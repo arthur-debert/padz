@@ -2,7 +2,9 @@ package commands
 
 import (
 	"bytes"
+	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"testing"
 	"time"
@@ -97,6 +99,113 @@ func TestCreate(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+func TestReadContentFromPipeWithReader(t *testing.T) {
+	tests := []struct {
+		name           string
+		readerContent  string
+		expectedResult []byte
+	}{
+		{
+			name:           "read simple content",
+			readerContent:  "Hello from reader",
+			expectedResult: []byte("Hello from reader"),
+		},
+		{
+			name:           "read multiline content",
+			readerContent:  "Line 1\nLine 2\nLine 3",
+			expectedResult: []byte("Line 1\nLine 2\nLine 3"),
+		},
+		{
+			name:           "read empty content",
+			readerContent:  "",
+			expectedResult: []byte{},
+		},
+		{
+			name:           "read content with special characters",
+			readerContent:  "Content with \t tabs and \n newlines!",
+			expectedResult: []byte("Content with \t tabs and \n newlines!"),
+		},
+		{
+			name:           "read Unicode content",
+			readerContent:  "Hello 世界 🌍",
+			expectedResult: []byte("Hello 世界 🌍"),
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			reader := bytes.NewBufferString(tt.readerContent)
+			result := ReadContentFromPipeWithReader(reader)
+
+			if !bytes.Equal(result, tt.expectedResult) {
+				t.Errorf("expected %q, got %q", tt.expectedResult, result)
+			}
+		})
+	}
+}
+
+// TestReadContentFromPipeIntegration tests the integration between
+// ReadContentFromPipe and the Create function
+func TestReadContentFromPipeIntegration(t *testing.T) {
+	tmpDir := setupCommandsTestDir(t)
+	defer os.RemoveAll(tmpDir)
+
+	s, err := store.NewStore()
+	if err != nil {
+		t.Fatalf("failed to create store: %v", err)
+	}
+
+	// Create a pipe with content
+	r, w, err := os.Pipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	oldStdin := os.Stdin
+	defer func() { os.Stdin = oldStdin }()
+	os.Stdin = r
+
+	// Write content to pipe
+	testContent := "Content from pipe\nSecond line"
+	go func() {
+		defer w.Close()
+		fmt.Fprint(w, testContent)
+	}()
+
+	// Read content from pipe
+	content := ReadContentFromPipe()
+	if content == nil {
+		t.Fatal("expected content from pipe, got nil")
+	}
+
+	// Create scratch with piped content
+	err = Create(s, "testproject", content)
+	if err != nil {
+		t.Errorf("unexpected error creating scratch: %v", err)
+	}
+
+	// Verify scratch was created with correct content
+	scratches := s.GetScratches()
+	if len(scratches) != 1 {
+		t.Fatalf("expected 1 scratch, got %d", len(scratches))
+	}
+
+	// Verify title is the first line
+	if scratches[0].Title != "Content from pipe" {
+		t.Errorf("expected title 'Content from pipe', got %q", scratches[0].Title)
+	}
+
+	// Verify content was saved correctly
+	savedContent, err := readScratchFile(scratches[0].ID)
+	if err != nil {
+		t.Fatalf("failed to read scratch file: %v", err)
+	}
+
+	if string(savedContent) != testContent {
+		t.Errorf("expected saved content %q, got %q", testContent, string(savedContent))
 	}
 }
 
@@ -197,7 +306,120 @@ func TestTrim(t *testing.T) {
 }
 
 func TestReadContentFromPipe(t *testing.T) {
-	t.Skip("ReadContentFromPipe requires stdin manipulation which is complex to test")
+	tests := []struct {
+		name           string
+		pipeContent    string
+		expectedResult []byte
+		setupFunc      func() (cleanup func())
+	}{
+		{
+		name:           "read from pipe with content",
+		pipeContent:    "Hello from pipe",
+		expectedResult: []byte("Hello from pipe"),
+		setupFunc: func() func() {
+			// Create a pipe
+			r, w, err := os.Pipe()
+			if err != nil {
+				t.Fatal(err)
+			}
+
+			// Save original stdin
+			oldStdin := os.Stdin
+			os.Stdin = r
+
+			// Write test content to pipe in a goroutine
+			go func() {
+				defer w.Close()
+				fmt.Fprint(w, "Hello from pipe")
+			}()
+
+			return func() {
+				os.Stdin = oldStdin
+				r.Close()
+			}
+		},
+	},
+	{
+		name:           "read from pipe with multiline content",
+		pipeContent:    "Line 1\nLine 2\nLine 3",
+		expectedResult: []byte("Line 1\nLine 2\nLine 3"),
+		setupFunc: func() func() {
+			r, w, err := os.Pipe()
+			if err != nil {
+				t.Fatal(err)
+			}
+
+			oldStdin := os.Stdin
+			os.Stdin = r
+
+			go func() {
+				defer w.Close()
+				fmt.Fprint(w, "Line 1\nLine 2\nLine 3")
+			}()
+
+			return func() {
+				os.Stdin = oldStdin
+				r.Close()
+			}
+		},
+	},
+	{
+		name:           "no pipe input (terminal)",
+		pipeContent:    "",
+		expectedResult: nil,
+		setupFunc: func() func() {
+			// Use a regular file to simulate terminal input
+			tmpFile, err := os.CreateTemp("", "stdin-test")
+			if err != nil {
+				t.Fatal(err)
+			}
+
+			oldStdin := os.Stdin
+			os.Stdin = tmpFile
+
+			return func() {
+				os.Stdin = oldStdin
+				tmpFile.Close()
+				os.Remove(tmpFile.Name())
+			}
+		},
+	},
+	{
+		name:           "empty pipe",
+		pipeContent:    "",
+		expectedResult: []byte{},
+		setupFunc: func() func() {
+			r, w, err := os.Pipe()
+			if err != nil {
+				t.Fatal(err)
+			}
+
+			oldStdin := os.Stdin
+			os.Stdin = r
+
+			// Close immediately to send EOF
+			w.Close()
+
+			return func() {
+				os.Stdin = oldStdin
+				r.Close()
+			}
+		},
+	},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cleanup := tt.setupFunc()
+			defer cleanup()
+
+			result := ReadContentFromPipe()
+
+			if !bytes.Equal(result, tt.expectedResult) {
+				t.Errorf("expected %q, got %q", tt.expectedResult, result)
+			}
+		})
+	}
 }
 
 func TestLs(t *testing.T) {
@@ -732,7 +954,169 @@ func TestCleanup(t *testing.T) {
 }
 
 func TestOpen(t *testing.T) {
-	t.Skip("Open function tests require editor interaction - complex to test without mocking")
+	// Skip if ed is not available
+	if _, err := exec.LookPath("ed"); err != nil {
+		t.Skip("ed editor not available in PATH")
+	}
+
+	tmpDir := setupCommandsTestDir(t)
+	defer os.RemoveAll(tmpDir)
+
+	s, err := store.NewStore()
+	if err != nil {
+		t.Fatalf("failed to create store: %v", err)
+	}
+
+	// Create a test scratch
+	originalContent := []byte("Original content\nLine 2\nLine 3")
+	err = Create(s, "testproject", originalContent)
+	if err != nil {
+		t.Fatalf("failed to create scratch: %v", err)
+	}
+
+	// Set up ed as the editor with a script that modifies the file
+	oldEditor := os.Getenv("EDITOR")
+	defer os.Setenv("EDITOR", oldEditor)
+
+	// Create an ed script that will append a line
+	edScript := createEdScript(t, []string{
+		"$a",           // append after last line
+		"New line added by ed",
+		".",            // end append mode
+		"w",            // write file
+		"q",            // quit
+	})
+	defer os.Remove(edScript)
+
+	// Set EDITOR to run ed with our script
+	editorCmd := fmt.Sprintf("ed -s < %s", edScript)
+	wrapperScript := createEditorWrapper(t, editorCmd)
+	defer os.Remove(wrapperScript)
+	os.Setenv("EDITOR", wrapperScript)
+
+	// Test opening and editing the scratch
+	err = Open(s, "testproject", "1")
+	if err != nil {
+		t.Errorf("unexpected error opening scratch: %v", err)
+	}
+
+	// Verify the content was modified
+	scratches := s.GetScratches()
+	if len(scratches) != 1 {
+		t.Fatalf("expected 1 scratch, got %d", len(scratches))
+	}
+
+	content, err := readScratchFile(scratches[0].ID)
+	if err != nil {
+		t.Fatalf("failed to read scratch content: %v", err)
+	}
+
+	expectedContent := "Original content\nLine 2\nLine 3\nNew line added by ed"
+	if string(content) != expectedContent {
+		t.Errorf("content mismatch:\nexpected: %q\ngot: %q", expectedContent, string(content))
+	}
+
+	// Test that title is updated
+	if scratches[0].Title != "Original content" {
+		t.Errorf("expected title 'Original content', got %q", scratches[0].Title)
+	}
+}
+
+func TestOpen_DeletesEmptyScratch(t *testing.T) {
+	// Skip if ed is not available
+	if _, err := exec.LookPath("ed"); err != nil {
+		t.Skip("ed editor not available in PATH")
+	}
+
+	tmpDir := setupCommandsTestDir(t)
+	defer os.RemoveAll(tmpDir)
+
+	s, err := store.NewStore()
+	if err != nil {
+		t.Fatalf("failed to create store: %v", err)
+	}
+
+	// Create a test scratch
+	err = Create(s, "testproject", []byte("Content to be deleted"))
+	if err != nil {
+		t.Fatalf("failed to create scratch: %v", err)
+	}
+
+	// Set up ed to delete all content
+	oldEditor := os.Getenv("EDITOR")
+	defer os.Setenv("EDITOR", oldEditor)
+
+	edScript := createEdScript(t, []string{
+		"1,$d",         // delete all lines
+		"w",            // write file
+		"q",            // quit
+	})
+	defer os.Remove(edScript)
+
+	editorCmd := fmt.Sprintf("ed -s < %s", edScript)
+	wrapperScript := createEditorWrapper(t, editorCmd)
+	defer os.Remove(wrapperScript)
+	os.Setenv("EDITOR", wrapperScript)
+
+	// Open and edit (delete all content)
+	err = Open(s, "testproject", "1")
+	if err != nil {
+		t.Errorf("unexpected error opening scratch: %v", err)
+	}
+
+	// Verify the scratch was deleted
+	scratches := s.GetScratches()
+	if len(scratches) != 0 {
+		t.Errorf("expected scratch to be deleted, but found %d scratches", len(scratches))
+	}
+}
+
+// createEdScript creates a temporary file with ed commands
+func createEdScript(t *testing.T, commands []string) string {
+	tmpFile, err := os.CreateTemp("", "ed-script-*.txt")
+	if err != nil {
+		t.Fatalf("failed to create ed script: %v", err)
+	}
+
+	for _, cmd := range commands {
+		if _, err := fmt.Fprintln(tmpFile, cmd); err != nil {
+			t.Fatalf("failed to write ed command: %v", err)
+		}
+	}
+
+	if err := tmpFile.Close(); err != nil {
+		t.Fatalf("failed to close ed script: %v", err)
+	}
+
+	return tmpFile.Name()
+}
+
+// createEditorWrapper creates a shell script that runs ed with redirection
+func createEditorWrapper(t *testing.T, editorCmd string) string {
+	script := fmt.Sprintf(`#!/bin/sh
+# Editor wrapper for testing
+FILE="$1"
+%s "$FILE"
+`, editorCmd)
+
+	tmpFile, err := os.CreateTemp("", "editor-wrapper-*.sh")
+	if err != nil {
+		t.Fatalf("failed to create editor wrapper: %v", err)
+	}
+
+	if _, err := tmpFile.WriteString(script); err != nil {
+		t.Fatalf("failed to write editor wrapper: %v", err)
+	}
+
+	if err := tmpFile.Close(); err != nil {
+		t.Fatalf("failed to close editor wrapper: %v", err)
+	}
+
+	if err := os.Chmod(tmpFile.Name(), 0755); err != nil {
+		t.Fatalf("failed to make editor wrapper executable: %v", err)
+	}
+
+	return tmpFile.Name()
 }
 
 func setupCommandsTestDir(t *testing.T) string {
@@ -768,6 +1152,7 @@ func equalStringSlices(a, b []string) bool {
 	}
 	return true
 }
+
 
 func TestCreateWithEmptyContent(t *testing.T) {
 	tmpDir := setupCommandsTestDir(t)

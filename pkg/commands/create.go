@@ -65,15 +65,26 @@ func saveScratchFile(id string, content []byte) error {
 	return os.WriteFile(path, content, 0644)
 }
 
+// ReadContentFromPipe checks if stdin is a pipe and reads its content
 func ReadContentFromPipe() []byte {
-	info, err := os.Stdin.Stat()
-	if err != nil {
-		return nil
+	return ReadContentFromPipeWithReader(os.Stdin)
+}
+
+// ReadContentFromPipeWithReader reads content from a pipe using the provided reader
+// This function is exported to allow for easier testing with mock readers
+func ReadContentFromPipeWithReader(reader io.Reader) []byte {
+	// Check if the reader is os.Stdin to perform pipe detection
+	if stdin, ok := reader.(*os.File); ok && stdin == os.Stdin {
+		info, err := stdin.Stat()
+		if err != nil {
+			return nil
+		}
+		if info.Mode()&os.ModeNamedPipe == 0 {
+			return nil
+		}
 	}
-	if info.Mode()&os.ModeNamedPipe == 0 {
-		return nil
-	}
+	
 	var buf bytes.Buffer
-	io.Copy(&buf, os.Stdin)
+	io.Copy(&buf, reader)
 	return buf.Bytes()
 }

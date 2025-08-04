@@ -2,54 +2,74 @@ package editor
 
 import (
 	"bytes"
+	"fmt"
 	"os"
 	"os/exec"
 	"strings"
 	"testing"
 )
 
-func TestOpenInEditor_DefaultEditor(t *testing.T) {
-	tests := []struct {
-		name           string
-		editorEnv      string
-		expectEditor   string
-		shouldTestExec bool
-	}{
-		{
-			name:           "EDITOR environment variable set",
-			editorEnv:      "nano",
-			expectEditor:   "nano",
-			shouldTestExec: false,
-		},
-		{
-			name:           "EDITOR environment variable empty - default to vim",
-			editorEnv:      "",
-			expectEditor:   "vim",
-			shouldTestExec: false,
-		},
-		{
-			name:           "EDITOR set to custom editor",
-			editorEnv:      "/usr/bin/emacs",
-			expectEditor:   "/usr/bin/emacs",
-			shouldTestExec: false,
-		},
+
+func TestOpenInEditor_WithRealEditor(t *testing.T) {
+	// Skip if ed is not available
+	if _, err := exec.LookPath("ed"); err != nil {
+		t.Skip("ed editor not available in PATH")
 	}
 
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			oldEditor := os.Getenv("EDITOR")
-			defer os.Setenv("EDITOR", oldEditor)
+	oldEditor := os.Getenv("EDITOR")
+	defer os.Setenv("EDITOR", oldEditor)
 
-			if tt.editorEnv == "" {
-				os.Unsetenv("EDITOR")
-			} else {
-				os.Setenv("EDITOR", tt.editorEnv)
-			}
+	// Create a wrapper that uses ed to append a line
+	edScript, err := os.CreateTemp("", "ed-test-script-*.txt")
+	if err != nil {
+		t.Fatalf("failed to create ed script: %v", err)
+	}
+	defer os.Remove(edScript.Name())
 
-			if !tt.shouldTestExec {
-				t.Skipf("Skipping execution test for %s - would require actual editor", tt.expectEditor)
-			}
-		})
+	// Write ed commands to append a test line
+	edCommands := `$a
+Test line from ed
+.
+w
+q
+`
+	if _, err := edScript.WriteString(edCommands); err != nil {
+		t.Fatalf("failed to write ed script: %v", err)
+	}
+	edScript.Close()
+
+	// Create wrapper script
+	wrapper, err := os.CreateTemp("", "ed-wrapper-*.sh")
+	if err != nil {
+		t.Fatalf("failed to create wrapper: %v", err)
+	}
+	defer os.Remove(wrapper.Name())
+
+	wrapperScript := fmt.Sprintf(`#!/bin/sh
+ed -s "$1" < %s
+`, edScript.Name())
+	
+	if _, err := wrapper.WriteString(wrapperScript); err != nil {
+		t.Fatalf("failed to write wrapper: %v", err)
+	}
+	wrapper.Close()
+
+	if err := os.Chmod(wrapper.Name(), 0755); err != nil {
+		t.Fatalf("failed to make wrapper executable: %v", err)
+	}
+
+	os.Setenv("EDITOR", wrapper.Name())
+
+	// Test with initial content
+	initialContent := []byte("Initial line 1\nInitial line 2")
+	result, err := OpenInEditor(initialContent)
+	if err != nil {
+		t.Errorf("unexpected error: %v", err)
+	}
+
+	expectedContent := "Initial line 1\nInitial line 2\nTest line from ed\n"
+	if string(result) != expectedContent {
+		t.Errorf("content mismatch:\nexpected: %q\ngot: %q", expectedContent, string(result))
 	}
 }
 
