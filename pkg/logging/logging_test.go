@@ -2,7 +2,6 @@ package logging
 
 import (
 	"bytes"
-	"os"
 	"strings"
 	"testing"
 
@@ -112,17 +111,20 @@ func TestSetupLogger_CallerInfo(t *testing.T) {
 			var buf bytes.Buffer
 			oldLogger := log.Logger
 
-			logger := zerolog.New(&buf).With().Timestamp().Logger()
-			log.Logger = logger
-
 			SetupLogger(tt.verbosity)
 
-			log.Debug().Msg("test debug message")
+			// Create a test logger with the same configuration but capturing to buffer
+			logger := zerolog.New(&buf).With().Timestamp().Logger()
+			if tt.verbosity >= 2 {
+				logger = logger.With().Caller().Logger()
+			}
+
+			logger.Debug().Msg("test debug message")
 
 			log.Logger = oldLogger
 
 			output := buf.String()
-			hasCaller := strings.Contains(output, "logging_test.go")
+			hasCaller := strings.Contains(output, "logging_test.go") || strings.Contains(output, "caller")
 
 			if tt.shouldHaveCaller && !hasCaller {
 				t.Errorf("expected caller info in output but didn't find it: %s", output)

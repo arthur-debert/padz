@@ -7,6 +7,8 @@ import (
 	"reflect"
 	"testing"
 	"time"
+
+	"github.com/adrg/xdg"
 )
 
 func TestNewStore(t *testing.T) {
@@ -48,12 +50,14 @@ func TestNewStore(t *testing.T) {
 			// Mock the XDG data directory
 			oldXDGDataHome := os.Getenv("XDG_DATA_HOME")
 			os.Setenv("XDG_DATA_HOME", tmpDir)
+			xdg.Reload()
 			defer func() {
 				if oldXDGDataHome == "" {
 					os.Unsetenv("XDG_DATA_HOME")
 				} else {
 					os.Setenv("XDG_DATA_HOME", oldXDGDataHome)
 				}
+				xdg.Reload()
 			}()
 
 			store, err := NewStore()
@@ -103,12 +107,14 @@ func TestStore_AddScratch(t *testing.T) {
 
 	oldXDGDataHome := os.Getenv("XDG_DATA_HOME")
 	os.Setenv("XDG_DATA_HOME", tmpDir)
+	xdg.Reload()
 	defer func() {
 		if oldXDGDataHome == "" {
 			os.Unsetenv("XDG_DATA_HOME")
 		} else {
 			os.Setenv("XDG_DATA_HOME", oldXDGDataHome)
 		}
+		xdg.Reload()
 	}()
 
 	store, err := NewStore()
@@ -143,12 +149,14 @@ func TestStore_RemoveScratch(t *testing.T) {
 
 	oldXDGDataHome := os.Getenv("XDG_DATA_HOME")
 	os.Setenv("XDG_DATA_HOME", tmpDir)
+	xdg.Reload()
 	defer func() {
 		if oldXDGDataHome == "" {
 			os.Unsetenv("XDG_DATA_HOME")
 		} else {
 			os.Setenv("XDG_DATA_HOME", oldXDGDataHome)
 		}
+		xdg.Reload()
 	}()
 
 	store, err := NewStore()
@@ -226,12 +234,14 @@ func TestStore_UpdateScratch(t *testing.T) {
 
 	oldXDGDataHome := os.Getenv("XDG_DATA_HOME")
 	os.Setenv("XDG_DATA_HOME", tmpDir)
+	xdg.Reload()
 	defer func() {
 		if oldXDGDataHome == "" {
 			os.Unsetenv("XDG_DATA_HOME")
 		} else {
 			os.Setenv("XDG_DATA_HOME", oldXDGDataHome)
 		}
+		xdg.Reload()
 	}()
 
 	store, err := NewStore()
@@ -278,12 +288,14 @@ func TestStore_SaveScratches(t *testing.T) {
 
 	oldXDGDataHome := os.Getenv("XDG_DATA_HOME")
 	os.Setenv("XDG_DATA_HOME", tmpDir)
+	xdg.Reload()
 	defer func() {
 		if oldXDGDataHome == "" {
 			os.Unsetenv("XDG_DATA_HOME")
 		} else {
 			os.Setenv("XDG_DATA_HOME", oldXDGDataHome)
 		}
+		xdg.Reload()
 	}()
 
 	store, err := NewStore()
@@ -311,12 +323,14 @@ func TestGetScratchPath(t *testing.T) {
 	tmpDir := t.TempDir()
 	oldXDGDataHome := os.Getenv("XDG_DATA_HOME")
 	os.Setenv("XDG_DATA_HOME", tmpDir)
+	xdg.Reload()
 	defer func() {
 		if oldXDGDataHome == "" {
 			os.Unsetenv("XDG_DATA_HOME")
 		} else {
 			os.Setenv("XDG_DATA_HOME", oldXDGDataHome)
 		}
+		xdg.Reload()
 	}()
 
 	path, err := GetScratchPath()
@@ -338,12 +352,14 @@ func TestGetScratchFilePath(t *testing.T) {
 	tmpDir := t.TempDir()
 	oldXDGDataHome := os.Getenv("XDG_DATA_HOME")
 	os.Setenv("XDG_DATA_HOME", tmpDir)
+	xdg.Reload()
 	defer func() {
 		if oldXDGDataHome == "" {
 			os.Unsetenv("XDG_DATA_HOME")
 		} else {
 			os.Setenv("XDG_DATA_HOME", oldXDGDataHome)
 		}
+		xdg.Reload()
 	}()
 
 	tests := []struct {
@@ -389,12 +405,14 @@ func TestStore_ConcurrentAccess(t *testing.T) {
 
 	oldXDGDataHome := os.Getenv("XDG_DATA_HOME")
 	os.Setenv("XDG_DATA_HOME", tmpDir)
+	xdg.Reload()
 	defer func() {
 		if oldXDGDataHome == "" {
 			os.Unsetenv("XDG_DATA_HOME")
 		} else {
 			os.Setenv("XDG_DATA_HOME", oldXDGDataHome)
 		}
+		xdg.Reload()
 	}()
 
 	store, err := NewStore()

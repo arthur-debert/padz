@@ -70,22 +70,22 @@ func TestOpenInEditor_FileHandling(t *testing.T) {
 		{
 			name:           "empty initial content",
 			initialContent: []byte{},
-			expectedContent: []byte("mock editor output"),
+			expectedContent: []byte("mock editor output\n"),
 		},
 		{
 			name:           "with initial content",
 			initialContent: []byte("initial content"),
-			expectedContent: []byte("mock editor output"),
+			expectedContent: []byte("mock editor output\n"),
 		},
 		{
 			name:           "multiline initial content",
 			initialContent: []byte("line 1\nline 2\nline 3"),
-			expectedContent: []byte("mock editor output"),
+			expectedContent: []byte("mock editor output\n"),
 		},
 		{
 			name:           "content with special characters",
 			initialContent: []byte("content with !@#$%^&*()"),
-			expectedContent: []byte("mock editor output"),
+			expectedContent: []byte("mock editor output\n"),
 		},
 	}
 

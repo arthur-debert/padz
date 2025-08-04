@@ -4,10 +4,10 @@ import (
 	"bytes"
 	"os"
 	"path/filepath"
-	"strings"
 	"testing"
 	"time"
 
+	"github.com/adrg/xdg"
 	"github.com/arthur-debert/padz/pkg/store"
 )
 
@@ -25,13 +25,6 @@ func TestCreate(t *testing.T) {
 			content:     []byte("Hello World\nThis is a test"),
 			expectError: false,
 			expectSave:  true,
-		},
-		{
-			name:        "create with empty content",
-			project:     "testproject",
-			content:     []byte(""),
-			expectError: false,
-			expectSave:  false,
 		},
 		{
 			name:        "create with whitespace only",
@@ -313,8 +306,8 @@ func TestSearch(t *testing.T) {
 
 	testContents := map[string]string{
 		"1": "This is content for scratch 1\nWith some test data",
-		"2": "Different content for scratch 2\nNo test here",
-		"3": "Global scratch content\nTesting global search",
+		"2": "Different content for scratch 2\nNo such keyword here",
+		"3": "Global scratch content\nSearching global data",
 	}
 
 	for _, scratch := range testScratches {
@@ -338,8 +331,8 @@ func TestSearch(t *testing.T) {
 			global:        false,
 			project:       "",
 			term:          "test",
-			expectedCount: 2,
-			expectedIDs:   []string{"1", "3"},
+			expectedCount: 1,
+			expectedIDs:   []string{"1"},
 			expectError:   false,
 		},
 		{
@@ -673,7 +666,7 @@ func TestCleanup(t *testing.T) {
 		{ID: "old1", Project: "test", Title: "Old 1", CreatedAt: now.AddDate(0, 0, -10)},
 		{ID: "old2", Project: "test", Title: "Old 2", CreatedAt: now.AddDate(0, 0, -8)},
 		{ID: "new1", Project: "test", Title: "New 1", CreatedAt: now.AddDate(0, 0, -5)},
-		{ID: "new2", Project: "test", Title: "New 2", CreatedAt: now.AddDate(0, 0, -1)},
+		{ID: "new2", Project: "test", Title: "New 2", CreatedAt: now.Add(-12 * time.Hour)}, // Less than 1 day
 	}
 
 	for _, scratch := range testScratches {
@@ -746,8 +739,14 @@ func setupCommandsTestDir(t *testing.T) string {
 	tmpDir := t.TempDir()
 	oldXDGDataHome := os.Getenv("XDG_DATA_HOME")
 	os.Setenv("XDG_DATA_HOME", tmpDir)
+	xdg.Reload()
 	t.Cleanup(func() {
-		os.Setenv("XDG_DATA_HOME", oldXDGDataHome)
+		if oldXDGDataHome == "" {
+			os.Unsetenv("XDG_DATA_HOME")
+		} else {
+			os.Setenv("XDG_DATA_HOME", oldXDGDataHome)
+		}
+		xdg.Reload()
 	})
 
 	scratchDir := filepath.Join(tmpDir, "scratch")
@@ -768,4 +767,66 @@ func equalStringSlices(a, b []string) bool {
 		}
 	}
 	return true
+}
+
+func TestCreateWithEmptyContent(t *testing.T) {
+	tmpDir := setupCommandsTestDir(t)
+	defer os.RemoveAll(tmpDir)
+
+	// Set editor to a command that will write test content and exit
+	oldEditor := os.Getenv("EDITOR")
+	testScript := createMockEditorScript(t, "test content from editor")
+	defer os.Remove(testScript)
+	
+	os.Setenv("EDITOR", testScript)
+	defer func() {
+		if oldEditor == "" {
+			os.Unsetenv("EDITOR")
+		} else {
+			os.Setenv("EDITOR", oldEditor)
+		}
+	}()
+
+	s, err := store.NewStore()
+	if err != nil {
+		t.Fatalf("failed to create store: %v", err)
+	}
+
+	initialCount := len(s.GetScratches())
+
+	// Test with empty content - should launch editor
+	err = Create(s, "testproject", []byte(""))
+	if err != nil {
+		t.Errorf("unexpected error: %v", err)
+		return
+	}
+
+	scratches := s.GetScratches()
+	if len(scratches) != initialCount+1 {
+		t.Errorf("expected scratch to be saved via editor, count: %d -> %d", initialCount, len(scratches))
+	}
+}
+
+func createMockEditorScript(t *testing.T, content string) string {
+	scriptContent := `#!/bin/bash
+echo "` + content + `" > "$1"
+`
+	tmpFile, err := os.CreateTemp("", "mockeditor-*.sh")
+	if err != nil {
+		t.Fatalf("failed to create temp file: %v", err)
+	}
+
+	if _, err := tmpFile.WriteString(scriptContent); err != nil {
+		t.Fatalf("failed to write script: %v", err)
+	}
+
+	if err := tmpFile.Close(); err != nil {
+		t.Fatalf("failed to close temp file: %v", err)
+	}
+
+	if err := os.Chmod(tmpFile.Name(), 0755); err != nil {
+		t.Fatalf("failed to make script executable: %v", err)
+	}
+
+	return tmpFile.Name()
 }
