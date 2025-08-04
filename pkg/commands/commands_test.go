@@ -744,61 +744,111 @@ func TestPeek(t *testing.T) {
 		t.Fatalf("failed to create store: %v", err)
 	}
 
-	testScratch := store.Scratch{
-		ID: "test1", Project: "testproject", Title: "Test Title", CreatedAt: time.Now(),
+	// Create test scratches in different projects
+	testScratches := []struct {
+		scratch store.Scratch
+		content string
+	}{
+		{
+			scratch: store.Scratch{ID: "test1", Project: "testproject", Title: "Test Title", CreatedAt: time.Now()},
+			content: "Line 1\nLine 2\nLine 3\nLine 4\nLine 5\nLine 6\nLine 7\nLine 8",
+		},
+		{
+			scratch: store.Scratch{ID: "test2", Project: "otherproject", Title: "Other Title", CreatedAt: time.Now()},
+			content: "Other Line 1\nOther Line 2\nOther Line 3\nOther Line 4\nOther Line 5",
+		},
+		{
+			scratch: store.Scratch{ID: "test3", Project: "global", Title: "Global Title", CreatedAt: time.Now()},
+			content: "Global Line 1\nGlobal Line 2\nGlobal Line 3",
+		},
 	}
-	s.AddScratch(testScratch)
+
+	for _, ts := range testScratches {
+		s.AddScratch(ts.scratch)
+		if err := saveScratchFile(ts.scratch.ID, []byte(ts.content)); err != nil {
+			t.Fatalf("failed to save scratch file: %v", err)
+		}
+	}
 
 	tests := []struct {
 		name            string
-		content         string
+		project         string
+		index           string
 		lines           int
+		all             bool
+		global          bool
 		expectedContent string
+		expectError     bool
 	}{
 		{
 			name:            "short content - return all",
-			content:         "Line 1\nLine 2\nLine 3",
+			project:         "global",
+			index:           "1",
 			lines:           3,
-			expectedContent: "Line 1\nLine 2\nLine 3",
+			expectedContent: "Global Line 1\nGlobal Line 2\nGlobal Line 3",
 		},
 		{
 			name:    "long content - peek with ellipsis",
-			content: "Line 1\nLine 2\nLine 3\nLine 4\nLine 5\nLine 6\nLine 7\nLine 8",
+			project: "testproject",
+			index:   "1",
 			lines:   2,
 			expectedContent: "Line 1\nLine 2\n...\nLine 7\nLine 8\n",
 		},
 		{
-			name:            "single line content",
-			content:         "Single line",
+			name:            "default 3 lines peek",
+			project:         "testproject",
+			index:           "1", 
 			lines:           3,
-			expectedContent: "Single line",
+			expectedContent: "Line 1\nLine 2\nLine 3\n...\nLine 6\nLine 7\nLine 8\n",
 		},
 		{
 			name:            "exactly 2*lines content",
-			content:         "Line 1\nLine 2\nLine 3\nLine 4",
+			project:         "otherproject",
+			index:           "1",
 			lines:           2,
-			expectedContent: "Line 1\nLine 2\nLine 3\nLine 4",
+			expectedContent: "Other Line 1\nOther Line 2\n...\nOther Line 4\nOther Line 5\n",
 		},
 		{
-			name:            "empty content",
-			content:         "",
-			lines:           3,
-			expectedContent: "",
+			name:        "invalid index",
+			project:     "testproject",
+			index:       "99",
+			lines:       3,
+			expectError: true,
+		},
+		{
+			name:            "peek with all flag",
+			project:         "",
+			index:           "2",
+			lines:           2,
+			all:             true,
+			expectedContent: "Other Line 1\nOther Line 2\n...\nOther Line 4\nOther Line 5\n",
+		},
+		{
+			name:            "peek with global flag",
+			project:         "",
+			index:           "1",
+			lines:           2,
+			global:          true,
+			expectedContent: "Global Line 1\nGlobal Line 2\nGlobal Line 3",
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			saveScratchFile(testScratch.ID, []byte(tt.content))
-
-			result, err := Peek(s, false, false, "testproject", "1", tt.lines)
+			result, err := Peek(s, tt.all, tt.global, tt.project, tt.index, tt.lines)
+			if tt.expectError {
+				if err == nil {
+					t.Errorf("expected error but got none")
+				}
+				return
+			}
 			if err != nil {
 				t.Errorf("unexpected error: %v", err)
 				return
 			}
 
 			if result != tt.expectedContent {
-				t.Errorf("expected content %q, got %q", tt.expectedContent, result)
+				t.Errorf("expected content:\n%q\ngot:\n%q", tt.expectedContent, result)
 			}
 		})
 	}
