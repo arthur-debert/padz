@@ -1,0 +1,57 @@
+# OS files
+.DS_Store
+Thumbs.db
+Desktop.ini
+
+# Editor files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+# Temporary files
+tmp/
+temp/
+*.tmp
+*.temp
+*.log
+# Local development
+local/
+.env.local
+.env.*.local
+# Backup files
+*.bak
+*.backup
+# Cache directories
+.cache/
+# System files
+.directory
+# Go binaries and build artifacts
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+# Test binary, built with go test -c
+*.test
+# Output of the go coverage tool
+*.out
+cover.html
+coverage.txt
+# Go workspace file
+go.work
+go.work.sum
+# Binary output
+/padz
+padz-*
+# Build directories
+/bin/
+/dist/
+/completions/
+/man/
+# GoReleaser
+dist/
+# Dependency directories (uncomment if needed)
+# vendor/
+# Go mod cache
+/go/pkg/mod/
