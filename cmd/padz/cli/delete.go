@@ -1,7 +1,7 @@
 /*
 Copyright © 2025 YOUR NAME HERE <EMAIL ADDRESS>
 */
-package main
+package cli
 
 import (
 	"fmt"
@@ -44,6 +44,3 @@ var deleteCmd = &cobra.Command{
 	},
 }
 
-func init() {
-	rootCmd.AddCommand(deleteCmd)
-}

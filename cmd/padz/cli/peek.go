@@ -1,7 +1,7 @@
 /*
 Copyright © 2025 YOUR NAME HERE <EMAIL ADDRESS>
 */
-package main
+package cli
 
 import (
 	"fmt"
@@ -14,13 +14,17 @@ import (
 	"github.com/spf13/cobra"
 )
 
-// openCmd represents the open command
-var openCmd = &cobra.Command{
-	Use:   "open [index]",
-	Short: "Open a scratch in the default editor",
-	Long:  `Open a scratch, identified by its index, in the default editor.`,
+// peekCmd represents the peek command
+var peekCmd = &cobra.Command{
+	Use:   "peek [index]",
+	Short: "Peek at a scratch",
+	Long:  `Peek at the first and last lines of a scratch.`,
 	Args:  cobra.ExactArgs(1),
 	Run: func(cmd *cobra.Command, args []string) {
+		all, _ := cmd.Flags().GetBool("all")
+		global, _ := cmd.Flags().GetBool("global")
+		lines, _ := cmd.Flags().GetInt("lines")
+
 		s, err := store.NewStore()
 		if err != nil {
 			log.Fatal(err)
@@ -36,14 +40,12 @@ var openCmd = &cobra.Command{
 			log.Fatal(err)
 		}
 
-		if err := commands.Open(s, proj, args[0]); err != nil {
+		content, err := commands.Peek(s, all, global, proj, args[0], lines)
+		if err != nil {
 			log.Fatal(err)
 		}
 
-		fmt.Println("Scratch updated.")
+		fmt.Print(content)
 	},
 }
 
-func init() {
-	rootCmd.AddCommand(openCmd)
-}

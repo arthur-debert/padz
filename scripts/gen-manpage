@@ -1,47 +1,31 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Always build the binary to ensure it's for the current platform
-echo "Building padz..."
-./scripts/build
+# Build output directory (matching main build script)
+BIN_DIR="bin"
+MAN_DIR="man/man1"
 
 # Create man directory
-mkdir -p man/man1
+mkdir -p "${MAN_DIR}"
+
+# Always build for the current platform to ensure compatibility
+if [ ! -f "${BIN_DIR}/padz" ]; then
+    echo "Building padz for current platform..."
+    ./scripts/build
+fi
+
+# Build the man page generator tool
+echo "Building padz-manpage tool..."
+go build -o "${BIN_DIR}/padz-manpage" ./cmd/padz-manpage
 
 # Generate man page
 echo "Generating man page..."
-./bin/padz man > man/man1/padz.1 || {
-    echo "Note: 'man' subcommand not implemented yet"
-    echo "Creating placeholder man page..."
-    cat > man/man1/padz.1 << EOF
-.TH PADZ 1 "$(date +"%B %Y")" "padz manual"
-.SH NAME
-padz \- A simple command-line note-taking tool
-.SH SYNOPSIS
-.B padz
-[\fIOPTIONS\fR] [\fICOMMAND\fR]
-.SH DESCRIPTION
-padz is a simple shell command to create, search, view, and edit quick notes.
-It uses the user's default command-line editor for note creation and editing,
-and focuses on streamlined content management.
-.SH OPTIONS
-.TP
-.BR \-h ", " \-\-help
-Show help message
-.TP
-.BR \-v ", " \-\-version
-Show version information
-.SH AUTHORS
-Arthur Debert <arthur@debert.xyz>
-.SH COPYRIGHT
-Copyright (C) 2024 Arthur Debert
-EOF
-}
+"${BIN_DIR}/padz-manpage" > "${MAN_DIR}/padz.1"
 
 # Compress the man page
-if [ -f "man/man1/padz.1" ]; then
-    gzip -f man/man1/padz.1
-    echo "✅ Man page generated in man/man1/padz.1.gz"
+if [ -f "${MAN_DIR}/padz.1" ]; then
+    gzip -f "${MAN_DIR}/padz.1"
+    echo "✅ Man page generated in ${MAN_DIR}/padz.1.gz"
 else
     echo "❌ Failed to generate man page"
     exit 1

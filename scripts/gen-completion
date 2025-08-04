@@ -1,21 +1,31 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Always build the binary to ensure it's for the current platform
-echo "Building padz..."
-./scripts/build
+# Build output directory (matching main build script)
+BIN_DIR="bin"
+COMPLETIONS_DIR="completions"
 
 # Create completions directory
-mkdir -p completions
+mkdir -p "${COMPLETIONS_DIR}"
+
+# Always build for the current platform to ensure compatibility
+if [ ! -f "${BIN_DIR}/padz" ]; then
+    echo "Building padz for current platform..."
+    ./scripts/build
+fi
+
+# Build the completion generator tool
+echo "Building padz-completions tool..."
+go build -o "${BIN_DIR}/padz-completions" ./cmd/padz-completions
 
 # Generate completions
 echo "Generating bash completion..."
-./bin/padz completion bash > completions/padz.bash
+"${BIN_DIR}/padz-completions" bash > "${COMPLETIONS_DIR}/padz.bash"
 
 echo "Generating zsh completion..."
-./bin/padz completion zsh > completions/_padz
+"${BIN_DIR}/padz-completions" zsh > "${COMPLETIONS_DIR}/_padz"
 
 echo "Generating fish completion..."
-./bin/padz completion fish > completions/padz.fish
+"${BIN_DIR}/padz-completions" fish > "${COMPLETIONS_DIR}/padz.fish"
 
-echo "✅ Completions generated in completions/"
+echo "✅ Completions generated in ${COMPLETIONS_DIR}/"

@@ -1,7 +1,7 @@
 /*
 Copyright © 2025 YOUR NAME HERE <EMAIL ADDRESS>
 */
-package main
+package cli
 
 import (
 	"fmt"
@@ -52,8 +52,3 @@ The output includes the index, the relative time of creation, and the title of t
 	},
 }
 
-func init() {
-	rootCmd.AddCommand(lsCmd)
-	lsCmd.Flags().Bool("all", false, "Show scratches from all projects")
-	lsCmd.Flags().Bool("global", false, "Show only global scratches")
-}

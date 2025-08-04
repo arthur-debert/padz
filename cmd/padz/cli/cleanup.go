@@ -1,7 +1,7 @@
 /*
 Copyright © 2025 YOUR NAME HERE <EMAIL ADDRESS>
 */
-package main
+package cli
 
 import (
 	"fmt"
@@ -33,7 +33,3 @@ var cleanupCmd = &cobra.Command{
 	},
 }
 
-func init() {
-	rootCmd.AddCommand(cleanupCmd)
-	cleanupCmd.Flags().Int("days", 7, "Number of days to keep scratches")
-}

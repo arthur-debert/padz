@@ -1,25 +1,26 @@
 /*
 Copyright © 2025 YOUR NAME HERE <EMAIL ADDRESS>
 */
-package main
+package cli
 
 import (
 	"fmt"
 	"log"
 	"os"
+	"os/exec"
 	"github.com/arthur-debert/padz/pkg/commands"
 	"github.com/arthur-debert/padz/pkg/project"
 	"github.com/arthur-debert/padz/pkg/store"
+	"strings"
 
-	"github.com/dustin/go-humanize"
 	"github.com/spf13/cobra"
 )
 
-// searchCmd represents the search command
-var searchCmd = &cobra.Command{
-	Use:   "search [term]",
-	Short: "Search for a scratch",
-	Long:  `Search for a scratch by a regular expression.`,
+// viewCmd represents the view command
+var viewCmd = &cobra.Command{
+	Use:   "view [index]",
+	Short: "View a scratch",
+	Long:  `View the content of a scratch identified by its index.`,
 	Args:  cobra.ExactArgs(1),
 	Run: func(cmd *cobra.Command, args []string) {
 		all, _ := cmd.Flags().GetBool("all")
@@ -40,19 +41,28 @@ var searchCmd = &cobra.Command{
 			log.Fatal(err)
 		}
 
-		scratches, err := commands.Search(s, all, global, proj, args[0])
+		content, err := commands.View(s, all, global, proj, args[0])
 		if err != nil {
 			log.Fatal(err)
 		}
 
-		for i, scratch := range scratches {
-			fmt.Printf("%d. %s %s\n", i+1, humanize.Time(scratch.CreatedAt), scratch.Title)
+		// Check if output is being piped
+		info, _ := os.Stdout.Stat()
+		if (info.Mode() & os.ModeCharDevice) == 0 {
+			fmt.Print(content)
+		} else {
+			// Use a pager
+			pager := os.Getenv("PAGER")
+			if pager == "" {
+				pager = "less"
+			}
+			c := exec.Command(pager)
+			c.Stdin = strings.NewReader(content)
+			c.Stdout = os.Stdout
+			if err := c.Run(); err != nil {
+				log.Fatal(err)
+			}
 		}
 	},
 }
 
-func init() {
-	rootCmd.AddCommand(searchCmd)
-	searchCmd.Flags().Bool("all", false, "Search in all projects")
-	searchCmd.Flags().Bool("global", false, "Search only in global scratches")
-}
