@@ -8,10 +8,10 @@ import (
 	"log"
 	"os"
 	"github.com/arthur-debert/padz/pkg/commands"
+	"github.com/arthur-debert/padz/pkg/output"
 	"github.com/arthur-debert/padz/pkg/project"
 	"github.com/arthur-debert/padz/pkg/store"
 
-	"github.com/dustin/go-humanize"
 	"github.com/spf13/cobra"
 )
 
@@ -45,9 +45,21 @@ func newSearchCmd() *cobra.Command {
 		if err != nil {
 			log.Fatal(err)
 		}
-
-		for i, scratch := range scratches {
-			fmt.Printf("%d. %s %s\n", i+1, humanize.Time(scratch.CreatedAt), scratch.Title)
+		
+		// Format output
+		format, err := output.GetFormat(outputFormat)
+		if err != nil {
+			log.Fatal(err)
+		}
+		
+		formatter := output.NewFormatter(format, nil)
+		if len(scratches) == 0 && format == output.PlainFormat {
+			fmt.Println("No matches found.")
+			return
+		}
+		
+		if err := formatter.FormatList(scratches, all); err != nil {
+			log.Fatal(err)
 		}
 	},
 	}

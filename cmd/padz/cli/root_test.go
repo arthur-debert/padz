@@ -144,3 +144,28 @@ func TestVerboseFlagStillWorks(t *testing.T) {
 		t.Fatalf("unexpected error when using hidden verbose flag: %v", err)
 	}
 }
+
+func TestFormatFlag(t *testing.T) {
+	cmd := NewRootCmd()
+	buf := new(bytes.Buffer)
+	cmd.SetOut(buf)
+	cmd.SetArgs([]string{"--help"})
+	
+	err := cmd.Execute()
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	
+	output := buf.String()
+	
+	// Check that format flag is shown
+	if !strings.Contains(output, "--format") {
+		t.Error("Expected --format flag in help output")
+	}
+	if !strings.Contains(output, "Output format") {
+		t.Error("Expected format flag description in help output")
+	}
+	if !strings.Contains(output, "plain, json, term") {
+		t.Error("Expected format options in help output")
+	}
+}

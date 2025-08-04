@@ -14,6 +14,7 @@ import (
 
 var (
 	verbosity int
+	outputFormat string
 )
 
 // NewRootCmd creates and returns the root command
@@ -42,6 +43,7 @@ func NewRootCmd() *cobra.Command {
 	// Setup persistent flags
 	rootCmd.PersistentFlags().CountVarP(&verbosity, "verbose", "v", "Increase verbosity (-v, -vv, -vvv)")
 	rootCmd.PersistentFlags().Lookup("verbose").Hidden = true
+	rootCmd.PersistentFlags().StringVar(&outputFormat, "format", "plain", "Output format (plain, json, term)")
 
 	// Add version flag
 	var versionFlag bool

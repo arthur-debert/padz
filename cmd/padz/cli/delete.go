@@ -4,10 +4,10 @@ Copyright © 2025 YOUR NAME HERE <EMAIL ADDRESS>
 package cli
 
 import (
-	"fmt"
 	"log"
 	"os"
 	"github.com/arthur-debert/padz/pkg/commands"
+	"github.com/arthur-debert/padz/pkg/output"
 	"github.com/arthur-debert/padz/pkg/project"
 	"github.com/arthur-debert/padz/pkg/store"
 
@@ -37,11 +37,26 @@ func newDeleteCmd() *cobra.Command {
 			log.Fatal(err)
 		}
 
-		if err := commands.Delete(s, proj, args[0]); err != nil {
+		err = commands.Delete(s, proj, args[0])
+		
+		// Format output
+		format, formatErr := output.GetFormat(outputFormat)
+		if formatErr != nil {
+			log.Fatal(formatErr)
+		}
+		
+		formatter := output.NewFormatter(format, nil)
+		
+		if err != nil {
+			if err := formatter.FormatError(err); err != nil {
+				log.Fatal(err)
+			}
+			os.Exit(1)
+		}
+		
+		if err := formatter.FormatSuccess("Scratch deleted."); err != nil {
 			log.Fatal(err)
 		}
-
-		fmt.Println("Scratch deleted.")
 	},
 	}
 }

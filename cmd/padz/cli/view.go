@@ -9,6 +9,7 @@ import (
 	"os"
 	"os/exec"
 	"github.com/arthur-debert/padz/pkg/commands"
+	"github.com/arthur-debert/padz/pkg/output"
 	"github.com/arthur-debert/padz/pkg/project"
 	"github.com/arthur-debert/padz/pkg/store"
 	"strings"
@@ -46,22 +47,36 @@ func newViewCmd() *cobra.Command {
 		if err != nil {
 			log.Fatal(err)
 		}
-
-		// Check if output is being piped
-		info, _ := os.Stdout.Stat()
-		if (info.Mode() & os.ModeCharDevice) == 0 {
-			fmt.Print(content)
-		} else {
-			// Use a pager
-			pager := os.Getenv("PAGER")
-			if pager == "" {
-				pager = "less"
-			}
-			c := exec.Command(pager)
-			c.Stdin = strings.NewReader(content)
-			c.Stdout = os.Stdout
-			if err := c.Run(); err != nil {
+		
+		// Format output
+		format, err := output.GetFormat(outputFormat)
+		if err != nil {
+			log.Fatal(err)
+		}
+		
+		if format == output.JSONFormat {
+			// JSON output goes directly to stdout
+			formatter := output.NewFormatter(format, nil)
+			if err := formatter.FormatString(content); err != nil {
 				log.Fatal(err)
+			}
+		} else {
+			// Check if output is being piped for plain/term formats
+			info, _ := os.Stdout.Stat()
+			if (info.Mode() & os.ModeCharDevice) == 0 {
+				fmt.Print(content)
+			} else {
+				// Use a pager
+				pager := os.Getenv("PAGER")
+				if pager == "" {
+					pager = "less"
+				}
+				c := exec.Command(pager)
+				c.Stdin = strings.NewReader(content)
+				c.Stdout = os.Stdout
+				if err := c.Run(); err != nil {
+					log.Fatal(err)
+				}
 			}
 		}
 	},

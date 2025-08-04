@@ -4,10 +4,10 @@ Copyright © 2025 YOUR NAME HERE <EMAIL ADDRESS>
 package cli
 
 import (
-	"fmt"
 	"log"
 	"os"
 	"github.com/arthur-debert/padz/pkg/commands"
+	"github.com/arthur-debert/padz/pkg/output"
 	"github.com/arthur-debert/padz/pkg/project"
 	"github.com/arthur-debert/padz/pkg/store"
 
@@ -45,8 +45,17 @@ func newPeekCmd() *cobra.Command {
 		if err != nil {
 			log.Fatal(err)
 		}
-
-		fmt.Print(content)
+		
+		// Format output
+		format, err := output.GetFormat(outputFormat)
+		if err != nil {
+			log.Fatal(err)
+		}
+		
+		formatter := output.NewFormatter(format, nil)
+		if err := formatter.FormatString(content); err != nil {
+			log.Fatal(err)
+		}
 	},
 	}
 }

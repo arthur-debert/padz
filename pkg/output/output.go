@@ -1,0 +1,118 @@
+package output
+
+import (
+	"encoding/json"
+	"fmt"
+	"io"
+	"os"
+
+	"github.com/arthur-debert/padz/pkg/store"
+	"github.com/dustin/go-humanize"
+)
+
+// Format represents the output format type
+type Format string
+
+const (
+	PlainFormat Format = "plain"
+	JSONFormat  Format = "json"
+	TermFormat  Format = "term"
+)
+
+// GetFormat returns the format from string
+func GetFormat(s string) (Format, error) {
+	switch s {
+	case "plain":
+		return PlainFormat, nil
+	case "json":
+		return JSONFormat, nil
+	case "term":
+		return TermFormat, nil
+	default:
+		return "", fmt.Errorf("invalid format: %s (valid: plain, json, term)", s)
+	}
+}
+
+// Formatter handles output formatting
+type Formatter struct {
+	format Format
+	writer io.Writer
+}
+
+// NewFormatter creates a new formatter
+func NewFormatter(format Format, writer io.Writer) *Formatter {
+	if writer == nil {
+		writer = os.Stdout
+	}
+	return &Formatter{
+		format: format,
+		writer: writer,
+	}
+}
+
+// FormatList formats a list of scratches
+func (f *Formatter) FormatList(scratches []store.Scratch, showProject bool) error {
+	switch f.format {
+	case JSONFormat:
+		return json.NewEncoder(f.writer).Encode(scratches)
+	case PlainFormat, TermFormat:
+		// For now, term is same as plain
+		for i, scratch := range scratches {
+			if showProject {
+				fmt.Fprintf(f.writer, "%d. %s %s %s\n", i+1, scratch.Project, humanize.Time(scratch.CreatedAt), scratch.Title)
+			} else {
+				fmt.Fprintf(f.writer, "%d. %s %s\n", i+1, humanize.Time(scratch.CreatedAt), scratch.Title)
+			}
+		}
+		return nil
+	default:
+		return fmt.Errorf("unsupported format: %s", f.format)
+	}
+}
+
+// FormatString formats a string output
+func (f *Formatter) FormatString(content string) error {
+	switch f.format {
+	case JSONFormat:
+		return json.NewEncoder(f.writer).Encode(map[string]string{"content": content})
+	case PlainFormat, TermFormat:
+		fmt.Fprint(f.writer, content)
+		return nil
+	default:
+		return fmt.Errorf("unsupported format: %s", f.format)
+	}
+}
+
+// FormatError formats an error
+func (f *Formatter) FormatError(err error) error {
+	if err == nil {
+		return nil
+	}
+	
+	switch f.format {
+	case JSONFormat:
+		return json.NewEncoder(f.writer).Encode(map[string]string{"error": err.Error()})
+	case PlainFormat, TermFormat:
+		// Errors go to stderr in plain/term mode
+		fmt.Fprintln(os.Stderr, err.Error())
+		return nil
+	default:
+		return fmt.Errorf("unsupported format: %s", f.format)
+	}
+}
+
+// FormatSuccess formats a success message
+func (f *Formatter) FormatSuccess(message string) error {
+	switch f.format {
+	case JSONFormat:
+		return json.NewEncoder(f.writer).Encode(map[string]string{"success": message})
+	case PlainFormat, TermFormat:
+		if message != "" {
+			fmt.Fprintln(f.writer, message)
+		}
+		return nil
+	default:
+		return fmt.Errorf("unsupported format: %s", f.format)
+	}
+}
+
