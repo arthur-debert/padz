@@ -4,6 +4,7 @@ import (
 	_ "embed"
 	"fmt"
 	"html/template"
+	"path/filepath"
 	"regexp"
 	"strings"
 
@@ -16,10 +17,12 @@ import (
 var padListItemTemplate string
 
 type PadListItem struct {
-	ID       string
-	Title    string
-	Project  string
-	TimeAgo  string
+	ID          string
+	Title       string
+	Project     string
+	ProjectName string
+	ShowProject bool
+	TimeAgo     string
 }
 
 type Renderer struct {
@@ -40,12 +43,21 @@ func NewRenderer() (*Renderer, error) {
 	return r, nil
 }
 
-func (r *Renderer) RenderPadListItem(scratch *store.Scratch) (string, error) {
+func (r *Renderer) RenderPadListItem(scratch *store.Scratch, showProject bool) (string, error) {
+	projectName := ""
+	if scratch.Project == "global" {
+		projectName = "global"
+	} else if scratch.Project != "" {
+		projectName = filepath.Base(scratch.Project)
+	}
+
 	item := PadListItem{
-		ID:      scratch.ID,
-		Title:   scratch.Title,
-		Project: scratch.Project,
-		TimeAgo: humanize.Time(scratch.CreatedAt),
+		ID:          scratch.ID,
+		Title:       scratch.Title,
+		Project:     scratch.Project,
+		ProjectName: projectName,
+		ShowProject: showProject,
+		TimeAgo:     humanize.Time(scratch.CreatedAt),
 	}
 
 	var buf strings.Builder
@@ -56,10 +68,10 @@ func (r *Renderer) RenderPadListItem(scratch *store.Scratch) (string, error) {
 	return applyStyles(buf.String()), nil
 }
 
-func (r *Renderer) RenderPadList(scratches []*store.Scratch) (string, error) {
+func (r *Renderer) RenderPadList(scratches []*store.Scratch, showProject bool) (string, error) {
 	var lines []string
 	for _, scratch := range scratches {
-		line, err := r.RenderPadListItem(scratch)
+		line, err := r.RenderPadListItem(scratch, showProject)
 		if err != nil {
 			return "", err
 		}

@@ -35,14 +35,14 @@ func NewTerminalFormatter(writer io.Writer) (*TerminalFormatter, error) {
 	}, nil
 }
 
-func (tf *TerminalFormatter) FormatList(scratches []store.Scratch) error {
+func (tf *TerminalFormatter) FormatList(scratches []store.Scratch, showProject bool) error {
 	// Convert []store.Scratch to []*store.Scratch
 	scratchPtrs := make([]*store.Scratch, len(scratches))
 	for i := range scratches {
 		scratchPtrs[i] = &scratches[i]
 	}
 	
-	output, err := tf.renderer.RenderPadList(scratchPtrs)
+	output, err := tf.renderer.RenderPadList(scratchPtrs, showProject)
 	if err != nil {
 		return err
 	}

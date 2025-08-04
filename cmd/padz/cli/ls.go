@@ -63,7 +63,7 @@ The output includes the index, the relative time of creation, and the title of t
 			if err != nil {
 				log.Fatal(err)
 			}
-			if err := termFormatter.FormatList(scratches); err != nil {
+			if err := termFormatter.FormatList(scratches, all); err != nil {
 				log.Fatal(err)
 			}
 		} else {
