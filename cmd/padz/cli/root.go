@@ -20,15 +20,9 @@ var (
 // NewRootCmd creates and returns the root command
 func NewRootCmd() *cobra.Command {
 	rootCmd := &cobra.Command{
-		Use:   "padz",
-		Short: "padz create scratch pads, draft files using $EDITOR.",
-		Long: `padz create scratch pads, draft files using $EDITOR.
-
-  $ padz                    # edit a new scratch in $EDITOR
-  $ padz ls                 # Lists scratches with an index to be used in open, view, delete:
-      1. 10 minutes ago My first scratch note
-  $ padz view <index>       # views in shell
-  $ padz search "<term>"    # search for scratches containing term`,
+		Use:   RootUse,
+		Short: RootShort,
+		Long:  RootLong,
 		DisableAutoGenTag: true,
 		CompletionOptions: cobra.CompletionOptions{
 			DisableDefaultCmd: true,
@@ -41,49 +35,48 @@ func NewRootCmd() *cobra.Command {
 	}
 
 	// Setup persistent flags
-	rootCmd.PersistentFlags().CountVarP(&verbosity, "verbose", "v", "Increase verbosity (-v, -vv, -vvv)")
+	rootCmd.PersistentFlags().CountVarP(&verbosity, "verbose", "v", FlagVerboseDesc)
 	rootCmd.PersistentFlags().Lookup("verbose").Hidden = true
-	rootCmd.PersistentFlags().StringVar(&outputFormat, "format", "plain", "Output format (plain, json, term)")
+	rootCmd.PersistentFlags().StringVar(&outputFormat, "format", "plain", FlagFormatDesc)
 
 	// Add version flag
 	var versionFlag bool
-	rootCmd.Flags().BoolVar(&versionFlag, "version", false, "Print version information")
+	rootCmd.Flags().BoolVar(&versionFlag, "version", false, FlagVersionDesc)
 	rootCmd.Run = func(cmd *cobra.Command, args []string) {
 		if versionFlag {
-			cmd.Printf("padz version %s (commit: %s, built: %s)\n", 
-				version.Version, version.Commit, version.Date)
+			cmd.Printf(VersionFormat, version.Version, version.Commit, version.Date)
 			return
 		}
 		// Original run logic for creating a scratch
 		s, err := store.NewStore()
 		if err != nil {
-			log.Fatal().Err(err).Msg("Failed to initialize store")
+			log.Fatal().Err(err).Msg(ErrFailedToInitStore)
 		}
 
 		dir, err := os.Getwd()
 		if err != nil {
-			log.Fatal().Err(err).Msg("Failed to get working directory")
+			log.Fatal().Err(err).Msg(ErrFailedToGetWorkingDir)
 		}
 
 		proj, err := project.GetCurrentProject(dir)
 		if err != nil {
-			log.Fatal().Err(err).Msg("Failed to get current project")
+			log.Fatal().Err(err).Msg(ErrFailedToGetProject)
 		}
 
 		content := commands.ReadContentFromPipe()
 		if err := commands.Create(s, proj, content); err != nil {
-			log.Fatal().Err(err).Msg("Failed to create note")
+			log.Fatal().Err(err).Msg(ErrFailedToCreateNote)
 		}
 	}
 
 	// Set up command groups
 	rootCmd.AddGroup(&cobra.Group{
 		ID:    "single",
-		Title: "SINGLE SCRATCH:",
+		Title: GroupSingleScratch,
 	})
 	rootCmd.AddGroup(&cobra.Group{
 		ID:    "multiple",
-		Title: "SCRATCHES:",
+		Title: GroupScratches,
 	})
 
 	// Single scratch commands
@@ -97,9 +90,9 @@ func NewRootCmd() *cobra.Command {
 	
 	peekCmd := newPeekCmd()
 	peekCmd.GroupID = "single"
-	peekCmd.Flags().IntP("lines", "n", 3, "Number of lines to show from the beginning and end")
-	peekCmd.Flags().Bool("all", false, "Show peek from all projects")
-	peekCmd.Flags().Bool("global", false, "Show only global scratches")
+	peekCmd.Flags().IntP("lines", "n", 3, FlagLinesDesc)
+	peekCmd.Flags().Bool("all", false, FlagAllDesc)
+	peekCmd.Flags().Bool("global", false, FlagGlobalDesc)
 	rootCmd.AddCommand(peekCmd)
 	
 	deleteCmd := newDeleteCmd()
@@ -109,19 +102,19 @@ func NewRootCmd() *cobra.Command {
 	// Multiple scratches commands
 	lsCmd := newLsCmd()
 	lsCmd.GroupID = "multiple"
-	lsCmd.Flags().Bool("all", false, "Show scratches from all projects")
-	lsCmd.Flags().Bool("global", false, "Show only global scratches")
+	lsCmd.Flags().Bool("all", false, FlagAllDesc)
+	lsCmd.Flags().Bool("global", false, FlagGlobalDesc)
 	rootCmd.AddCommand(lsCmd)
 	
 	cleanupCmd := newCleanupCmd()
 	cleanupCmd.GroupID = "multiple"
-	cleanupCmd.Flags().IntP("days", "d", 30, "Delete scratches older than this many days")
+	cleanupCmd.Flags().IntP("days", "d", 30, FlagDaysDesc)
 	rootCmd.AddCommand(cleanupCmd)
 	
 	searchCmd := newSearchCmd()
 	searchCmd.GroupID = "multiple"
-	searchCmd.Flags().BoolP("all", "a", false, "Search in all projects")
-	searchCmd.Flags().BoolP("global", "g", false, "Search in global scratches only")
+	searchCmd.Flags().BoolP("all", "a", false, FlagAllDescSearch)
+	searchCmd.Flags().BoolP("global", "g", false, FlagGlobalDescSearch)
 	rootCmd.AddCommand(searchCmd)
 
 

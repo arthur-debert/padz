@@ -20,9 +20,9 @@ import (
 // newViewCmd creates and returns a new view command
 func newViewCmd() *cobra.Command {
 	return &cobra.Command{
-	Use:   "view <index>",
-	Short: "View a scratch",
-	Long:  `View the content of a scratch identified by its index.`,
+	Use:   ViewUse,
+	Short: ViewShort,
+	Long:  ViewLong,
 	Args:  cobra.ExactArgs(1),
 	Run: func(cmd *cobra.Command, args []string) {
 		all, _ := cmd.Flags().GetBool("all")

@@ -17,9 +17,9 @@ import (
 // newPeekCmd creates and returns a new peek command
 func newPeekCmd() *cobra.Command {
 	return &cobra.Command{
-	Use:   "peek <index>",
-	Short: "Peek at a scratch",
-	Long:  `Peek at the first and last lines of a scratch.`,
+	Use:   PeekUse,
+	Short: PeekShort,
+	Long:  PeekLong,
 	Args:  cobra.ExactArgs(1),
 	Run: func(cmd *cobra.Command, args []string) {
 		all, _ := cmd.Flags().GetBool("all")

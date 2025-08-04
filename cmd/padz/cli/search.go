@@ -18,9 +18,9 @@ import (
 // newSearchCmd creates and returns a new search command
 func newSearchCmd() *cobra.Command {
 	return &cobra.Command{
-	Use:   "search [term]",
-	Short: "Search for a scratch",
-	Long:  `Search for a scratch by a regular expression.`,
+	Use:   SearchUse,
+	Short: SearchShort,
+	Long:  SearchLong,
 	Args:  cobra.ExactArgs(1),
 	Run: func(cmd *cobra.Command, args []string) {
 		all, _ := cmd.Flags().GetBool("all")
@@ -54,7 +54,7 @@ func newSearchCmd() *cobra.Command {
 		
 		formatter := output.NewFormatter(format, nil)
 		if len(scratches) == 0 && format == output.PlainFormat {
-			fmt.Println("No matches found.")
+			fmt.Println(SearchNoMatchesFound)
 			return
 		}
 		
