@@ -4,19 +4,20 @@ Copyright © 2025 YOUR NAME HERE <EMAIL ADDRESS>
 package cli
 
 import (
-	"fmt"
 	"log"
 	"os"
 	"github.com/arthur-debert/padz/pkg/commands"
+	"github.com/arthur-debert/padz/pkg/output"
 	"github.com/arthur-debert/padz/pkg/project"
 	"github.com/arthur-debert/padz/pkg/store"
 
 	"github.com/spf13/cobra"
 )
 
-// peekCmd represents the peek command
-var peekCmd = &cobra.Command{
-	Use:   "peek [index]",
+// newPeekCmd creates and returns a new peek command
+func newPeekCmd() *cobra.Command {
+	return &cobra.Command{
+	Use:   "peek <index>",
 	Short: "Peek at a scratch",
 	Long:  `Peek at the first and last lines of a scratch.`,
 	Args:  cobra.ExactArgs(1),
@@ -44,8 +45,18 @@ var peekCmd = &cobra.Command{
 		if err != nil {
 			log.Fatal(err)
 		}
-
-		fmt.Print(content)
+		
+		// Format output
+		format, err := output.GetFormat(outputFormat)
+		if err != nil {
+			log.Fatal(err)
+		}
+		
+		formatter := output.NewFormatter(format, nil)
+		if err := formatter.FormatString(content); err != nil {
+			log.Fatal(err)
+		}
 	},
+	}
 }
 
