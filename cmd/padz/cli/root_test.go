@@ -110,3 +110,37 @@ func TestVersionSubcommandRemoved(t *testing.T) {
 		t.Error("Expected 'unknown command' error message")
 	}
 }
+
+func TestVerboseFlagHidden(t *testing.T) {
+	cmd := NewRootCmd()
+	buf := new(bytes.Buffer)
+	cmd.SetOut(buf)
+	cmd.SetArgs([]string{"--help"})
+	
+	err := cmd.Execute()
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	
+	output := buf.String()
+	
+	// Check that verbose flag is not in help
+	if strings.Contains(output, "-v, --verbose") {
+		t.Error("Verbose flag should be hidden from help output")
+	}
+	if strings.Contains(output, "Increase verbosity") {
+		t.Error("Verbose flag description should be hidden from help output")
+	}
+}
+
+func TestVerboseFlagStillWorks(t *testing.T) {
+	// Test that hidden flag still functions
+	cmd := NewRootCmd()
+	cmd.SetArgs([]string{"-v", "--help"})
+	
+	// Should not error
+	err := cmd.Execute()
+	if err != nil {
+		t.Fatalf("unexpected error when using hidden verbose flag: %v", err)
+	}
+}
