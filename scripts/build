@@ -9,7 +9,18 @@ BLUE='\033[0;34m'
 BOLD='\033[1m'
 NC='\033[0m' # No Color
 
+# Build output directory (using bin/ to avoid conflicts with goreleaser's dist/)
+BIN_DIR="bin"
+
 echo -e "${BLUE}${BOLD}🔨 Building padz...${NC}"
+echo
+
+# Clean and create build directories
+echo -e "${BLUE}Setting up build directories...${NC}"
+# Only clean the bin directory, preserve other build artifacts
+rm -rf "${BIN_DIR}"
+mkdir -p "${BIN_DIR}"
+echo -e "${GREEN}✅ Build directories ready${NC}"
 echo
 
 # Get version information from git
@@ -24,26 +35,77 @@ echo -e "  Commit:  ${BOLD}$COMMIT${NC}"
 echo -e "  Date:    ${BOLD}$BUILD_DATE${NC}"
 echo
 
+# List all packages to ensure they're recognized
+echo -e "${BLUE}Listing all packages...${NC}"
+if command -v go >/dev/null 2>&1 && [ -f "vendor/modules.txt" ]; then
+    go list -mod=vendor ./...
+else
+    go list ./...
+fi
+
 # Build all packages first
 echo -e "${BLUE}Building all packages...${NC}"
-if go build -v ./...; then
-    echo -e "${GREEN}✅ All packages built successfully${NC}"
+if [ -f "vendor/modules.txt" ]; then
+    # Use vendor if available
+    if go build -mod=vendor -v ./...; then
+        echo -e "${GREEN}✅ All packages built successfully${NC}"
+    else
+        echo -e "${RED}❌ Package build failed${NC}"
+        exit 1
+    fi
 else
-    echo -e "${RED}❌ Package build failed${NC}"
-    exit 1
+    # Fall back to normal build
+    if go build -v ./...; then
+        echo -e "${GREEN}✅ All packages built successfully${NC}"
+    else
+        echo -e "${RED}❌ Package build failed${NC}"
+        exit 1
+    fi
 fi
 
 # Set up LDFLAGS for version embedding
+# Using a more flexible approach that works with both main package and internal/version package
 LDFLAGS="-s -w"
-LDFLAGS="$LDFLAGS -X main.version=$VERSION"
-LDFLAGS="$LDFLAGS -X main.commit=$COMMIT"
-LDFLAGS="$LDFLAGS -X main.buildDate=$BUILD_DATE"
+if [ -d "internal/version" ] || [ -d "pkg/version" ]; then
+    # If there's a version package, use it
+    VERSION_PKG=$(find . -name "version.go" -path "*/version/*" | head -1 | sed 's|/version.go||' | sed 's|^\./||')
+    if [ -n "$VERSION_PKG" ]; then
+        LDFLAGS="$LDFLAGS -X github.com/arthur-debert/padz/$VERSION_PKG.Version=$VERSION"
+        LDFLAGS="$LDFLAGS -X github.com/arthur-debert/padz/$VERSION_PKG.Commit=$COMMIT"
+        LDFLAGS="$LDFLAGS -X github.com/arthur-debert/padz/$VERSION_PKG.Date=$BUILD_DATE"
+    else
+        # Fall back to main package
+        LDFLAGS="$LDFLAGS -X main.version=$VERSION"
+        LDFLAGS="$LDFLAGS -X main.commit=$COMMIT"
+        LDFLAGS="$LDFLAGS -X main.buildDate=$BUILD_DATE"
+    fi
+else
+    # Use main package
+    LDFLAGS="$LDFLAGS -X main.version=$VERSION"
+    LDFLAGS="$LDFLAGS -X main.commit=$COMMIT"
+    LDFLAGS="$LDFLAGS -X main.buildDate=$BUILD_DATE"
+fi
 
 # Build the main binary
 echo
 echo -e "${BLUE}Building CLI binary...${NC}"
-if go build -ldflags "$LDFLAGS" -o padz ./cmd/padz; then
-    echo -e "${GREEN}✅ Binary built successfully: ./padz${NC}"
+BUILD_CMD="go build"
+if [ -f "vendor/modules.txt" ]; then
+    BUILD_CMD="$BUILD_CMD -mod=vendor"
+fi
+
+if [ -d "cmd/padz/main" ]; then
+    # Some projects have main package in a subdirectory
+    BUILD_TARGET="./cmd/padz/main"
+elif [ -d "cmd/padz" ]; then
+    BUILD_TARGET="./cmd/padz"
+else
+    echo -e "${RED}❌ Cannot find cmd/padz directory${NC}"
+    exit 1
+fi
+
+if $BUILD_CMD -ldflags "$LDFLAGS" -o "${BIN_DIR}/padz" "$BUILD_TARGET"; then
+    echo -e "${GREEN}✅ Binary built successfully: ${BIN_DIR}/padz${NC}"
 else
     echo -e "${RED}❌ Binary build failed${NC}"
     exit 1
@@ -53,7 +115,11 @@ fi
 if [[ "${SKIP_TESTS:-}" != "true" ]]; then
     echo
     echo -e "${YELLOW}Running tests...${NC}"
-    if go test ./... -short; then
+    TEST_CMD="go test ./... -short"
+    if [ -f "vendor/modules.txt" ]; then
+        TEST_CMD="go test -mod=vendor ./... -short"
+    fi
+    if $TEST_CMD; then
         echo -e "${GREEN}✅ All tests passed${NC}"
     else
         echo -e "${RED}❌ Tests failed${NC}"
@@ -67,27 +133,18 @@ fi
 # Verify the binary works
 echo
 echo -e "${BLUE}Verifying binary...${NC}"
-if ./padz --version >/dev/null 2>&1; then
+if "${BIN_DIR}/padz" --version >/dev/null 2>&1; then
     echo -e "${GREEN}✅ Binary verification passed${NC}"
     # Show actual version output
     echo -e "${BLUE}Version output:${NC}"
-    ./padz --version || true
-elif ./padz --help >/dev/null 2>&1; then
+    "${BIN_DIR}/padz" --version || true
+elif "${BIN_DIR}/padz" --help >/dev/null 2>&1; then
     echo -e "${GREEN}✅ Binary verification passed (via --help)${NC}"
 else
     echo -e "${RED}❌ Binary verification failed${NC}"
     exit 1
 fi
 
-# Create symlink in bin directory if it doesn't exist
-if [ ! -d "bin" ]; then
-    mkdir -p bin
-fi
-if [ ! -e "bin/padz" ]; then
-    ln -sf "../padz" "bin/padz"
-    echo -e "${GREEN}✅ Created symlink in bin/padz${NC}"
-fi
-
 echo
 echo -e "${GREEN}${BOLD}🎉 Build completed successfully!${NC}"
-echo -e "${BLUE}Binary location: ${BOLD}./padz${NC}"
+echo -e "${BLUE}Binary location: ${BOLD}${BIN_DIR}/padz${NC}"

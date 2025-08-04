@@ -1,0 +1,77 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# Colors for output
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+BLUE='\033[0;34m'
+BOLD='\033[1m'
+NC='\033[0m' # No Color
+
+echo -e "${BLUE}${BOLD}🚀 Building complete padz distribution...${NC}"
+echo
+
+# Clean build directory completely
+echo -e "${BLUE}Cleaning build directory...${NC}"
+rm -rf dist/build
+mkdir -p dist/build
+echo -e "${GREEN}✅ Build directory cleaned${NC}"
+echo
+
+# Build binary
+echo -e "${BLUE}Building binary...${NC}"
+./scripts/build
+echo
+
+# Generate completions
+echo -e "${BLUE}Generating shell completions...${NC}"
+if [ -f "./scripts/gen-completion" ]; then
+    ./scripts/gen-completion
+else
+    echo -e "${YELLOW}⚠️  No completion generation script found${NC}"
+fi
+echo
+
+# Generate man page
+echo -e "${BLUE}Generating man page...${NC}"
+if [ -f "./scripts/gen-manpage" ]; then
+    ./scripts/gen-manpage
+else
+    echo -e "${YELLOW}⚠️  No man page generation script found${NC}"
+fi
+echo
+
+# Copy binary to dist/build
+echo -e "${BLUE}Copying binary to distribution directory...${NC}"
+if [ -f "bin/padz" ]; then
+    cp "bin/padz" "dist/build/"
+    echo -e "${GREEN}✅ Binary copied${NC}"
+else
+    echo -e "${RED}❌ Binary not found at bin/padz${NC}"
+    exit 1
+fi
+
+# Copy completions if they exist
+if [ -d "completions" ]; then
+    echo -e "${BLUE}Copying completions...${NC}"
+    cp -r completions "dist/build/"
+    echo -e "${GREEN}✅ Completions copied${NC}"
+fi
+
+# Copy man pages if they exist
+if [ -d "man" ]; then
+    echo -e "${BLUE}Copying man pages...${NC}"
+    cp -r man "dist/build/"
+    echo -e "${GREEN}✅ Man pages copied${NC}"
+fi
+
+# Show final structure
+echo
+echo -e "${GREEN}${BOLD}✅ Build complete! Final structure:${NC}"
+find dist/build -type f | sort | while read -r file; do
+    echo -e "  ${BLUE}$(echo "$file" | sed 's|dist/build/||')${NC}"
+done
+
+echo
+echo -e "${GREEN}All build artifacts are in: ${BOLD}dist/build/${NC}"

@@ -18,6 +18,7 @@ _answers_file: ".copier/.copier-answers.golang-cli.yml"
 _exclude:
   - "**/*.bak"
   - ".goreleaser.yml.template"
+  - "{% if not use_version_package %}internal{% endif %}"
 
 # Questions specific to Golang CLI projects
 project_name:
@@ -69,6 +70,11 @@ year:
   type: int
   help: Copyright year
   default: "{{ 2024 }}"
+
+use_version_package:
+  type: bool
+  help: Use a dedicated version package (internal/version) instead of main package vars?
+  default: true
 
 # Post-generation tasks for Golang CLI
 _tasks:
@@ -175,6 +181,22 @@ _tasks:
       # Make all scripts executable
       chmod +x scripts/*
     description: "Making scripts executable"
+    
+  - command: |
+      # Update build-all script references if needed
+      if [ -f "scripts/build-all" ]; then
+          # Determine package name
+          PKG_NAME="{{ package_name }}"
+          if [ "$PKG_NAME" = "my-cli" ] || [ "$PKG_NAME" = "my-awesome-cli" ]; then
+              DIR_NAME=$(basename "$PWD")
+              if [ "$DIR_NAME" != "." ] && [ -n "$DIR_NAME" ]; then
+                  PKG_NAME="$DIR_NAME"
+                  sed -i.bak "s|{{ package_name }}|$PKG_NAME|g" scripts/build-all
+                  rm -f scripts/build-all.bak
+              fi
+          fi
+      fi
+    description: "Updating build-all script references"
     
   - command: |
       # Update package name references if using directory name

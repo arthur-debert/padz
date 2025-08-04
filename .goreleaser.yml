@@ -7,7 +7,9 @@ builds:
     main: ./cmd/my-cli
     binary: padz
     ldflags:
-      - -s -w -X main.version={{.Version}} -X main.commit={{.Commit}} -X main.date={{.Date}}
+
+      - -s -w -X github.com/arthur-debert/my-cli/internal/version.Version={{.Version}} -X github.com/arthur-debert/my-cli/internal/version.Commit={{.Commit}} -X github.com/arthur-debert/my-cli/internal/version.Date={{.Date}}
+
     env:
       - CGO_ENABLED=0
     goos: [linux, windows, darwin]
@@ -15,6 +17,14 @@ builds:
     ignore:
       - goos: windows
         goarch: arm64
+
+before:
+  hooks:
+    # Generate completions and man pages before archiving
+    - cmd: ./scripts/gen-completion
+      output: true
+    - cmd: ./scripts/gen-manpage
+      output: true
 
 archives:
   - id: my-cli-archive
@@ -27,10 +37,14 @@ archives:
     files:
       - "README.md"
       - "LICENSE"
-      - src: "completions/*"
+      - src: "dist/build/completions/*"
         dst: "completions"
-      - src: "man/man1/*"
+        info:
+          mode: 0644
+      - src: "dist/build/man/man1/*"
         dst: "man/man1"
+        info:
+          mode: 0644
 
 checksum:
   name_template: "checksums.txt"
