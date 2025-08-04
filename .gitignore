@@ -43,7 +43,9 @@ go.work
 go.work.sum
 # Binary output
 /padz
-padz-*
+# Ignore padz binaries but not source directories
+/padz-*
+!/cmd/padz-*
 # Build directories
 /bin/
 /dist/
