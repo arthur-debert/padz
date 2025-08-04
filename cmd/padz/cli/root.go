@@ -99,6 +99,10 @@ func NewRootCmd() *cobra.Command {
 	deleteCmd.GroupID = "single"
 	rootCmd.AddCommand(deleteCmd)
 	
+	pathCmd := newPathCmd()
+	pathCmd.GroupID = "single"
+	rootCmd.AddCommand(pathCmd)
+	
 	// Multiple scratches commands
 	lsCmd := newLsCmd()
 	lsCmd.GroupID = "multiple"
