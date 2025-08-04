@@ -6,6 +6,7 @@ import (
 	"io"
 	"os"
 
+	"github.com/arthur-debert/padz/pkg/commands"
 	"github.com/arthur-debert/padz/pkg/store"
 	"github.com/dustin/go-humanize"
 )
@@ -110,6 +111,19 @@ func (f *Formatter) FormatSuccess(message string) error {
 		if message != "" {
 			fmt.Fprintln(f.writer, message)
 		}
+		return nil
+	default:
+		return fmt.Errorf("unsupported format: %s", f.format)
+	}
+}
+
+// FormatPath formats a path result
+func (f *Formatter) FormatPath(result *commands.PathResult) error {
+	switch f.format {
+	case JSONFormat:
+		return json.NewEncoder(f.writer).Encode(result)
+	case PlainFormat, TermFormat:
+		fmt.Fprintln(f.writer, result.Path)
 		return nil
 	default:
 		return fmt.Errorf("unsupported format: %s", f.format)

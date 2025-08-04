@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/arthur-debert/padz/pkg/commands"
 	"github.com/arthur-debert/padz/pkg/store"
 )
 
@@ -171,6 +172,46 @@ func TestFormatSuccess(t *testing.T) {
 
 		if !strings.Contains(buf.String(), message) {
 			t.Errorf("expected message in output")
+		}
+	})
+}
+
+func TestFormatPath(t *testing.T) {
+	pathResult := &commands.PathResult{
+		Path: "/tmp/padz/test-scratch-123",
+	}
+
+	t.Run("JSON", func(t *testing.T) {
+		buf := new(bytes.Buffer)
+		formatter := NewFormatter(JSONFormat, buf)
+		
+		err := formatter.FormatPath(pathResult)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+
+		var result commands.PathResult
+		if err := json.Unmarshal(buf.Bytes(), &result); err != nil {
+			t.Fatalf("output is not valid JSON: %v", err)
+		}
+
+		if result.Path != pathResult.Path {
+			t.Errorf("expected path %s, got %s", pathResult.Path, result.Path)
+		}
+	})
+
+	t.Run("Plain", func(t *testing.T) {
+		buf := new(bytes.Buffer)
+		formatter := NewFormatter(PlainFormat, buf)
+		
+		err := formatter.FormatPath(pathResult)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+
+		output := strings.TrimSpace(buf.String())
+		if output != pathResult.Path {
+			t.Errorf("expected %s, got %s", pathResult.Path, output)
 		}
 	})
 }
