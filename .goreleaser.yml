@@ -35,11 +35,11 @@ archives:
     files:
       - "README.md"
       - "LICENSE"
-      - src: "dist/build/completions/*"
+      - src: "completions/*"
         dst: "completions"
         info:
           mode: 0644
-      - src: "dist/build/man/man1/*"
+      - src: "man/man1/*"
         dst: "man/man1"
         info:
           mode: 0644
