@@ -12,8 +12,9 @@ import (
 	"github.com/spf13/cobra"
 )
 
-// cleanupCmd represents the cleanup command
-var cleanupCmd = &cobra.Command{
+// newCleanupCmd creates and returns a new cleanup command
+func newCleanupCmd() *cobra.Command {
+	return &cobra.Command{
 	Use:   "cleanup",
 	Short: "Cleanup old scratches",
 	Long:  `Cleanup scratches older than a specified number of days.`,
@@ -31,5 +32,6 @@ var cleanupCmd = &cobra.Command{
 
 		fmt.Println("Cleanup complete.")
 	},
+	}
 }
 

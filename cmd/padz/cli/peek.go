@@ -14,8 +14,9 @@ import (
 	"github.com/spf13/cobra"
 )
 
-// peekCmd represents the peek command
-var peekCmd = &cobra.Command{
+// newPeekCmd creates and returns a new peek command
+func newPeekCmd() *cobra.Command {
+	return &cobra.Command{
 	Use:   "peek <index>",
 	Short: "Peek at a scratch",
 	Long:  `Peek at the first and last lines of a scratch.`,
@@ -47,5 +48,6 @@ var peekCmd = &cobra.Command{
 
 		fmt.Print(content)
 	},
+	}
 }
 

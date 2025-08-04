@@ -15,8 +15,9 @@ import (
 	"github.com/spf13/cobra"
 )
 
-// searchCmd represents the search command
-var searchCmd = &cobra.Command{
+// newSearchCmd creates and returns a new search command
+func newSearchCmd() *cobra.Command {
+	return &cobra.Command{
 	Use:   "search [term]",
 	Short: "Search for a scratch",
 	Long:  `Search for a scratch by a regular expression.`,
@@ -49,5 +50,6 @@ var searchCmd = &cobra.Command{
 			fmt.Printf("%d. %s %s\n", i+1, humanize.Time(scratch.CreatedAt), scratch.Title)
 		}
 	},
+	}
 }
 

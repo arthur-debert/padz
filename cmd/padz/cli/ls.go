@@ -15,8 +15,9 @@ import (
 	"github.com/spf13/cobra"
 )
 
-// lsCmd represents the ls command
-var lsCmd = &cobra.Command{
+// newLsCmd creates and returns a new ls command
+func newLsCmd() *cobra.Command {
+	return &cobra.Command{
 	Use:   "ls",
 	Short: "Lists all scratches for the current project",
 	Long: `Lists all scratches for the current project.
@@ -50,5 +51,6 @@ The output includes the index, the relative time of creation, and the title of t
 			}
 		}
 	},
+	}
 }
 

@@ -51,3 +51,48 @@ func TestCommandGroups(t *testing.T) {
 	
 	// Commands in main help don't show parameters, only in individual help
 }
+
+func TestVersionFlag(t *testing.T) {
+	cmd := NewRootCmd()
+	buf := new(bytes.Buffer)
+	// Capture both stdout and stderr
+	cmd.SetOut(buf)
+	cmd.SetErr(buf)
+	cmd.SetArgs([]string{"--version"})
+	
+	err := cmd.Execute()
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	
+	output := buf.String()
+	
+	// Check version output format
+	if !strings.Contains(output, "padz version") {
+		t.Errorf("Expected 'padz version' in version output, got: %s", output)
+	}
+	if !strings.Contains(output, "(commit:") {
+		t.Errorf("Expected '(commit:' in version output, got: %s", output)
+	}
+	if !strings.Contains(output, "built:") {
+		t.Errorf("Expected 'built:' in version output, got: %s", output)
+	}
+}
+
+func TestVersionSubcommandRemoved(t *testing.T) {
+	cmd := NewRootCmd()
+	buf := new(bytes.Buffer)
+	cmd.SetErr(buf)
+	cmd.SetArgs([]string{"version"})
+	
+	// Should fail with unknown command
+	err := cmd.Execute()
+	if err == nil {
+		t.Error("Expected error when using 'version' as subcommand")
+	}
+	
+	errOutput := buf.String()
+	if !strings.Contains(errOutput, "unknown command") {
+		t.Error("Expected 'unknown command' error message")
+	}
+}

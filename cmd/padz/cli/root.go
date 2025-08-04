@@ -1,7 +1,6 @@
 package cli
 
 import (
-	"fmt"
 	"os"
 
 	"github.com/arthur-debert/padz/internal/version"
@@ -34,42 +33,41 @@ and focuses on streamlined content management.`,
 			logging.SetupLogger(verbosity)
 			log.Debug().Str("command", cmd.Name()).Msg("Command started")
 		},
-		Run: func(cmd *cobra.Command, args []string) {
-			s, err := store.NewStore()
-			if err != nil {
-				log.Fatal().Err(err).Msg("Failed to initialize store")
-			}
-
-			dir, err := os.Getwd()
-			if err != nil {
-				log.Fatal().Err(err).Msg("Failed to get working directory")
-			}
-
-			proj, err := project.GetCurrentProject(dir)
-			if err != nil {
-				log.Fatal().Err(err).Msg("Failed to get current project")
-			}
-
-			content := commands.ReadContentFromPipe()
-			if err := commands.Create(s, proj, content); err != nil {
-				log.Fatal().Err(err).Msg("Failed to create note")
-			}
-		},
 	}
 
 	// Setup persistent flags
 	rootCmd.PersistentFlags().CountVarP(&verbosity, "verbose", "v", "Increase verbosity (-v, -vv, -vvv)")
 
-	// Add version command
-	rootCmd.AddCommand(&cobra.Command{
-		Use:   "version",
-		Short: "Print the version number",
-		Long:  `Print the version number of padz`,
-		Run: func(cmd *cobra.Command, args []string) {
-			fmt.Printf("padz version %s (commit: %s, built: %s)\n", 
+	// Add version flag
+	var versionFlag bool
+	rootCmd.Flags().BoolVar(&versionFlag, "version", false, "Print version information")
+	rootCmd.Run = func(cmd *cobra.Command, args []string) {
+		if versionFlag {
+			cmd.Printf("padz version %s (commit: %s, built: %s)\n", 
 				version.Version, version.Commit, version.Date)
-		},
-	})
+			return
+		}
+		// Original run logic for creating a scratch
+		s, err := store.NewStore()
+		if err != nil {
+			log.Fatal().Err(err).Msg("Failed to initialize store")
+		}
+
+		dir, err := os.Getwd()
+		if err != nil {
+			log.Fatal().Err(err).Msg("Failed to get working directory")
+		}
+
+		proj, err := project.GetCurrentProject(dir)
+		if err != nil {
+			log.Fatal().Err(err).Msg("Failed to get current project")
+		}
+
+		content := commands.ReadContentFromPipe()
+		if err := commands.Create(s, proj, content); err != nil {
+			log.Fatal().Err(err).Msg("Failed to create note")
+		}
+	}
 
 	// Set up command groups
 	rootCmd.AddGroup(&cobra.Group{
@@ -82,31 +80,38 @@ and focuses on streamlined content management.`,
 	})
 
 	// Single scratch commands
+	viewCmd := newViewCmd()
 	viewCmd.GroupID = "single"
 	rootCmd.AddCommand(viewCmd)
 	
+	openCmd := newOpenCmd()
 	openCmd.GroupID = "single"
 	rootCmd.AddCommand(openCmd)
 	
+	peekCmd := newPeekCmd()
 	peekCmd.GroupID = "single"
 	peekCmd.Flags().IntP("lines", "n", 3, "Number of lines to show from the beginning and end")
 	peekCmd.Flags().Bool("all", false, "Show peek from all projects")
 	peekCmd.Flags().Bool("global", false, "Show only global scratches")
 	rootCmd.AddCommand(peekCmd)
 	
+	deleteCmd := newDeleteCmd()
 	deleteCmd.GroupID = "single"
 	rootCmd.AddCommand(deleteCmd)
 	
 	// Multiple scratches commands
+	lsCmd := newLsCmd()
 	lsCmd.GroupID = "multiple"
 	lsCmd.Flags().Bool("all", false, "Show scratches from all projects")
 	lsCmd.Flags().Bool("global", false, "Show only global scratches")
 	rootCmd.AddCommand(lsCmd)
 	
+	cleanupCmd := newCleanupCmd()
 	cleanupCmd.GroupID = "multiple"
 	cleanupCmd.Flags().IntP("days", "d", 30, "Delete scratches older than this many days")
 	rootCmd.AddCommand(cleanupCmd)
 	
+	searchCmd := newSearchCmd()
 	searchCmd.GroupID = "multiple"
 	searchCmd.Flags().BoolP("all", "a", false, "Search in all projects")
 	searchCmd.Flags().BoolP("global", "g", false, "Search in global scratches only")

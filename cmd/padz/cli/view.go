@@ -16,8 +16,9 @@ import (
 	"github.com/spf13/cobra"
 )
 
-// viewCmd represents the view command
-var viewCmd = &cobra.Command{
+// newViewCmd creates and returns a new view command
+func newViewCmd() *cobra.Command {
+	return &cobra.Command{
 	Use:   "view <index>",
 	Short: "View a scratch",
 	Long:  `View the content of a scratch identified by its index.`,
@@ -64,5 +65,6 @@ var viewCmd = &cobra.Command{
 			}
 		}
 	},
+	}
 }
 

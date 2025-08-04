@@ -14,8 +14,9 @@ import (
 	"github.com/spf13/cobra"
 )
 
-// openCmd represents the open command
-var openCmd = &cobra.Command{
+// newOpenCmd creates and returns a new open command
+func newOpenCmd() *cobra.Command {
+	return &cobra.Command{
 	Use:   "open <index>",
 	Short: "Open a scratch in $EDITOR",
 	Long:  `Open a scratch, identified by its index, in $EDITOR.`,
@@ -42,5 +43,6 @@ var openCmd = &cobra.Command{
 
 		fmt.Println("Scratch updated.")
 	},
+	}
 }
 

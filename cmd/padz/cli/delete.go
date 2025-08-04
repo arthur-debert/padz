@@ -14,8 +14,9 @@ import (
 	"github.com/spf13/cobra"
 )
 
-// deleteCmd represents the delete command
-var deleteCmd = &cobra.Command{
+// newDeleteCmd creates and returns a new delete command
+func newDeleteCmd() *cobra.Command {
+	return &cobra.Command{
 	Use:   "delete <index>",
 	Short: "Delete a scratch",
 	Long:  `Delete a scratch identified by its index.`,
@@ -42,5 +43,6 @@ var deleteCmd = &cobra.Command{
 
 		fmt.Println("Scratch deleted.")
 	},
+	}
 }
 
