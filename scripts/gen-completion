@@ -10,12 +10,12 @@ mkdir -p completions
 
 # Generate completions
 echo "Generating bash completion..."
-./padz completion bash > completions/padz.bash
+./bin/padz completion bash > completions/padz.bash
 
 echo "Generating zsh completion..."
-./padz completion zsh > completions/_padz
+./bin/padz completion zsh > completions/_padz
 
 echo "Generating fish completion..."
-./padz completion fish > completions/padz.fish
+./bin/padz completion fish > completions/padz.fish
 
 echo "✅ Completions generated in completions/"

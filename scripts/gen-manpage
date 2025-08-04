@@ -10,18 +10,20 @@ mkdir -p man/man1
 
 # Generate man page
 echo "Generating man page..."
-./padz man > man/man1/padz.1 || {
+./bin/padz man > man/man1/padz.1 || {
     echo "Note: 'man' subcommand not implemented yet"
     echo "Creating placeholder man page..."
     cat > man/man1/padz.1 << EOF
-.TH MY-CLI 1 "$(date +"%B %Y")" "padz manual"
+.TH PADZ 1 "$(date +"%B %Y")" "padz manual"
 .SH NAME
-padz \- Description of your CLI tool
+padz \- A simple command-line note-taking tool
 .SH SYNOPSIS
 .B padz
 [\fIOPTIONS\fR] [\fICOMMAND\fR]
 .SH DESCRIPTION
-Description of your CLI tool
+padz is a simple shell command to create, search, view, and edit quick notes.
+It uses the user's default command-line editor for note creation and editing,
+and focuses on streamlined content management.
 .SH OPTIONS
 .TP
 .BR \-h ", " \-\-help
