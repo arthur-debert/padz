@@ -16,9 +16,9 @@ import (
 
 // openCmd represents the open command
 var openCmd = &cobra.Command{
-	Use:   "open [index]",
-	Short: "Open a scratch in the default editor",
-	Long:  `Open a scratch, identified by its index, in the default editor.`,
+	Use:   "open <index>",
+	Short: "Open a scratch in $EDITOR",
+	Long:  `Open a scratch, identified by its index, in $EDITOR.`,
 	Args:  cobra.ExactArgs(1),
 	Run: func(cmd *cobra.Command, args []string) {
 		s, err := store.NewStore()

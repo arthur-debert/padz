@@ -16,7 +16,7 @@ import (
 
 // peekCmd represents the peek command
 var peekCmd = &cobra.Command{
-	Use:   "peek [index]",
+	Use:   "peek <index>",
 	Short: "Peek at a scratch",
 	Long:  `Peek at the first and last lines of a scratch.`,
 	Args:  cobra.ExactArgs(1),

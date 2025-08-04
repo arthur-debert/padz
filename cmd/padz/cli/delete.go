@@ -16,7 +16,7 @@ import (
 
 // deleteCmd represents the delete command
 var deleteCmd = &cobra.Command{
-	Use:   "delete [index]",
+	Use:   "delete <index>",
 	Short: "Delete a scratch",
 	Long:  `Delete a scratch identified by its index.`,
 	Args:  cobra.ExactArgs(1),

@@ -18,7 +18,7 @@ import (
 
 // viewCmd represents the view command
 var viewCmd = &cobra.Command{
-	Use:   "view [index]",
+	Use:   "view <index>",
 	Short: "View a scratch",
 	Long:  `View the content of a scratch identified by its index.`,
 	Args:  cobra.ExactArgs(1),

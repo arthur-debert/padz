@@ -23,7 +23,7 @@ func NewRootCmd() *cobra.Command {
 		Use:   "padz",
 		Short: "A simple command-line note-taking tool",
 		Long: `padz is a simple shell command to create, search, view, and edit quick notes.
-It uses the user's default command-line editor for note creation and editing,
+It uses $EDITOR for note creation and editing,
 and focuses on streamlined content management.`,
 		DisableAutoGenTag: true,
 		CompletionOptions: cobra.CompletionOptions{
@@ -71,26 +71,46 @@ and focuses on streamlined content management.`,
 		},
 	})
 
-	// Add all the subcommands with their flags
-	lsCmd.Flags().Bool("all", false, "Show scratches from all projects")
-	lsCmd.Flags().Bool("global", false, "Show only global scratches")
-	rootCmd.AddCommand(lsCmd)
-	
+	// Set up command groups
+	rootCmd.AddGroup(&cobra.Group{
+		ID:    "single",
+		Title: "SINGLE SCRATCH:",
+	})
+	rootCmd.AddGroup(&cobra.Group{
+		ID:    "multiple",
+		Title: "SCRATCHES:",
+	})
+
+	// Single scratch commands
+	viewCmd.GroupID = "single"
 	rootCmd.AddCommand(viewCmd)
+	
+	openCmd.GroupID = "single"
 	rootCmd.AddCommand(openCmd)
-	rootCmd.AddCommand(deleteCmd)
 	
-	searchCmd.Flags().BoolP("all", "a", false, "Search in all projects")
-	searchCmd.Flags().BoolP("global", "g", false, "Search in global scratches only")
-	rootCmd.AddCommand(searchCmd)
-	
+	peekCmd.GroupID = "single"
 	peekCmd.Flags().IntP("lines", "n", 3, "Number of lines to show from the beginning and end")
 	peekCmd.Flags().Bool("all", false, "Show peek from all projects")
 	peekCmd.Flags().Bool("global", false, "Show only global scratches")
 	rootCmd.AddCommand(peekCmd)
 	
+	deleteCmd.GroupID = "single"
+	rootCmd.AddCommand(deleteCmd)
+	
+	// Multiple scratches commands
+	lsCmd.GroupID = "multiple"
+	lsCmd.Flags().Bool("all", false, "Show scratches from all projects")
+	lsCmd.Flags().Bool("global", false, "Show only global scratches")
+	rootCmd.AddCommand(lsCmd)
+	
+	cleanupCmd.GroupID = "multiple"
 	cleanupCmd.Flags().IntP("days", "d", 30, "Delete scratches older than this many days")
 	rootCmd.AddCommand(cleanupCmd)
+	
+	searchCmd.GroupID = "multiple"
+	searchCmd.Flags().BoolP("all", "a", false, "Search in all projects")
+	searchCmd.Flags().BoolP("global", "g", false, "Search in global scratches only")
+	rootCmd.AddCommand(searchCmd)
 
 	return rootCmd
 }
