@@ -60,33 +60,32 @@ changelog:
       - "Merge pull request"
       - "Merge branch"
 
-# Homebrew formula disabled until HOMEBREW_TAP_TOKEN is properly configured
-# brews:
-#   - ids: [padz-archive]
-#     name: padz
-#     repository:
-#       owner: arthur-debert
-#       name: homebrew-tools
-#       token: "{{ .Env.HOMEBREW_TAP_TOKEN }}"
-#     directory: Formula
-#     commit_author:
-#       name: goreleaserbot
-#       email: bot@goreleaser.com
-#     homepage: "https://github.com/arthur-debert/padz"
-#     description: "A simple command-line note-taking tool"
-#     license: "MIT"
-#     test: |
-#       system "#{bin}/padz --help"
-#     install: |
-#       bin.install "padz"
-#       
-#       # Install shell completions
-#       bash_completion.install "completions/padz.bash" if File.exist?("completions/padz.bash")
-#       zsh_completion.install "completions/_padz" if File.exist?("completions/_padz")
-#       fish_completion.install "completions/padz.fish" if File.exist?("completions/padz.fish")
-#       
-#       # Install man page
-#       man1.install "man/man1/padz.1.gz" if File.exist?("man/man1/padz.1.gz")
+brews:
+  - ids: [padz-archive]
+    name: padz
+    repository:
+      owner: arthur-debert
+      name: homebrew-tools
+      token: "{{ .Env.HOMEBREW_TAP_TOKEN }}"
+    directory: Formula
+    commit_author:
+      name: goreleaserbot
+      email: bot@goreleaser.com
+    homepage: "https://github.com/arthur-debert/padz"
+    description: "A simple command-line note-taking tool"
+    license: "MIT"
+    test: |
+      system "#{bin}/padz --help"
+    install: |
+      bin.install "padz"
+      
+      # Install shell completions
+      bash_completion.install "completions/padz.bash" if File.exist?("completions/padz.bash")
+      zsh_completion.install "completions/_padz" if File.exist?("completions/_padz")
+      fish_completion.install "completions/padz.fish" if File.exist?("completions/padz.fish")
+      
+      # Install man page
+      man1.install "man/man1/padz.1.gz" if File.exist?("man/man1/padz.1.gz")
 
 # nFPM packages (deb, rpm, etc.)
 # https://goreleaser.com/customization/nfpm/
