@@ -15,8 +15,6 @@ import (
 
 var (
 	verbosity int
-	verbose   bool
-	debug     bool
 )
 
 // NewRootCmd creates and returns the root command
@@ -61,8 +59,6 @@ and focuses on streamlined content management.`,
 
 	// Setup persistent flags
 	rootCmd.PersistentFlags().CountVarP(&verbosity, "verbose", "v", "Increase verbosity (-v, -vv, -vvv)")
-	rootCmd.PersistentFlags().BoolVar(&verbose, "verbose-old", false, "Enable verbose output")
-	rootCmd.PersistentFlags().BoolVar(&debug, "debug", false, "Enable debug output")
 
 	// Add version command
 	rootCmd.AddCommand(&cobra.Command{
