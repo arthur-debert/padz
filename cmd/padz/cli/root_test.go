@@ -50,6 +50,20 @@ func TestCommandGroups(t *testing.T) {
 	}
 	
 	// Commands in main help don't show parameters, only in individual help
+	
+	// Check for usage examples
+	if !strings.Contains(output, "$ padz                    # edit a new scratch in $EDITOR") {
+		t.Error("Expected usage example '$ padz' in help output")
+	}
+	if !strings.Contains(output, "$ padz ls                 # Lists scratches") {
+		t.Error("Expected usage example '$ padz ls' in help output")
+	}
+	if !strings.Contains(output, "$ padz view <index>       # views in shell") {
+		t.Error("Expected usage example '$ padz view <index>' in help output")
+	}
+	if !strings.Contains(output, "$ padz search \"<term>\"    # search for scratches") {
+		t.Error("Expected usage example '$ padz search' in help output")
+	}
 }
 
 func TestVersionFlag(t *testing.T) {

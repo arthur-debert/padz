@@ -20,10 +20,14 @@ var (
 func NewRootCmd() *cobra.Command {
 	rootCmd := &cobra.Command{
 		Use:   "padz",
-		Short: "A simple command-line note-taking tool",
-		Long: `padz is a simple shell command to create, search, view, and edit quick notes.
-It uses $EDITOR for note creation and editing,
-and focuses on streamlined content management.`,
+		Short: "padz create scratch pads, draft files using $EDITOR.",
+		Long: `padz create scratch pads, draft files using $EDITOR.
+
+  $ padz                    # edit a new scratch in $EDITOR
+  $ padz ls                 # Lists scratches with an index to be used in open, view, delete:
+      1. 10 minutes ago My first scratch note
+  $ padz view <index>       # views in shell
+  $ padz search "<term>"    # search for scratches containing term`,
 		DisableAutoGenTag: true,
 		CompletionOptions: cobra.CompletionOptions{
 			DisableDefaultCmd: true,
@@ -116,6 +120,7 @@ and focuses on streamlined content management.`,
 	searchCmd.Flags().BoolP("all", "a", false, "Search in all projects")
 	searchCmd.Flags().BoolP("global", "g", false, "Search in global scratches only")
 	rootCmd.AddCommand(searchCmd)
+
 
 	return rootCmd
 }
