@@ -88,7 +88,9 @@ and focuses on streamlined content management.`,
 	searchCmd.Flags().BoolP("global", "g", false, "Search in global scratches only")
 	rootCmd.AddCommand(searchCmd)
 	
-	peekCmd.Flags().IntP("lines", "n", 5, "Number of lines to show from the beginning and end")
+	peekCmd.Flags().IntP("lines", "n", 3, "Number of lines to show from the beginning and end")
+	peekCmd.Flags().Bool("all", false, "Show peek from all projects")
+	peekCmd.Flags().Bool("global", false, "Show only global scratches")
 	rootCmd.AddCommand(peekCmd)
 	
 	cleanupCmd.Flags().IntP("days", "d", 30, "Delete scratches older than this many days")
