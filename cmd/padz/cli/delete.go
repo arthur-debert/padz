@@ -17,9 +17,9 @@ import (
 // newDeleteCmd creates and returns a new delete command
 func newDeleteCmd() *cobra.Command {
 	return &cobra.Command{
-	Use:   "delete <index>",
-	Short: "Delete a scratch",
-	Long:  `Delete a scratch identified by its index.`,
+	Use:   DeleteUse,
+	Short: DeleteShort,
+	Long:  DeleteLong,
 	Args:  cobra.ExactArgs(1),
 	Run: func(cmd *cobra.Command, args []string) {
 		s, err := store.NewStore()
@@ -54,7 +54,7 @@ func newDeleteCmd() *cobra.Command {
 			os.Exit(1)
 		}
 		
-		if err := formatter.FormatSuccess("Scratch deleted."); err != nil {
+		if err := formatter.FormatSuccess(DeleteSuccess); err != nil {
 			log.Fatal(err)
 		}
 	},

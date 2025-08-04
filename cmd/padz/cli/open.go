@@ -17,9 +17,9 @@ import (
 // newOpenCmd creates and returns a new open command
 func newOpenCmd() *cobra.Command {
 	return &cobra.Command{
-	Use:   "open <index>",
-	Short: "Open a scratch in $EDITOR",
-	Long:  `Open a scratch, identified by its index, in $EDITOR.`,
+	Use:   OpenUse,
+	Short: OpenShort,
+	Long:  OpenLong,
 	Args:  cobra.ExactArgs(1),
 	Run: func(cmd *cobra.Command, args []string) {
 		s, err := store.NewStore()
@@ -54,7 +54,7 @@ func newOpenCmd() *cobra.Command {
 			os.Exit(1)
 		}
 		
-		if err := formatter.FormatSuccess("Scratch updated."); err != nil {
+		if err := formatter.FormatSuccess(OpenSuccess); err != nil {
 			log.Fatal(err)
 		}
 	},

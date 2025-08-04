@@ -17,9 +17,9 @@ import (
 // newCleanupCmd creates and returns a new cleanup command
 func newCleanupCmd() *cobra.Command {
 	return &cobra.Command{
-	Use:   "cleanup",
-	Short: "Cleanup old scratches",
-	Long:  `Cleanup scratches older than a specified number of days.`,
+	Use:   CleanupUse,
+	Short: CleanupShort,
+	Long:  CleanupLong,
 	Run: func(cmd *cobra.Command, args []string) {
 		days, _ := cmd.Flags().GetInt("days")
 
@@ -45,7 +45,7 @@ func newCleanupCmd() *cobra.Command {
 			os.Exit(1)
 		}
 		
-		message := fmt.Sprintf("Cleaned up scratches older than %d days.", days)
+		message := fmt.Sprintf(CleanupSuccessFormat, days)
 		if err := formatter.FormatSuccess(message); err != nil {
 			log.Fatal(err)
 		}
