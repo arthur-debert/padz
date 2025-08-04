@@ -1,14 +1,14 @@
 version: 2
 
-project_name: my-cli
+project_name: padz
 
 builds:
-  - id: my-cli
-    main: ./cmd/my-cli
+  - id: padz
+    main: ./cmd/padz
     binary: padz
     ldflags:
 
-      - -s -w -X github.com/arthur-debert/my-cli/internal/version.Version={{.Version}} -X github.com/arthur-debert/my-cli/internal/version.Commit={{.Commit}} -X github.com/arthur-debert/my-cli/internal/version.Date={{.Date}}
+      - -s -w -X github.com/arthur-debert/padz/internal/version.Version={{.Version}} -X github.com/arthur-debert/padz/internal/version.Commit={{.Commit}} -X github.com/arthur-debert/padz/internal/version.Date={{.Date}}
 
     env:
       - CGO_ENABLED=0
@@ -21,19 +21,17 @@ builds:
 before:
   hooks:
     # Generate completions and man pages before archiving
-    - cmd: ./scripts/gen-completion
-      output: true
-    - cmd: ./scripts/gen-manpage
-      output: true
+    - ./scripts/gen-completion
+    - ./scripts/gen-manpage
 
 archives:
-  - id: my-cli-archive
-    ids: [my-cli]
+  - id: padz-archive
+    ids: [padz]
     formats: [tar.gz]
     format_overrides:
       - goos: windows
         formats: [zip]
-    name_template: "my-cli-cli_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
+    name_template: "padz-cli_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
     files:
       - "README.md"
       - "LICENSE"
@@ -63,8 +61,8 @@ changelog:
       - "Merge branch"
 
 brews:
-  - ids: [my-cli-archive]
-    name: my-cli
+  - ids: [padz-archive]
+    name: padz
     repository:
       owner: arthur-debert
       name: homebrew-tools
@@ -74,55 +72,55 @@ brews:
     commit_author:
       name: goreleaserbot
       email: bot@goreleaser.com
-    homepage: "https://github.com/arthur-debert/my-cli"
-    description: "Description of your CLI tool"
+    homepage: "https://github.com/arthur-debert/padz"
+    description: "A simple command-line note-taking tool"
     license: "MIT"
     test: |
-      system "#{bin}/my-cli --help"
+      system "#{bin}/padz --help"
     install: |
-      bin.install "my-cli"
+      bin.install "padz"
       
       # Install shell completions
-      bash_completion.install "completions/my-cli.bash" if File.exist?("completions/my-cli.bash")
-      zsh_completion.install "completions/_my-cli" if File.exist?("completions/_my-cli")
-      fish_completion.install "completions/my-cli.fish" if File.exist?("completions/my-cli.fish")
+      bash_completion.install "completions/padz.bash" if File.exist?("completions/padz.bash")
+      zsh_completion.install "completions/_padz" if File.exist?("completions/_padz")
+      fish_completion.install "completions/padz.fish" if File.exist?("completions/padz.fish")
       
       # Install man page
-      man1.install "man/man1/my-cli.1.gz" if File.exist?("man/man1/my-cli.1.gz")
+      man1.install "man/man1/padz.1.gz" if File.exist?("man/man1/padz.1.gz")
 
 # nFPM packages (deb, rpm, etc.)
 # https://goreleaser.com/customization/nfpm/
 nfpms:
-  - id: my-cli
-    builds: [my-cli]
+  - id: padz
+    builds: [padz]
     formats: [deb, rpm, apk]
-    package_name: my-cli
-    file_name_template: "my-cli_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
-    homepage: "https://github.com/arthur-debert/my-cli"
+    package_name: padz
+    file_name_template: "padz_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
+    homepage: "https://github.com/arthur-debert/padz"
     maintainer: "Arthur Debert <arthur@debert.xyz>"
-    description: "Description of your CLI tool"
+    description: "A simple command-line note-taking tool"
     license: "MIT"
     section: utils
     priority: optional
     contents:
       # Man page
-      - src: man/man1/my-cli.1.gz
-        dst: /usr/share/man/man1/my-cli.1.gz
+      - src: man/man1/padz.1.gz
+        dst: /usr/share/man/man1/padz.1.gz
         file_info:
           mode: 0644
       # Bash completion
-      - src: completions/my-cli.bash
-        dst: /usr/share/bash-completion/completions/my-cli
+      - src: completions/padz.bash
+        dst: /usr/share/bash-completion/completions/padz
         file_info:
           mode: 0644
       # Zsh completion
-      - src: completions/_my-cli
-        dst: /usr/share/zsh/site-functions/_my-cli
+      - src: completions/_padz
+        dst: /usr/share/zsh/site-functions/_padz
         file_info:
           mode: 0644
       # Fish completion
-      - src: completions/my-cli.fish
-        dst: /usr/share/fish/vendor_completions.d/my-cli.fish
+      - src: completions/padz.fish
+        dst: /usr/share/fish/vendor_completions.d/padz.fish
         file_info:
           mode: 0644
 
