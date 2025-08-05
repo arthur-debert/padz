@@ -33,6 +33,7 @@ type StyleSet struct {
 	PadTitle   StyleDefinition `json:"padTitle"`
 	PadProject StyleDefinition `json:"padProject"`
 	PadTime    StyleDefinition `json:"padTime"`
+	PadIndex   StyleDefinition `json:"padIndex"`
 }
 
 type Styles struct {
@@ -85,6 +86,7 @@ func (sm *StyleManager) loadActiveStyles() {
 	sm.activeStyles["padTitle"] = createStyle(set.PadTitle)
 	sm.activeStyles["padProject"] = createStyle(set.PadProject)
 	sm.activeStyles["padTime"] = createStyle(set.PadTime)
+	sm.activeStyles["padIndex"] = createStyle(set.PadIndex)
 }
 
 func createStyle(def StyleDefinition) lipgloss.Style {

@@ -59,15 +59,15 @@ func (f *Formatter) FormatList(scratches []store.Scratch, showProject bool) erro
 		return json.NewEncoder(f.writer).Encode(scratches)
 	case PlainFormat, TermFormat:
 		// For now, term is same as plain
-		for _, scratch := range scratches {
+		for i, scratch := range scratches {
 			if showProject {
 				projectName := "global"
 				if scratch.Project != "global" && scratch.Project != "" {
 					projectName = filepath.Base(scratch.Project)
 				}
-				fmt.Fprintf(f.writer, "%s %s %s\n", projectName, humanize.Time(scratch.CreatedAt), scratch.Title)
+				fmt.Fprintf(f.writer, "%d. %s %s %s\n", i+1, projectName, humanize.Time(scratch.CreatedAt), scratch.Title)
 			} else {
-				fmt.Fprintf(f.writer, "%s %s\n", humanize.Time(scratch.CreatedAt), scratch.Title)
+				fmt.Fprintf(f.writer, "%d. %s %s\n", i+1, humanize.Time(scratch.CreatedAt), scratch.Title)
 			}
 		}
 		return nil

@@ -41,6 +41,7 @@ type PadListItem struct {
 	ProjectName string
 	ShowProject bool
 	TimeAgo     string
+	Index       int
 }
 
 type SearchResultItem struct {
@@ -51,6 +52,7 @@ type SearchResultItem struct {
 	ProjectName      string
 	ShowProject      bool
 	TimeAgo          string
+	Index            int
 }
 
 type Message struct {
@@ -99,7 +101,7 @@ func NewRenderer() (*Renderer, error) {
 	return r, nil
 }
 
-func (r *Renderer) RenderPadListItem(scratch *store.Scratch, showProject bool) (string, error) {
+func (r *Renderer) RenderPadListItem(scratch *store.Scratch, showProject bool, index int) (string, error) {
 	projectName := ""
 	if scratch.Project == "global" {
 		projectName = "global"
@@ -114,6 +116,7 @@ func (r *Renderer) RenderPadListItem(scratch *store.Scratch, showProject bool) (
 		ProjectName: projectName,
 		ShowProject: showProject,
 		TimeAgo:     humanize.Time(scratch.CreatedAt),
+		Index:       index,
 	}
 
 	var buf strings.Builder
@@ -126,8 +129,8 @@ func (r *Renderer) RenderPadListItem(scratch *store.Scratch, showProject bool) (
 
 func (r *Renderer) RenderPadList(scratches []*store.Scratch, showProject bool) (string, error) {
 	var lines []string
-	for _, scratch := range scratches {
-		line, err := r.RenderPadListItem(scratch, showProject)
+	for i, scratch := range scratches {
+		line, err := r.RenderPadListItem(scratch, showProject, i+1)
 		if err != nil {
 			return "", err
 		}
