@@ -82,10 +82,13 @@ func NewRootCmd() *cobra.Command {
 	// Single scratch commands
 	viewCmd := newViewCmd()
 	viewCmd.GroupID = "single"
+	viewCmd.Flags().Bool("all", false, FlagAllDesc)
+	viewCmd.Flags().Bool("global", false, FlagGlobalDesc)
 	rootCmd.AddCommand(viewCmd)
 	
 	openCmd := newOpenCmd()
 	openCmd.GroupID = "single"
+	openCmd.Flags().Bool("all", false, FlagAllDesc)
 	rootCmd.AddCommand(openCmd)
 	
 	peekCmd := newPeekCmd()
@@ -97,10 +100,12 @@ func NewRootCmd() *cobra.Command {
 	
 	deleteCmd := newDeleteCmd()
 	deleteCmd.GroupID = "single"
+	deleteCmd.Flags().Bool("all", false, FlagAllDesc)
 	rootCmd.AddCommand(deleteCmd)
 	
 	pathCmd := newPathCmd()
 	pathCmd.GroupID = "single"
+	pathCmd.Flags().Bool("all", false, FlagAllDesc)
 	rootCmd.AddCommand(pathCmd)
 	
 	// Multiple scratches commands

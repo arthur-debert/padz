@@ -5,8 +5,8 @@ import (
 	"github.com/arthur-debert/padz/pkg/store"
 )
 
-func Open(s *store.Store, project string, indexStr string) error {
-	scratchToOpen, err := GetScratchByIndex(s, false, false, project, indexStr)
+func Open(s *store.Store, all bool, project string, indexStr string) error {
+	scratchToOpen, err := GetScratchByIndex(s, all, false, project, indexStr)
 	if err != nil {
 		return err
 	}

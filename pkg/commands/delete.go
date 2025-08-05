@@ -5,8 +5,8 @@ import (
 	"github.com/arthur-debert/padz/pkg/store"
 )
 
-func Delete(s *store.Store, project string, indexStr string) error {
-	scratchToDelete, err := GetScratchByIndex(s, false, false, project, indexStr)
+func Delete(s *store.Store, all bool, project string, indexStr string) error {
+	scratchToDelete, err := GetScratchByIndex(s, all, false, project, indexStr)
 	if err != nil {
 		return err
 	}

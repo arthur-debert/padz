@@ -22,6 +22,8 @@ func newDeleteCmd() *cobra.Command {
 	Long:  DeleteLong,
 	Args:  cobra.ExactArgs(1),
 	Run: func(cmd *cobra.Command, args []string) {
+		all, _ := cmd.Flags().GetBool("all")
+
 		s, err := store.NewStore()
 		if err != nil {
 			log.Fatal(err)
@@ -37,7 +39,7 @@ func newDeleteCmd() *cobra.Command {
 			log.Fatal(err)
 		}
 
-		err = commands.Delete(s, proj, args[0])
+		err = commands.Delete(s, all, proj, args[0])
 		
 		// Format output
 		format, formatErr := output.GetFormat(outputFormat)
