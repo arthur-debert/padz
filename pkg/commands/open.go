@@ -1,25 +1,15 @@
 package commands
 
 import (
-	"fmt"
 	"github.com/arthur-debert/padz/pkg/editor"
 	"github.com/arthur-debert/padz/pkg/store"
-	"strconv"
 )
 
 func Open(s *store.Store, project string, indexStr string) error {
-	scratches := Ls(s, false, false, project)
-
-	index, err := strconv.Atoi(indexStr)
+	scratchToOpen, err := GetScratchByIndex(s, false, false, project, indexStr)
 	if err != nil {
-		return fmt.Errorf("invalid index: %s", indexStr)
+		return err
 	}
-
-	if index < 1 || index > len(scratches) {
-		return fmt.Errorf("index out of range: %d", index)
-	}
-
-	scratchToOpen := scratches[index-1]
 
 	content, err := readScratchFile(scratchToOpen.ID)
 	if err != nil {
@@ -45,5 +35,5 @@ func Open(s *store.Store, project string, indexStr string) error {
 	}
 
 	scratchToOpen.Title = getTitle(trimmedContent)
-	return s.UpdateScratch(scratchToOpen)
+	return s.UpdateScratch(*scratchToOpen)
 }

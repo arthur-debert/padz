@@ -431,11 +431,12 @@ func TestLs(t *testing.T) {
 		t.Fatalf("failed to create store: %v", err)
 	}
 
+	now := time.Now()
 	testScratches := []store.Scratch{
-		{ID: "1", Project: "project1", Title: "Title 1", CreatedAt: time.Now()},
-		{ID: "2", Project: "project2", Title: "Title 2", CreatedAt: time.Now()},
-		{ID: "3", Project: "global", Title: "Global Title", CreatedAt: time.Now()},
-		{ID: "4", Project: "project1", Title: "Another P1", CreatedAt: time.Now()},
+		{ID: "1", Project: "project1", Title: "Title 1", CreatedAt: now.Add(-3 * time.Hour)}, // oldest
+		{ID: "2", Project: "project2", Title: "Title 2", CreatedAt: now.Add(-2 * time.Hour)},
+		{ID: "3", Project: "global", Title: "Global Title", CreatedAt: now.Add(-1 * time.Hour)},
+		{ID: "4", Project: "project1", Title: "Another P1", CreatedAt: now}, // newest
 	}
 
 	for _, scratch := range testScratches {
@@ -451,20 +452,20 @@ func TestLs(t *testing.T) {
 		expectedIDs   []string
 	}{
 		{
-			name:          "list all scratches",
+			name:          "list all scratches - reverse chronological order",
 			all:           true,
 			global:        false,
 			project:       "",
 			expectedCount: 4,
-			expectedIDs:   []string{"1", "2", "3", "4"},
+			expectedIDs:   []string{"4", "3", "2", "1"}, // newest first
 		},
 		{
-			name:          "list project1 scratches",
+			name:          "list project1 scratches - reverse chronological order",
 			all:           false,
 			global:        false,
 			project:       "project1",
 			expectedCount: 2,
-			expectedIDs:   []string{"1", "4"},
+			expectedIDs:   []string{"4", "1"}, // newest first
 		},
 		{
 			name:          "list project2 scratches",
@@ -520,10 +521,11 @@ func TestSearch(t *testing.T) {
 		t.Fatalf("failed to create store: %v", err)
 	}
 
+	now := time.Now()
 	testScratches := []store.Scratch{
-		{ID: "1", Project: "project1", Title: "Title 1", CreatedAt: time.Now()},
-		{ID: "2", Project: "project2", Title: "Title 2", CreatedAt: time.Now()},
-		{ID: "3", Project: "global", Title: "Global Title", CreatedAt: time.Now()},
+		{ID: "1", Project: "project1", Title: "Title 1", CreatedAt: now.Add(-2 * time.Hour)}, // older
+		{ID: "2", Project: "project2", Title: "Title 2", CreatedAt: now.Add(-1 * time.Hour)}, // newer
+		{ID: "3", Project: "global", Title: "Global Title", CreatedAt: now}, // newest
 	}
 
 	testContents := map[string]string{
@@ -598,13 +600,13 @@ func TestSearch(t *testing.T) {
 			expectError:   false,
 		},
 		{
-			name:          "regex pattern search",
+			name:          "regex pattern search - reverse chronological order",
 			all:           true,
 			global:        false,
 			project:       "",
 			term:          "scratch [0-9]",
 			expectedCount: 2,
-			expectedIDs:   []string{"1", "2"},
+			expectedIDs:   []string{"2", "1"}, // newest first (2 is newer than 1)
 			expectError:   false,
 		},
 	}
@@ -744,21 +746,22 @@ func TestPeek(t *testing.T) {
 		t.Fatalf("failed to create store: %v", err)
 	}
 
-	// Create test scratches in different projects
+	// Create test scratches in different projects with distinct timestamps
+	now := time.Now()
 	testScratches := []struct {
 		scratch store.Scratch
 		content string
 	}{
 		{
-			scratch: store.Scratch{ID: "test1", Project: "testproject", Title: "Test Title", CreatedAt: time.Now()},
+			scratch: store.Scratch{ID: "test1", Project: "testproject", Title: "Test Title", CreatedAt: now.Add(-2 * time.Hour)}, // older
 			content: "Line 1\nLine 2\nLine 3\nLine 4\nLine 5\nLine 6\nLine 7\nLine 8",
 		},
 		{
-			scratch: store.Scratch{ID: "test2", Project: "otherproject", Title: "Other Title", CreatedAt: time.Now()},
+			scratch: store.Scratch{ID: "test2", Project: "otherproject", Title: "Other Title", CreatedAt: now.Add(-1 * time.Hour)}, // middle
 			content: "Other Line 1\nOther Line 2\nOther Line 3\nOther Line 4\nOther Line 5",
 		},
 		{
-			scratch: store.Scratch{ID: "test3", Project: "global", Title: "Global Title", CreatedAt: time.Now()},
+			scratch: store.Scratch{ID: "test3", Project: "global", Title: "Global Title", CreatedAt: now}, // newest
 			content: "Global Line 1\nGlobal Line 2\nGlobal Line 3",
 		},
 	}
@@ -1167,6 +1170,168 @@ FILE="$1"
 	}
 
 	return tmpFile.Name()
+}
+
+func TestSortByCreatedAtDesc(t *testing.T) {
+	now := time.Now()
+	testScratches := []store.Scratch{
+		{ID: "oldest", Project: "test", Title: "Oldest", CreatedAt: now.Add(-3 * time.Hour)},
+		{ID: "newest", Project: "test", Title: "Newest", CreatedAt: now},
+		{ID: "middle", Project: "test", Title: "Middle", CreatedAt: now.Add(-1 * time.Hour)},
+		{ID: "old", Project: "test", Title: "Old", CreatedAt: now.Add(-2 * time.Hour)},
+	}
+
+	sorted := sortByCreatedAtDesc(testScratches)
+
+	expected := []string{"newest", "middle", "old", "oldest"}
+	actual := make([]string, len(sorted))
+	for i, scratch := range sorted {
+		actual[i] = scratch.ID
+	}
+
+	if !equalStringSlices(actual, expected) {
+		t.Errorf("expected order %v, got %v", expected, actual)
+	}
+
+	// Test that original slice is not modified
+	if testScratches[0].ID != "oldest" {
+		t.Errorf("original slice was modified")
+	}
+}
+
+func TestGetScratchByIndex(t *testing.T) {
+	tmpDir := setupCommandsTestDir(t)
+	defer os.RemoveAll(tmpDir)
+
+	s, err := store.NewStore()
+	if err != nil {
+		t.Fatalf("failed to create store: %v", err)
+	}
+
+	now := time.Now()
+	testScratches := []store.Scratch{
+		{ID: "1", Project: "project1", Title: "Title 1", CreatedAt: now.Add(-3 * time.Hour)}, // oldest, will be index 3
+		{ID: "2", Project: "project2", Title: "Title 2", CreatedAt: now.Add(-2 * time.Hour)}, // index 3 in all
+		{ID: "3", Project: "global", Title: "Global Title", CreatedAt: now.Add(-1 * time.Hour)}, // index 2 in all
+		{ID: "4", Project: "project1", Title: "Another P1", CreatedAt: now}, // newest, will be index 1
+	}
+
+	for _, scratch := range testScratches {
+		s.AddScratch(scratch)
+	}
+
+	tests := []struct {
+		name        string
+		all         bool
+		global      bool
+		project     string
+		indexStr    string
+		expectedID  string
+		expectError bool
+	}{
+		{
+			name:        "get first scratch in project1 (newest)",
+			all:         false,
+			global:      false,
+			project:     "project1",
+			indexStr:    "1",
+			expectedID:  "4", // newest project1 scratch
+			expectError: false,
+		},
+		{
+			name:        "get second scratch in project1 (oldest)",
+			all:         false,
+			global:      false,
+			project:     "project1",
+			indexStr:    "2",
+			expectedID:  "1", // oldest project1 scratch
+			expectError: false,
+		},
+		{
+			name:        "get first scratch globally (newest overall)",
+			all:         true,
+			global:      false,
+			project:     "",
+			indexStr:    "1",
+			expectedID:  "4", // newest overall
+			expectError: false,
+		},
+		{
+			name:        "get global scratch",
+			all:         false,
+			global:      true,
+			project:     "",
+			indexStr:    "1",
+			expectedID:  "3", // only global scratch
+			expectError: false,
+		},
+		{
+			name:        "invalid index string",
+			all:         false,
+			global:      false,
+			project:     "project1",
+			indexStr:    "invalid",
+			expectedID:  "",
+			expectError: true,
+		},
+		{
+			name:        "index out of range - too high",
+			all:         false,
+			global:      false,
+			project:     "project1",
+			indexStr:    "99",
+			expectedID:  "",
+			expectError: true,
+		},
+		{
+			name:        "index out of range - zero",
+			all:         false,
+			global:      false,
+			project:     "project1",
+			indexStr:    "0",
+			expectedID:  "",
+			expectError: true,
+		},
+		{
+			name:        "index out of range - negative",
+			all:         false,
+			global:      false,
+			project:     "project1",
+			indexStr:    "-1",
+			expectedID:  "",
+			expectError: true,
+		},
+		{
+			name:        "no scratches in non-existent project",
+			all:         false,
+			global:      false,
+			project:     "nonexistent",
+			indexStr:    "1",
+			expectedID:  "",
+			expectError: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result, err := GetScratchByIndex(s, tt.all, tt.global, tt.project, tt.indexStr)
+			
+			if tt.expectError {
+				if err == nil {
+					t.Errorf("expected error but got none")
+				}
+				return
+			}
+			if err != nil {
+				t.Errorf("unexpected error: %v", err)
+				return
+			}
+
+			if result.ID != tt.expectedID {
+				t.Errorf("expected ID %s, got %s", tt.expectedID, result.ID)
+			}
+		})
+	}
 }
 
 func setupCommandsTestDir(t *testing.T) string {
