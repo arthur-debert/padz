@@ -1,8 +1,8 @@
 package commands
 
 import (
-	"regexp"
 	"github.com/arthur-debert/padz/pkg/store"
+	"regexp"
 )
 
 func Search(s *store.Store, all, global bool, project, term string) ([]store.Scratch, error) {

@@ -5,10 +5,10 @@ import (
 	"bytes"
 	"crypto/sha1"
 	"fmt"
-	"io"
-	"os"
 	"github.com/arthur-debert/padz/pkg/editor"
 	"github.com/arthur-debert/padz/pkg/store"
+	"io"
+	"os"
 	"strings"
 	"time"
 )
@@ -83,8 +83,8 @@ func ReadContentFromPipeWithReader(reader io.Reader) []byte {
 			return nil
 		}
 	}
-	
+
 	var buf bytes.Buffer
-	io.Copy(&buf, reader)
+	_, _ = io.Copy(&buf, reader)
 	return buf.Bytes()
 }

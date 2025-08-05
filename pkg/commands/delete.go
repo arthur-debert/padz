@@ -1,8 +1,8 @@
 package commands
 
 import (
-	"os"
 	"github.com/arthur-debert/padz/pkg/store"
+	"os"
 )
 
 func Delete(s *store.Store, all bool, project string, indexStr string) error {

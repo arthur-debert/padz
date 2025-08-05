@@ -64,8 +64,7 @@ func newNukeCmd() *cobra.Command {
 			// First, get the count of pads to delete
 			var count int
 			var confirmMsg string
-			var successMsg string
-			
+
 			// Count the pads that would be deleted
 			if all {
 				count = len(s.GetScratches())
@@ -91,18 +90,15 @@ func newNukeCmd() *cobra.Command {
 				return
 			}
 
-			// Prepare messages based on scope
+			// Prepare confirmation message based on scope
 			if all {
 				confirmMsg = fmt.Sprintf(NukeConfirmAll, count)
-				successMsg = fmt.Sprintf(NukeSuccessAll, count)
 			} else if proj == "" {
 				confirmMsg = fmt.Sprintf(NukeConfirmGlobal, count)
-				successMsg = fmt.Sprintf(NukeSuccessGlobal, count)
 			} else {
 				// For project scope, extract just the project name from the path
 				projectName := filepath.Base(proj)
 				confirmMsg = fmt.Sprintf(NukeConfirmProject, count, projectName)
-				successMsg = fmt.Sprintf(NukeSuccessProject, count, projectName)
 			}
 
 			// Show confirmation prompt
@@ -136,6 +132,7 @@ func newNukeCmd() *cobra.Command {
 				}
 
 				// Use the actual deleted count from the result
+				var successMsg string
 				if all {
 					successMsg = fmt.Sprintf(NukeSuccessAll, result.DeletedCount)
 				} else if result.Scope == "global" {

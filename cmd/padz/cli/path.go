@@ -6,7 +6,7 @@ package cli
 import (
 	"log"
 	"os"
-	
+
 	"github.com/arthur-debert/padz/pkg/commands"
 	"github.com/arthur-debert/padz/pkg/output"
 	"github.com/arthur-debert/padz/pkg/project"
@@ -40,22 +40,22 @@ func newPathCmd() *cobra.Command {
 			}
 
 			result, err := commands.Path(s, all, proj, args[0])
-			
+
 			// Format output
 			format, formatErr := output.GetFormat(outputFormat)
 			if formatErr != nil {
 				log.Fatal(formatErr)
 			}
-			
+
 			formatter := output.NewFormatter(format, nil)
-			
+
 			if err != nil {
 				if err := formatter.FormatError(err); err != nil {
 					log.Fatal(err)
 				}
 				os.Exit(1)
 			}
-			
+
 			// For path command, output the path directly in plain/term mode
 			if format == output.PlainFormat || format == output.TermFormat {
 				if err := formatter.FormatString(result.Path); err != nil {

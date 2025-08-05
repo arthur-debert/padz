@@ -9,7 +9,6 @@ import (
 	"testing"
 )
 
-
 func TestOpenInEditor_WithRealEditor(t *testing.T) {
 	// Skip if ed is not available
 	if _, err := exec.LookPath("ed"); err != nil {
@@ -17,14 +16,14 @@ func TestOpenInEditor_WithRealEditor(t *testing.T) {
 	}
 
 	oldEditor := os.Getenv("EDITOR")
-	defer os.Setenv("EDITOR", oldEditor)
+	defer func() { _ = os.Setenv("EDITOR", oldEditor) }()
 
 	// Create a wrapper that uses ed to append a line
 	edScript, err := os.CreateTemp("", "ed-test-script-*.txt")
 	if err != nil {
 		t.Fatalf("failed to create ed script: %v", err)
 	}
-	defer os.Remove(edScript.Name())
+	defer func() { _ = os.Remove(edScript.Name()) }()
 
 	// Write ed commands to append a test line
 	edCommands := `$a
@@ -36,29 +35,33 @@ q
 	if _, err := edScript.WriteString(edCommands); err != nil {
 		t.Fatalf("failed to write ed script: %v", err)
 	}
-	edScript.Close()
+	if err := edScript.Close(); err != nil {
+		t.Fatalf("failed to close ed script: %v", err)
+	}
 
 	// Create wrapper script
 	wrapper, err := os.CreateTemp("", "ed-wrapper-*.sh")
 	if err != nil {
 		t.Fatalf("failed to create wrapper: %v", err)
 	}
-	defer os.Remove(wrapper.Name())
+	defer func() { _ = os.Remove(wrapper.Name()) }()
 
 	wrapperScript := fmt.Sprintf(`#!/bin/sh
 ed -s "$1" < %s
 `, edScript.Name())
-	
+
 	if _, err := wrapper.WriteString(wrapperScript); err != nil {
 		t.Fatalf("failed to write wrapper: %v", err)
 	}
-	wrapper.Close()
+	if err := wrapper.Close(); err != nil {
+		t.Fatalf("failed to close wrapper: %v", err)
+	}
 
 	if err := os.Chmod(wrapper.Name(), 0755); err != nil {
 		t.Fatalf("failed to make wrapper executable: %v", err)
 	}
 
-	os.Setenv("EDITOR", wrapper.Name())
+	_ = os.Setenv("EDITOR", wrapper.Name())
 
 	// Test with initial content
 	initialContent := []byte("Initial line 1\nInitial line 2")
@@ -75,36 +78,36 @@ ed -s "$1" < %s
 
 func TestOpenInEditor_FileHandling(t *testing.T) {
 	oldEditor := os.Getenv("EDITOR")
-	defer os.Setenv("EDITOR", oldEditor)
+	defer func() { _ = os.Setenv("EDITOR", oldEditor) }()
 
 	testEditor := createMockEditor(t)
-	defer os.Remove(testEditor)
+	defer func() { _ = os.Remove(testEditor) }()
 
-	os.Setenv("EDITOR", testEditor)
+	_ = os.Setenv("EDITOR", testEditor)
 
 	tests := []struct {
-		name           string
-		initialContent []byte
+		name            string
+		initialContent  []byte
 		expectedContent []byte
 	}{
 		{
-			name:           "empty initial content",
-			initialContent: []byte{},
+			name:            "empty initial content",
+			initialContent:  []byte{},
 			expectedContent: []byte("mock editor output\n"),
 		},
 		{
-			name:           "with initial content",
-			initialContent: []byte("initial content"),
+			name:            "with initial content",
+			initialContent:  []byte("initial content"),
 			expectedContent: []byte("mock editor output\n"),
 		},
 		{
-			name:           "multiline initial content",
-			initialContent: []byte("line 1\nline 2\nline 3"),
+			name:            "multiline initial content",
+			initialContent:  []byte("line 1\nline 2\nline 3"),
 			expectedContent: []byte("mock editor output\n"),
 		},
 		{
-			name:           "content with special characters",
-			initialContent: []byte("content with !@#$%^&*()"),
+			name:            "content with special characters",
+			initialContent:  []byte("content with !@#$%^&*()"),
 			expectedContent: []byte("mock editor output\n"),
 		},
 	}
@@ -134,10 +137,10 @@ func TestOpenInEditor_ErrorHandling(t *testing.T) {
 		{
 			name: "nonexistent editor",
 			setupFunc: func() {
-				os.Setenv("EDITOR", "/nonexistent/editor")
+				_ = os.Setenv("EDITOR", "/nonexistent/editor")
 			},
 			tearDown: func() {
-				os.Unsetenv("EDITOR")
+				_ = os.Unsetenv("EDITOR")
 			},
 			expectErr: true,
 		},
@@ -145,12 +148,12 @@ func TestOpenInEditor_ErrorHandling(t *testing.T) {
 			name: "editor that fails",
 			setupFunc: func() {
 				failingEditor := createFailingMockEditor(t)
-				os.Setenv("EDITOR", failingEditor)
+				_ = os.Setenv("EDITOR", failingEditor)
 			},
 			tearDown: func() {
 				editor := os.Getenv("EDITOR")
-				os.Remove(editor)
-				os.Unsetenv("EDITOR")
+				_ = os.Remove(editor)
+				_ = os.Unsetenv("EDITOR")
 			},
 			expectErr: true,
 		},
@@ -159,7 +162,7 @@ func TestOpenInEditor_ErrorHandling(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			oldEditor := os.Getenv("EDITOR")
-			defer os.Setenv("EDITOR", oldEditor)
+			defer func() { _ = os.Setenv("EDITOR", oldEditor) }()
 
 			tt.setupFunc()
 			defer tt.tearDown()
@@ -177,12 +180,12 @@ func TestOpenInEditor_ErrorHandling(t *testing.T) {
 
 func TestOpenInEditor_TempFileCleanup(t *testing.T) {
 	oldEditor := os.Getenv("EDITOR")
-	defer os.Setenv("EDITOR", oldEditor)
+	defer func() { _ = os.Setenv("EDITOR", oldEditor) }()
 
 	testEditor := createMockEditor(t)
-	defer os.Remove(testEditor)
+	defer func() { _ = os.Remove(testEditor) }()
 
-	os.Setenv("EDITOR", testEditor)
+	_ = os.Setenv("EDITOR", testEditor)
 
 	tempFilesBefore := countTempFiles(t)
 
@@ -200,12 +203,12 @@ func TestOpenInEditor_TempFileCleanup(t *testing.T) {
 
 func TestOpenInEditor_LargeContent(t *testing.T) {
 	oldEditor := os.Getenv("EDITOR")
-	defer os.Setenv("EDITOR", oldEditor)
+	defer func() { _ = os.Setenv("EDITOR", oldEditor) }()
 
 	testEditor := createMockEditor(t)
-	defer os.Remove(testEditor)
+	defer func() { _ = os.Remove(testEditor) }()
 
-	os.Setenv("EDITOR", testEditor)
+	_ = os.Setenv("EDITOR", testEditor)
 
 	largeContent := bytes.Repeat([]byte("this is a test line\n"), 10000)
 
@@ -221,12 +224,12 @@ func TestOpenInEditor_LargeContent(t *testing.T) {
 
 func TestOpenInEditor_BinaryContent(t *testing.T) {
 	oldEditor := os.Getenv("EDITOR")
-	defer os.Setenv("EDITOR", oldEditor)
+	defer func() { _ = os.Setenv("EDITOR", oldEditor) }()
 
 	testEditor := createMockEditor(t)
-	defer os.Remove(testEditor)
+	defer func() { _ = os.Remove(testEditor) }()
 
-	os.Setenv("EDITOR", testEditor)
+	_ = os.Setenv("EDITOR", testEditor)
 
 	binaryContent := []byte{0x00, 0x01, 0x02, 0x03, 0xFF, 0xFE, 0xFD}
 
@@ -242,15 +245,15 @@ func TestOpenInEditor_BinaryContent(t *testing.T) {
 
 func BenchmarkOpenInEditor(b *testing.B) {
 	oldEditor := os.Getenv("EDITOR")
-	defer os.Setenv("EDITOR", oldEditor)
+	defer func() { _ = os.Setenv("EDITOR", oldEditor) }()
 
-	os.Setenv("EDITOR", "true")
+	_ = os.Setenv("EDITOR", "true")
 
 	content := []byte("benchmark test content")
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		OpenInEditor(content)
+		_, _ = OpenInEditor(content)
 	}
 }
 
@@ -308,10 +311,10 @@ func countTempFiles(t *testing.T) int {
 
 func TestOpenInEditor_EditorWithArguments(t *testing.T) {
 	oldEditor := os.Getenv("EDITOR")
-	defer os.Setenv("EDITOR", oldEditor)
+	defer func() { _ = os.Setenv("EDITOR", oldEditor) }()
 
 	mockScript := createMockEditor(t)
-	defer os.Remove(mockScript)
+	defer func() { _ = os.Remove(mockScript) }()
 
 	tests := []struct {
 		name         string
@@ -332,7 +335,7 @@ func TestOpenInEditor_EditorWithArguments(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			os.Setenv("EDITOR", tt.editorCmd)
+			_ = os.Setenv("EDITOR", tt.editorCmd)
 
 			_, err := OpenInEditor([]byte("test"))
 			if tt.expectsError && err == nil {
@@ -349,11 +352,11 @@ func TestOpenInEditor_PathLookup(t *testing.T) {
 	oldEditor := os.Getenv("EDITOR")
 	oldPath := os.Getenv("PATH")
 	defer func() {
-		os.Setenv("EDITOR", oldEditor)
-		os.Setenv("PATH", oldPath)
+		_ = os.Setenv("EDITOR", oldEditor)
+		_ = os.Setenv("PATH", oldPath)
 	}()
 
-	os.Setenv("EDITOR", "true")
+	_ = os.Setenv("EDITOR", "true")
 
 	_, err := OpenInEditor([]byte("test"))
 	if err != nil {

@@ -1,8 +1,8 @@
 package commands
 
 import (
-	"os"
 	"github.com/arthur-debert/padz/pkg/store"
+	"os"
 )
 
 func View(s *store.Store, all, global bool, project string, indexStr string) (string, error) {

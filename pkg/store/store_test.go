@@ -45,17 +45,17 @@ func TestNewStore(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			tmpDir := setupTempDir(t, tt.setupFiles)
-			defer os.RemoveAll(tmpDir)
+			defer func() { _ = os.RemoveAll(tmpDir) }()
 
 			// Mock the XDG data directory
 			oldXDGDataHome := os.Getenv("XDG_DATA_HOME")
-			os.Setenv("XDG_DATA_HOME", tmpDir)
+			_ = os.Setenv("XDG_DATA_HOME", tmpDir)
 			xdg.Reload()
 			defer func() {
 				if oldXDGDataHome == "" {
-					os.Unsetenv("XDG_DATA_HOME")
+					_ = os.Unsetenv("XDG_DATA_HOME")
 				} else {
-					os.Setenv("XDG_DATA_HOME", oldXDGDataHome)
+					_ = os.Setenv("XDG_DATA_HOME", oldXDGDataHome)
 				}
 				xdg.Reload()
 			}()
@@ -103,16 +103,16 @@ func TestStore_GetScratches(t *testing.T) {
 
 func TestStore_AddScratch(t *testing.T) {
 	tmpDir := setupTempDir(t, nil)
-	defer os.RemoveAll(tmpDir)
+	defer func() { _ = os.RemoveAll(tmpDir) }()
 
 	oldXDGDataHome := os.Getenv("XDG_DATA_HOME")
-	os.Setenv("XDG_DATA_HOME", tmpDir)
+	_ = os.Setenv("XDG_DATA_HOME", tmpDir)
 	xdg.Reload()
 	defer func() {
 		if oldXDGDataHome == "" {
-			os.Unsetenv("XDG_DATA_HOME")
+			_ = os.Unsetenv("XDG_DATA_HOME")
 		} else {
-			os.Setenv("XDG_DATA_HOME", oldXDGDataHome)
+			_ = os.Setenv("XDG_DATA_HOME", oldXDGDataHome)
 		}
 		xdg.Reload()
 	}()
@@ -145,16 +145,16 @@ func TestStore_AddScratch(t *testing.T) {
 
 func TestStore_RemoveScratch(t *testing.T) {
 	tmpDir := setupTempDir(t, nil)
-	defer os.RemoveAll(tmpDir)
+	defer func() { _ = os.RemoveAll(tmpDir) }()
 
 	oldXDGDataHome := os.Getenv("XDG_DATA_HOME")
-	os.Setenv("XDG_DATA_HOME", tmpDir)
+	_ = os.Setenv("XDG_DATA_HOME", tmpDir)
 	xdg.Reload()
 	defer func() {
 		if oldXDGDataHome == "" {
-			os.Unsetenv("XDG_DATA_HOME")
+			_ = os.Unsetenv("XDG_DATA_HOME")
 		} else {
-			os.Setenv("XDG_DATA_HOME", oldXDGDataHome)
+			_ = os.Setenv("XDG_DATA_HOME", oldXDGDataHome)
 		}
 		xdg.Reload()
 	}()
@@ -165,11 +165,11 @@ func TestStore_RemoveScratch(t *testing.T) {
 	}
 
 	tests := []struct {
-		name            string
+		name             string
 		initialScratches []Scratch
-		removeID        string
-		expectedCount   int
-		expectedRemoved bool
+		removeID         string
+		expectedCount    int
+		expectedRemoved  bool
 	}{
 		{
 			name: "remove existing scratch",
@@ -191,11 +191,11 @@ func TestStore_RemoveScratch(t *testing.T) {
 			expectedRemoved: false,
 		},
 		{
-			name:            "remove from empty store",
+			name:             "remove from empty store",
 			initialScratches: []Scratch{},
-			removeID:        "test1",
-			expectedCount:   0,
-			expectedRemoved: false,
+			removeID:         "test1",
+			expectedCount:    0,
+			expectedRemoved:  false,
 		},
 	}
 
@@ -230,16 +230,16 @@ func TestStore_RemoveScratch(t *testing.T) {
 
 func TestStore_UpdateScratch(t *testing.T) {
 	tmpDir := setupTempDir(t, nil)
-	defer os.RemoveAll(tmpDir)
+	defer func() { _ = os.RemoveAll(tmpDir) }()
 
 	oldXDGDataHome := os.Getenv("XDG_DATA_HOME")
-	os.Setenv("XDG_DATA_HOME", tmpDir)
+	_ = os.Setenv("XDG_DATA_HOME", tmpDir)
 	xdg.Reload()
 	defer func() {
 		if oldXDGDataHome == "" {
-			os.Unsetenv("XDG_DATA_HOME")
+			_ = os.Unsetenv("XDG_DATA_HOME")
 		} else {
-			os.Setenv("XDG_DATA_HOME", oldXDGDataHome)
+			_ = os.Setenv("XDG_DATA_HOME", oldXDGDataHome)
 		}
 		xdg.Reload()
 	}()
@@ -284,16 +284,16 @@ func TestStore_UpdateScratch(t *testing.T) {
 
 func TestStore_SaveScratches(t *testing.T) {
 	tmpDir := setupTempDir(t, nil)
-	defer os.RemoveAll(tmpDir)
+	defer func() { _ = os.RemoveAll(tmpDir) }()
 
 	oldXDGDataHome := os.Getenv("XDG_DATA_HOME")
-	os.Setenv("XDG_DATA_HOME", tmpDir)
+	_ = os.Setenv("XDG_DATA_HOME", tmpDir)
 	xdg.Reload()
 	defer func() {
 		if oldXDGDataHome == "" {
-			os.Unsetenv("XDG_DATA_HOME")
+			_ = os.Unsetenv("XDG_DATA_HOME")
 		} else {
-			os.Setenv("XDG_DATA_HOME", oldXDGDataHome)
+			_ = os.Setenv("XDG_DATA_HOME", oldXDGDataHome)
 		}
 		xdg.Reload()
 	}()
@@ -322,13 +322,13 @@ func TestStore_SaveScratches(t *testing.T) {
 func TestGetScratchPath(t *testing.T) {
 	tmpDir := t.TempDir()
 	oldXDGDataHome := os.Getenv("XDG_DATA_HOME")
-	os.Setenv("XDG_DATA_HOME", tmpDir)
+	_ = os.Setenv("XDG_DATA_HOME", tmpDir)
 	xdg.Reload()
 	defer func() {
 		if oldXDGDataHome == "" {
-			os.Unsetenv("XDG_DATA_HOME")
+			_ = os.Unsetenv("XDG_DATA_HOME")
 		} else {
-			os.Setenv("XDG_DATA_HOME", oldXDGDataHome)
+			_ = os.Setenv("XDG_DATA_HOME", oldXDGDataHome)
 		}
 		xdg.Reload()
 	}()
@@ -351,13 +351,13 @@ func TestGetScratchPath(t *testing.T) {
 func TestGetScratchFilePath(t *testing.T) {
 	tmpDir := t.TempDir()
 	oldXDGDataHome := os.Getenv("XDG_DATA_HOME")
-	os.Setenv("XDG_DATA_HOME", tmpDir)
+	_ = os.Setenv("XDG_DATA_HOME", tmpDir)
 	xdg.Reload()
 	defer func() {
 		if oldXDGDataHome == "" {
-			os.Unsetenv("XDG_DATA_HOME")
+			_ = os.Unsetenv("XDG_DATA_HOME")
 		} else {
-			os.Setenv("XDG_DATA_HOME", oldXDGDataHome)
+			_ = os.Setenv("XDG_DATA_HOME", oldXDGDataHome)
 		}
 		xdg.Reload()
 	}()
@@ -401,16 +401,16 @@ func TestGetScratchFilePath(t *testing.T) {
 
 func TestStore_ConcurrentAccess(t *testing.T) {
 	tmpDir := setupTempDir(t, nil)
-	defer os.RemoveAll(tmpDir)
+	defer func() { _ = os.RemoveAll(tmpDir) }()
 
 	oldXDGDataHome := os.Getenv("XDG_DATA_HOME")
-	os.Setenv("XDG_DATA_HOME", tmpDir)
+	_ = os.Setenv("XDG_DATA_HOME", tmpDir)
 	xdg.Reload()
 	defer func() {
 		if oldXDGDataHome == "" {
-			os.Unsetenv("XDG_DATA_HOME")
+			_ = os.Unsetenv("XDG_DATA_HOME")
 		} else {
-			os.Setenv("XDG_DATA_HOME", oldXDGDataHome)
+			_ = os.Setenv("XDG_DATA_HOME", oldXDGDataHome)
 		}
 		xdg.Reload()
 	}()
@@ -424,6 +424,7 @@ func TestStore_ConcurrentAccess(t *testing.T) {
 	const numOperations = 100
 
 	done := make(chan bool, numGoroutines)
+	errors := make(chan error, numGoroutines*numOperations)
 
 	for i := 0; i < numGoroutines; i++ {
 		go func(id int) {
@@ -434,7 +435,10 @@ func TestStore_ConcurrentAccess(t *testing.T) {
 					Title:     fmt.Sprintf("Title %d %d", id, j),
 					CreatedAt: time.Now(),
 				}
-				store.AddScratch(scratch)
+				if err := store.AddScratch(scratch); err != nil {
+					errors <- fmt.Errorf("failed to add scratch: %v", err)
+					return
+				}
 			}
 			done <- true
 		}(i)
@@ -442,6 +446,14 @@ func TestStore_ConcurrentAccess(t *testing.T) {
 
 	for i := 0; i < numGoroutines; i++ {
 		<-done
+	}
+	close(errors)
+
+	// Check if any errors occurred
+	for err := range errors {
+		if err != nil {
+			t.Fatal(err)
+		}
 	}
 
 	scratches := store.GetScratches()

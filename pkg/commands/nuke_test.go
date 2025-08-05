@@ -12,8 +12,8 @@ import (
 func TestNuke(t *testing.T) {
 	// Create temporary store
 	tempDir := t.TempDir()
-	os.Setenv("XDG_DATA_HOME", tempDir)
-	defer os.Unsetenv("XDG_DATA_HOME")
+	_ = os.Setenv("XDG_DATA_HOME", tempDir)
+	defer func() { _ = os.Unsetenv("XDG_DATA_HOME") }()
 
 	s, err := store.NewStore()
 	if err != nil {
@@ -111,8 +111,12 @@ func TestNuke(t *testing.T) {
 	// Test 3: Nuke all
 	t.Run("NukeAll", func(t *testing.T) {
 		// Re-add some scratches
-		s.AddScratch(store.Scratch{ID: generateTestID("new", 0), Project: "new-project", Title: "New"})
-		s.AddScratch(store.Scratch{ID: generateTestID("new", 1), Project: globalProject, Title: "New global"})
+		if err := s.AddScratch(store.Scratch{ID: generateTestID("new", 0), Project: "new-project", Title: "New"}); err != nil {
+			t.Fatalf("failed to add scratch: %v", err)
+		}
+		if err := s.AddScratch(store.Scratch{ID: generateTestID("new", 1), Project: globalProject, Title: "New global"}); err != nil {
+			t.Fatalf("failed to add scratch: %v", err)
+		}
 
 		result, err := Nuke(s, true, "")
 		if err != nil {

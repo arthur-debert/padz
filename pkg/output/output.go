@@ -65,9 +65,13 @@ func (f *Formatter) FormatList(scratches []store.Scratch, showProject bool) erro
 				if scratch.Project != "global" && scratch.Project != "" {
 					projectName = filepath.Base(scratch.Project)
 				}
-				fmt.Fprintf(f.writer, "%d. %s %s %s\n", i+1, projectName, humanize.Time(scratch.CreatedAt), scratch.Title)
+				if _, err := fmt.Fprintf(f.writer, "%d. %s %s %s\n", i+1, projectName, humanize.Time(scratch.CreatedAt), scratch.Title); err != nil {
+					return err
+				}
 			} else {
-				fmt.Fprintf(f.writer, "%d. %s %s\n", i+1, humanize.Time(scratch.CreatedAt), scratch.Title)
+				if _, err := fmt.Fprintf(f.writer, "%d. %s %s\n", i+1, humanize.Time(scratch.CreatedAt), scratch.Title); err != nil {
+					return err
+				}
 			}
 		}
 		return nil
@@ -82,7 +86,7 @@ func (f *Formatter) FormatString(content string) error {
 	case JSONFormat:
 		return json.NewEncoder(f.writer).Encode(map[string]string{"content": content})
 	case PlainFormat, TermFormat:
-		fmt.Fprint(f.writer, content)
+		_, _ = fmt.Fprint(f.writer, content)
 		return nil
 	default:
 		return fmt.Errorf("unsupported format: %s", f.format)
@@ -94,7 +98,7 @@ func (f *Formatter) FormatError(err error) error {
 	if err == nil {
 		return nil
 	}
-	
+
 	switch f.format {
 	case JSONFormat:
 		return json.NewEncoder(f.writer).Encode(map[string]string{"error": err.Error()})
@@ -114,7 +118,9 @@ func (f *Formatter) FormatSuccess(message string) error {
 		return json.NewEncoder(f.writer).Encode(map[string]string{"success": message})
 	case PlainFormat, TermFormat:
 		if message != "" {
-			fmt.Fprintln(f.writer, message)
+			if _, err := fmt.Fprintln(f.writer, message); err != nil {
+				return err
+			}
 		}
 		return nil
 	default:
@@ -128,10 +134,11 @@ func (f *Formatter) FormatPath(result *commands.PathResult) error {
 	case JSONFormat:
 		return json.NewEncoder(f.writer).Encode(result)
 	case PlainFormat, TermFormat:
-		fmt.Fprintln(f.writer, result.Path)
+		if _, err := fmt.Fprintln(f.writer, result.Path); err != nil {
+			return err
+		}
 		return nil
 	default:
 		return fmt.Errorf("unsupported format: %s", f.format)
 	}
 }
-

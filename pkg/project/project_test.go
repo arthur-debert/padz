@@ -69,7 +69,7 @@ func TestGetCurrentProject(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			tmpDir := setupProjectTestDir(t, tt.setupDirs)
-			defer os.RemoveAll(tmpDir)
+			defer func() { _ = os.RemoveAll(tmpDir) }()
 
 			startPath := filepath.Join(tmpDir, tt.startDir)
 			project, err := GetCurrentProject(startPath)
@@ -95,8 +95,8 @@ func TestGetCurrentProject(t *testing.T) {
 
 func TestGetCurrentProject_EdgeCases(t *testing.T) {
 	tests := []struct {
-		name        string
-		setupFunc   func(string) string
+		name           string
+		setupFunc      func(string) string
 		expectedResult string
 	}{
 		{
@@ -104,7 +104,9 @@ func TestGetCurrentProject_EdgeCases(t *testing.T) {
 			setupFunc: func(tmpDir string) string {
 				specialDir := filepath.Join(tmpDir, "my-project_v2.0")
 				gitDir := filepath.Join(specialDir, ".git")
-				os.MkdirAll(gitDir, 0755)
+				if err := os.MkdirAll(gitDir, 0755); err != nil {
+					t.Fatalf("failed to create git dir: %v", err)
+				}
 				return specialDir
 			},
 			expectedResult: "my-project_v2.0",
@@ -114,7 +116,9 @@ func TestGetCurrentProject_EdgeCases(t *testing.T) {
 			setupFunc: func(tmpDir string) string {
 				spaceDir := filepath.Join(tmpDir, "my project")
 				gitDir := filepath.Join(spaceDir, ".git")
-				os.MkdirAll(gitDir, 0755)
+				if err := os.MkdirAll(gitDir, 0755); err != nil {
+					t.Fatalf("failed to create git dir: %v", err)
+				}
 				return spaceDir
 			},
 			expectedResult: "my project",
@@ -126,10 +130,14 @@ func TestGetCurrentProject_EdgeCases(t *testing.T) {
 				for i := 0; i < 10; i++ {
 					deepPath = filepath.Join(deepPath, fmt.Sprintf("level%d", i))
 				}
-				os.MkdirAll(deepPath, 0755)
-				
+				if err := os.MkdirAll(deepPath, 0755); err != nil {
+					t.Fatalf("failed to create deep path: %v", err)
+				}
+
 				gitDir := filepath.Join(tmpDir, "level0", ".git")
-				os.MkdirAll(gitDir, 0755)
+				if err := os.MkdirAll(gitDir, 0755); err != nil {
+					t.Fatalf("failed to create git dir: %v", err)
+				}
 				return deepPath
 			},
 			expectedResult: "level0",
@@ -156,12 +164,12 @@ func TestGetCurrentProject_EdgeCases(t *testing.T) {
 
 func TestGetCurrentProject_NonExistentDirectory(t *testing.T) {
 	nonExistentPath := "/this/path/does/not/exist"
-	
+
 	project, err := GetCurrentProject(nonExistentPath)
 	if err != nil {
 		t.Errorf("unexpected error for non-existent directory: %v", err)
 	}
-	
+
 	if project != "global" {
 		t.Errorf("expected 'global' for non-existent directory, got '%s'", project)
 	}
@@ -170,8 +178,10 @@ func TestGetCurrentProject_NonExistentDirectory(t *testing.T) {
 func TestGetCurrentProject_GitFileNotDirectory(t *testing.T) {
 	tmpDir := t.TempDir()
 	projectDir := filepath.Join(tmpDir, "project")
-	os.MkdirAll(projectDir, 0755)
-	
+	if err := os.MkdirAll(projectDir, 0755); err != nil {
+		t.Fatalf("failed to create project dir: %v", err)
+	}
+
 	gitFile := filepath.Join(projectDir, ".git")
 	if err := os.WriteFile(gitFile, []byte("gitdir: ../other.git"), 0644); err != nil {
 		t.Fatalf("failed to create .git file: %v", err)
@@ -191,7 +201,9 @@ func TestGetCurrentProject_SymlinkHandling(t *testing.T) {
 	tmpDir := t.TempDir()
 	realProject := filepath.Join(tmpDir, "realproject")
 	gitDir := filepath.Join(realProject, ".git")
-	os.MkdirAll(gitDir, 0755)
+	if err := os.MkdirAll(gitDir, 0755); err != nil {
+		t.Fatalf("failed to create git dir: %v", err)
+	}
 
 	linkProject := filepath.Join(tmpDir, "linkproject")
 	if err := os.Symlink(realProject, linkProject); err != nil {
@@ -210,19 +222,23 @@ func TestGetCurrentProject_SymlinkHandling(t *testing.T) {
 
 func BenchmarkGetCurrentProject(b *testing.B) {
 	tmpDir := b.TempDir()
-	
+
 	deepPath := tmpDir
 	for i := 0; i < 20; i++ {
 		deepPath = filepath.Join(deepPath, fmt.Sprintf("level%d", i))
 	}
-	os.MkdirAll(deepPath, 0755)
-	
+	if err := os.MkdirAll(deepPath, 0755); err != nil {
+		b.Fatalf("failed to create deep path: %v", err)
+	}
+
 	gitDir := filepath.Join(tmpDir, ".git")
-	os.MkdirAll(gitDir, 0755)
+	if err := os.MkdirAll(gitDir, 0755); err != nil {
+		b.Fatalf("failed to create git dir: %v", err)
+	}
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		GetCurrentProject(deepPath)
+		_, _ = GetCurrentProject(deepPath)
 	}
 }
 

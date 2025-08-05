@@ -55,7 +55,7 @@ func TestFormatListJSON(t *testing.T) {
 
 	buf := new(bytes.Buffer)
 	formatter := NewFormatter(JSONFormat, buf)
-	
+
 	err := formatter.FormatList(scratches, false)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -84,7 +84,7 @@ func TestFormatListPlain(t *testing.T) {
 
 	buf := new(bytes.Buffer)
 	formatter := NewFormatter(PlainFormat, buf)
-	
+
 	err := formatter.FormatList(scratches, false)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -108,7 +108,7 @@ func TestFormatString(t *testing.T) {
 	t.Run("JSON", func(t *testing.T) {
 		buf := new(bytes.Buffer)
 		formatter := NewFormatter(JSONFormat, buf)
-		
+
 		err := formatter.FormatString(content)
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
@@ -127,7 +127,7 @@ func TestFormatString(t *testing.T) {
 	t.Run("Plain", func(t *testing.T) {
 		buf := new(bytes.Buffer)
 		formatter := NewFormatter(PlainFormat, buf)
-		
+
 		err := formatter.FormatString(content)
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
@@ -145,7 +145,7 @@ func TestFormatSuccess(t *testing.T) {
 	t.Run("JSON", func(t *testing.T) {
 		buf := new(bytes.Buffer)
 		formatter := NewFormatter(JSONFormat, buf)
-		
+
 		err := formatter.FormatSuccess(message)
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
@@ -164,7 +164,7 @@ func TestFormatSuccess(t *testing.T) {
 	t.Run("Plain", func(t *testing.T) {
 		buf := new(bytes.Buffer)
 		formatter := NewFormatter(PlainFormat, buf)
-		
+
 		err := formatter.FormatSuccess(message)
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
@@ -184,7 +184,7 @@ func TestFormatPath(t *testing.T) {
 	t.Run("JSON", func(t *testing.T) {
 		buf := new(bytes.Buffer)
 		formatter := NewFormatter(JSONFormat, buf)
-		
+
 		err := formatter.FormatPath(pathResult)
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
@@ -203,7 +203,7 @@ func TestFormatPath(t *testing.T) {
 	t.Run("Plain", func(t *testing.T) {
 		buf := new(bytes.Buffer)
 		formatter := NewFormatter(PlainFormat, buf)
-		
+
 		err := formatter.FormatPath(pathResult)
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
