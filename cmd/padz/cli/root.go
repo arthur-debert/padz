@@ -120,6 +120,11 @@ func NewRootCmd() *cobra.Command {
 	searchCmd.Flags().BoolP("all", "a", false, FlagAllDescSearch)
 	searchCmd.Flags().BoolP("global", "g", false, FlagGlobalDescSearch)
 	rootCmd.AddCommand(searchCmd)
+	
+	nukeCmd := newNukeCmd()
+	nukeCmd.GroupID = "multiple"
+	nukeCmd.Flags().Bool("all", false, FlagAllDesc)
+	rootCmd.AddCommand(nukeCmd)
 
 
 	return rootCmd
