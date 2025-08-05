@@ -1,7 +1,6 @@
 package commands
 
 import (
-	"os"
 	"strings"
 	"testing"
 	"time"
@@ -11,14 +10,10 @@ import (
 
 func TestPath(t *testing.T) {
 	// Setup test environment
-	tmpDir := setupCommandsTestDir(t)
-	defer func() { _ = os.RemoveAll(tmpDir) }()
+	setup := SetupCommandTest(t)
+	defer setup.Cleanup()
 
-	// Create a real store
-	s, err := store.NewStore()
-	if err != nil {
-		t.Fatalf("failed to create store: %v", err)
-	}
+	s := setup.Store
 
 	// Add test scratches to the store with distinct timestamps
 	now := time.Now()

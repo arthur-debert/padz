@@ -2,13 +2,11 @@ package store
 
 import (
 	"fmt"
-	"os"
-	"path/filepath"
 	"reflect"
 	"testing"
 	"time"
 
-	"github.com/adrg/xdg"
+	"github.com/arthur-debert/padz/pkg/testutil"
 )
 
 func TestNewStore(t *testing.T) {
@@ -44,23 +42,21 @@ func TestNewStore(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			tmpDir := setupTempDir(t, tt.setupFiles)
-			defer func() { _ = os.RemoveAll(tmpDir) }()
+			cfg, cleanup := testutil.SetupTestEnvironment(t)
+			defer cleanup()
 
-			// Mock the XDG data directory
-			oldXDGDataHome := os.Getenv("XDG_DATA_HOME")
-			_ = os.Setenv("XDG_DATA_HOME", tmpDir)
-			xdg.Reload()
-			defer func() {
-				if oldXDGDataHome == "" {
-					_ = os.Unsetenv("XDG_DATA_HOME")
-				} else {
-					_ = os.Setenv("XDG_DATA_HOME", oldXDGDataHome)
+			// Setup files in memory filesystem
+			if tt.setupFiles != nil {
+				for filename, content := range tt.setupFiles {
+					path := cfg.FileSystem.Join("/test/data/scratch", filename)
+					err := cfg.FileSystem.WriteFile(path, []byte(content), 0644)
+					if err != nil {
+						t.Fatalf("Failed to write test file: %v", err)
+					}
 				}
-				xdg.Reload()
-			}()
+			}
 
-			store, err := NewStore()
+			store, err := NewStoreWithConfig(cfg)
 			if tt.expectError {
 				if err == nil {
 					t.Errorf("expected error but got none")
@@ -102,22 +98,10 @@ func TestStore_GetScratches(t *testing.T) {
 }
 
 func TestStore_AddScratch(t *testing.T) {
-	tmpDir := setupTempDir(t, nil)
-	defer func() { _ = os.RemoveAll(tmpDir) }()
+	cfg, cleanup := testutil.SetupTestEnvironment(t)
+	defer cleanup()
 
-	oldXDGDataHome := os.Getenv("XDG_DATA_HOME")
-	_ = os.Setenv("XDG_DATA_HOME", tmpDir)
-	xdg.Reload()
-	defer func() {
-		if oldXDGDataHome == "" {
-			_ = os.Unsetenv("XDG_DATA_HOME")
-		} else {
-			_ = os.Setenv("XDG_DATA_HOME", oldXDGDataHome)
-		}
-		xdg.Reload()
-	}()
-
-	store, err := NewStore()
+	store, err := NewStoreWithConfig(cfg)
 	if err != nil {
 		t.Fatalf("failed to create store: %v", err)
 	}
@@ -144,22 +128,10 @@ func TestStore_AddScratch(t *testing.T) {
 }
 
 func TestStore_RemoveScratch(t *testing.T) {
-	tmpDir := setupTempDir(t, nil)
-	defer func() { _ = os.RemoveAll(tmpDir) }()
+	cfg, cleanup := testutil.SetupTestEnvironment(t)
+	defer cleanup()
 
-	oldXDGDataHome := os.Getenv("XDG_DATA_HOME")
-	_ = os.Setenv("XDG_DATA_HOME", tmpDir)
-	xdg.Reload()
-	defer func() {
-		if oldXDGDataHome == "" {
-			_ = os.Unsetenv("XDG_DATA_HOME")
-		} else {
-			_ = os.Setenv("XDG_DATA_HOME", oldXDGDataHome)
-		}
-		xdg.Reload()
-	}()
-
-	store, err := NewStore()
+	store, err := NewStoreWithConfig(cfg)
 	if err != nil {
 		t.Fatalf("failed to create store: %v", err)
 	}
@@ -229,22 +201,10 @@ func TestStore_RemoveScratch(t *testing.T) {
 }
 
 func TestStore_UpdateScratch(t *testing.T) {
-	tmpDir := setupTempDir(t, nil)
-	defer func() { _ = os.RemoveAll(tmpDir) }()
+	cfg, cleanup := testutil.SetupTestEnvironment(t)
+	defer cleanup()
 
-	oldXDGDataHome := os.Getenv("XDG_DATA_HOME")
-	_ = os.Setenv("XDG_DATA_HOME", tmpDir)
-	xdg.Reload()
-	defer func() {
-		if oldXDGDataHome == "" {
-			_ = os.Unsetenv("XDG_DATA_HOME")
-		} else {
-			_ = os.Setenv("XDG_DATA_HOME", oldXDGDataHome)
-		}
-		xdg.Reload()
-	}()
-
-	store, err := NewStore()
+	store, err := NewStoreWithConfig(cfg)
 	if err != nil {
 		t.Fatalf("failed to create store: %v", err)
 	}
@@ -283,22 +243,10 @@ func TestStore_UpdateScratch(t *testing.T) {
 }
 
 func TestStore_SaveScratches(t *testing.T) {
-	tmpDir := setupTempDir(t, nil)
-	defer func() { _ = os.RemoveAll(tmpDir) }()
+	cfg, cleanup := testutil.SetupTestEnvironment(t)
+	defer cleanup()
 
-	oldXDGDataHome := os.Getenv("XDG_DATA_HOME")
-	_ = os.Setenv("XDG_DATA_HOME", tmpDir)
-	xdg.Reload()
-	defer func() {
-		if oldXDGDataHome == "" {
-			_ = os.Unsetenv("XDG_DATA_HOME")
-		} else {
-			_ = os.Setenv("XDG_DATA_HOME", oldXDGDataHome)
-		}
-		xdg.Reload()
-	}()
-
-	store, err := NewStore()
+	store, err := NewStoreWithConfig(cfg)
 	if err != nil {
 		t.Fatalf("failed to create store: %v", err)
 	}
@@ -320,47 +268,28 @@ func TestStore_SaveScratches(t *testing.T) {
 }
 
 func TestGetScratchPath(t *testing.T) {
-	tmpDir := t.TempDir()
-	oldXDGDataHome := os.Getenv("XDG_DATA_HOME")
-	_ = os.Setenv("XDG_DATA_HOME", tmpDir)
-	xdg.Reload()
-	defer func() {
-		if oldXDGDataHome == "" {
-			_ = os.Unsetenv("XDG_DATA_HOME")
-		} else {
-			_ = os.Setenv("XDG_DATA_HOME", oldXDGDataHome)
-		}
-		xdg.Reload()
-	}()
+	cfg, cleanup := testutil.SetupTestEnvironment(t)
+	defer cleanup()
 
-	path, err := GetScratchPath()
+	path, err := GetScratchPathWithConfig(cfg)
 	if err != nil {
 		t.Errorf("unexpected error getting scratch path: %v", err)
 	}
 
-	expectedPath := filepath.Join(tmpDir, "scratch")
+	expectedPath := "/test/data/scratch"
 	if path != expectedPath {
 		t.Errorf("expected path %s, got %s", expectedPath, path)
 	}
 
-	if _, err := os.Stat(path); os.IsNotExist(err) {
+	// Verify directory was created in memory filesystem
+	if _, err := cfg.FileSystem.Stat(path); err != nil {
 		t.Errorf("expected directory to be created at %s", path)
 	}
 }
 
 func TestGetScratchFilePath(t *testing.T) {
-	tmpDir := t.TempDir()
-	oldXDGDataHome := os.Getenv("XDG_DATA_HOME")
-	_ = os.Setenv("XDG_DATA_HOME", tmpDir)
-	xdg.Reload()
-	defer func() {
-		if oldXDGDataHome == "" {
-			_ = os.Unsetenv("XDG_DATA_HOME")
-		} else {
-			_ = os.Setenv("XDG_DATA_HOME", oldXDGDataHome)
-		}
-		xdg.Reload()
-	}()
+	cfg, cleanup := testutil.SetupTestEnvironment(t)
+	defer cleanup()
 
 	tests := []struct {
 		name       string
@@ -370,52 +299,39 @@ func TestGetScratchFilePath(t *testing.T) {
 		{
 			name:       "simple id",
 			id:         "test123",
-			expectPath: "test123",
+			expectPath: "/test/data/scratch/test123",
 		},
 		{
 			name:       "hash id",
 			id:         "abc123def456",
-			expectPath: "abc123def456",
+			expectPath: "/test/data/scratch/abc123def456",
 		},
 		{
 			name:       "empty id",
 			id:         "",
-			expectPath: "",
+			expectPath: "/test/data/scratch",
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			path, err := GetScratchFilePath(tt.id)
+			path, err := GetScratchFilePathWithConfig(tt.id, cfg)
 			if err != nil {
 				t.Errorf("unexpected error getting scratch file path: %v", err)
 			}
 
-			expectedPath := filepath.Join(tmpDir, "scratch", tt.expectPath)
-			if path != expectedPath {
-				t.Errorf("expected path %s, got %s", expectedPath, path)
+			if path != tt.expectPath {
+				t.Errorf("expected path %s, got %s", tt.expectPath, path)
 			}
 		})
 	}
 }
 
 func TestStore_ConcurrentAccess(t *testing.T) {
-	tmpDir := setupTempDir(t, nil)
-	defer func() { _ = os.RemoveAll(tmpDir) }()
+	cfg, cleanup := testutil.SetupTestEnvironment(t)
+	defer cleanup()
 
-	oldXDGDataHome := os.Getenv("XDG_DATA_HOME")
-	_ = os.Setenv("XDG_DATA_HOME", tmpDir)
-	xdg.Reload()
-	defer func() {
-		if oldXDGDataHome == "" {
-			_ = os.Unsetenv("XDG_DATA_HOME")
-		} else {
-			_ = os.Setenv("XDG_DATA_HOME", oldXDGDataHome)
-		}
-		xdg.Reload()
-	}()
-
-	store, err := NewStore()
+	store, err := NewStoreWithConfig(cfg)
 	if err != nil {
 		t.Fatalf("failed to create store: %v", err)
 	}
@@ -463,19 +379,51 @@ func TestStore_ConcurrentAccess(t *testing.T) {
 	}
 }
 
-func setupTempDir(t *testing.T, files map[string]string) string {
-	tmpDir := t.TempDir()
-	scratchDir := filepath.Join(tmpDir, "scratch")
-	if err := os.MkdirAll(scratchDir, 0755); err != nil {
-		t.Fatalf("failed to create scratch directory: %v", err)
+func TestMemoryFilesystemIntegration(t *testing.T) {
+	cfg, cleanup := testutil.SetupTestEnvironment(t)
+	defer cleanup()
+
+	// Verify we're using memory filesystem
+	memFS := testutil.GetMemoryFS(cfg)
+	if memFS == nil {
+		t.Fatal("Expected memory filesystem in test configuration")
 	}
 
-	for filename, content := range files {
-		path := filepath.Join(scratchDir, filename)
-		if err := os.WriteFile(path, []byte(content), 0644); err != nil {
-			t.Fatalf("failed to write test file %s: %v", filename, err)
+	// Create a store and add scratches
+	store, err := NewStoreWithConfig(cfg)
+	if err != nil {
+		t.Fatalf("Failed to create store: %v", err)
+	}
+
+	// Add some scratches
+	for i := 0; i < 3; i++ {
+		scratch := Scratch{
+			ID:        fmt.Sprintf("test%d", i),
+			Project:   "testproject",
+			Title:     fmt.Sprintf("Test %d", i),
+			CreatedAt: time.Now(),
+		}
+		if err := store.AddScratch(scratch); err != nil {
+			t.Fatalf("Failed to add scratch: %v", err)
 		}
 	}
 
-	return tmpDir
+	// Verify files are in memory filesystem only
+	files := memFS.GetAllFiles()
+
+	// Should have metadata file
+	metadataPath := "/test/data/scratch/metadata.json"
+	if _, exists := files[metadataPath]; !exists {
+		t.Error("Expected metadata file in memory filesystem")
+	}
+
+	// Verify content
+	data, err := cfg.FileSystem.ReadFile(metadataPath)
+	if err != nil {
+		t.Fatalf("Failed to read metadata: %v", err)
+	}
+
+	if len(data) == 0 {
+		t.Error("Metadata file is empty")
+	}
 }

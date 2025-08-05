@@ -3,10 +3,11 @@ package store
 import (
 	"encoding/json"
 	"os"
-	"path/filepath"
 	"sync"
 
 	"github.com/adrg/xdg"
+	"github.com/arthur-debert/padz/pkg/config"
+	"github.com/arthur-debert/padz/pkg/filesystem"
 )
 
 const (
@@ -17,10 +18,19 @@ const (
 type Store struct {
 	mu        sync.Mutex
 	scratches []Scratch
+	fs        filesystem.FileSystem
+	cfg       *config.Config
 }
 
 func NewStore() (*Store, error) {
-	store := &Store{}
+	return NewStoreWithConfig(config.GetConfig())
+}
+
+func NewStoreWithConfig(cfg *config.Config) (*Store, error) {
+	store := &Store{
+		fs:  cfg.FileSystem,
+		cfg: cfg,
+	}
 	if err := store.load(); err != nil {
 		return nil, err
 	}
@@ -44,17 +54,17 @@ func (s *Store) load() error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	path, err := getMetadataPath()
+	path, err := s.getMetadataPathWithStore()
 	if err != nil {
 		return err
 	}
 
-	if _, err := os.Stat(path); os.IsNotExist(err) {
+	if _, err := s.fs.Stat(path); os.IsNotExist(err) {
 		s.scratches = []Scratch{}
 		return nil
 	}
 
-	data, err := os.ReadFile(path)
+	data, err := s.fs.ReadFile(path)
 	if err != nil {
 		return err
 	}
@@ -63,7 +73,7 @@ func (s *Store) load() error {
 }
 
 func (s *Store) save() error {
-	path, err := getMetadataPath()
+	path, err := s.getMetadataPathWithStore()
 	if err != nil {
 		return err
 	}
@@ -73,7 +83,7 @@ func (s *Store) save() error {
 		return err
 	}
 
-	return os.WriteFile(path, data, 0644)
+	return s.fs.WriteFile(path, data, 0644)
 }
 
 func (s *Store) AddScratch(scratch Scratch) error {
@@ -111,28 +121,52 @@ func (s *Store) UpdateScratch(scratchToUpdate Scratch) error {
 }
 
 func GetScratchPath() (string, error) {
-	path, err := xdg.DataFile(dataDirName)
-	if err != nil {
-		return "", err
+	cfg := config.GetConfig()
+	return GetScratchPathWithConfig(cfg)
+}
+
+func GetScratchPathWithConfig(cfg *config.Config) (string, error) {
+	var path string
+	var err error
+
+	if cfg.DataPath != "" {
+		// Use configured path for testing
+		path = cfg.FileSystem.Join(cfg.DataPath, dataDirName)
+	} else {
+		// Use XDG for production
+		path, err = xdg.DataFile(dataDirName)
+		if err != nil {
+			return "", err
+		}
 	}
-	if err := os.MkdirAll(path, 0755); err != nil {
+
+	if err := cfg.FileSystem.MkdirAll(path, 0755); err != nil {
 		return "", err
 	}
 	return path, nil
 }
 
 func GetScratchFilePath(id string) (string, error) {
-	path, err := GetScratchPath()
-	if err != nil {
-		return "", err
-	}
-	return filepath.Join(path, id), nil
+	cfg := config.GetConfig()
+	return GetScratchFilePathWithConfig(id, cfg)
 }
 
-func getMetadataPath() (string, error) {
-	path, err := GetScratchPath()
+func GetScratchFilePathWithConfig(id string, cfg *config.Config) (string, error) {
+	path, err := GetScratchPathWithConfig(cfg)
 	if err != nil {
 		return "", err
 	}
-	return filepath.Join(path, metadataFileName), nil
+	return cfg.FileSystem.Join(path, id), nil
+}
+
+func getMetadataPathWithConfig(cfg *config.Config) (string, error) {
+	path, err := GetScratchPathWithConfig(cfg)
+	if err != nil {
+		return "", err
+	}
+	return cfg.FileSystem.Join(path, metadataFileName), nil
+}
+
+func (s *Store) getMetadataPathWithStore() (string, error) {
+	return getMetadataPathWithConfig(s.cfg)
 }
