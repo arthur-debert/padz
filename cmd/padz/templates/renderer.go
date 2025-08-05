@@ -3,10 +3,10 @@ package templates
 import (
 	_ "embed"
 	"fmt"
-	"html/template"
 	"path/filepath"
 	"regexp"
 	"strings"
+	"text/template"
 
 	"github.com/arthur-debert/padz/cmd/padz/styles"
 	"github.com/arthur-debert/padz/pkg/store"
