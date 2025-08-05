@@ -4,9 +4,11 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"strings"
 
 	"github.com/arthur-debert/padz/cmd/padz/styles"
 	"github.com/arthur-debert/padz/cmd/padz/templates"
+	"github.com/arthur-debert/padz/pkg/commands"
 	"github.com/arthur-debert/padz/pkg/store"
 )
 
@@ -51,6 +53,22 @@ func (tf *TerminalFormatter) FormatList(scratches []store.Scratch, showProject b
 		return err
 	}
 	_, err = fmt.Fprintln(tf.writer, output)
+	return err
+}
+
+func (tf *TerminalFormatter) FormatSearchResults(results []commands.ScratchWithIndex, showProject bool) error {
+	// Convert to scratch pointers with indices
+	var lines []string
+	for _, result := range results {
+		line, err := tf.renderer.RenderPadListItem(&result.Scratch, showProject, result.Index)
+		if err != nil {
+			return err
+		}
+		lines = append(lines, line)
+	}
+
+	output := strings.Join(lines, "\n")
+	_, err := fmt.Fprintln(tf.writer, output)
 	return err
 }
 

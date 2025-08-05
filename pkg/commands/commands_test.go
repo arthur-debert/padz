@@ -621,6 +621,116 @@ func TestSearch(t *testing.T) {
 	}
 }
 
+func TestSearchWithIndices(t *testing.T) {
+	setup := SetupCommandTest(t)
+	defer setup.Cleanup()
+
+	now := time.Now()
+	testScratches := []store.Scratch{
+		{ID: "1", Project: "p1", Title: "A", CreatedAt: now.Add(-4 * time.Hour)}, // Will be index 4
+		{ID: "2", Project: "p2", Title: "B", CreatedAt: now.Add(-3 * time.Hour)}, // Will be index 3
+		{ID: "3", Project: "p1", Title: "C", CreatedAt: now.Add(-2 * time.Hour)}, // Will be index 2
+		{ID: "4", Project: "p2", Title: "D", CreatedAt: now.Add(-1 * time.Hour)}, // Will be index 1
+	}
+
+	testContents := map[string]string{
+		"1": "Content for one",
+		"2": "Content for two",
+		"3": "Content for three",
+		"4": "Content for four",
+	}
+
+	for _, scratch := range testScratches {
+		if err := setup.Store.AddScratch(scratch); err != nil {
+			t.Fatalf("failed to add scratch: %v", err)
+		}
+		setup.WriteScratchFile(t, scratch.ID, []byte(testContents[scratch.ID]))
+	}
+
+	tests := []struct {
+		name             string
+		all              bool
+		global           bool
+		project          string
+		term             string
+		expectedCount    int
+		expectedIndices  []int
+		expectedOrderIDs []string
+		expectError      bool
+	}{
+		{
+			name:             "search all, find two, check indices",
+			all:              true,
+			term:             "Content for t",
+			expectedCount:    2,
+			expectedIndices:  []int{2, 3},
+			expectedOrderIDs: []string{"3", "2"},
+		},
+		{
+			name:             "search p1, find one, check index",
+			project:          "p1",
+			term:             "three",
+			expectedCount:    1,
+			expectedIndices:  []int{1},
+			expectedOrderIDs: []string{"3"},
+		},
+		{
+			name:             "search all, no results",
+			all:              true,
+			term:             "nonexistent",
+			expectedCount:    0,
+			expectedIndices:  []int{},
+			expectedOrderIDs: []string{},
+		},
+		{
+			name:          "invalid regex",
+			all:           true,
+			term:          "[invalid",
+			expectError:   true,
+			expectedCount: 0,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			results, err := SearchWithIndices(setup.Store, tt.all, tt.global, tt.project, tt.term)
+
+			if tt.expectError {
+				if err == nil {
+					t.Fatal("expected error but got none")
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+
+			if len(results) != tt.expectedCount {
+				t.Fatalf("expected %d results, got %d", tt.expectedCount, len(results))
+			}
+
+			if tt.expectedCount > 0 {
+				indices := make([]int, len(results))
+				ids := make([]string, len(results))
+				for i, r := range results {
+					indices[i] = r.Index
+					ids[i] = r.ID
+				}
+
+				// Check indices
+				if !equalIntSlices(indices, tt.expectedIndices) {
+					t.Errorf("expected indices %v, got %v", tt.expectedIndices, indices)
+				}
+
+				// Check order
+				if !equalStringSlices(ids, tt.expectedOrderIDs) {
+					t.Errorf("expected order %v, got %v", tt.expectedOrderIDs, ids)
+				}
+			}
+		})
+	}
+}
+
 func TestView(t *testing.T) {
 	setup := SetupCommandTest(t)
 	defer setup.Cleanup()
@@ -1348,6 +1458,18 @@ echo "` + content + `" > "$1"
 }
 
 func equalStringSlices(a, b []string) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for i, v := range a {
+		if v != b[i] {
+			return false
+		}
+	}
+	return true
+}
+
+func equalIntSlices(a, b []int) bool {
 	if len(a) != len(b) {
 		return false
 	}
