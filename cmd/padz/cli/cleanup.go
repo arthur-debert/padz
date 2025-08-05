@@ -9,7 +9,6 @@ import (
 	"github.com/arthur-debert/padz/pkg/commands"
 	"github.com/arthur-debert/padz/pkg/output"
 	"github.com/arthur-debert/padz/pkg/store"
-	"os"
 
 	"github.com/spf13/cobra"
 )
@@ -36,19 +35,12 @@ func newCleanupCmd() *cobra.Command {
 			log.Fatal(formatErr)
 		}
 		
-		formatter := output.NewFormatter(format, nil)
-		
 		if err != nil {
-			if err := formatter.FormatError(err); err != nil {
-				log.Fatal(err)
-			}
-			os.Exit(1)
+			handleTerminalError(err, format)
 		}
 		
 		message := fmt.Sprintf(CleanupSuccessFormat, days)
-		if err := formatter.FormatSuccess(message); err != nil {
-			log.Fatal(err)
-		}
+		handleTerminalSuccess(message, format)
 	},
 	}
 }

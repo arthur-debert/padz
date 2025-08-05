@@ -57,8 +57,9 @@ The output includes the index, the relative time of creation, and the title of t
 			return
 		}
 		
-		// Use terminal formatter for term format
-		if format == output.TermFormat {
+		// Use terminal formatter for both plain and term formats
+		// Terminal detection will automatically strip formatting when piped
+		if format == output.PlainFormat || format == output.TermFormat {
 			termFormatter, err := formatter.NewTerminalFormatter(nil)
 			if err != nil {
 				log.Fatal(err)
@@ -67,6 +68,7 @@ The output includes the index, the relative time of creation, and the title of t
 				log.Fatal(err)
 			}
 		} else {
+			// JSON format uses the standard formatter
 			formatter := output.NewFormatter(format, nil)
 			if err := formatter.FormatList(scratches, all); err != nil {
 				log.Fatal(err)

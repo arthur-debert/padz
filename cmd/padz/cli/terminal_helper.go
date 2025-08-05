@@ -10,7 +10,9 @@ import (
 
 // handleTerminalError handles error output with terminal formatting support
 func handleTerminalError(err error, format output.Format) {
-	if format == output.TermFormat {
+	if format == output.PlainFormat || format == output.TermFormat {
+		// Use terminal formatter for both plain and term formats
+		// Terminal detection will automatically strip formatting when piped
 		termFormatter, termErr := formatter.NewTerminalFormatter(nil)
 		if termErr != nil {
 			log.Fatal(termErr)
@@ -27,7 +29,9 @@ func handleTerminalError(err error, format output.Format) {
 
 // handleTerminalSuccess handles success output with terminal formatting support
 func handleTerminalSuccess(message string, format output.Format) {
-	if format == output.TermFormat {
+	if format == output.PlainFormat || format == output.TermFormat {
+		// Use terminal formatter for both plain and term formats
+		// Terminal detection will automatically strip formatting when piped
 		termFormatter, err := formatter.NewTerminalFormatter(nil)
 		if err != nil {
 			log.Fatal(err)

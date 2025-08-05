@@ -58,7 +58,7 @@ func (f *Formatter) FormatList(scratches []store.Scratch, showProject bool) erro
 	case JSONFormat:
 		return json.NewEncoder(f.writer).Encode(scratches)
 	case PlainFormat, TermFormat:
-		// For now, term is same as plain
+		// Both plain and term use the same output - terminal detection handles formatting stripping
 		for i, scratch := range scratches {
 			if showProject {
 				projectName := "global"

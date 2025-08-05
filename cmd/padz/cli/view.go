@@ -4,7 +4,6 @@ Copyright © 2025 YOUR NAME HERE <EMAIL ADDRESS>
 package cli
 
 import (
-	"fmt"
 	"log"
 	"os"
 	"os/exec"
@@ -61,8 +60,9 @@ func newViewCmd() *cobra.Command {
 			if err := outputFormatter.FormatString(content); err != nil {
 				log.Fatal(err)
 			}
-		} else if format == output.TermFormat {
-			// Check if output is being piped for term format
+		} else if format == output.PlainFormat || format == output.TermFormat {
+			// Use terminal formatter for both plain and term formats
+			// Terminal detection will automatically strip formatting when piped
 			info, _ := os.Stdout.Stat()
 			if (info.Mode() & os.ModeCharDevice) == 0 {
 				// Piped - use terminal formatter without pager
@@ -74,7 +74,7 @@ func newViewCmd() *cobra.Command {
 					log.Fatal(err)
 				}
 			} else {
-				// Use terminal formatter with pager
+				// Not piped - use terminal formatter with pager
 				var styledContent strings.Builder
 				termFormatter, err := formatter.NewTerminalFormatter(&styledContent)
 				if err != nil {
@@ -93,24 +93,6 @@ func newViewCmd() *cobra.Command {
 				}
 				c := exec.Command("sh", "-c", pager)
 				c.Stdin = strings.NewReader(styledContent.String())
-				c.Stdout = os.Stdout
-				if err := c.Run(); err != nil {
-					log.Fatal(err)
-				}
-			}
-		} else {
-			// Plain format - check if output is being piped
-			info, _ := os.Stdout.Stat()
-			if (info.Mode() & os.ModeCharDevice) == 0 {
-				fmt.Print(content)
-			} else {
-				// Use a pager
-				pager := os.Getenv("PAGER")
-				if pager == "" {
-					pager = "less"
-				}
-				c := exec.Command(pager)
-				c.Stdin = strings.NewReader(content)
 				c.Stdout = os.Stdout
 				if err := c.Run(); err != nil {
 					log.Fatal(err)
