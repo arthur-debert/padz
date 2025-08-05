@@ -80,6 +80,34 @@ func (f *Formatter) FormatList(scratches []store.Scratch, showProject bool) erro
 	}
 }
 
+// FormatSearchResults formats search results that include indices
+func (f *Formatter) FormatSearchResults(results []commands.ScratchWithIndex, showProject bool) error {
+	switch f.format {
+	case JSONFormat:
+		return json.NewEncoder(f.writer).Encode(results)
+	case PlainFormat, TermFormat:
+		// Both plain and term use the same output - terminal detection handles formatting stripping
+		for _, result := range results {
+			if showProject {
+				projectName := "global"
+				if result.Project != "global" && result.Project != "" {
+					projectName = filepath.Base(result.Project)
+				}
+				if _, err := fmt.Fprintf(f.writer, "%d. %s %s %s\n", result.Index, projectName, humanize.Time(result.CreatedAt), result.Title); err != nil {
+					return err
+				}
+			} else {
+				if _, err := fmt.Fprintf(f.writer, "%d. %s %s\n", result.Index, humanize.Time(result.CreatedAt), result.Title); err != nil {
+					return err
+				}
+			}
+		}
+		return nil
+	default:
+		return fmt.Errorf("unsupported format: %s", f.format)
+	}
+}
+
 // FormatString formats a string output
 func (f *Formatter) FormatString(content string) error {
 	switch f.format {

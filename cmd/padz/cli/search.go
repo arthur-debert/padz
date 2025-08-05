@@ -42,7 +42,8 @@ func newSearchCmd() *cobra.Command {
 				log.Fatal(err)
 			}
 
-			scratches, err := commands.Search(s, all, global, proj, args[0])
+			// Use SearchWithIndices to get results with correct positional indices
+			searchResults, err := commands.SearchWithIndices(s, all, global, proj, args[0])
 			if err != nil {
 				log.Fatal(err)
 			}
@@ -53,7 +54,7 @@ func newSearchCmd() *cobra.Command {
 				log.Fatal(err)
 			}
 
-			if len(scratches) == 0 && (format == output.PlainFormat || format == output.TermFormat) {
+			if len(searchResults) == 0 && (format == output.PlainFormat || format == output.TermFormat) {
 				fmt.Println(SearchNoMatchesFound)
 				return
 			}
@@ -65,13 +66,13 @@ func newSearchCmd() *cobra.Command {
 				if err != nil {
 					log.Fatal(err)
 				}
-				if err := termFormatter.FormatList(scratches, all); err != nil {
+				if err := termFormatter.FormatSearchResults(searchResults, all); err != nil {
 					log.Fatal(err)
 				}
 			} else {
-				// JSON format uses the standard formatter
+				// JSON format should output the ScratchWithIndex objects
 				outputFormatter := output.NewFormatter(format, nil)
-				if err := outputFormatter.FormatList(scratches, all); err != nil {
+				if err := outputFormatter.FormatSearchResults(searchResults, all); err != nil {
 					log.Fatal(err)
 				}
 			}
