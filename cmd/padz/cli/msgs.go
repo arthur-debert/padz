@@ -103,3 +103,25 @@ const (
 	
 	SearchNoMatchesFound = "No matches found."
 )
+
+// Nuke command messages
+const (
+	NukeUse   = "nuke"
+	NukeShort = "Delete all scratches in the current scope"
+	NukeLong  = `Delete all scratches in the current scope (project or global).
+Use --all to delete all scratches across all scopes.`
+	
+	// Confirmation prompts
+	NukeConfirmProject = "This will delete all %d pads in [%s]. Confirm? [y/N] "
+	NukeConfirmGlobal  = "This will delete all %d pads in global storage. Confirm? [y/N] "
+	NukeConfirmAll     = "This will delete all %d pads across all scopes, projects and global. Confirm? [y/N] "
+	
+	// Success messages
+	NukeSuccessProject = "Deleted all %d pads in [%s]."
+	NukeSuccessGlobal  = "Deleted all %d pads in global storage."
+	NukeSuccessAll     = "Deleted all %d pads across all scopes."
+	
+	// Other messages
+	NukeNoPadsFound = "No pads found to delete."
+	NukeCancelled   = "Nuke cancelled."
+)
