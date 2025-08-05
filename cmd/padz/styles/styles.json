@@ -66,6 +66,11 @@
       "background": "",
       "bold": false,
       "italic": true
+    },
+    "padIndex": {
+      "foreground": "#d7af5f",
+      "background": "",
+      "bold": true
     }
   },
   "light": {
@@ -135,6 +140,11 @@
       "background": "",
       "bold": false,
       "italic": true
+    },
+    "padIndex": {
+      "foreground": "#d78700",
+      "background": "",
+      "bold": true
     }
   }
 }

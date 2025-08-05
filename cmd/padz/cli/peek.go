@@ -50,8 +50,9 @@ func newPeekCmd() *cobra.Command {
 			log.Fatal(err)
 		}
 		
-		if format == output.TermFormat {
-			// For terminal format, handle peek formatting with template
+		if format == output.PlainFormat || format == output.TermFormat {
+			// Use terminal formatter for both plain and term formats
+			// Terminal detection will automatically strip formatting when piped
 			content, err := commands.View(s, all, global, proj, args[0])
 			if err != nil {
 				log.Fatal(err)
@@ -91,7 +92,7 @@ func newPeekCmd() *cobra.Command {
 				}
 			}
 		} else {
-			// For plain and JSON formats, use existing peek logic
+			// For JSON format, use existing peek logic
 			content, err := commands.Peek(s, all, global, proj, args[0], lines)
 			if err != nil {
 				log.Fatal(err)

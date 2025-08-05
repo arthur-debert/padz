@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"github.com/arthur-debert/padz/cmd/padz/formatter"
 	"github.com/arthur-debert/padz/pkg/commands"
 	"github.com/arthur-debert/padz/pkg/output"
 	"github.com/arthur-debert/padz/pkg/project"
@@ -52,14 +53,27 @@ func newSearchCmd() *cobra.Command {
 			log.Fatal(err)
 		}
 		
-		formatter := output.NewFormatter(format, nil)
-		if len(scratches) == 0 && format == output.PlainFormat {
+		if len(scratches) == 0 && (format == output.PlainFormat || format == output.TermFormat) {
 			fmt.Println(SearchNoMatchesFound)
 			return
 		}
 		
-		if err := formatter.FormatList(scratches, all); err != nil {
-			log.Fatal(err)
+		// Use terminal formatter for both plain and term formats
+		// Terminal detection will automatically strip formatting when piped
+		if format == output.PlainFormat || format == output.TermFormat {
+			termFormatter, err := formatter.NewTerminalFormatter(nil)
+			if err != nil {
+				log.Fatal(err)
+			}
+			if err := termFormatter.FormatList(scratches, all); err != nil {
+				log.Fatal(err)
+			}
+		} else {
+			// JSON format uses the standard formatter
+			outputFormatter := output.NewFormatter(format, nil)
+			if err := outputFormatter.FormatList(scratches, all); err != nil {
+				log.Fatal(err)
+			}
 		}
 	},
 	}

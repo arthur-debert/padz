@@ -97,6 +97,9 @@ func TestFormatListPlain(t *testing.T) {
 	if !strings.Contains(output, "hour") {
 		t.Error("expected time in output")
 	}
+	if !strings.Contains(output, "1.") {
+		t.Error("expected index number in output")
+	}
 }
 
 func TestFormatString(t *testing.T) {

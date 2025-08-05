@@ -45,18 +45,11 @@ func newDeleteCmd() *cobra.Command {
 			log.Fatal(formatErr)
 		}
 		
-		formatter := output.NewFormatter(format, nil)
-		
 		if err != nil {
-			if err := formatter.FormatError(err); err != nil {
-				log.Fatal(err)
-			}
-			os.Exit(1)
+			handleTerminalError(err, format)
 		}
 		
-		if err := formatter.FormatSuccess(DeleteSuccess); err != nil {
-			log.Fatal(err)
-		}
+		handleTerminalSuccess(DeleteSuccess, format)
 	},
 	}
 }
