@@ -10,6 +10,8 @@ import (
 
 	"github.com/arthur-debert/padz/cmd/padz/styles"
 	"github.com/arthur-debert/padz/pkg/store"
+	"github.com/charmbracelet/lipgloss"
+	"github.com/charmbracelet/x/term"
 	"github.com/dustin/go-humanize"
 )
 
@@ -128,15 +130,156 @@ func (r *Renderer) RenderPadListItem(scratch *store.Scratch, showProject bool, i
 }
 
 func (r *Renderer) RenderPadList(scratches []*store.Scratch, showProject bool) (string, error) {
+	// Get terminal width and calculate column widths
+	termWidth := getTerminalWidth()
+	widths := calculateColumnWidths(termWidth, showProject)
+	
 	var lines []string
 	for i, scratch := range scratches {
-		line, err := r.RenderPadListItem(scratch, showProject, i+1)
-		if err != nil {
-			return "", err
+		// Prepare data
+		index := i + 1
+		projectName := ""
+		if scratch.Project == "global" {
+			projectName = "global"
+		} else if scratch.Project != "" {
+			projectName = filepath.Base(scratch.Project)
 		}
-		lines = append(lines, line)
+		timeAgo := humanize.Time(scratch.CreatedAt)
+		
+		// Build line with proper column alignment (WITHOUT styling first)
+		var parts []string
+		
+		// Index (right-aligned)
+		indexStr := fmt.Sprintf("%d.", index)
+		indexPadded := padLeft(indexStr, widths.ID-1) + " "
+		
+		// Project (if showing)
+		projectPadded := ""
+		if showProject {
+			project := truncateWithEllipsis(projectName, widths.Project)
+			projectPadded = padRight(project, widths.Project) + "  "
+		}
+		
+		// Title
+		title := truncateWithEllipsis(scratch.Title, widths.Title)
+		titlePadded := padRight(title, widths.Title) + "  "
+		
+		// Time (prepare for right-alignment)
+		timePadded := padLeft(timeAgo, widths.Date)
+		
+		// Now apply styles to each part
+		indexStyle := styles.Get("padIndex")
+		parts = append(parts, strings.Replace(indexPadded, indexStr, indexStyle.Render(indexStr), 1))
+		
+		if showProject && projectPadded != "" {
+			projectStyle := styles.Get("padProject")
+			// Find the actual project text within the padded string
+			projectText := strings.TrimSpace(projectPadded[:widths.Project])
+			parts = append(parts, strings.Replace(projectPadded, projectText, projectStyle.Render(projectText), 1))
+		}
+		
+		titleStyle := styles.Get("padTitle")
+		// Find the actual title text within the padded string
+		titleText := strings.TrimSpace(titlePadded[:widths.Title])
+		parts = append(parts, strings.Replace(titlePadded, titleText, titleStyle.Render(titleText), 1))
+		
+		timeStyle := styles.Get("padTime")
+		parts = append(parts, strings.Replace(timePadded, timeAgo, timeStyle.Render(timeAgo), 1))
+		
+		lines = append(lines, strings.Join(parts, ""))
 	}
+	
 	return strings.Join(lines, "\n"), nil
+}
+
+// Column width definitions
+type columnWidths struct {
+	ID      int
+	Project int
+	Date    int
+	Title   int
+}
+
+// getTerminalWidth returns the terminal width, bounded between 80 and 120
+func getTerminalWidth() int {
+	width, _, err := term.GetSize(0)
+	if err != nil {
+		width = 80
+	}
+	
+	if width < 80 {
+		return 80
+	}
+	if width > 120 {
+		return 120
+	}
+	return width
+}
+
+// calculateColumnWidths determines the width for each column
+func calculateColumnWidths(termWidth int, showProject bool) columnWidths {
+	widths := columnWidths{
+		ID:   4,  // "99. " (2 digits + dot + space)
+		Date: 16, // "a long while ago"
+	}
+	
+	if showProject {
+		widths.Project = 8
+	}
+	
+	// Calculate title width: terminal - id - date - project - spaces
+	spacesCount := 2 // Between ID and title/project
+	if showProject {
+		spacesCount += 2 // Between project and title
+	}
+	spacesCount += 2 // Between title and date
+	
+	widths.Title = termWidth - widths.ID - widths.Date - widths.Project - spacesCount
+	
+	// Ensure title has at least some space
+	if widths.Title < 10 {
+		widths.Title = 10
+	}
+	
+	return widths
+}
+
+// truncateWithEllipsis truncates a string to maxLen and adds "..." if truncated
+func truncateWithEllipsis(s string, maxLen int) string {
+	if lipgloss.Width(s) <= maxLen {
+		return s
+	}
+	
+	if maxLen <= 3 {
+		return s[:maxLen]
+	}
+	
+	// Account for "..." when truncating
+	truncateAt := maxLen - 3
+	runes := []rune(s)
+	if truncateAt > len(runes) {
+		truncateAt = len(runes)
+	}
+	
+	return string(runes[:truncateAt]) + "..."
+}
+
+// padRight pads a string to the specified width
+func padRight(s string, width int) string {
+	currentWidth := lipgloss.Width(s)
+	if currentWidth >= width {
+		return s
+	}
+	return s + strings.Repeat(" ", width-currentWidth)
+}
+
+// padLeft pads a string to the specified width
+func padLeft(s string, width int) string {
+	currentWidth := lipgloss.Width(s)
+	if currentWidth >= width {
+		return s
+	}
+	return strings.Repeat(" ", width-currentWidth) + s
 }
 
 func applyStyles(text string) string {
@@ -208,3 +351,4 @@ func (r *Renderer) RenderContentPeek(startContent, endContent string, hasSkipped
 	}
 	return applyStyles(buf.String()), nil
 }
+
