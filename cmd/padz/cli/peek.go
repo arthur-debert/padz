@@ -4,8 +4,11 @@ Copyright © 2025 YOUR NAME HERE <EMAIL ADDRESS>
 package cli
 
 import (
+	"bufio"
 	"log"
 	"os"
+	"strings"
+	"github.com/arthur-debert/padz/cmd/padz/formatter"
 	"github.com/arthur-debert/padz/pkg/commands"
 	"github.com/arthur-debert/padz/pkg/output"
 	"github.com/arthur-debert/padz/pkg/project"
@@ -41,20 +44,63 @@ func newPeekCmd() *cobra.Command {
 			log.Fatal(err)
 		}
 
-		content, err := commands.Peek(s, all, global, proj, args[0], lines)
-		if err != nil {
-			log.Fatal(err)
-		}
-		
 		// Format output
 		format, err := output.GetFormat(outputFormat)
 		if err != nil {
 			log.Fatal(err)
 		}
 		
-		formatter := output.NewFormatter(format, nil)
-		if err := formatter.FormatString(content); err != nil {
-			log.Fatal(err)
+		if format == output.TermFormat {
+			// For terminal format, handle peek formatting with template
+			content, err := commands.View(s, all, global, proj, args[0])
+			if err != nil {
+				log.Fatal(err)
+			}
+			
+			// Parse content into lines (excluding blank lines as per issue #12)
+			scanner := bufio.NewScanner(strings.NewReader(content))
+			var contentLines []string
+			for scanner.Scan() {
+				line := scanner.Text()
+				if strings.TrimSpace(line) != "" { // Skip blank lines
+					contentLines = append(contentLines, line)
+				}
+			}
+			
+			termFormatter, err := formatter.NewTerminalFormatter(nil)
+			if err != nil {
+				log.Fatal(err)
+			}
+			
+			if len(contentLines) <= 2*lines {
+				// Show full content
+				if err := termFormatter.FormatContentView(strings.Join(contentLines, "\n")); err != nil {
+					log.Fatal(err)
+				}
+			} else {
+				// Show peek format with start/end content and skipped count
+				startLines := contentLines[:lines]
+				endLines := contentLines[len(contentLines)-lines:]
+				skippedLines := len(contentLines) - 2*lines
+				
+				startContent := strings.Join(startLines, "\n") + "\n"
+				endContent := strings.Join(endLines, "\n")
+				
+				if err := termFormatter.FormatContentPeek(startContent, endContent, true, skippedLines); err != nil {
+					log.Fatal(err)
+				}
+			}
+		} else {
+			// For plain and JSON formats, use existing peek logic
+			content, err := commands.Peek(s, all, global, proj, args[0], lines)
+			if err != nil {
+				log.Fatal(err)
+			}
+			
+			outputFormatter := output.NewFormatter(format, nil)
+			if err := outputFormatter.FormatString(content); err != nil {
+				log.Fatal(err)
+			}
 		}
 	},
 	}

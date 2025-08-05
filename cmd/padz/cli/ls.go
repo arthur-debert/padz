@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"github.com/arthur-debert/padz/cmd/padz/formatter"
 	"github.com/arthur-debert/padz/pkg/commands"
 	"github.com/arthur-debert/padz/pkg/output"
 	"github.com/arthur-debert/padz/pkg/project"
@@ -49,14 +50,27 @@ The output includes the index, the relative time of creation, and the title of t
 			log.Fatal(err)
 		}
 		
-		formatter := output.NewFormatter(format, nil)
-		if len(scratches) == 0 && format == output.PlainFormat {
-			fmt.Println("No scratches found.")
+		if len(scratches) == 0 {
+			if format == output.PlainFormat || format == output.TermFormat {
+				fmt.Println("No scratches found.")
+			}
 			return
 		}
 		
-		if err := formatter.FormatList(scratches, all); err != nil {
-			log.Fatal(err)
+		// Use terminal formatter for term format
+		if format == output.TermFormat {
+			termFormatter, err := formatter.NewTerminalFormatter(nil)
+			if err != nil {
+				log.Fatal(err)
+			}
+			if err := termFormatter.FormatList(scratches, all); err != nil {
+				log.Fatal(err)
+			}
+		} else {
+			formatter := output.NewFormatter(format, nil)
+			if err := formatter.FormatList(scratches, all); err != nil {
+				log.Fatal(err)
+			}
 		}
 	},
 	}
