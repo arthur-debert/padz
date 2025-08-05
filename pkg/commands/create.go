@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"crypto/sha1"
 	"fmt"
+	"github.com/arthur-debert/padz/pkg/config"
 	"github.com/arthur-debert/padz/pkg/editor"
 	"github.com/arthur-debert/padz/pkg/store"
 	"io"
@@ -58,11 +59,12 @@ func trim(content []byte) []byte {
 }
 
 func saveScratchFile(id string, content []byte) error {
+	fs := config.GetConfig().FileSystem
 	path, err := store.GetScratchFilePath(id)
 	if err != nil {
 		return err
 	}
-	return os.WriteFile(path, content, 0644)
+	return fs.WriteFile(path, content, 0644)
 }
 
 // ReadContentFromPipe checks if stdin is a pipe and reads its content
