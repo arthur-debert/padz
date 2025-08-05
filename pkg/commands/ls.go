@@ -1,7 +1,9 @@
 package commands
 
 import (
+	"fmt"
 	"sort"
+	"strconv"
 	"github.com/arthur-debert/padz/pkg/store"
 )
 
@@ -29,4 +31,19 @@ func sortByCreatedAtDesc(scratches []store.Scratch) []store.Scratch {
 		return sorted[i].CreatedAt.After(sorted[j].CreatedAt)
 	})
 	return sorted
+}
+
+func GetScratchByIndex(s *store.Store, all, global bool, project string, indexStr string) (*store.Scratch, error) {
+	scratches := Ls(s, all, global, project)
+
+	index, err := strconv.Atoi(indexStr)
+	if err != nil {
+		return nil, fmt.Errorf("invalid index: %s", indexStr)
+	}
+
+	if index < 1 || index > len(scratches) {
+		return nil, fmt.Errorf("index out of range: %d", index)
+	}
+
+	return &scratches[index-1], nil
 }

@@ -1199,6 +1199,141 @@ func TestSortByCreatedAtDesc(t *testing.T) {
 	}
 }
 
+func TestGetScratchByIndex(t *testing.T) {
+	tmpDir := setupCommandsTestDir(t)
+	defer os.RemoveAll(tmpDir)
+
+	s, err := store.NewStore()
+	if err != nil {
+		t.Fatalf("failed to create store: %v", err)
+	}
+
+	now := time.Now()
+	testScratches := []store.Scratch{
+		{ID: "1", Project: "project1", Title: "Title 1", CreatedAt: now.Add(-3 * time.Hour)}, // oldest, will be index 3
+		{ID: "2", Project: "project2", Title: "Title 2", CreatedAt: now.Add(-2 * time.Hour)}, // index 3 in all
+		{ID: "3", Project: "global", Title: "Global Title", CreatedAt: now.Add(-1 * time.Hour)}, // index 2 in all
+		{ID: "4", Project: "project1", Title: "Another P1", CreatedAt: now}, // newest, will be index 1
+	}
+
+	for _, scratch := range testScratches {
+		s.AddScratch(scratch)
+	}
+
+	tests := []struct {
+		name        string
+		all         bool
+		global      bool
+		project     string
+		indexStr    string
+		expectedID  string
+		expectError bool
+	}{
+		{
+			name:        "get first scratch in project1 (newest)",
+			all:         false,
+			global:      false,
+			project:     "project1",
+			indexStr:    "1",
+			expectedID:  "4", // newest project1 scratch
+			expectError: false,
+		},
+		{
+			name:        "get second scratch in project1 (oldest)",
+			all:         false,
+			global:      false,
+			project:     "project1",
+			indexStr:    "2",
+			expectedID:  "1", // oldest project1 scratch
+			expectError: false,
+		},
+		{
+			name:        "get first scratch globally (newest overall)",
+			all:         true,
+			global:      false,
+			project:     "",
+			indexStr:    "1",
+			expectedID:  "4", // newest overall
+			expectError: false,
+		},
+		{
+			name:        "get global scratch",
+			all:         false,
+			global:      true,
+			project:     "",
+			indexStr:    "1",
+			expectedID:  "3", // only global scratch
+			expectError: false,
+		},
+		{
+			name:        "invalid index string",
+			all:         false,
+			global:      false,
+			project:     "project1",
+			indexStr:    "invalid",
+			expectedID:  "",
+			expectError: true,
+		},
+		{
+			name:        "index out of range - too high",
+			all:         false,
+			global:      false,
+			project:     "project1",
+			indexStr:    "99",
+			expectedID:  "",
+			expectError: true,
+		},
+		{
+			name:        "index out of range - zero",
+			all:         false,
+			global:      false,
+			project:     "project1",
+			indexStr:    "0",
+			expectedID:  "",
+			expectError: true,
+		},
+		{
+			name:        "index out of range - negative",
+			all:         false,
+			global:      false,
+			project:     "project1",
+			indexStr:    "-1",
+			expectedID:  "",
+			expectError: true,
+		},
+		{
+			name:        "no scratches in non-existent project",
+			all:         false,
+			global:      false,
+			project:     "nonexistent",
+			indexStr:    "1",
+			expectedID:  "",
+			expectError: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result, err := GetScratchByIndex(s, tt.all, tt.global, tt.project, tt.indexStr)
+			
+			if tt.expectError {
+				if err == nil {
+					t.Errorf("expected error but got none")
+				}
+				return
+			}
+			if err != nil {
+				t.Errorf("unexpected error: %v", err)
+				return
+			}
+
+			if result.ID != tt.expectedID {
+				t.Errorf("expected ID %s, got %s", tt.expectedID, result.ID)
+			}
+		})
+	}
+}
+
 func setupCommandsTestDir(t *testing.T) string {
 	tmpDir := t.TempDir()
 	oldXDGDataHome := os.Getenv("XDG_DATA_HOME")

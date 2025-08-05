@@ -20,25 +20,26 @@ func TestPath(t *testing.T) {
 		t.Fatalf("failed to create store: %v", err)
 	}
 
-	// Add test scratches to the store
+	// Add test scratches to the store with distinct timestamps
+	now := time.Now()
 	testScratches := []store.Scratch{
 		{
 			ID:        "test-scratch-1",
 			Title:     "Test Scratch 1",
 			Project:   "test-project",
-			CreatedAt: time.Now(),
+			CreatedAt: now.Add(-2 * time.Hour), // older scratch
 		},
 		{
 			ID:        "test-scratch-2",
 			Title:     "Test Scratch 2",
 			Project:   "test-project",
-			CreatedAt: time.Now(),
+			CreatedAt: now, // newer scratch, will be index 1
 		},
 		{
 			ID:        "other-project-scratch",
 			Title:     "Other Project Scratch",
 			Project:   "other-project",
-			CreatedAt: time.Now(),
+			CreatedAt: now.Add(-1 * time.Hour),
 		},
 	}
 
@@ -53,9 +54,9 @@ func TestPath(t *testing.T) {
 			t.Fatalf("unexpected error: %v", err)
 		}
 
-		// The path should contain the scratch ID
-		if !strings.Contains(result.Path, "test-scratch-1") {
-			t.Errorf("expected path to contain scratch ID 'test-scratch-1', got %s", result.Path)
+		// With reverse chronological order, index 1 should be test-scratch-2 (newest)
+		if !strings.Contains(result.Path, "test-scratch-2") {
+			t.Errorf("expected path to contain scratch ID 'test-scratch-2', got %s", result.Path)
 		}
 	})
 
@@ -65,8 +66,9 @@ func TestPath(t *testing.T) {
 			t.Fatalf("unexpected error: %v", err)
 		}
 
-		if !strings.Contains(result.Path, "test-scratch-2") {
-			t.Errorf("expected path to contain scratch ID 'test-scratch-2', got %s", result.Path)
+		// With reverse chronological order, index 2 should be test-scratch-1 (older)
+		if !strings.Contains(result.Path, "test-scratch-1") {
+			t.Errorf("expected path to contain scratch ID 'test-scratch-1', got %s", result.Path)
 		}
 	})
 
@@ -107,8 +109,9 @@ func TestPath(t *testing.T) {
 		if err == nil {
 			t.Error("expected error when no scratches found")
 		}
-		if !strings.Contains(err.Error(), "no scratches found") {
-			t.Errorf("expected 'no scratches found' error, got: %v", err)
+		// The centralized function returns "index out of range" when there are no scratches
+		if !strings.Contains(err.Error(), "out of range") {
+			t.Errorf("expected 'out of range' error, got: %v", err)
 		}
 		
 		// Restore scratches for other tests
@@ -122,8 +125,9 @@ func TestPath(t *testing.T) {
 		if err == nil {
 			t.Error("expected error for nonexistent project")
 		}
-		if !strings.Contains(err.Error(), "no scratches found") {
-			t.Errorf("expected 'no scratches found' error, got: %v", err)
+		// The centralized function returns "index out of range" when no scratches match the filter
+		if !strings.Contains(err.Error(), "out of range") {
+			t.Errorf("expected 'out of range' error, got: %v", err)
 		}
 	})
 }

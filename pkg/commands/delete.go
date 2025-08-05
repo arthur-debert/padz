@@ -1,25 +1,15 @@
 package commands
 
 import (
-	"fmt"
 	"os"
 	"github.com/arthur-debert/padz/pkg/store"
-	"strconv"
 )
 
 func Delete(s *store.Store, project string, indexStr string) error {
-	scratches := Ls(s, false, false, project)
-
-	index, err := strconv.Atoi(indexStr)
+	scratchToDelete, err := GetScratchByIndex(s, false, false, project, indexStr)
 	if err != nil {
-		return fmt.Errorf("invalid index: %s", indexStr)
+		return err
 	}
-
-	if index < 1 || index > len(scratches) {
-		return fmt.Errorf("index out of range: %d", index)
-	}
-
-	scratchToDelete := scratches[index-1]
 
 	if err := deleteScratchFile(scratchToDelete.ID); err != nil {
 		return err
