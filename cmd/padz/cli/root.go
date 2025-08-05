@@ -37,7 +37,7 @@ func NewRootCmd() *cobra.Command {
 	// Setup persistent flags
 	rootCmd.PersistentFlags().CountVarP(&verbosity, "verbose", "v", FlagVerboseDesc)
 	rootCmd.PersistentFlags().Lookup("verbose").Hidden = true
-	rootCmd.PersistentFlags().StringVar(&outputFormat, "format", "plain", FlagFormatDesc)
+	rootCmd.PersistentFlags().StringVar(&outputFormat, "format", "term", FlagFormatDesc)
 
 	// Add version flag
 	var versionFlag bool
