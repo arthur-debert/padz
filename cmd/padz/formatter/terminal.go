@@ -4,9 +4,11 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"strings"
 
 	"github.com/arthur-debert/padz/cmd/padz/styles"
 	"github.com/arthur-debert/padz/cmd/padz/templates"
+	"github.com/arthur-debert/padz/pkg/commands"
 	"github.com/arthur-debert/padz/pkg/store"
 )
 
@@ -45,13 +47,29 @@ func (tf *TerminalFormatter) FormatList(scratches []store.Scratch, showProject b
 	for i := range scratches {
 		scratchPtrs[i] = &scratches[i]
 	}
-	
+
 	output, err := tf.renderer.RenderPadList(scratchPtrs, showProject)
 	if err != nil {
 		return err
 	}
-	fmt.Fprintln(tf.writer, output)
-	return nil
+	_, err = fmt.Fprintln(tf.writer, output)
+	return err
+}
+
+func (tf *TerminalFormatter) FormatSearchResults(results []commands.ScratchWithIndex, showProject bool) error {
+	// Convert to scratch pointers with indices
+	var lines []string
+	for _, result := range results {
+		line, err := tf.renderer.RenderPadListItem(&result.Scratch, showProject, result.Index)
+		if err != nil {
+			return err
+		}
+		lines = append(lines, line)
+	}
+
+	output := strings.Join(lines, "\n")
+	_, err := fmt.Fprintln(tf.writer, output)
+	return err
 }
 
 func (tf *TerminalFormatter) FormatError(err error) {
@@ -61,30 +79,30 @@ func (tf *TerminalFormatter) FormatError(err error) {
 
 func (tf *TerminalFormatter) FormatSuccess(message string) {
 	successStyle := styles.Get("success")
-	fmt.Fprintln(tf.writer, successStyle.Render(message))
+	_, _ = fmt.Fprintln(tf.writer, successStyle.Render(message))
 }
 
 func (tf *TerminalFormatter) FormatWarning(message string) {
 	warningStyle := styles.Get("warning")
-	fmt.Fprintln(tf.writer, warningStyle.Render(message))
+	_, _ = fmt.Fprintln(tf.writer, warningStyle.Render(message))
 }
 
 func (tf *TerminalFormatter) FormatString(content string) {
-	fmt.Fprint(tf.writer, content)
+	_, _ = fmt.Fprint(tf.writer, content)
 }
 
 func (tf *TerminalFormatter) FormatPath(path string) {
-	fmt.Fprintln(tf.writer, path)
+	_, _ = fmt.Fprintln(tf.writer, path)
 }
 
 func (tf *TerminalFormatter) FormatContentView(content string) error {
 	output, err := tf.renderer.RenderContentView(content)
 	if err != nil {
 		// Fallback to plain content
-		fmt.Fprint(tf.writer, content)
+		_, _ = fmt.Fprint(tf.writer, content)
 		return err
 	}
-	fmt.Fprint(tf.writer, output)
+	_, _ = fmt.Fprint(tf.writer, output)
 	return nil
 }
 
@@ -92,13 +110,15 @@ func (tf *TerminalFormatter) FormatContentPeek(startContent, endContent string, 
 	output, err := tf.renderer.RenderContentPeek(startContent, endContent, hasSkipped, skippedLines)
 	if err != nil {
 		// Fallback to basic peek format
-		fmt.Fprint(tf.writer, startContent)
+		_, _ = fmt.Fprint(tf.writer, startContent)
 		if hasSkipped {
-			fmt.Fprintf(tf.writer, "... %d more lines ...\n", skippedLines)
+			if _, err := fmt.Fprintf(tf.writer, "... %d more lines ...\n", skippedLines); err != nil {
+				return err
+			}
 		}
-		fmt.Fprint(tf.writer, endContent)
+		_, _ = fmt.Fprint(tf.writer, endContent)
 		return err
 	}
-	fmt.Fprint(tf.writer, output)
+	_, _ = fmt.Fprint(tf.writer, output)
 	return nil
 }

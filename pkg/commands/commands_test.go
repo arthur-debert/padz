@@ -5,11 +5,9 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
-	"path/filepath"
 	"testing"
 	"time"
 
-	"github.com/adrg/xdg"
 	"github.com/arthur-debert/padz/pkg/store"
 )
 
@@ -60,17 +58,12 @@ func TestCreate(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			tmpDir := setupCommandsTestDir(t)
-			defer os.RemoveAll(tmpDir)
+			setup := SetupCommandTest(t)
+			defer setup.Cleanup()
 
-			s, err := store.NewStore()
-			if err != nil {
-				t.Fatalf("failed to create store: %v", err)
-			}
+			initialCount := len(setup.Store.GetScratches())
 
-			initialCount := len(s.GetScratches())
-
-			err = Create(s, tt.project, tt.content)
+			err := Create(setup.Store, tt.project, tt.content)
 			if tt.expectError {
 				if err == nil {
 					t.Errorf("expected error but got none")
@@ -82,7 +75,7 @@ func TestCreate(t *testing.T) {
 				return
 			}
 
-			scratches := s.GetScratches()
+			scratches := setup.Store.GetScratches()
 			if tt.expectSave {
 				if len(scratches) != initialCount+1 {
 					t.Errorf("expected scratch to be saved, count: %d -> %d", initialCount, len(scratches))
@@ -150,13 +143,8 @@ func TestReadContentFromPipeWithReader(t *testing.T) {
 // TestReadContentFromPipeIntegration tests the integration between
 // ReadContentFromPipe and the Create function
 func TestReadContentFromPipeIntegration(t *testing.T) {
-	tmpDir := setupCommandsTestDir(t)
-	defer os.RemoveAll(tmpDir)
-
-	s, err := store.NewStore()
-	if err != nil {
-		t.Fatalf("failed to create store: %v", err)
-	}
+	setup := SetupCommandTest(t)
+	defer setup.Cleanup()
 
 	// Create a pipe with content
 	r, w, err := os.Pipe()
@@ -171,8 +159,8 @@ func TestReadContentFromPipeIntegration(t *testing.T) {
 	// Write content to pipe
 	testContent := "Content from pipe\nSecond line"
 	go func() {
-		defer w.Close()
-		fmt.Fprint(w, testContent)
+		defer func() { _ = w.Close() }()
+		_, _ = fmt.Fprint(w, testContent)
 	}()
 
 	// Read content from pipe
@@ -182,13 +170,13 @@ func TestReadContentFromPipeIntegration(t *testing.T) {
 	}
 
 	// Create scratch with piped content
-	err = Create(s, "testproject", content)
+	err = Create(setup.Store, "testproject", content)
 	if err != nil {
 		t.Errorf("unexpected error creating scratch: %v", err)
 	}
 
 	// Verify scratch was created with correct content
-	scratches := s.GetScratches()
+	scratches := setup.Store.GetScratches()
 	if len(scratches) != 1 {
 		t.Fatalf("expected 1 scratch, got %d", len(scratches))
 	}
@@ -199,10 +187,7 @@ func TestReadContentFromPipeIntegration(t *testing.T) {
 	}
 
 	// Verify content was saved correctly
-	savedContent, err := readScratchFile(scratches[0].ID)
-	if err != nil {
-		t.Fatalf("failed to read scratch file: %v", err)
-	}
+	savedContent := setup.ReadScratchFile(t, scratches[0].ID)
 
 	if string(savedContent) != testContent {
 		t.Errorf("expected saved content %q, got %q", testContent, string(savedContent))
@@ -313,99 +298,99 @@ func TestReadContentFromPipe(t *testing.T) {
 		setupFunc      func() (cleanup func())
 	}{
 		{
-		name:           "read from pipe with content",
-		pipeContent:    "Hello from pipe",
-		expectedResult: []byte("Hello from pipe"),
-		setupFunc: func() func() {
-			// Create a pipe
-			r, w, err := os.Pipe()
-			if err != nil {
-				t.Fatal(err)
-			}
+			name:           "read from pipe with content",
+			pipeContent:    "Hello from pipe",
+			expectedResult: []byte("Hello from pipe"),
+			setupFunc: func() func() {
+				// Create a pipe
+				r, w, err := os.Pipe()
+				if err != nil {
+					t.Fatal(err)
+				}
 
-			// Save original stdin
-			oldStdin := os.Stdin
-			os.Stdin = r
+				// Save original stdin
+				oldStdin := os.Stdin
+				os.Stdin = r
 
-			// Write test content to pipe in a goroutine
-			go func() {
-				defer w.Close()
-				fmt.Fprint(w, "Hello from pipe")
-			}()
+				// Write test content to pipe in a goroutine
+				go func() {
+					defer func() { _ = w.Close() }()
+					_, _ = fmt.Fprint(w, "Hello from pipe")
+				}()
 
-			return func() {
-				os.Stdin = oldStdin
-				r.Close()
-			}
+				return func() {
+					os.Stdin = oldStdin
+					_ = r.Close()
+				}
+			},
 		},
-	},
-	{
-		name:           "read from pipe with multiline content",
-		pipeContent:    "Line 1\nLine 2\nLine 3",
-		expectedResult: []byte("Line 1\nLine 2\nLine 3"),
-		setupFunc: func() func() {
-			r, w, err := os.Pipe()
-			if err != nil {
-				t.Fatal(err)
-			}
+		{
+			name:           "read from pipe with multiline content",
+			pipeContent:    "Line 1\nLine 2\nLine 3",
+			expectedResult: []byte("Line 1\nLine 2\nLine 3"),
+			setupFunc: func() func() {
+				r, w, err := os.Pipe()
+				if err != nil {
+					t.Fatal(err)
+				}
 
-			oldStdin := os.Stdin
-			os.Stdin = r
+				oldStdin := os.Stdin
+				os.Stdin = r
 
-			go func() {
-				defer w.Close()
-				fmt.Fprint(w, "Line 1\nLine 2\nLine 3")
-			}()
+				go func() {
+					defer func() { _ = w.Close() }()
+					_, _ = fmt.Fprint(w, "Line 1\nLine 2\nLine 3")
+				}()
 
-			return func() {
-				os.Stdin = oldStdin
-				r.Close()
-			}
+				return func() {
+					os.Stdin = oldStdin
+					_ = r.Close()
+				}
+			},
 		},
-	},
-	{
-		name:           "no pipe input (terminal)",
-		pipeContent:    "",
-		expectedResult: nil,
-		setupFunc: func() func() {
-			// Use a regular file to simulate terminal input
-			tmpFile, err := os.CreateTemp("", "stdin-test")
-			if err != nil {
-				t.Fatal(err)
-			}
+		{
+			name:           "no pipe input (terminal)",
+			pipeContent:    "",
+			expectedResult: nil,
+			setupFunc: func() func() {
+				// Use a regular file to simulate terminal input
+				tmpFile, err := os.CreateTemp("", "stdin-test")
+				if err != nil {
+					t.Fatal(err)
+				}
 
-			oldStdin := os.Stdin
-			os.Stdin = tmpFile
+				oldStdin := os.Stdin
+				os.Stdin = tmpFile
 
-			return func() {
-				os.Stdin = oldStdin
-				tmpFile.Close()
-				os.Remove(tmpFile.Name())
-			}
+				return func() {
+					os.Stdin = oldStdin
+					_ = tmpFile.Close()
+					_ = os.Remove(tmpFile.Name())
+				}
+			},
 		},
-	},
-	{
-		name:           "empty pipe",
-		pipeContent:    "",
-		expectedResult: []byte{},
-		setupFunc: func() func() {
-			r, w, err := os.Pipe()
-			if err != nil {
-				t.Fatal(err)
-			}
+		{
+			name:           "empty pipe",
+			pipeContent:    "",
+			expectedResult: []byte{},
+			setupFunc: func() func() {
+				r, w, err := os.Pipe()
+				if err != nil {
+					t.Fatal(err)
+				}
 
-			oldStdin := os.Stdin
-			os.Stdin = r
+				oldStdin := os.Stdin
+				os.Stdin = r
 
-			// Close immediately to send EOF
-			w.Close()
+				// Close immediately to send EOF
+				_ = w.Close()
 
-			return func() {
-				os.Stdin = oldStdin
-				r.Close()
-			}
+				return func() {
+					os.Stdin = oldStdin
+					_ = r.Close()
+				}
+			},
 		},
-	},
 	}
 
 	for _, tt := range tests {
@@ -423,13 +408,8 @@ func TestReadContentFromPipe(t *testing.T) {
 }
 
 func TestLs(t *testing.T) {
-	tmpDir := setupCommandsTestDir(t)
-	defer os.RemoveAll(tmpDir)
-
-	s, err := store.NewStore()
-	if err != nil {
-		t.Fatalf("failed to create store: %v", err)
-	}
+	setup := SetupCommandTest(t)
+	defer setup.Cleanup()
 
 	now := time.Now()
 	testScratches := []store.Scratch{
@@ -440,7 +420,9 @@ func TestLs(t *testing.T) {
 	}
 
 	for _, scratch := range testScratches {
-		s.AddScratch(scratch)
+		if err := setup.Store.AddScratch(scratch); err != nil {
+			t.Fatalf("failed to add scratch: %v", err)
+		}
 	}
 
 	tests := []struct {
@@ -495,7 +477,7 @@ func TestLs(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			result := Ls(s, tt.all, tt.global, tt.project)
+			result := Ls(setup.Store, tt.all, tt.global, tt.project)
 			if len(result) != tt.expectedCount {
 				t.Errorf("expected %d scratches, got %d", tt.expectedCount, len(result))
 			}
@@ -513,19 +495,14 @@ func TestLs(t *testing.T) {
 }
 
 func TestSearch(t *testing.T) {
-	tmpDir := setupCommandsTestDir(t)
-	defer os.RemoveAll(tmpDir)
-
-	s, err := store.NewStore()
-	if err != nil {
-		t.Fatalf("failed to create store: %v", err)
-	}
+	setup := SetupCommandTest(t)
+	defer setup.Cleanup()
 
 	now := time.Now()
 	testScratches := []store.Scratch{
 		{ID: "1", Project: "project1", Title: "Title 1", CreatedAt: now.Add(-2 * time.Hour)}, // older
 		{ID: "2", Project: "project2", Title: "Title 2", CreatedAt: now.Add(-1 * time.Hour)}, // newer
-		{ID: "3", Project: "global", Title: "Global Title", CreatedAt: now}, // newest
+		{ID: "3", Project: "global", Title: "Global Title", CreatedAt: now},                  // newest
 	}
 
 	testContents := map[string]string{
@@ -535,8 +512,10 @@ func TestSearch(t *testing.T) {
 	}
 
 	for _, scratch := range testScratches {
-		s.AddScratch(scratch)
-		saveScratchFile(scratch.ID, []byte(testContents[scratch.ID]))
+		if err := setup.Store.AddScratch(scratch); err != nil {
+			t.Fatalf("failed to add scratch: %v", err)
+		}
+		setup.WriteScratchFile(t, scratch.ID, []byte(testContents[scratch.ID]))
 	}
 
 	tests := []struct {
@@ -560,7 +539,7 @@ func TestSearch(t *testing.T) {
 			expectError:   false,
 		},
 		{
-			name:          "search project1 for 'content'", 
+			name:          "search project1 for 'content'",
 			all:           false,
 			global:        false,
 			project:       "project1",
@@ -613,8 +592,8 @@ func TestSearch(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			result, err := Search(s, tt.all, tt.global, tt.project, tt.term)
-			
+			result, err := Search(setup.Store, tt.all, tt.global, tt.project, tt.term)
+
 			if tt.expectError {
 				if err == nil {
 					t.Errorf("expected error but got none")
@@ -642,22 +621,129 @@ func TestSearch(t *testing.T) {
 	}
 }
 
-func TestView(t *testing.T) {
-	tmpDir := setupCommandsTestDir(t)
-	defer os.RemoveAll(tmpDir)
+func TestSearchWithIndices(t *testing.T) {
+	setup := SetupCommandTest(t)
+	defer setup.Cleanup()
 
-	s, err := store.NewStore()
-	if err != nil {
-		t.Fatalf("failed to create store: %v", err)
+	now := time.Now()
+	testScratches := []store.Scratch{
+		{ID: "1", Project: "p1", Title: "A", CreatedAt: now.Add(-4 * time.Hour)}, // Will be index 4
+		{ID: "2", Project: "p2", Title: "B", CreatedAt: now.Add(-3 * time.Hour)}, // Will be index 3
+		{ID: "3", Project: "p1", Title: "C", CreatedAt: now.Add(-2 * time.Hour)}, // Will be index 2
+		{ID: "4", Project: "p2", Title: "D", CreatedAt: now.Add(-1 * time.Hour)}, // Will be index 1
 	}
+
+	testContents := map[string]string{
+		"1": "Content for one",
+		"2": "Content for two",
+		"3": "Content for three",
+		"4": "Content for four",
+	}
+
+	for _, scratch := range testScratches {
+		if err := setup.Store.AddScratch(scratch); err != nil {
+			t.Fatalf("failed to add scratch: %v", err)
+		}
+		setup.WriteScratchFile(t, scratch.ID, []byte(testContents[scratch.ID]))
+	}
+
+	tests := []struct {
+		name             string
+		all              bool
+		global           bool
+		project          string
+		term             string
+		expectedCount    int
+		expectedIndices  []int
+		expectedOrderIDs []string
+		expectError      bool
+	}{
+		{
+			name:             "search all, find two, check indices",
+			all:              true,
+			term:             "Content for t",
+			expectedCount:    2,
+			expectedIndices:  []int{2, 3},
+			expectedOrderIDs: []string{"3", "2"},
+		},
+		{
+			name:             "search p1, find one, check index",
+			project:          "p1",
+			term:             "three",
+			expectedCount:    1,
+			expectedIndices:  []int{1},
+			expectedOrderIDs: []string{"3"},
+		},
+		{
+			name:             "search all, no results",
+			all:              true,
+			term:             "nonexistent",
+			expectedCount:    0,
+			expectedIndices:  []int{},
+			expectedOrderIDs: []string{},
+		},
+		{
+			name:          "invalid regex",
+			all:           true,
+			term:          "[invalid",
+			expectError:   true,
+			expectedCount: 0,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			results, err := SearchWithIndices(setup.Store, tt.all, tt.global, tt.project, tt.term)
+
+			if tt.expectError {
+				if err == nil {
+					t.Fatal("expected error but got none")
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+
+			if len(results) != tt.expectedCount {
+				t.Fatalf("expected %d results, got %d", tt.expectedCount, len(results))
+			}
+
+			if tt.expectedCount > 0 {
+				indices := make([]int, len(results))
+				ids := make([]string, len(results))
+				for i, r := range results {
+					indices[i] = r.Index
+					ids[i] = r.ID
+				}
+
+				// Check indices
+				if !equalIntSlices(indices, tt.expectedIndices) {
+					t.Errorf("expected indices %v, got %v", tt.expectedIndices, indices)
+				}
+
+				// Check order
+				if !equalStringSlices(ids, tt.expectedOrderIDs) {
+					t.Errorf("expected order %v, got %v", tt.expectedOrderIDs, ids)
+				}
+			}
+		})
+	}
+}
+
+func TestView(t *testing.T) {
+	setup := SetupCommandTest(t)
+	defer setup.Cleanup()
 
 	testScratch := store.Scratch{
 		ID: "test1", Project: "testproject", Title: "Test Title", CreatedAt: time.Now(),
 	}
-	s.AddScratch(testScratch)
+	if err := setup.Store.AddScratch(testScratch); err != nil {
+		t.Fatalf("failed to add test scratch: %v", err)
+	}
 
 	testContent := "Line 1\nLine 2\nLine 3"
-	saveScratchFile(testScratch.ID, []byte(testContent))
+	setup.WriteScratchFile(t, testScratch.ID, []byte(testContent))
 
 	tests := []struct {
 		name            string
@@ -717,8 +803,8 @@ func TestView(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			result, err := View(s, tt.all, tt.global, tt.project, tt.indexStr)
-			
+			result, err := View(setup.Store, tt.all, tt.global, tt.project, tt.indexStr)
+
 			if tt.expectError {
 				if err == nil {
 					t.Errorf("expected error but got none")
@@ -738,13 +824,8 @@ func TestView(t *testing.T) {
 }
 
 func TestPeek(t *testing.T) {
-	tmpDir := setupCommandsTestDir(t)
-	defer os.RemoveAll(tmpDir)
-
-	s, err := store.NewStore()
-	if err != nil {
-		t.Fatalf("failed to create store: %v", err)
-	}
+	setup := SetupCommandTest(t)
+	defer setup.Cleanup()
 
 	// Create test scratches in different projects with distinct timestamps
 	now := time.Now()
@@ -767,10 +848,10 @@ func TestPeek(t *testing.T) {
 	}
 
 	for _, ts := range testScratches {
-		s.AddScratch(ts.scratch)
-		if err := saveScratchFile(ts.scratch.ID, []byte(ts.content)); err != nil {
-			t.Fatalf("failed to save scratch file: %v", err)
+		if err := setup.Store.AddScratch(ts.scratch); err != nil {
+			t.Fatalf("failed to add test scratch: %v", err)
 		}
+		setup.WriteScratchFile(t, ts.scratch.ID, []byte(ts.content))
 	}
 
 	tests := []struct {
@@ -791,16 +872,16 @@ func TestPeek(t *testing.T) {
 			expectedContent: "Global Line 1\nGlobal Line 2\nGlobal Line 3",
 		},
 		{
-			name:    "long content - peek with ellipsis",
-			project: "testproject",
-			index:   "1",
-			lines:   2,
+			name:            "long content - peek with ellipsis",
+			project:         "testproject",
+			index:           "1",
+			lines:           2,
 			expectedContent: "Line 1\nLine 2\n...\nLine 7\nLine 8\n",
 		},
 		{
 			name:            "default 3 lines peek",
 			project:         "testproject",
-			index:           "1", 
+			index:           "1",
 			lines:           3,
 			expectedContent: "Line 1\nLine 2\nLine 3\n...\nLine 6\nLine 7\nLine 8\n",
 		},
@@ -838,7 +919,7 @@ func TestPeek(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			result, err := Peek(s, tt.all, tt.global, tt.project, tt.index, tt.lines)
+			result, err := Peek(setup.Store, tt.all, tt.global, tt.project, tt.index, tt.lines)
 			if tt.expectError {
 				if err == nil {
 					t.Errorf("expected error but got none")
@@ -858,19 +939,16 @@ func TestPeek(t *testing.T) {
 }
 
 func TestDelete(t *testing.T) {
-	tmpDir := setupCommandsTestDir(t)
-	defer os.RemoveAll(tmpDir)
-
-	s, err := store.NewStore()
-	if err != nil {
-		t.Fatalf("failed to create store: %v", err)
-	}
+	setup := SetupCommandTest(t)
+	defer setup.Cleanup()
 
 	testScratch := store.Scratch{
 		ID: "test1", Project: "testproject", Title: "Test Title", CreatedAt: time.Now(),
 	}
-	s.AddScratch(testScratch)
-	saveScratchFile(testScratch.ID, []byte("test content"))
+	if err := setup.Store.AddScratch(testScratch); err != nil {
+		t.Fatalf("failed to add test scratch: %v", err)
+	}
+	setup.WriteScratchFile(t, testScratch.ID, []byte("test content"))
 
 	tests := []struct {
 		name        string
@@ -900,10 +978,10 @@ func TestDelete(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			initialCount := len(s.GetScratches())
+			initialCount := len(setup.Store.GetScratches())
 
-			err := Delete(s, false, tt.project, tt.indexStr)
-			
+			err := Delete(setup.Store, false, tt.project, tt.indexStr)
+
 			if tt.expectError {
 				if err == nil {
 					t.Errorf("expected error but got none")
@@ -915,12 +993,13 @@ func TestDelete(t *testing.T) {
 				return
 			}
 
-			if len(s.GetScratches()) != initialCount-1 {
+			if len(setup.Store.GetScratches()) != initialCount-1 {
 				t.Errorf("expected scratch count to decrease by 1")
 			}
 
-			path, _ := store.GetScratchFilePath(testScratch.ID)
-			if _, err := os.Stat(path); !os.IsNotExist(err) {
+			// Verify file was deleted
+			path, _ := store.GetScratchFilePathWithConfig(testScratch.ID, setup.Config)
+			if _, err := setup.Config.FileSystem.Stat(path); err == nil {
 				t.Errorf("expected scratch file to be deleted")
 			}
 		})
@@ -928,13 +1007,8 @@ func TestDelete(t *testing.T) {
 }
 
 func TestCleanup(t *testing.T) {
-	tmpDir := setupCommandsTestDir(t)
-	defer os.RemoveAll(tmpDir)
-
-	s, err := store.NewStore()
-	if err != nil {
-		t.Fatalf("failed to create store: %v", err)
-	}
+	setup := SetupCommandTest(t)
+	defer setup.Cleanup()
 
 	now := time.Now()
 	testScratches := []store.Scratch{
@@ -945,32 +1019,34 @@ func TestCleanup(t *testing.T) {
 	}
 
 	for _, scratch := range testScratches {
-		s.AddScratch(scratch)
-		saveScratchFile(scratch.ID, []byte("content"))
+		if err := setup.Store.AddScratch(scratch); err != nil {
+			t.Fatalf("failed to add scratch: %v", err)
+		}
+		setup.WriteScratchFile(t, scratch.ID, []byte("content"))
 	}
 
 	tests := []struct {
-		name                string
-		days                int
-		expectedRemaining   int
+		name                 string
+		days                 int
+		expectedRemaining    int
 		expectedRemainingIDs []string
 	}{
 		{
-			name:                "cleanup 7 days",
-			days:                7,
-			expectedRemaining:   2,
+			name:                 "cleanup 7 days",
+			days:                 7,
+			expectedRemaining:    2,
 			expectedRemainingIDs: []string{"new1", "new2"},
 		},
 		{
-			name:                "cleanup 1 day",
-			days:                1,
-			expectedRemaining:   1,
+			name:                 "cleanup 1 day",
+			days:                 1,
+			expectedRemaining:    1,
 			expectedRemainingIDs: []string{"new2"},
 		},
 		{
-			name:                "cleanup 20 days",
-			days:                20,
-			expectedRemaining:   4,
+			name:                 "cleanup 20 days",
+			days:                 20,
+			expectedRemaining:    4,
 			expectedRemainingIDs: []string{"old1", "old2", "new1", "new2"},
 		},
 	}
@@ -978,18 +1054,20 @@ func TestCleanup(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			// Reset store for each test
-			s.SaveScratches(testScratches)
+			if err := setup.Store.SaveScratches(testScratches); err != nil {
+				t.Fatalf("failed to save scratches: %v", err)
+			}
 			for _, scratch := range testScratches {
-				saveScratchFile(scratch.ID, []byte("content"))
+				setup.WriteScratchFile(t, scratch.ID, []byte("content"))
 			}
 
-			err := Cleanup(s, tt.days)
+			err := Cleanup(setup.Store, tt.days)
 			if err != nil {
 				t.Errorf("unexpected error: %v", err)
 				return
 			}
 
-			remaining := s.GetScratches()
+			remaining := setup.Store.GetScratches()
 			if len(remaining) != tt.expectedRemaining {
 				t.Errorf("expected %d remaining scratches, got %d", tt.expectedRemaining, len(remaining))
 			}
@@ -1012,57 +1090,51 @@ func TestOpen(t *testing.T) {
 		t.Skip("ed editor not available in PATH")
 	}
 
-	tmpDir := setupCommandsTestDir(t)
-	defer os.RemoveAll(tmpDir)
-
-	s, err := store.NewStore()
-	if err != nil {
-		t.Fatalf("failed to create store: %v", err)
-	}
+	setup := SetupCommandTest(t)
+	defer setup.Cleanup()
 
 	// Create a test scratch
 	originalContent := []byte("Original content\nLine 2\nLine 3")
-	err = Create(s, "testproject", originalContent)
+	err := Create(setup.Store, "testproject", originalContent)
 	if err != nil {
 		t.Fatalf("failed to create scratch: %v", err)
 	}
 
 	// Set up ed as the editor with a script that modifies the file
 	oldEditor := os.Getenv("EDITOR")
-	defer os.Setenv("EDITOR", oldEditor)
+	defer func() { _ = os.Setenv("EDITOR", oldEditor) }()
 
 	// Create an ed script that will append a line
 	edScript := createEdScript(t, []string{
-		"$a",           // append after last line
+		"$a", // append after last line
 		"New line added by ed",
-		".",            // end append mode
-		"w",            // write file
-		"q",            // quit
+		".", // end append mode
+		"w", // write file
+		"q", // quit
 	})
-	defer os.Remove(edScript)
+	defer func() { _ = os.Remove(edScript) }()
 
 	// Set EDITOR to run ed with our script
 	editorCmd := fmt.Sprintf("ed -s < %s", edScript)
 	wrapperScript := createEditorWrapper(t, editorCmd)
-	defer os.Remove(wrapperScript)
-	os.Setenv("EDITOR", wrapperScript)
+	defer func() { _ = os.Remove(wrapperScript) }()
+	if err := os.Setenv("EDITOR", wrapperScript); err != nil {
+		t.Fatalf("failed to set EDITOR: %v", err)
+	}
 
 	// Test opening and editing the scratch
-	err = Open(s, false, "testproject", "1")
+	err = Open(setup.Store, false, "testproject", "1")
 	if err != nil {
 		t.Errorf("unexpected error opening scratch: %v", err)
 	}
 
 	// Verify the content was modified
-	scratches := s.GetScratches()
+	scratches := setup.Store.GetScratches()
 	if len(scratches) != 1 {
 		t.Fatalf("expected 1 scratch, got %d", len(scratches))
 	}
 
-	content, err := readScratchFile(scratches[0].ID)
-	if err != nil {
-		t.Fatalf("failed to read scratch content: %v", err)
-	}
+	content := setup.ReadScratchFile(t, scratches[0].ID)
 
 	expectedContent := "Original content\nLine 2\nLine 3\nNew line added by ed"
 	if string(content) != expectedContent {
@@ -1081,44 +1153,41 @@ func TestOpen_DeletesEmptyScratch(t *testing.T) {
 		t.Skip("ed editor not available in PATH")
 	}
 
-	tmpDir := setupCommandsTestDir(t)
-	defer os.RemoveAll(tmpDir)
-
-	s, err := store.NewStore()
-	if err != nil {
-		t.Fatalf("failed to create store: %v", err)
-	}
+	setup := SetupCommandTest(t)
+	defer setup.Cleanup()
 
 	// Create a test scratch
-	err = Create(s, "testproject", []byte("Content to be deleted"))
+	err := Create(setup.Store, "testproject", []byte("Content to be deleted"))
 	if err != nil {
 		t.Fatalf("failed to create scratch: %v", err)
 	}
 
 	// Set up ed to delete all content
 	oldEditor := os.Getenv("EDITOR")
-	defer os.Setenv("EDITOR", oldEditor)
+	defer func() { _ = os.Setenv("EDITOR", oldEditor) }()
 
 	edScript := createEdScript(t, []string{
-		"1,$d",         // delete all lines
-		"w",            // write file
-		"q",            // quit
+		"1,$d", // delete all lines
+		"w",    // write file
+		"q",    // quit
 	})
-	defer os.Remove(edScript)
+	defer func() { _ = os.Remove(edScript) }()
 
 	editorCmd := fmt.Sprintf("ed -s < %s", edScript)
 	wrapperScript := createEditorWrapper(t, editorCmd)
-	defer os.Remove(wrapperScript)
-	os.Setenv("EDITOR", wrapperScript)
+	defer func() { _ = os.Remove(wrapperScript) }()
+	if err := os.Setenv("EDITOR", wrapperScript); err != nil {
+		t.Fatalf("failed to set EDITOR: %v", err)
+	}
 
 	// Open and edit (delete all content)
-	err = Open(s, false, "testproject", "1")
+	err = Open(setup.Store, false, "testproject", "1")
 	if err != nil {
 		t.Errorf("unexpected error opening scratch: %v", err)
 	}
 
 	// Verify the scratch was deleted
-	scratches := s.GetScratches()
+	scratches := setup.Store.GetScratches()
 	if len(scratches) != 0 {
 		t.Errorf("expected scratch to be deleted, but found %d scratches", len(scratches))
 	}
@@ -1200,24 +1269,21 @@ func TestSortByCreatedAtDesc(t *testing.T) {
 }
 
 func TestGetScratchByIndex(t *testing.T) {
-	tmpDir := setupCommandsTestDir(t)
-	defer os.RemoveAll(tmpDir)
-
-	s, err := store.NewStore()
-	if err != nil {
-		t.Fatalf("failed to create store: %v", err)
-	}
+	setup := SetupCommandTest(t)
+	defer setup.Cleanup()
 
 	now := time.Now()
 	testScratches := []store.Scratch{
-		{ID: "1", Project: "project1", Title: "Title 1", CreatedAt: now.Add(-3 * time.Hour)}, // oldest, will be index 3
-		{ID: "2", Project: "project2", Title: "Title 2", CreatedAt: now.Add(-2 * time.Hour)}, // index 3 in all
+		{ID: "1", Project: "project1", Title: "Title 1", CreatedAt: now.Add(-3 * time.Hour)},    // oldest, will be index 3
+		{ID: "2", Project: "project2", Title: "Title 2", CreatedAt: now.Add(-2 * time.Hour)},    // index 3 in all
 		{ID: "3", Project: "global", Title: "Global Title", CreatedAt: now.Add(-1 * time.Hour)}, // index 2 in all
-		{ID: "4", Project: "project1", Title: "Another P1", CreatedAt: now}, // newest, will be index 1
+		{ID: "4", Project: "project1", Title: "Another P1", CreatedAt: now},                     // newest, will be index 1
 	}
 
 	for _, scratch := range testScratches {
-		s.AddScratch(scratch)
+		if err := setup.Store.AddScratch(scratch); err != nil {
+			t.Fatalf("failed to add scratch: %v", err)
+		}
 	}
 
 	tests := []struct {
@@ -1314,8 +1380,8 @@ func TestGetScratchByIndex(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			result, err := GetScratchByIndex(s, tt.all, tt.global, tt.project, tt.indexStr)
-			
+			result, err := GetScratchByIndex(setup.Store, tt.all, tt.global, tt.project, tt.indexStr)
+
 			if tt.expectError {
 				if err == nil {
 					t.Errorf("expected error but got none")
@@ -1334,74 +1400,34 @@ func TestGetScratchByIndex(t *testing.T) {
 	}
 }
 
-func setupCommandsTestDir(t *testing.T) string {
-	tmpDir := t.TempDir()
-	oldXDGDataHome := os.Getenv("XDG_DATA_HOME")
-	os.Setenv("XDG_DATA_HOME", tmpDir)
-	xdg.Reload()
-	t.Cleanup(func() {
-		if oldXDGDataHome == "" {
-			os.Unsetenv("XDG_DATA_HOME")
-		} else {
-			os.Setenv("XDG_DATA_HOME", oldXDGDataHome)
-		}
-		xdg.Reload()
-	})
-
-	scratchDir := filepath.Join(tmpDir, "scratch")
-	if err := os.MkdirAll(scratchDir, 0755); err != nil {
-		t.Fatalf("failed to create scratch directory: %v", err)
-	}
-
-	return tmpDir
-}
-
-func equalStringSlices(a, b []string) bool {
-	if len(a) != len(b) {
-		return false
-	}
-	for i, v := range a {
-		if v != b[i] {
-			return false
-		}
-	}
-	return true
-}
-
-
 func TestCreateWithEmptyContent(t *testing.T) {
-	tmpDir := setupCommandsTestDir(t)
-	defer os.RemoveAll(tmpDir)
+	setup := SetupCommandTest(t)
+	defer setup.Cleanup()
 
 	// Set editor to a command that will write test content and exit
 	oldEditor := os.Getenv("EDITOR")
 	testScript := createMockEditorScript(t, "test content from editor")
-	defer os.Remove(testScript)
-	
-	os.Setenv("EDITOR", testScript)
+	defer func() { _ = os.Remove(testScript) }()
+
+	_ = os.Setenv("EDITOR", testScript)
 	defer func() {
 		if oldEditor == "" {
-			os.Unsetenv("EDITOR")
+			_ = os.Unsetenv("EDITOR")
 		} else {
-			os.Setenv("EDITOR", oldEditor)
+			_ = os.Setenv("EDITOR", oldEditor)
 		}
 	}()
 
-	s, err := store.NewStore()
-	if err != nil {
-		t.Fatalf("failed to create store: %v", err)
-	}
-
-	initialCount := len(s.GetScratches())
+	initialCount := len(setup.Store.GetScratches())
 
 	// Test with empty content - should launch editor
-	err = Create(s, "testproject", []byte(""))
+	err := Create(setup.Store, "testproject", []byte(""))
 	if err != nil {
 		t.Errorf("unexpected error: %v", err)
 		return
 	}
 
-	scratches := s.GetScratches()
+	scratches := setup.Store.GetScratches()
 	if len(scratches) != initialCount+1 {
 		t.Errorf("expected scratch to be saved via editor, count: %d -> %d", initialCount, len(scratches))
 	}
@@ -1429,4 +1455,28 @@ echo "` + content + `" > "$1"
 	}
 
 	return tmpFile.Name()
+}
+
+func equalStringSlices(a, b []string) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for i, v := range a {
+		if v != b[i] {
+			return false
+		}
+	}
+	return true
+}
+
+func equalIntSlices(a, b []int) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for i, v := range a {
+		if v != b[i] {
+			return false
+		}
+	}
+	return true
 }

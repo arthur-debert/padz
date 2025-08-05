@@ -80,28 +80,28 @@ func TestSetupLogger_Output(t *testing.T) {
 
 func TestSetupLogger_CallerInfo(t *testing.T) {
 	tests := []struct {
-		name            string
-		verbosity       int
+		name             string
+		verbosity        int
 		shouldHaveCaller bool
 	}{
 		{
-			name:            "verbosity 0 - no caller info",
-			verbosity:       0,
+			name:             "verbosity 0 - no caller info",
+			verbosity:        0,
 			shouldHaveCaller: false,
 		},
 		{
-			name:            "verbosity 1 - no caller info",
-			verbosity:       1,
+			name:             "verbosity 1 - no caller info",
+			verbosity:        1,
 			shouldHaveCaller: false,
 		},
 		{
-			name:            "verbosity 2 - has caller info",
-			verbosity:       2,
+			name:             "verbosity 2 - has caller info",
+			verbosity:        2,
 			shouldHaveCaller: true,
 		},
 		{
-			name:            "verbosity 3 - has caller info",
-			verbosity:       3,
+			name:             "verbosity 3 - has caller info",
+			verbosity:        3,
 			shouldHaveCaller: true,
 		},
 	}
@@ -198,10 +198,10 @@ func TestWithFields(t *testing.T) {
 		{
 			name: "multiple fields with different types",
 			fields: map[string]interface{}{
-				"string_field":  "test",
-				"int_field":     42,
-				"bool_field":    true,
-				"float_field":   3.14,
+				"string_field": "test",
+				"int_field":    42,
+				"bool_field":   true,
+				"float_field":  3.14,
 			},
 		},
 		{

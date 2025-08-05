@@ -13,16 +13,16 @@ import (
 )
 
 var (
-	verbosity int
+	verbosity    int
 	outputFormat string
 )
 
 // NewRootCmd creates and returns the root command
 func NewRootCmd() *cobra.Command {
 	rootCmd := &cobra.Command{
-		Use:   RootUse,
-		Short: RootShort,
-		Long:  RootLong,
+		Use:               RootUse,
+		Short:             RootShort,
+		Long:              RootLong,
 		DisableAutoGenTag: true,
 		CompletionOptions: cobra.CompletionOptions{
 			DisableDefaultCmd: true,
@@ -85,52 +85,51 @@ func NewRootCmd() *cobra.Command {
 	viewCmd.Flags().Bool("all", false, FlagAllDesc)
 	viewCmd.Flags().Bool("global", false, FlagGlobalDesc)
 	rootCmd.AddCommand(viewCmd)
-	
+
 	openCmd := newOpenCmd()
 	openCmd.GroupID = "single"
 	openCmd.Flags().Bool("all", false, FlagAllDesc)
 	rootCmd.AddCommand(openCmd)
-	
+
 	peekCmd := newPeekCmd()
 	peekCmd.GroupID = "single"
 	peekCmd.Flags().IntP("lines", "n", 3, FlagLinesDesc)
 	peekCmd.Flags().Bool("all", false, FlagAllDesc)
 	peekCmd.Flags().Bool("global", false, FlagGlobalDesc)
 	rootCmd.AddCommand(peekCmd)
-	
+
 	deleteCmd := newDeleteCmd()
 	deleteCmd.GroupID = "single"
 	deleteCmd.Flags().Bool("all", false, FlagAllDesc)
 	rootCmd.AddCommand(deleteCmd)
-	
+
 	pathCmd := newPathCmd()
 	pathCmd.GroupID = "single"
 	pathCmd.Flags().Bool("all", false, FlagAllDesc)
 	rootCmd.AddCommand(pathCmd)
-	
+
 	// Multiple scratches commands
 	lsCmd := newLsCmd()
 	lsCmd.GroupID = "multiple"
 	lsCmd.Flags().Bool("all", false, FlagAllDesc)
 	lsCmd.Flags().Bool("global", false, FlagGlobalDesc)
 	rootCmd.AddCommand(lsCmd)
-	
+
 	cleanupCmd := newCleanupCmd()
 	cleanupCmd.GroupID = "multiple"
 	cleanupCmd.Flags().IntP("days", "d", 30, FlagDaysDesc)
 	rootCmd.AddCommand(cleanupCmd)
-	
+
 	searchCmd := newSearchCmd()
 	searchCmd.GroupID = "multiple"
 	searchCmd.Flags().BoolP("all", "a", false, FlagAllDescSearch)
 	searchCmd.Flags().BoolP("global", "g", false, FlagGlobalDescSearch)
 	rootCmd.AddCommand(searchCmd)
-	
+
 	nukeCmd := newNukeCmd()
 	nukeCmd.GroupID = "multiple"
 	nukeCmd.Flags().Bool("all", false, FlagAllDesc)
 	rootCmd.AddCommand(nukeCmd)
-
 
 	return rootCmd
 }

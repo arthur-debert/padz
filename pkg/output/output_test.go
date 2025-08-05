@@ -55,7 +55,7 @@ func TestFormatListJSON(t *testing.T) {
 
 	buf := new(bytes.Buffer)
 	formatter := NewFormatter(JSONFormat, buf)
-	
+
 	err := formatter.FormatList(scratches, false)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -84,7 +84,7 @@ func TestFormatListPlain(t *testing.T) {
 
 	buf := new(bytes.Buffer)
 	formatter := NewFormatter(PlainFormat, buf)
-	
+
 	err := formatter.FormatList(scratches, false)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -108,7 +108,7 @@ func TestFormatString(t *testing.T) {
 	t.Run("JSON", func(t *testing.T) {
 		buf := new(bytes.Buffer)
 		formatter := NewFormatter(JSONFormat, buf)
-		
+
 		err := formatter.FormatString(content)
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
@@ -127,7 +127,7 @@ func TestFormatString(t *testing.T) {
 	t.Run("Plain", func(t *testing.T) {
 		buf := new(bytes.Buffer)
 		formatter := NewFormatter(PlainFormat, buf)
-		
+
 		err := formatter.FormatString(content)
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
@@ -145,7 +145,7 @@ func TestFormatSuccess(t *testing.T) {
 	t.Run("JSON", func(t *testing.T) {
 		buf := new(bytes.Buffer)
 		formatter := NewFormatter(JSONFormat, buf)
-		
+
 		err := formatter.FormatSuccess(message)
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
@@ -164,7 +164,7 @@ func TestFormatSuccess(t *testing.T) {
 	t.Run("Plain", func(t *testing.T) {
 		buf := new(bytes.Buffer)
 		formatter := NewFormatter(PlainFormat, buf)
-		
+
 		err := formatter.FormatSuccess(message)
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
@@ -184,7 +184,7 @@ func TestFormatPath(t *testing.T) {
 	t.Run("JSON", func(t *testing.T) {
 		buf := new(bytes.Buffer)
 		formatter := NewFormatter(JSONFormat, buf)
-		
+
 		err := formatter.FormatPath(pathResult)
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
@@ -203,7 +203,7 @@ func TestFormatPath(t *testing.T) {
 	t.Run("Plain", func(t *testing.T) {
 		buf := new(bytes.Buffer)
 		formatter := NewFormatter(PlainFormat, buf)
-		
+
 		err := formatter.FormatPath(pathResult)
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
@@ -212,6 +212,88 @@ func TestFormatPath(t *testing.T) {
 		output := strings.TrimSpace(buf.String())
 		if output != pathResult.Path {
 			t.Errorf("expected %s, got %s", pathResult.Path, output)
+		}
+	})
+}
+
+func TestFormatSearchResults(t *testing.T) {
+	results := []commands.ScratchWithIndex{
+		{
+			Scratch: store.Scratch{
+				ID:      "1",
+				Title:   "Result 1",
+				Project: "proj1",
+			},
+			Index: 5,
+		},
+		{
+			Scratch: store.Scratch{
+				ID:      "2",
+				Title:   "Result 2",
+				Project: "proj2",
+			},
+			Index: 10,
+		},
+	}
+
+	t.Run("JSON", func(t *testing.T) {
+		buf := new(bytes.Buffer)
+		formatter := NewFormatter(JSONFormat, buf)
+		err := formatter.FormatSearchResults(results, true)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+
+		var out []commands.ScratchWithIndex
+		if err := json.Unmarshal(buf.Bytes(), &out); err != nil {
+			t.Fatalf("failed to unmarshal json: %v", err)
+		}
+
+		if len(out) != 2 {
+			t.Fatalf("expected 2 results, got %d", len(out))
+		}
+		if out[0].Index != 5 || out[1].Index != 10 {
+			t.Errorf("expected indices 5 and 10, got %d and %d", out[0].Index, out[1].Index)
+		}
+		if out[0].Title != "Result 1" {
+			t.Errorf("expected title 'Result 1', got %s", out[0].Title)
+		}
+	})
+
+	t.Run("Plain with project", func(t *testing.T) {
+		buf := new(bytes.Buffer)
+		formatter := NewFormatter(PlainFormat, buf)
+		err := formatter.FormatSearchResults(results, true)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+
+		s := buf.String()
+		if !strings.Contains(s, "5.") || !strings.Contains(s, "10.") {
+			t.Error("expected to find indices 5 and 10")
+		}
+		if !strings.Contains(s, "proj1") || !strings.Contains(s, "proj2") {
+			t.Error("expected to find project names")
+		}
+		if !strings.Contains(s, "Result 1") || !strings.Contains(s, "Result 2") {
+			t.Error("expected to find titles")
+		}
+	})
+
+	t.Run("Plain without project", func(t *testing.T) {
+		buf := new(bytes.Buffer)
+		formatter := NewFormatter(PlainFormat, buf)
+		err := formatter.FormatSearchResults(results, false)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+
+		s := buf.String()
+		if strings.Contains(s, "proj1") || strings.Contains(s, "proj2") {
+			t.Error("expected not to find project names")
+		}
+		if !strings.Contains(s, "Result 1") || !strings.Contains(s, "Result 2") {
+			t.Error("expected to find titles")
 		}
 	})
 }

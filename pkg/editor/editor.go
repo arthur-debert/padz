@@ -15,7 +15,7 @@ func OpenInEditor(content []byte) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer os.Remove(tmpfile.Name())
+	defer func() { _ = os.Remove(tmpfile.Name()) }()
 
 	if len(content) > 0 {
 		if _, err := tmpfile.Write(content); err != nil {

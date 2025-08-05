@@ -1,7 +1,6 @@
 package commands
 
 import (
-	"os"
 	"strings"
 	"testing"
 	"time"
@@ -11,14 +10,10 @@ import (
 
 func TestPath(t *testing.T) {
 	// Setup test environment
-	tmpDir := setupCommandsTestDir(t)
-	defer os.RemoveAll(tmpDir)
+	setup := SetupCommandTest(t)
+	defer setup.Cleanup()
 
-	// Create a real store
-	s, err := store.NewStore()
-	if err != nil {
-		t.Fatalf("failed to create store: %v", err)
-	}
+	s := setup.Store
 
 	// Add test scratches to the store with distinct timestamps
 	now := time.Now()
@@ -104,7 +99,7 @@ func TestPath(t *testing.T) {
 		if err := s.SaveScratches([]store.Scratch{}); err != nil {
 			t.Fatalf("failed to clear scratches: %v", err)
 		}
-		
+
 		_, err := Path(s, false, "test-project", "1")
 		if err == nil {
 			t.Error("expected error when no scratches found")
@@ -113,7 +108,7 @@ func TestPath(t *testing.T) {
 		if !strings.Contains(err.Error(), "out of range") {
 			t.Errorf("expected 'out of range' error, got: %v", err)
 		}
-		
+
 		// Restore scratches for other tests
 		if err := s.SaveScratches(testScratches); err != nil {
 			t.Fatalf("failed to restore scratches: %v", err)

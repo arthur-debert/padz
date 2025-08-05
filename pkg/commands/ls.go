@@ -2,9 +2,9 @@ package commands
 
 import (
 	"fmt"
+	"github.com/arthur-debert/padz/pkg/store"
 	"sort"
 	"strconv"
-	"github.com/arthur-debert/padz/pkg/store"
 )
 
 func Ls(s *store.Store, all, global bool, project string) []store.Scratch {
