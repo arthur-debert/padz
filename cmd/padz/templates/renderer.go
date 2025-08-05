@@ -16,6 +16,24 @@ import (
 //go:embed pad-list-item.tmpl
 var padListItemTemplate string
 
+//go:embed error.tmpl
+var errorTemplate string
+
+//go:embed success.tmpl
+var successTemplate string
+
+//go:embed empty-state.tmpl
+var emptyStateTemplate string
+
+//go:embed search-result.tmpl
+var searchResultTemplate string
+
+//go:embed content-view.tmpl
+var contentViewTemplate string
+
+//go:embed content-peek.tmpl
+var contentPeekTemplate string
+
 type PadListItem struct {
 	ID          string
 	Title       string
@@ -23,6 +41,31 @@ type PadListItem struct {
 	ProjectName string
 	ShowProject bool
 	TimeAgo     string
+}
+
+type SearchResultItem struct {
+	ID               string
+	Title            string
+	HighlightedTitle string
+	Project          string
+	ProjectName      string
+	ShowProject      bool
+	TimeAgo          string
+}
+
+type Message struct {
+	Message string
+}
+
+type ContentView struct {
+	Content string
+}
+
+type ContentPeek struct {
+	StartContent  string
+	EndContent    string
+	HasSkipped    bool
+	SkippedLines  int
 }
 
 type Renderer struct {
@@ -34,11 +77,24 @@ func NewRenderer() (*Renderer, error) {
 		templates: make(map[string]*template.Template),
 	}
 
-	tmpl, err := template.New("pad-list-item").Parse(padListItemTemplate)
-	if err != nil {
-		return nil, fmt.Errorf("failed to parse pad-list-item template: %w", err)
+	// Load all templates
+	templates := map[string]string{
+		"pad-list-item": padListItemTemplate,
+		"error":         errorTemplate,
+		"success":       successTemplate,
+		"empty-state":   emptyStateTemplate,
+		"search-result": searchResultTemplate,
+		"content-view":  contentViewTemplate,
+		"content-peek":  contentPeekTemplate,
 	}
-	r.templates["pad-list-item"] = tmpl
+
+	for name, content := range templates {
+		tmpl, err := template.New(name).Parse(content)
+		if err != nil {
+			return nil, fmt.Errorf("failed to parse %s template: %w", name, err)
+		}
+		r.templates[name] = tmpl
+	}
 
 	return r, nil
 }
@@ -125,4 +181,27 @@ func applyStyles(text string) string {
 	}
 	
 	return result
+}
+
+func (r *Renderer) RenderContentView(content string) (string, error) {
+	data := ContentView{Content: content}
+	var buf strings.Builder
+	if err := r.templates["content-view"].Execute(&buf, data); err != nil {
+		return "", fmt.Errorf("failed to execute content-view template: %w", err)
+	}
+	return applyStyles(buf.String()), nil
+}
+
+func (r *Renderer) RenderContentPeek(startContent, endContent string, hasSkipped bool, skippedLines int) (string, error) {
+	data := ContentPeek{
+		StartContent: startContent,
+		EndContent:   endContent,
+		HasSkipped:   hasSkipped,
+		SkippedLines: skippedLines,
+	}
+	var buf strings.Builder
+	if err := r.templates["content-peek"].Execute(&buf, data); err != nil {
+		return "", fmt.Errorf("failed to execute content-peek template: %w", err)
+	}
+	return applyStyles(buf.String()), nil
 }

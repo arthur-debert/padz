@@ -35,6 +35,10 @@ func NewTerminalFormatter(writer io.Writer) (*TerminalFormatter, error) {
 	}, nil
 }
 
+func (tf *TerminalFormatter) SetWriter(writer io.Writer) {
+	tf.writer = writer
+}
+
 func (tf *TerminalFormatter) FormatList(scratches []store.Scratch, showProject bool) error {
 	// Convert []store.Scratch to []*store.Scratch
 	scratchPtrs := make([]*store.Scratch, len(scratches))
@@ -71,4 +75,30 @@ func (tf *TerminalFormatter) FormatString(content string) {
 
 func (tf *TerminalFormatter) FormatPath(path string) {
 	fmt.Fprintln(tf.writer, path)
+}
+
+func (tf *TerminalFormatter) FormatContentView(content string) error {
+	output, err := tf.renderer.RenderContentView(content)
+	if err != nil {
+		// Fallback to plain content
+		fmt.Fprint(tf.writer, content)
+		return err
+	}
+	fmt.Fprint(tf.writer, output)
+	return nil
+}
+
+func (tf *TerminalFormatter) FormatContentPeek(startContent, endContent string, hasSkipped bool, skippedLines int) error {
+	output, err := tf.renderer.RenderContentPeek(startContent, endContent, hasSkipped, skippedLines)
+	if err != nil {
+		// Fallback to basic peek format
+		fmt.Fprint(tf.writer, startContent)
+		if hasSkipped {
+			fmt.Fprintf(tf.writer, "... %d more lines ...\n", skippedLines)
+		}
+		fmt.Fprint(tf.writer, endContent)
+		return err
+	}
+	fmt.Fprint(tf.writer, output)
+	return nil
 }

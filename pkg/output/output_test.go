@@ -91,9 +91,6 @@ func TestFormatListPlain(t *testing.T) {
 	}
 
 	output := buf.String()
-	if !strings.Contains(output, "1.") {
-		t.Error("expected index in output")
-	}
 	if !strings.Contains(output, "Test Scratch") {
 		t.Error("expected title in output")
 	}

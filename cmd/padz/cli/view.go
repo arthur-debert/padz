@@ -8,6 +8,7 @@ import (
 	"log"
 	"os"
 	"os/exec"
+	"github.com/arthur-debert/padz/cmd/padz/formatter"
 	"github.com/arthur-debert/padz/pkg/commands"
 	"github.com/arthur-debert/padz/pkg/output"
 	"github.com/arthur-debert/padz/pkg/project"
@@ -56,12 +57,49 @@ func newViewCmd() *cobra.Command {
 		
 		if format == output.JSONFormat {
 			// JSON output goes directly to stdout
-			formatter := output.NewFormatter(format, nil)
-			if err := formatter.FormatString(content); err != nil {
+			outputFormatter := output.NewFormatter(format, nil)
+			if err := outputFormatter.FormatString(content); err != nil {
 				log.Fatal(err)
 			}
+		} else if format == output.TermFormat {
+			// Check if output is being piped for term format
+			info, _ := os.Stdout.Stat()
+			if (info.Mode() & os.ModeCharDevice) == 0 {
+				// Piped - use terminal formatter without pager
+				termFormatter, err := formatter.NewTerminalFormatter(nil)
+				if err != nil {
+					log.Fatal(err)
+				}
+				if err := termFormatter.FormatContentView(content); err != nil {
+					log.Fatal(err)
+				}
+			} else {
+				// Use terminal formatter with pager
+				var styledContent strings.Builder
+				termFormatter, err := formatter.NewTerminalFormatter(&styledContent)
+				if err != nil {
+					log.Fatal(err)
+				}
+				
+				// Render styled content
+				if err := termFormatter.FormatContentView(content); err != nil {
+					log.Fatal(err)
+				}
+				
+				// Use pager with styled content
+				pager := os.Getenv("PAGER")
+				if pager == "" {
+					pager = "less -R" // -R flag to handle ANSI colors
+				}
+				c := exec.Command("sh", "-c", pager)
+				c.Stdin = strings.NewReader(styledContent.String())
+				c.Stdout = os.Stdout
+				if err := c.Run(); err != nil {
+					log.Fatal(err)
+				}
+			}
 		} else {
-			// Check if output is being piped for plain/term formats
+			// Plain format - check if output is being piped
 			info, _ := os.Stdout.Stat()
 			if (info.Mode() & os.ModeCharDevice) == 0 {
 				fmt.Print(content)
