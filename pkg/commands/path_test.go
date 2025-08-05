@@ -49,7 +49,7 @@ func TestPath(t *testing.T) {
 	}
 
 	t.Run("ValidIndex", func(t *testing.T) {
-		result, err := Path(s, "test-project", "1")
+		result, err := Path(s, false, "test-project", "1")
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
@@ -61,7 +61,7 @@ func TestPath(t *testing.T) {
 	})
 
 	t.Run("SecondIndex", func(t *testing.T) {
-		result, err := Path(s, "test-project", "2")
+		result, err := Path(s, false, "test-project", "2")
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
@@ -73,7 +73,7 @@ func TestPath(t *testing.T) {
 	})
 
 	t.Run("IndexOutOfRange", func(t *testing.T) {
-		_, err := Path(s, "test-project", "3")
+		_, err := Path(s, false, "test-project", "3")
 		if err == nil {
 			t.Error("expected error for out of range index")
 		}
@@ -83,7 +83,7 @@ func TestPath(t *testing.T) {
 	})
 
 	t.Run("InvalidIndex", func(t *testing.T) {
-		_, err := Path(s, "test-project", "invalid")
+		_, err := Path(s, false, "test-project", "invalid")
 		if err == nil {
 			t.Error("expected error for invalid index")
 		}
@@ -93,7 +93,7 @@ func TestPath(t *testing.T) {
 	})
 
 	t.Run("ZeroIndex", func(t *testing.T) {
-		_, err := Path(s, "test-project", "0")
+		_, err := Path(s, false, "test-project", "0")
 		if err == nil {
 			t.Error("expected error for zero index")
 		}
@@ -105,7 +105,7 @@ func TestPath(t *testing.T) {
 			t.Fatalf("failed to clear scratches: %v", err)
 		}
 		
-		_, err := Path(s, "test-project", "1")
+		_, err := Path(s, false, "test-project", "1")
 		if err == nil {
 			t.Error("expected error when no scratches found")
 		}
@@ -121,7 +121,7 @@ func TestPath(t *testing.T) {
 	})
 
 	t.Run("WrongProject", func(t *testing.T) {
-		_, err := Path(s, "nonexistent-project", "1")
+		_, err := Path(s, false, "nonexistent-project", "1")
 		if err == nil {
 			t.Error("expected error for nonexistent project")
 		}

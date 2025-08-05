@@ -12,8 +12,8 @@ type PathResult struct {
 }
 
 // Path returns the full path to a scratch file
-func Path(s *store.Store, project string, indexStr string) (*PathResult, error) {
-	scratch, err := GetScratchByIndex(s, false, false, project, indexStr)
+func Path(s *store.Store, all bool, project string, indexStr string) (*PathResult, error) {
+	scratch, err := GetScratchByIndex(s, all, false, project, indexStr)
 	if err != nil {
 		return nil, err
 	}

@@ -22,6 +22,8 @@ func newPathCmd() *cobra.Command {
 		Long:  `Get the full path to a scratch file identified by its index.`,
 		Args:  cobra.ExactArgs(1),
 		Run: func(cmd *cobra.Command, args []string) {
+			all, _ := cmd.Flags().GetBool("all")
+
 			s, err := store.NewStore()
 			if err != nil {
 				log.Fatal(err)
@@ -37,7 +39,7 @@ func newPathCmd() *cobra.Command {
 				log.Fatal(err)
 			}
 
-			result, err := commands.Path(s, proj, args[0])
+			result, err := commands.Path(s, all, proj, args[0])
 			
 			// Format output
 			format, formatErr := output.GetFormat(outputFormat)
