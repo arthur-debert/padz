@@ -75,15 +75,7 @@ func NewRootCmd() *cobra.Command {
 
 		content := commands.ReadContentFromPipe()
 
-		// If we have a title but no content, just use the title as content
-		if titleFlag != "" && len(content) == 0 {
-			content = []byte(titleFlag)
-		} else if titleFlag != "" && len(content) > 0 {
-			// If we have both title and content, prepend title
-			content = append([]byte(titleFlag+"\n\n"), content...)
-		}
-
-		if err := commands.Create(s, proj, content); err != nil {
+		if err := commands.CreateWithTitle(s, proj, content, titleFlag); err != nil {
 			log.Fatal().Err(err).Msg(ErrFailedToCreateNote)
 		}
 	}

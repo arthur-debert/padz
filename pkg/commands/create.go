@@ -15,9 +15,19 @@ import (
 )
 
 func Create(s *store.Store, project string, content []byte) error {
+	return CreateWithTitle(s, project, content, "")
+}
+
+// CreateWithTitle creates a scratch with an optional pre-defined title
+func CreateWithTitle(s *store.Store, project string, content []byte, providedTitle string) error {
 	var err error
 	if len(content) == 0 {
-		content, err = editor.OpenInEditor(nil)
+		// If we have a provided title, show it in the editor
+		var initialContent []byte
+		if providedTitle != "" {
+			initialContent = []byte(providedTitle + "\n\n")
+		}
+		content, err = editor.OpenInEditor(initialContent)
 		if err != nil {
 			return err
 		}
@@ -28,7 +38,12 @@ func Create(s *store.Store, project string, content []byte) error {
 		return nil // Don't save empty scratches
 	}
 
-	title := getTitle(trimmedContent)
+	// Use provided title if available, otherwise extract from content
+	title := providedTitle
+	if title == "" {
+		title = getTitle(trimmedContent)
+	}
+
 	id := fmt.Sprintf("%x", sha1.Sum(trimmedContent))
 
 	scratch := store.Scratch{
