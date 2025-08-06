@@ -42,6 +42,12 @@ func NewRootCmd() *cobra.Command {
 	// Add version flag
 	var versionFlag bool
 	rootCmd.Flags().BoolVar(&versionFlag, "version", false, FlagVersionDesc)
+
+	// Add create command flags
+	var globalFlag bool
+	var titleFlag string
+	rootCmd.Flags().BoolVarP(&globalFlag, "global", "g", false, "Create scratch in global scope")
+	rootCmd.Flags().StringVarP(&titleFlag, "title", "t", "", "Title for the scratch")
 	rootCmd.Run = func(cmd *cobra.Command, args []string) {
 		if versionFlag {
 			cmd.Printf(VersionFormat, version.Version, version.Commit, version.Date)
@@ -58,12 +64,19 @@ func NewRootCmd() *cobra.Command {
 			log.Fatal().Err(err).Msg(ErrFailedToGetWorkingDir)
 		}
 
-		proj, err := project.GetCurrentProject(dir)
-		if err != nil {
-			log.Fatal().Err(err).Msg(ErrFailedToGetProject)
+		proj := "global"
+		if !globalFlag {
+			currentProj, err := project.GetCurrentProject(dir)
+			if err != nil {
+				log.Fatal().Err(err).Msg(ErrFailedToGetProject)
+			}
+			proj = currentProj
 		}
 
 		content := commands.ReadContentFromPipe()
+		if titleFlag != "" {
+			content = append([]byte(titleFlag+"\n\n"), content...)
+		}
 		if err := commands.Create(s, proj, content); err != nil {
 			log.Fatal().Err(err).Msg(ErrFailedToCreateNote)
 		}
