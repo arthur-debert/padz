@@ -37,11 +37,17 @@ func NewRootCmd() *cobra.Command {
 	// Setup persistent flags
 	rootCmd.PersistentFlags().CountVarP(&verbosity, "verbose", "v", FlagVerboseDesc)
 	rootCmd.PersistentFlags().Lookup("verbose").Hidden = true
-	rootCmd.PersistentFlags().StringVar(&outputFormat, "format", "term", FlagFormatDesc)
+	rootCmd.PersistentFlags().StringVarP(&outputFormat, "format", "f", "term", FlagFormatDesc)
 
 	// Add version flag
 	var versionFlag bool
 	rootCmd.Flags().BoolVar(&versionFlag, "version", false, FlagVersionDesc)
+
+	// Add create command flags
+	var globalFlag bool
+	var titleFlag string
+	rootCmd.Flags().BoolVarP(&globalFlag, "global", "g", false, "Create scratch in global scope")
+	rootCmd.Flags().StringVarP(&titleFlag, "title", "t", "", "Title for the scratch")
 	rootCmd.Run = func(cmd *cobra.Command, args []string) {
 		if versionFlag {
 			cmd.Printf(VersionFormat, version.Version, version.Commit, version.Date)
@@ -58,13 +64,18 @@ func NewRootCmd() *cobra.Command {
 			log.Fatal().Err(err).Msg(ErrFailedToGetWorkingDir)
 		}
 
-		proj, err := project.GetCurrentProject(dir)
-		if err != nil {
-			log.Fatal().Err(err).Msg(ErrFailedToGetProject)
+		proj := "global"
+		if !globalFlag {
+			currentProj, err := project.GetCurrentProject(dir)
+			if err != nil {
+				log.Fatal().Err(err).Msg(ErrFailedToGetProject)
+			}
+			proj = currentProj
 		}
 
 		content := commands.ReadContentFromPipe()
-		if err := commands.Create(s, proj, content); err != nil {
+
+		if err := commands.CreateWithTitle(s, proj, content, titleFlag); err != nil {
 			log.Fatal().Err(err).Msg(ErrFailedToCreateNote)
 		}
 	}
@@ -82,37 +93,37 @@ func NewRootCmd() *cobra.Command {
 	// Single scratch commands
 	viewCmd := newViewCmd()
 	viewCmd.GroupID = "single"
-	viewCmd.Flags().Bool("all", false, FlagAllDesc)
-	viewCmd.Flags().Bool("global", false, FlagGlobalDesc)
+	viewCmd.Flags().BoolP("all", "a", false, FlagAllDesc)
+	viewCmd.Flags().BoolP("global", "g", false, FlagGlobalDesc)
 	rootCmd.AddCommand(viewCmd)
 
 	openCmd := newOpenCmd()
 	openCmd.GroupID = "single"
-	openCmd.Flags().Bool("all", false, FlagAllDesc)
+	openCmd.Flags().BoolP("all", "a", false, FlagAllDesc)
 	rootCmd.AddCommand(openCmd)
 
 	peekCmd := newPeekCmd()
 	peekCmd.GroupID = "single"
 	peekCmd.Flags().IntP("lines", "n", 3, FlagLinesDesc)
-	peekCmd.Flags().Bool("all", false, FlagAllDesc)
-	peekCmd.Flags().Bool("global", false, FlagGlobalDesc)
+	peekCmd.Flags().BoolP("all", "a", false, FlagAllDesc)
+	peekCmd.Flags().BoolP("global", "g", false, FlagGlobalDesc)
 	rootCmd.AddCommand(peekCmd)
 
 	deleteCmd := newDeleteCmd()
 	deleteCmd.GroupID = "single"
-	deleteCmd.Flags().Bool("all", false, FlagAllDesc)
+	deleteCmd.Flags().BoolP("all", "a", false, FlagAllDesc)
 	rootCmd.AddCommand(deleteCmd)
 
 	pathCmd := newPathCmd()
 	pathCmd.GroupID = "single"
-	pathCmd.Flags().Bool("all", false, FlagAllDesc)
+	pathCmd.Flags().BoolP("all", "a", false, FlagAllDesc)
 	rootCmd.AddCommand(pathCmd)
 
 	// Multiple scratches commands
 	lsCmd := newLsCmd()
 	lsCmd.GroupID = "multiple"
-	lsCmd.Flags().Bool("all", false, FlagAllDesc)
-	lsCmd.Flags().Bool("global", false, FlagGlobalDesc)
+	lsCmd.Flags().BoolP("all", "a", false, FlagAllDesc)
+	lsCmd.Flags().BoolP("global", "g", false, FlagGlobalDesc)
 	rootCmd.AddCommand(lsCmd)
 
 	cleanupCmd := newCleanupCmd()
@@ -128,7 +139,7 @@ func NewRootCmd() *cobra.Command {
 
 	nukeCmd := newNukeCmd()
 	nukeCmd.GroupID = "multiple"
-	nukeCmd.Flags().Bool("all", false, FlagAllDesc)
+	nukeCmd.Flags().BoolP("all", "a", false, FlagAllDesc)
 	rootCmd.AddCommand(nukeCmd)
 
 	return rootCmd
