@@ -82,37 +82,37 @@ func NewRootCmd() *cobra.Command {
 	// Single scratch commands
 	viewCmd := newViewCmd()
 	viewCmd.GroupID = "single"
-	viewCmd.Flags().Bool("all", false, FlagAllDesc)
-	viewCmd.Flags().Bool("global", false, FlagGlobalDesc)
+	viewCmd.Flags().BoolP("all", "a", false, FlagAllDesc)
+	viewCmd.Flags().BoolP("global", "g", false, FlagGlobalDesc)
 	rootCmd.AddCommand(viewCmd)
 
 	openCmd := newOpenCmd()
 	openCmd.GroupID = "single"
-	openCmd.Flags().Bool("all", false, FlagAllDesc)
+	openCmd.Flags().BoolP("all", "a", false, FlagAllDesc)
 	rootCmd.AddCommand(openCmd)
 
 	peekCmd := newPeekCmd()
 	peekCmd.GroupID = "single"
 	peekCmd.Flags().IntP("lines", "n", 3, FlagLinesDesc)
-	peekCmd.Flags().Bool("all", false, FlagAllDesc)
-	peekCmd.Flags().Bool("global", false, FlagGlobalDesc)
+	peekCmd.Flags().BoolP("all", "a", false, FlagAllDesc)
+	peekCmd.Flags().BoolP("global", "g", false, FlagGlobalDesc)
 	rootCmd.AddCommand(peekCmd)
 
 	deleteCmd := newDeleteCmd()
 	deleteCmd.GroupID = "single"
-	deleteCmd.Flags().Bool("all", false, FlagAllDesc)
+	deleteCmd.Flags().BoolP("all", "a", false, FlagAllDesc)
 	rootCmd.AddCommand(deleteCmd)
 
 	pathCmd := newPathCmd()
 	pathCmd.GroupID = "single"
-	pathCmd.Flags().Bool("all", false, FlagAllDesc)
+	pathCmd.Flags().BoolP("all", "a", false, FlagAllDesc)
 	rootCmd.AddCommand(pathCmd)
 
 	// Multiple scratches commands
 	lsCmd := newLsCmd()
 	lsCmd.GroupID = "multiple"
-	lsCmd.Flags().Bool("all", false, FlagAllDesc)
-	lsCmd.Flags().Bool("global", false, FlagGlobalDesc)
+	lsCmd.Flags().BoolP("all", "a", false, FlagAllDesc)
+	lsCmd.Flags().BoolP("global", "g", false, FlagGlobalDesc)
 	rootCmd.AddCommand(lsCmd)
 
 	cleanupCmd := newCleanupCmd()
@@ -128,7 +128,7 @@ func NewRootCmd() *cobra.Command {
 
 	nukeCmd := newNukeCmd()
 	nukeCmd.GroupID = "multiple"
-	nukeCmd.Flags().Bool("all", false, FlagAllDesc)
+	nukeCmd.Flags().BoolP("all", "a", false, FlagAllDesc)
 	rootCmd.AddCommand(nukeCmd)
 
 	return rootCmd
