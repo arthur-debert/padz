@@ -2,7 +2,7 @@ padz: A Simple Command-Line Note-Taking Tool
 
 1. Core Concept
 
-padz is a simple shell command to create, search, view, and edit quick notes. It uses the user's default command-line editor (via the $EDITOR environment variable) for note creation and editing, and focuses on streamlined content management.
+padz is a simple shell command for creating, searching, viewing, and editing quick notes. It uses the user's default command-line editor (via the $EDITOR environment variable) for note creation and editing, with a focus on streamlined content management.
 
 2. Main Functionality
 
@@ -12,7 +12,7 @@ The command-line interface provides the following commands:
       Shows help and usage information. Use `padz create` or `padz new` to create a new scratch.
 
     - $ padz create (or $ padz new, $ padz n)
-      Creates a new scratch. This command opens the user's $EDITOR with a temporary file. Upon saving and closing, the content is saved as a new scratch. If content is piped to it (e.g., `git diff | padz create`), it creates a new scratch non-interactively with the piped content. Empty scratches or those with only whitespace will not be saved. Can use --title to specify a custom title and --global to create in global scope.
+      Creates a new scratch. This command opens the user's $EDITOR with a temporary file. Upon saving and closing, the content is saved as a new scratch. If content is piped to it (e.g., `git diff | padz create`), it creates a new scratch non-interactively with the piped content. Empty scratches or those containing only whitespace will not be saved. Use --title to specify a custom title and --global to create in global scope.
 
     - $ padz ls
       Lists all scratches for the current context (local project by default).
@@ -23,10 +23,10 @@ The command-line interface provides the following commands:
       Opens the scratch at the given index in the user's $EDITOR for editing.
 
     - $ padz view <index>
-      Displays the content of the scratch at the given index using the system's default pager (e.g., `less`). If the output is being piped, it will print directly to stdout.
+      Displays the content of the scratch at the given index using the system's default pager (e.g., `less`). If the output is being piped, it will print directly to standard output.
 
     - $ padz peek <index>
-      Shows the first and last N lines of a scratch. The default is 3 lines and can be overridden with a `--lines` flag.
+      Shows the first and last N lines of a scratch. The default is 3 lines, which can be overridden with a `--lines` flag.
 
     - $ padz delete <index>
       Deletes the scratch at the given index.
@@ -35,7 +35,7 @@ The command-line interface provides the following commands:
       Searches the content of all scratches for the given term. The search supports regular expressions. The output format is the same as `ls`.
 
     - $ padz cleanup
-      Deletes scratches older than a specified time. The default is 30 days, which can be overridden with a `--days` flag.
+      Deletes scratches older than a specified time period. The default is 30 days, which can be overridden with a `--days` flag.
 
 3. Local vs. Global Contexts
 
@@ -43,7 +43,7 @@ Scratches are organized by project to keep them relevant to the user's current w
 
     - Local (Default): When a command is run, `padz` searches for a `.git` directory, moving up from the current directory. If found, the parent directory's name is used as the project name. All operations apply only to scratches associated with this project.
 
-    - Global: If no `.git` repository is found in the directory hierarchy, scratches are considered global. The `--global` flag can be used to force global context, regardless of the current directory.
+    - Global: If no `.git` repository is found in the directory hierarchy, scratches are considered global. The `--global` flag can be used to force the global context, regardless of the current directory.
 
     - All Contexts: The `--all` flag can be used with listing commands (`ls`, `search`, `peek`) to show scratches from all projects and the global context. In this mode, the project name is prefixed to each line.
       Example:
@@ -54,13 +54,13 @@ Scratches are organized by project to keep them relevant to the user's current w
 
 4. Storage and Metadata
 
-    - Scratch Content: The actual content of each scratch will be stored in a dedicated file within the XDG state directory (e.g., `~/.local/state/padz/`). File names will be auto-generated hashes to avoid conflicts and simplify management.
+    - Scratch Content: The actual content of each scratch will be stored in a dedicated file within the XDG state directory (e.g., `~/.local/state/padz/`). File names will be automatically generated hashes to avoid conflicts and simplify management.
 
-    - Metadata: A single JSON file (`metadata.json`) will be kept in the same directory to store metadata for all scratches. This file is the single source of truth. Each entry will contain:
-        - A unique hash (which is also the filename).
-        - The creation timestamp.
-        - The associated project name (or a special "global" identifier).
-        - The title, automatically generated from the first non-empty line of the scratch content.
+    - Metadata: A single JSON file (`metadata.json`) will be maintained in the same directory to store metadata for all scratches. This file serves as the single source of truth. Each entry will contain:
+        - A unique hash (which is also the filename)
+        - The creation timestamp
+        - The associated project name (or a special "global" identifier)
+        - The title, automatically generated from the first non-empty line of the scratch content
 
 5. Implementation Details
 
@@ -69,7 +69,7 @@ Scratches are organized by project to keep them relevant to the user's current w
     - Project Structure:
         - `cmd/`: Contains the main application entry point and Cobra command definitions. This layer is responsible for parsing arguments/flags and handling all I/O (printing to the console).
         - `pkg/`: Contains the core application logic. It will expose functions for each command (e.g., `ListScratches`, `CreateScratch`). These functions will be pure, returning data structures and errors, and will not print directly to stdout. This separation ensures the core logic is easily testable.
-    - Editor: The tool will respect the `$EDITOR` environment variable. If not set, it will fall back to a sensible default like `vim` or `nano`.
-    - Time Formatting: A library will be used to format dates into humane, relative time (e.g., "2 hours ago", "yesterday").
+    - Editor: The tool will respect the `$EDITOR` environment variable. If not set, it will fall back to a sensible default such as `vim` or `nano`.
+    - Time Formatting: A library will be used to format dates into human-readable, relative time (e.g., "2 hours ago", "yesterday").
     - Note Processing: Leading and trailing blank lines from notes will be trimmed before saving.
-    - Configuration: The tool will not use a configuration file. Behavior will be controlled via command-line flags (e.g., `--days`, `--lines`).
+    - Configuration: The tool will not use a configuration file. Behavior will be controlled through command-line flags (e.g., `--days`, `--lines`).

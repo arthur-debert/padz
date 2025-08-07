@@ -1,6 +1,17 @@
-# Go CLI Module
+# PADZ: Command-Line Note-Taking Tool
 
-This module sets up a complete Go CLI application with Cobra framework, comprehensive build tooling, and CI/CD pipelines.
+A simple, fast command-line note-taking tool designed for developers who want quick, context-aware scratch notes without leaving their terminal environment.
+
+## Architecture Overview
+
+**PADZ** follows a simple, effective architecture designed for personal productivity:
+
+- **Central Git Repository Storage**: All notes stored in a single location separate from project repos
+- **JSON-Based Metadata**: Human-readable metadata format for easy inspection and debugging
+- **Target Capacity**: Optimized for ~1,000 tasks without requiring complex indexing
+- **Single Instance Design**: No multi-user or concurrent access complexity
+- **Simple Error Handling**: Direct git error messages without complex wrapping
+- **Future Export Support**: Planned markdown lists and directory structure export
 
 ## What You Get
 
@@ -19,7 +30,7 @@ padz/
 ```
 
 ### 🛠️ Build & Development Scripts
-- **`./scripts/build`** - Builds the CLI binary with embedded version info
+- **`./scripts/build`** - Builds the CLI binary with embedded version information
 - **`./scripts/test`** - Runs tests with race detection and coverage
 - **`./scripts/test-with-coverage`** - Detailed coverage report with visualization
 - **`./scripts/lint`** - Comprehensive code linting with golangci-lint
@@ -28,8 +39,8 @@ padz/
 - **`./scripts/cloc-go`** - Go-specific line counting statistics
 
 ### 🚀 GitHub Actions Workflows
-- **Test workflow** - Runs on every push: build, test, coverage upload
-- **Release workflow** - Triggers on version tags: multi-platform builds, GitHub releases
+- **Test workflow** - Runs on every push: build, test, and coverage upload
+- **Release workflow** - Triggers on version tags: multi-platform builds and GitHub releases
 - **Codecov integration** - Automatic coverage reporting
 
 ### 📦 Release & Distribution
@@ -43,7 +54,7 @@ padz/
 ### 🔧 Pre-configured Features
 - **Cobra CLI framework** with command structure
 - **Structured logging** with zerolog
-- **Version command** with git commit info
+- **Version command** with Git commit information
 - **Comprehensive error handling**
 - **Context-aware configuration**
 - **Pre-commit hooks** for consistent code quality
