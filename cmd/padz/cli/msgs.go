@@ -6,7 +6,8 @@ const (
 	RootShort = "padz create scratch pads, draft files using $EDITOR."
 	RootLong  = `padz create scratch pads, draft files using $EDITOR.
 
-  $ padz                    # edit a new scratch in $EDITOR
+  $ padz                    # shows help and usage information
+  $ padz create             # create a new scratch in $EDITOR
   $ padz ls                 # Lists scratches with an index to be used in open, view, delete:
       1. 10 minutes ago My first scratch note
   $ padz view <index>       # views in shell

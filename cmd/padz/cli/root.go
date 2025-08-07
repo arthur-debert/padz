@@ -4,10 +4,7 @@ import (
 	"os"
 
 	"github.com/arthur-debert/padz/internal/version"
-	"github.com/arthur-debert/padz/pkg/commands"
 	"github.com/arthur-debert/padz/pkg/logging"
-	"github.com/arthur-debert/padz/pkg/project"
-	"github.com/arthur-debert/padz/pkg/store"
 	"github.com/rs/zerolog/log"
 	"github.com/spf13/cobra"
 )
@@ -43,41 +40,14 @@ func NewRootCmd() *cobra.Command {
 	var versionFlag bool
 	rootCmd.Flags().BoolVar(&versionFlag, "version", false, FlagVersionDesc)
 
-	// Add create command flags
-	var globalFlag bool
-	var titleFlag string
-	rootCmd.Flags().BoolVarP(&globalFlag, "global", "g", false, "Create scratch in global scope")
-	rootCmd.Flags().StringVarP(&titleFlag, "title", "t", "", "Title for the scratch")
 	rootCmd.Run = func(cmd *cobra.Command, args []string) {
 		if versionFlag {
 			cmd.Printf(VersionFormat, version.Version, version.Commit, version.Date)
 			return
 		}
-		// Original run logic for creating a scratch
-		s, err := store.NewStore()
-		if err != nil {
-			log.Fatal().Err(err).Msg(ErrFailedToInitStore)
-		}
-
-		dir, err := os.Getwd()
-		if err != nil {
-			log.Fatal().Err(err).Msg(ErrFailedToGetWorkingDir)
-		}
-
-		proj := "global"
-		if !globalFlag {
-			currentProj, err := project.GetCurrentProject(dir)
-			if err != nil {
-				log.Fatal().Err(err).Msg(ErrFailedToGetProject)
-			}
-			proj = currentProj
-		}
-
-		content := commands.ReadContentFromPipe()
-
-		if err := commands.CreateWithTitle(s, proj, content, titleFlag); err != nil {
-			log.Fatal().Err(err).Msg(ErrFailedToCreateNote)
-		}
+		// Show help when no command is provided
+		_ = cmd.Help()
+		os.Exit(1)
 	}
 
 	// Set up command groups
@@ -91,6 +61,12 @@ func NewRootCmd() *cobra.Command {
 	})
 
 	// Single scratch commands
+	createCmd := newCreateCmd()
+	createCmd.GroupID = "single"
+	createCmd.Flags().BoolP("global", "g", false, "Create scratch in global scope")
+	createCmd.Flags().StringP("title", "t", "", "Title for the scratch")
+	rootCmd.AddCommand(createCmd)
+
 	viewCmd := newViewCmd()
 	viewCmd.GroupID = "single"
 	viewCmd.Flags().BoolP("all", "a", false, FlagAllDesc)
