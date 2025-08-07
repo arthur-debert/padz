@@ -5,6 +5,8 @@ import (
 	"path/filepath"
 	"sync"
 	"time"
+
+	"github.com/arthur-debert/padz/pkg/logging"
 )
 
 // FileSystem defines the interface for file system operations
@@ -31,23 +33,70 @@ func NewOSFileSystem() *OSFileSystem {
 }
 
 func (fs *OSFileSystem) WriteFile(path string, data []byte, perm os.FileMode) error {
-	return os.WriteFile(path, data, perm)
+	logger := logging.GetLogger("filesystem.os")
+	logger.Info().Str("path", path).Int("bytes", len(data)).Str("perm", perm.String()).Msg("Writing file")
+
+	if err := os.WriteFile(path, data, perm); err != nil {
+		logger.Error().Err(err).Str("path", path).Int("bytes", len(data)).Msg("Failed to write file")
+		return err
+	}
+
+	logger.Debug().Str("path", path).Int("bytes", len(data)).Msg("File written successfully")
+	return nil
 }
 
 func (fs *OSFileSystem) ReadFile(path string) ([]byte, error) {
-	return os.ReadFile(path)
+	logger := logging.GetLogger("filesystem.os")
+	logger.Debug().Str("path", path).Msg("Reading file")
+
+	data, err := os.ReadFile(path)
+	if err != nil {
+		logger.Error().Err(err).Str("path", path).Msg("Failed to read file")
+		return nil, err
+	}
+
+	logger.Debug().Str("path", path).Int("bytes_read", len(data)).Msg("File read successfully")
+	return data, nil
 }
 
 func (fs *OSFileSystem) Stat(path string) (os.FileInfo, error) {
-	return os.Stat(path)
+	logger := logging.GetLogger("filesystem.os")
+	logger.Debug().Str("path", path).Msg("Getting file info")
+
+	info, err := os.Stat(path)
+	if err != nil {
+		logger.Debug().Err(err).Str("path", path).Msg("File stat failed")
+		return nil, err
+	}
+
+	logger.Debug().Str("path", path).Int64("size", info.Size()).Bool("is_dir", info.IsDir()).Msg("File stat successful")
+	return info, nil
 }
 
 func (fs *OSFileSystem) Remove(path string) error {
-	return os.Remove(path)
+	logger := logging.GetLogger("filesystem.os")
+	logger.Info().Str("path", path).Msg("Removing file")
+
+	if err := os.Remove(path); err != nil {
+		logger.Error().Err(err).Str("path", path).Msg("Failed to remove file")
+		return err
+	}
+
+	logger.Info().Str("path", path).Msg("File removed successfully")
+	return nil
 }
 
 func (fs *OSFileSystem) MkdirAll(path string, perm os.FileMode) error {
-	return os.MkdirAll(path, perm)
+	logger := logging.GetLogger("filesystem.os")
+	logger.Debug().Str("path", path).Str("perm", perm.String()).Msg("Creating directory path")
+
+	if err := os.MkdirAll(path, perm); err != nil {
+		logger.Error().Err(err).Str("path", path).Msg("Failed to create directory path")
+		return err
+	}
+
+	logger.Debug().Str("path", path).Msg("Directory path created successfully")
+	return nil
 }
 
 func (fs *OSFileSystem) Join(elem ...string) string {
@@ -69,12 +118,16 @@ func NewMemoryFileSystem() *MemoryFileSystem {
 }
 
 func (fs *MemoryFileSystem) WriteFile(path string, data []byte, perm os.FileMode) error {
+	logger := logging.GetLogger("filesystem.mem")
+	logger.Info().Str("path", path).Int("bytes", len(data)).Str("perm", perm.String()).Msg("Writing file to memory")
+
 	fs.mu.Lock()
 	defer fs.mu.Unlock()
 
 	// Ensure parent directory exists
 	dir := filepath.Dir(path)
 	if !fs.dirExists(dir) {
+		logger.Error().Str("path", path).Str("parent_dir", dir).Msg("Parent directory does not exist")
 		return &os.PathError{Op: "write", Path: path, Err: os.ErrNotExist}
 	}
 
@@ -82,21 +135,29 @@ func (fs *MemoryFileSystem) WriteFile(path string, data []byte, perm os.FileMode
 	dataCopy := make([]byte, len(data))
 	copy(dataCopy, data)
 	fs.files[path] = dataCopy
+
+	logger.Debug().Str("path", path).Int("bytes", len(data)).Int("total_files", len(fs.files)).Msg("File written to memory successfully")
 	return nil
 }
 
 func (fs *MemoryFileSystem) ReadFile(path string) ([]byte, error) {
+	logger := logging.GetLogger("filesystem.mem")
+	logger.Debug().Str("path", path).Msg("Reading file from memory")
+
 	fs.mu.RLock()
 	defer fs.mu.RUnlock()
 
 	data, exists := fs.files[path]
 	if !exists {
+		logger.Debug().Str("path", path).Msg("File not found in memory")
 		return nil, &os.PathError{Op: "read", Path: path, Err: os.ErrNotExist}
 	}
 
 	// Return a copy to avoid mutations
 	dataCopy := make([]byte, len(data))
 	copy(dataCopy, data)
+
+	logger.Debug().Str("path", path).Int("bytes_read", len(data)).Msg("File read from memory successfully")
 	return dataCopy, nil
 }
 
@@ -127,25 +188,39 @@ func (fs *MemoryFileSystem) Stat(path string) (os.FileInfo, error) {
 }
 
 func (fs *MemoryFileSystem) Remove(path string) error {
+	logger := logging.GetLogger("filesystem.mem")
+	logger.Info().Str("path", path).Msg("Removing file from memory")
+
 	fs.mu.Lock()
 	defer fs.mu.Unlock()
 
 	if _, exists := fs.files[path]; exists {
 		delete(fs.files, path)
+		logger.Info().Str("path", path).Int("remaining_files", len(fs.files)).Msg("File removed from memory successfully")
 		return nil
 	}
 
+	logger.Debug().Str("path", path).Msg("File not found for removal")
 	return &os.PathError{Op: "remove", Path: path, Err: os.ErrNotExist}
 }
 
 func (fs *MemoryFileSystem) MkdirAll(path string, perm os.FileMode) error {
+	logger := logging.GetLogger("filesystem.mem")
+	logger.Debug().Str("path", path).Str("perm", perm.String()).Msg("Creating directory path in memory")
+
 	fs.mu.Lock()
 	defer fs.mu.Unlock()
 
 	// Mark all parent directories as existing
+	dirCount := 0
 	for p := path; p != "/" && p != "."; p = filepath.Dir(p) {
+		if !fs.dirs[p] {
+			dirCount++
+		}
 		fs.dirs[p] = true
 	}
+
+	logger.Debug().Str("path", path).Int("dirs_created", dirCount).Int("total_dirs", len(fs.dirs)).Msg("Directory path created in memory successfully")
 	return nil
 }
 
