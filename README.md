@@ -59,6 +59,36 @@ padz/
 - **Context-aware configuration**
 - **Pre-commit hooks** for consistent code quality
 
+### 📝 Logging
+
+padz features comprehensive dual logging that provides both user-friendly console output and detailed file logging for debugging:
+
+**Console Logging** (respects verbosity flags):
+- Use `-v` for Info level, `-vv` for Debug level, `-vvv` for Trace level
+- Human-readable format with colors and timestamps
+- Output goes to stderr for proper piping behavior
+
+**File Logging** (always enabled):
+- **All activity is logged** to file regardless of verbosity settings
+- JSON format with structured fields for easy parsing
+- **Location**: 
+  - **macOS**: `~/Library/Application Support/padz.log`
+  - **Linux**: `~/.local/state/padz/padz.log` 
+  - **Windows**: `%LOCALAPPDATA%\padz\padz.log`
+- Automatic directory creation with proper permissions
+- Complete audit trail of all commands, errors, and debug information
+
+**Finding Your Log File**:
+```bash
+# Run any padz command with debug verbosity to see the log file location
+padz ls -vv
+# Look for: "Logger initialized with dual output log_file=..."
+
+# Or check the standard locations above
+```
+
+This dual logging approach ensures you always have detailed information available for troubleshooting while keeping console output clean and user-friendly.
+
 ### 🎯 Development Tools
 - **golangci-lint** - Comprehensive Go linting (auto-installed)
 - **gotestsum** - Better test output formatting (auto-installed)

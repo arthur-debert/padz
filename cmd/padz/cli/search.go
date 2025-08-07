@@ -10,7 +10,7 @@ import (
 	"github.com/arthur-debert/padz/pkg/output"
 	"github.com/arthur-debert/padz/pkg/project"
 	"github.com/arthur-debert/padz/pkg/store"
-	"log"
+	"github.com/rs/zerolog/log"
 	"os"
 
 	"github.com/spf13/cobra"
@@ -29,29 +29,29 @@ func newSearchCmd() *cobra.Command {
 
 			s, err := store.NewStore()
 			if err != nil {
-				log.Fatal(err)
+				log.Fatal().Err(err).Msg("Operation failed")
 			}
 
 			dir, err := os.Getwd()
 			if err != nil {
-				log.Fatal(err)
+				log.Fatal().Err(err).Msg("Operation failed")
 			}
 
 			proj, err := project.GetCurrentProject(dir)
 			if err != nil {
-				log.Fatal(err)
+				log.Fatal().Err(err).Msg("Operation failed")
 			}
 
 			// Use SearchWithIndices to get results with correct positional indices
 			searchResults, err := commands.SearchWithIndices(s, all, global, proj, args[0])
 			if err != nil {
-				log.Fatal(err)
+				log.Fatal().Err(err).Msg("Operation failed")
 			}
 
 			// Format output
 			format, err := output.GetFormat(outputFormat)
 			if err != nil {
-				log.Fatal(err)
+				log.Fatal().Err(err).Msg("Operation failed")
 			}
 
 			if len(searchResults) == 0 && (format == output.PlainFormat || format == output.TermFormat) {
@@ -64,16 +64,16 @@ func newSearchCmd() *cobra.Command {
 			if format == output.PlainFormat || format == output.TermFormat {
 				termFormatter, err := formatter.NewTerminalFormatter(nil)
 				if err != nil {
-					log.Fatal(err)
+					log.Fatal().Err(err).Msg("Operation failed")
 				}
 				if err := termFormatter.FormatSearchResults(searchResults, all); err != nil {
-					log.Fatal(err)
+					log.Fatal().Err(err).Msg("Operation failed")
 				}
 			} else {
 				// JSON format should output the ScratchWithIndex objects
 				outputFormatter := output.NewFormatter(format, nil)
 				if err := outputFormatter.FormatSearchResults(searchResults, all); err != nil {
-					log.Fatal(err)
+					log.Fatal().Err(err).Msg("Operation failed")
 				}
 			}
 		},

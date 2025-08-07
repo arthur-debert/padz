@@ -1,7 +1,7 @@
 package cli
 
 import (
-	"log"
+	"github.com/rs/zerolog/log"
 	"os"
 
 	"github.com/arthur-debert/padz/cmd/padz/formatter"
@@ -15,13 +15,13 @@ func handleTerminalError(err error, format output.Format) {
 		// Terminal detection will automatically strip formatting when piped
 		termFormatter, termErr := formatter.NewTerminalFormatter(nil)
 		if termErr != nil {
-			log.Fatal(termErr)
+			log.Fatal().Err(termErr).Msg("Failed to create terminal formatter")
 		}
 		termFormatter.FormatError(err)
 	} else {
 		outputFormatter := output.NewFormatter(format, nil)
 		if formatErr := outputFormatter.FormatError(err); formatErr != nil {
-			log.Fatal(formatErr)
+			log.Fatal().Err(formatErr).Msg("Failed to get output format")
 		}
 	}
 	os.Exit(1)
@@ -34,13 +34,13 @@ func handleTerminalSuccess(message string, format output.Format) {
 		// Terminal detection will automatically strip formatting when piped
 		termFormatter, err := formatter.NewTerminalFormatter(nil)
 		if err != nil {
-			log.Fatal(err)
+			log.Fatal().Err(err).Msg("Operation failed")
 		}
 		termFormatter.FormatSuccess(message)
 	} else {
 		outputFormatter := output.NewFormatter(format, nil)
 		if err := outputFormatter.FormatSuccess(message); err != nil {
-			log.Fatal(err)
+			log.Fatal().Err(err).Msg("Operation failed")
 		}
 	}
 }

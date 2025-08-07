@@ -8,9 +8,9 @@ import (
 	"github.com/arthur-debert/padz/pkg/output"
 	"github.com/arthur-debert/padz/pkg/project"
 	"github.com/arthur-debert/padz/pkg/store"
-	"log"
 	"os"
 
+	"github.com/rs/zerolog/log"
 	"github.com/spf13/cobra"
 )
 
@@ -26,17 +26,17 @@ func newDeleteCmd() *cobra.Command {
 
 			s, err := store.NewStore()
 			if err != nil {
-				log.Fatal(err)
+				log.Fatal().Err(err).Msg("Failed to initialize store")
 			}
 
 			dir, err := os.Getwd()
 			if err != nil {
-				log.Fatal(err)
+				log.Fatal().Err(err).Msg("Failed to get current working directory")
 			}
 
 			proj, err := project.GetCurrentProject(dir)
 			if err != nil {
-				log.Fatal(err)
+				log.Fatal().Err(err).Msg("Failed to get current project")
 			}
 
 			err = commands.Delete(s, all, proj, args[0])
@@ -44,7 +44,7 @@ func newDeleteCmd() *cobra.Command {
 			// Format output
 			format, formatErr := output.GetFormat(outputFormat)
 			if formatErr != nil {
-				log.Fatal(formatErr)
+				log.Fatal().Err(formatErr).Msg("Failed to get output format")
 			}
 
 			if err != nil {

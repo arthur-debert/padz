@@ -4,7 +4,7 @@ Copyright © 2025 YOUR NAME HERE <EMAIL ADDRESS>
 package cli
 
 import (
-	"log"
+	"github.com/rs/zerolog/log"
 	"os"
 
 	"github.com/arthur-debert/padz/pkg/commands"
@@ -26,17 +26,17 @@ func newPathCmd() *cobra.Command {
 
 			s, err := store.NewStore()
 			if err != nil {
-				log.Fatal(err)
+				log.Fatal().Err(err).Msg("Operation failed")
 			}
 
 			dir, err := os.Getwd()
 			if err != nil {
-				log.Fatal(err)
+				log.Fatal().Err(err).Msg("Operation failed")
 			}
 
 			proj, err := project.GetCurrentProject(dir)
 			if err != nil {
-				log.Fatal(err)
+				log.Fatal().Err(err).Msg("Operation failed")
 			}
 
 			result, err := commands.Path(s, all, proj, args[0])
@@ -44,14 +44,14 @@ func newPathCmd() *cobra.Command {
 			// Format output
 			format, formatErr := output.GetFormat(outputFormat)
 			if formatErr != nil {
-				log.Fatal(formatErr)
+				log.Fatal().Err(formatErr).Msg("Failed to get output format")
 			}
 
 			formatter := output.NewFormatter(format, nil)
 
 			if err != nil {
 				if err := formatter.FormatError(err); err != nil {
-					log.Fatal(err)
+					log.Fatal().Err(err).Msg("Operation failed")
 				}
 				os.Exit(1)
 			}
@@ -59,12 +59,12 @@ func newPathCmd() *cobra.Command {
 			// For path command, output the path directly in plain/term mode
 			if format == output.PlainFormat || format == output.TermFormat {
 				if err := formatter.FormatString(result.Path); err != nil {
-					log.Fatal(err)
+					log.Fatal().Err(err).Msg("Operation failed")
 				}
 			} else {
 				// For JSON, output the structured result
 				if err := formatter.FormatPath(result); err != nil {
-					log.Fatal(err)
+					log.Fatal().Err(err).Msg("Operation failed")
 				}
 			}
 		},
