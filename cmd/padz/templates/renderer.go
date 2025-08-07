@@ -224,7 +224,7 @@ func calculateColumnWidths(termWidth int, showProject bool) columnWidths {
 	}
 
 	if showProject {
-		widths.Project = 8
+		widths.Project = 14
 	}
 
 	// Calculate title width: terminal - id - date - project - spaces

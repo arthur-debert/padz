@@ -79,9 +79,9 @@ func TestColumnWidthCalculation(t *testing.T) {
 		wantTitle   int
 	}{
 		{80, false, 56},  // 80 - 4 (id) - 16 (date) - 2 - 2 = 56
-		{80, true, 46},   // 80 - 4 (id) - 8 (proj) - 16 (date) - 2 - 2 - 2 = 46
+		{80, true, 40},   // 80 - 4 (id) - 14 (proj) - 16 (date) - 2 - 2 - 2 = 40
 		{120, false, 96}, // 120 - 4 - 16 - 2 - 2 = 96
-		{120, true, 86},  // 120 - 4 - 8 - 16 - 2 - 2 - 2 = 86
+		{120, true, 80},  // 120 - 4 - 14 - 16 - 2 - 2 - 2 = 80
 	}
 
 	for _, tt := range tests {
