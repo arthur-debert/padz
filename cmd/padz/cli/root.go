@@ -118,6 +118,10 @@ func NewRootCmd() *cobra.Command {
 	nukeCmd.Flags().BoolP("all", "a", false, FlagAllDesc)
 	rootCmd.AddCommand(nukeCmd)
 
+	recoverCmd := newRecoverCmd()
+	recoverCmd.GroupID = "multiple"
+	rootCmd.AddCommand(recoverCmd)
+
 	return rootCmd
 }
 
