@@ -125,12 +125,12 @@ func getLogFilePath() (string, error) {
 	}
 
 	// Use XDG state directory for logs (typically ~/.local/state/padz/)
-	logDir, err := xdg.StateFile(pkgName)
+	logDir, err := xdg.StateFile(filepath.Join(pkgName, fmt.Sprintf("%s.log", pkgName)))
 	if err != nil {
 		return "", fmt.Errorf("failed to get XDG state directory: %w", err)
 	}
 
-	return filepath.Join(filepath.Dir(logDir), fmt.Sprintf("%s.log", pkgName)), nil
+	return logDir, nil
 }
 
 // LevelFilterWriter wraps a writer and filters log entries based on level

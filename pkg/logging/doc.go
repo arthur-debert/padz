@@ -14,7 +14,7 @@
 //   - JSON format with structured fields for programmatic parsing
 //   - Logs ALL levels (Trace through Fatal) regardless of verbosity flags
 //   - XDG-compliant locations:
-//   - macOS: ~/Library/Application Support/padz.log
+//   - macOS: ~/Library/Application Support/padz/padz.log
 //   - Linux: ~/.local/state/padz/padz.log
 //   - Windows: %LOCALAPPDATA%\padz\padz.log
 //   - Complete audit trail for troubleshooting and analysis
@@ -117,11 +117,11 @@
 //
 // View recent logs:
 //
-//	tail -f ~/Library/Application Support/padz.log | jq
+//	tail -f ~/Library/Application Support/padz/padz.log | jq
 //
 // Filter logs by level:
 //
-//	jq 'select(.level=="error")' ~/Library/Application Support/padz.log
+//	jq 'select(.level=="error")' ~/Library/Application Support/padz/padz.log
 //
 // Extract errors with context:
 //

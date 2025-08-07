@@ -72,7 +72,7 @@ padz features comprehensive dual logging that provides both user-friendly consol
 - **All activity is logged** to file regardless of verbosity settings
 - JSON format with structured fields for easy parsing
 - **Location**: 
-  - **macOS**: `~/Library/Application Support/padz.log`
+  - **macOS**: `~/Library/Application Support/padz/padz.log`
   - **Linux**: `~/.local/state/padz/padz.log` 
   - **Windows**: `%LOCALAPPDATA%\padz\padz.log`
 - Automatic directory creation with proper permissions
