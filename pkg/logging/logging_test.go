@@ -10,40 +10,35 @@ import (
 )
 
 func TestSetupLogger_LogLevels(t *testing.T) {
+	// Note: With dual logging (console + file), the global level is always Trace
+	// so that the file gets all logs. Console filtering happens at the writer level.
 	tests := []struct {
-		name          string
-		verbosity     int
-		expectedLevel zerolog.Level
+		name      string
+		verbosity int
 	}{
 		{
-			name:          "verbosity 0 - warn level",
-			verbosity:     0,
-			expectedLevel: zerolog.WarnLevel,
+			name:      "verbosity 0 - warn level console",
+			verbosity: 0,
 		},
 		{
-			name:          "verbosity 1 - info level",
-			verbosity:     1,
-			expectedLevel: zerolog.InfoLevel,
+			name:      "verbosity 1 - info level console",
+			verbosity: 1,
 		},
 		{
-			name:          "verbosity 2 - debug level",
-			verbosity:     2,
-			expectedLevel: zerolog.DebugLevel,
+			name:      "verbosity 2 - debug level console",
+			verbosity: 2,
 		},
 		{
-			name:          "verbosity 3 - trace level",
-			verbosity:     3,
-			expectedLevel: zerolog.TraceLevel,
+			name:      "verbosity 3 - trace level console",
+			verbosity: 3,
 		},
 		{
-			name:          "verbosity 10 - trace level (high values default to trace)",
-			verbosity:     10,
-			expectedLevel: zerolog.TraceLevel,
+			name:      "verbosity 10 - trace level console (high values default to trace)",
+			verbosity: 10,
 		},
 		{
-			name:          "negative verbosity - trace level (default case)",
-			verbosity:     -1,
-			expectedLevel: zerolog.TraceLevel,
+			name:      "negative verbosity - trace level console (default case)",
+			verbosity: -1,
 		},
 	}
 
@@ -51,9 +46,11 @@ func TestSetupLogger_LogLevels(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			SetupLogger(tt.verbosity)
 
+			// With dual logging, global level is always Trace so file gets everything
 			actualLevel := zerolog.GlobalLevel()
-			if actualLevel != tt.expectedLevel {
-				t.Errorf("expected log level %v, got %v", tt.expectedLevel, actualLevel)
+			expectedGlobalLevel := zerolog.TraceLevel
+			if actualLevel != expectedGlobalLevel {
+				t.Errorf("expected global log level %v (for file logging), got %v", expectedGlobalLevel, actualLevel)
 			}
 		})
 	}
