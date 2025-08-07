@@ -10,7 +10,7 @@ import (
 	"github.com/arthur-debert/padz/pkg/output"
 	"github.com/arthur-debert/padz/pkg/project"
 	"github.com/arthur-debert/padz/pkg/store"
-	"log"
+	"github.com/rs/zerolog/log"
 	"os"
 	"strings"
 
@@ -31,23 +31,23 @@ func newPeekCmd() *cobra.Command {
 
 			s, err := store.NewStore()
 			if err != nil {
-				log.Fatal(err)
+				log.Fatal().Err(err).Msg("Operation failed")
 			}
 
 			dir, err := os.Getwd()
 			if err != nil {
-				log.Fatal(err)
+				log.Fatal().Err(err).Msg("Operation failed")
 			}
 
 			proj, err := project.GetCurrentProject(dir)
 			if err != nil {
-				log.Fatal(err)
+				log.Fatal().Err(err).Msg("Operation failed")
 			}
 
 			// Format output
 			format, err := output.GetFormat(outputFormat)
 			if err != nil {
-				log.Fatal(err)
+				log.Fatal().Err(err).Msg("Operation failed")
 			}
 
 			if format == output.PlainFormat || format == output.TermFormat {
@@ -55,7 +55,7 @@ func newPeekCmd() *cobra.Command {
 				// Terminal detection will automatically strip formatting when piped
 				content, err := commands.View(s, all, global, proj, args[0])
 				if err != nil {
-					log.Fatal(err)
+					log.Fatal().Err(err).Msg("Operation failed")
 				}
 
 				// Parse content into lines (excluding blank lines as per issue #12)
@@ -70,13 +70,13 @@ func newPeekCmd() *cobra.Command {
 
 				termFormatter, err := formatter.NewTerminalFormatter(nil)
 				if err != nil {
-					log.Fatal(err)
+					log.Fatal().Err(err).Msg("Operation failed")
 				}
 
 				if len(contentLines) <= 2*lines {
 					// Show full content
 					if err := termFormatter.FormatContentView(strings.Join(contentLines, "\n")); err != nil {
-						log.Fatal(err)
+						log.Fatal().Err(err).Msg("Operation failed")
 					}
 				} else {
 					// Show peek format with start/end content and skipped count
@@ -88,19 +88,19 @@ func newPeekCmd() *cobra.Command {
 					endContent := strings.Join(endLines, "\n")
 
 					if err := termFormatter.FormatContentPeek(startContent, endContent, true, skippedLines); err != nil {
-						log.Fatal(err)
+						log.Fatal().Err(err).Msg("Operation failed")
 					}
 				}
 			} else {
 				// For JSON format, use existing peek logic
 				content, err := commands.Peek(s, all, global, proj, args[0], lines)
 				if err != nil {
-					log.Fatal(err)
+					log.Fatal().Err(err).Msg("Operation failed")
 				}
 
 				outputFormatter := output.NewFormatter(format, nil)
 				if err := outputFormatter.FormatString(content); err != nil {
-					log.Fatal(err)
+					log.Fatal().Err(err).Msg("Operation failed")
 				}
 			}
 		},

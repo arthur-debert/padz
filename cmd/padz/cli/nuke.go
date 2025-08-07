@@ -6,7 +6,7 @@ package cli
 import (
 	"bufio"
 	"fmt"
-	"log"
+	"github.com/rs/zerolog/log"
 	"os"
 	"path/filepath"
 	"strings"
@@ -31,23 +31,23 @@ func newNukeCmd() *cobra.Command {
 
 			s, err := store.NewStore()
 			if err != nil {
-				log.Fatal(err)
+				log.Fatal().Err(err).Msg("Operation failed")
 			}
 
 			dir, err := os.Getwd()
 			if err != nil {
-				log.Fatal(err)
+				log.Fatal().Err(err).Msg("Operation failed")
 			}
 
 			proj, err := project.GetCurrentProject(dir)
 			if err != nil {
-				log.Fatal(err)
+				log.Fatal().Err(err).Msg("Operation failed")
 			}
 
 			// Format output
 			format, err := output.GetFormat(outputFormat)
 			if err != nil {
-				log.Fatal(err)
+				log.Fatal().Err(err).Msg("Operation failed")
 			}
 
 			// For JSON format, we need to handle confirmation differently
@@ -56,7 +56,7 @@ func newNukeCmd() *cobra.Command {
 				// For now, we'll just fail with an error
 				outputFormatter := output.NewFormatter(format, nil)
 				if err := outputFormatter.FormatError(fmt.Errorf("interactive confirmation not supported in JSON format")); err != nil {
-					log.Fatal(err)
+					log.Fatal().Err(err).Msg("Operation failed")
 				}
 				return
 			}

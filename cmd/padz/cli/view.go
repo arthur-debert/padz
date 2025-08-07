@@ -9,7 +9,7 @@ import (
 	"github.com/arthur-debert/padz/pkg/output"
 	"github.com/arthur-debert/padz/pkg/project"
 	"github.com/arthur-debert/padz/pkg/store"
-	"log"
+	"github.com/rs/zerolog/log"
 	"os"
 	"os/exec"
 	"strings"
@@ -30,28 +30,28 @@ func newViewCmd() *cobra.Command {
 
 			s, err := store.NewStore()
 			if err != nil {
-				log.Fatal(err)
+				log.Fatal().Err(err).Msg("Operation failed")
 			}
 
 			dir, err := os.Getwd()
 			if err != nil {
-				log.Fatal(err)
+				log.Fatal().Err(err).Msg("Operation failed")
 			}
 
 			proj, err := project.GetCurrentProject(dir)
 			if err != nil {
-				log.Fatal(err)
+				log.Fatal().Err(err).Msg("Operation failed")
 			}
 
 			content, err := commands.View(s, all, global, proj, args[0])
 			if err != nil {
-				log.Fatal(err)
+				log.Fatal().Err(err).Msg("Operation failed")
 			}
 
 			// Format output
 			format, err := output.GetFormat(outputFormat)
 			if err != nil {
-				log.Fatal(err)
+				log.Fatal().Err(err).Msg("Operation failed")
 			}
 
 			switch format {
@@ -59,7 +59,7 @@ func newViewCmd() *cobra.Command {
 				// JSON output goes directly to stdout
 				outputFormatter := output.NewFormatter(format, nil)
 				if err := outputFormatter.FormatString(content); err != nil {
-					log.Fatal(err)
+					log.Fatal().Err(err).Msg("Operation failed")
 				}
 			case output.PlainFormat, output.TermFormat:
 				// Use terminal formatter for both plain and term formats
@@ -69,22 +69,22 @@ func newViewCmd() *cobra.Command {
 					// Piped - use terminal formatter without pager
 					termFormatter, err := formatter.NewTerminalFormatter(nil)
 					if err != nil {
-						log.Fatal(err)
+						log.Fatal().Err(err).Msg("Operation failed")
 					}
 					if err := termFormatter.FormatContentView(content); err != nil {
-						log.Fatal(err)
+						log.Fatal().Err(err).Msg("Operation failed")
 					}
 				} else {
 					// Not piped - use terminal formatter with pager
 					var styledContent strings.Builder
 					termFormatter, err := formatter.NewTerminalFormatter(&styledContent)
 					if err != nil {
-						log.Fatal(err)
+						log.Fatal().Err(err).Msg("Operation failed")
 					}
 
 					// Render styled content
 					if err := termFormatter.FormatContentView(content); err != nil {
-						log.Fatal(err)
+						log.Fatal().Err(err).Msg("Operation failed")
 					}
 
 					// Use pager with styled content
@@ -96,11 +96,11 @@ func newViewCmd() *cobra.Command {
 					c.Stdin = strings.NewReader(styledContent.String())
 					c.Stdout = os.Stdout
 					if err := c.Run(); err != nil {
-						log.Fatal(err)
+						log.Fatal().Err(err).Msg("Operation failed")
 					}
 				}
 			default:
-				log.Fatalf("unsupported format: %s", format)
+				log.Fatal().Str("format", string(format)).Msg("Unsupported format")
 			}
 		},
 	}

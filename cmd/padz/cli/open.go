@@ -8,7 +8,7 @@ import (
 	"github.com/arthur-debert/padz/pkg/output"
 	"github.com/arthur-debert/padz/pkg/project"
 	"github.com/arthur-debert/padz/pkg/store"
-	"log"
+	"github.com/rs/zerolog/log"
 	"os"
 
 	"github.com/spf13/cobra"
@@ -26,17 +26,17 @@ func newOpenCmd() *cobra.Command {
 
 			s, err := store.NewStore()
 			if err != nil {
-				log.Fatal(err)
+				log.Fatal().Err(err).Msg("Operation failed")
 			}
 
 			dir, err := os.Getwd()
 			if err != nil {
-				log.Fatal(err)
+				log.Fatal().Err(err).Msg("Operation failed")
 			}
 
 			proj, err := project.GetCurrentProject(dir)
 			if err != nil {
-				log.Fatal(err)
+				log.Fatal().Err(err).Msg("Operation failed")
 			}
 
 			err = commands.Open(s, all, proj, args[0])
@@ -44,7 +44,7 @@ func newOpenCmd() *cobra.Command {
 			// Format output
 			format, formatErr := output.GetFormat(outputFormat)
 			if formatErr != nil {
-				log.Fatal(formatErr)
+				log.Fatal().Err(formatErr).Msg("Failed to get output format")
 			}
 
 			if err != nil {
