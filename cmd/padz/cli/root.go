@@ -1,8 +1,6 @@
 package cli
 
 import (
-	"os"
-
 	"github.com/arthur-debert/padz/internal/version"
 	"github.com/arthur-debert/padz/pkg/logging"
 	"github.com/rs/zerolog/log"
@@ -45,9 +43,9 @@ func NewRootCmd() *cobra.Command {
 			cmd.Printf(VersionFormat, version.Version, version.Commit, version.Date)
 			return
 		}
-		// Show help when no command is provided
-		_ = cmd.Help()
-		os.Exit(1)
+		// Run ls command when no command is provided
+		lsCmd := newLsCmd()
+		lsCmd.Run(lsCmd, args)
 	}
 
 	// Set up command groups

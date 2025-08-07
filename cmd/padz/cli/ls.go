@@ -52,7 +52,7 @@ The output includes the index, the relative time of creation, and the title of t
 
 			if len(scratches) == 0 {
 				if format == output.PlainFormat || format == output.TermFormat {
-					fmt.Println("No scratches found.")
+					fmt.Println("Nothing here, create your first scratch with `padz create` or `padz help` for assistance.")
 				}
 				return
 			}
