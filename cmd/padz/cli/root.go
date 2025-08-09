@@ -120,6 +120,10 @@ func NewRootCmd() *cobra.Command {
 	recoverCmd.GroupID = "multiple"
 	rootCmd.AddCommand(recoverCmd)
 
+	linksCmd := newLinksCmd()
+	linksCmd.GroupID = "multiple"
+	rootCmd.AddCommand(linksCmd)
+
 	return rootCmd
 }
 
