@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"crypto/sha1"
 	"fmt"
+	"github.com/arthur-debert/padz/pkg/clipboard"
 	"github.com/arthur-debert/padz/pkg/config"
 	"github.com/arthur-debert/padz/pkg/editor"
 	"github.com/arthur-debert/padz/pkg/store"
@@ -57,7 +58,14 @@ func CreateWithTitle(s *store.Store, project string, content []byte, providedTit
 		return err
 	}
 
-	return s.AddScratch(scratch)
+	if err := s.AddScratch(scratch); err != nil {
+		return err
+	}
+
+	// Copy content to clipboard
+	_ = clipboard.Copy(trimmedContent)
+
+	return nil
 }
 
 func getTitle(content []byte) string {
