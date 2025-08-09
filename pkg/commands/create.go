@@ -68,6 +68,64 @@ func CreateWithTitle(s *store.Store, project string, content []byte, providedTit
 	return nil
 }
 
+// CreateWithTitleAndContent creates a scratch with a title and optional initial content
+func CreateWithTitleAndContent(s *store.Store, project string, title string, initialContent []byte) error {
+	var err error
+	var content []byte
+
+	// Prepare initial content for editor
+	var editorContent []byte
+	if title != "" && len(initialContent) > 0 {
+		// Both title and initial content provided
+		editorContent = []byte(title + "\n\n" + string(initialContent))
+	} else if title != "" {
+		// Only title provided
+		editorContent = []byte(title + "\n\n")
+	} else if len(initialContent) > 0 {
+		// Only initial content provided
+		editorContent = initialContent
+	}
+
+	// Open editor with prepared content
+	content, err = editor.OpenInEditor(editorContent)
+	if err != nil {
+		return err
+	}
+
+	trimmedContent := trim(content)
+	if len(trimmedContent) == 0 {
+		return nil // Don't save empty scratches
+	}
+
+	// Use provided title if available, otherwise extract from content
+	finalTitle := title
+	if finalTitle == "" {
+		finalTitle = getTitle(trimmedContent)
+	}
+
+	id := fmt.Sprintf("%x", sha1.Sum(trimmedContent))
+
+	scratch := store.Scratch{
+		ID:        id,
+		Project:   project,
+		Title:     finalTitle,
+		CreatedAt: time.Now(),
+	}
+
+	if err := saveScratchFile(id, trimmedContent); err != nil {
+		return err
+	}
+
+	if err := s.AddScratch(scratch); err != nil {
+		return err
+	}
+
+	// Copy content to clipboard
+	_ = clipboard.Copy(trimmedContent)
+
+	return nil
+}
+
 func getTitle(content []byte) string {
 	reader := bytes.NewReader(content)
 	scanner := bufio.NewScanner(reader)
