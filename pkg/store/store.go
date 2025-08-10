@@ -2,7 +2,9 @@ package store
 
 import (
 	"encoding/json"
+	"fmt"
 	"os"
+	"strings"
 	"sync"
 	"time"
 
@@ -19,10 +21,12 @@ const (
 )
 
 type Store struct {
-	mu        sync.Mutex
-	scratches []Scratch
-	fs        filesystem.FileSystem
-	cfg       *config.Config
+	mu              sync.Mutex
+	scratches       []Scratch
+	fs              filesystem.FileSystem
+	cfg             *config.Config
+	metadataManager *MetadataManager
+	useNewMetadata  bool // Flag to enable new metadata system
 }
 
 func NewStore() (*Store, error) {
@@ -39,6 +43,17 @@ func NewStoreWithConfig(cfg *config.Config) (*Store, error) {
 		fs:  cfg.FileSystem,
 		cfg: cfg,
 	}
+
+	// Initialize metadata manager
+	basePath, err := GetScratchPathWithConfig(cfg)
+	if err != nil {
+		return nil, err
+	}
+	store.metadataManager = NewMetadataManager(cfg.FileSystem, basePath)
+
+	// Check if we should use new metadata system
+	store.useNewMetadata = store.shouldUseNewMetadata()
+
 	if err := store.load(); err != nil {
 		logger.Error().Err(err).Msg("Failed to load store data")
 		return nil, err
@@ -66,15 +81,84 @@ func (s *Store) SaveScratches(scratches []Scratch) error {
 	newCount := len(scratches)
 
 	logger.Info().Int("old_count", oldCount).Int("new_count", newCount).Msg("Bulk replacing scratches")
+
+	if s.useNewMetadata {
+		// Rebuild entire metadata system with new scratches
+		// This is expensive but ensures consistency
+		logger.Info().Msg("Rebuilding metadata for bulk save")
+
+		// Create new index
+		index := &Index{
+			Version:   indexVersion,
+			UpdatedAt: time.Now(),
+			Scratches: make(map[string]IndexEntry),
+		}
+
+		// Save all individual metadata files
+		for _, scratch := range scratches {
+			if err := s.metadataManager.SaveScratchMetadata(&scratch); err != nil {
+				logger.Error().Err(err).Str("scratch_id", scratch.ID).Msg("Failed to save scratch metadata during bulk save")
+				continue
+			}
+
+			// Add to index
+			index.Scratches[scratch.ID] = IndexEntry{
+				Project:   scratch.Project,
+				Title:     scratch.Title,
+				CreatedAt: scratch.CreatedAt,
+			}
+		}
+
+		// Save index
+		if err := s.metadataManager.SaveIndex(index); err != nil {
+			logger.Error().Err(err).Msg("Failed to save index during bulk save")
+			return err
+		}
+
+		// Clean up orphaned metadata files
+		metadataPath := s.metadataManager.GetMetadataPath()
+		if entries, err := s.fs.ReadDir(metadataPath); err == nil {
+			for _, entry := range entries {
+				if strings.HasSuffix(entry.Name(), ".json") {
+					id := strings.TrimSuffix(entry.Name(), ".json")
+					if _, exists := index.Scratches[id]; !exists {
+						// Remove orphaned metadata file
+						_ = s.metadataManager.DeleteScratchMetadata(id)
+					}
+				}
+			}
+		}
+	}
+
 	s.scratches = scratches
 
-	if err := s.save(); err != nil {
-		logger.Error().Err(err).Int("scratch_count", newCount).Msg("Failed to save scratches after bulk replace")
-		return err
+	if !s.useNewMetadata {
+		if err := s.save(); err != nil {
+			logger.Error().Err(err).Int("scratch_count", newCount).Msg("Failed to save scratches after bulk replace")
+			return err
+		}
 	}
 
 	logger.Info().Int("scratch_count", newCount).Msg("Bulk scratches saved successfully")
 	return nil
+}
+
+// shouldUseNewMetadata checks if we should use the new metadata system
+func (s *Store) shouldUseNewMetadata() bool {
+	indexPath := s.metadataManager.GetIndexPath()
+	if _, err := s.fs.Stat(indexPath); err == nil {
+		// Index exists, use new system
+		return true
+	}
+
+	// Check if metadata directory exists with files
+	metadataPath := s.metadataManager.GetMetadataPath()
+	if entries, err := s.fs.ReadDir(metadataPath); err == nil && len(entries) > 0 {
+		// Metadata directory has files, use new system
+		return true
+	}
+
+	return false
 }
 
 func (s *Store) load() error {
@@ -82,6 +166,10 @@ func (s *Store) load() error {
 	defer s.mu.Unlock()
 
 	logger := logging.GetLogger("store")
+
+	if s.useNewMetadata {
+		return s.loadWithNewMetadata()
+	}
 
 	path, err := s.getMetadataPathWithStore()
 	if err != nil {
@@ -111,11 +199,68 @@ func (s *Store) load() error {
 	}
 
 	logger.Info().Int("scratch_count", len(s.scratches)).Str("path", path).Msg("Store data loaded successfully")
+
+	// Check if we should migrate to new system
+	if !s.useNewMetadata && len(s.scratches) > 0 {
+		logger.Info().Msg("Legacy metadata detected, migrating to new system")
+		if err := s.metadataManager.MigrateFromLegacyMetadata(s.scratches); err != nil {
+			logger.Error().Err(err).Msg("Failed to migrate to new metadata system")
+			// Continue with old system if migration fails
+		} else {
+			s.useNewMetadata = true
+			logger.Info().Msg("Migration to new metadata system completed")
+		}
+	}
+
+	return nil
+}
+
+// loadWithNewMetadata loads scratches using the new metadata system
+func (s *Store) loadWithNewMetadata() error {
+	logger := logging.GetLogger("store")
+	logger.Debug().Msg("Loading store data using new metadata system")
+
+	// Initialize metadata system if needed
+	if err := s.metadataManager.Initialize(); err != nil {
+		return err
+	}
+
+	// Load index
+	index, err := s.metadataManager.LoadIndex()
+	if err != nil {
+		return err
+	}
+
+	// Load individual metadata for each scratch in index
+	s.scratches = make([]Scratch, 0, len(index.Scratches))
+	for id, entry := range index.Scratches {
+		scratch, err := s.metadataManager.LoadScratchMetadata(id)
+		if err != nil {
+			logger.Warn().Err(err).Str("id", id).Msg("Failed to load scratch metadata")
+			continue
+		}
+		if scratch == nil {
+			// Metadata file missing, reconstruct from index
+			scratch = &Scratch{
+				ID:        id,
+				Project:   entry.Project,
+				Title:     entry.Title,
+				CreatedAt: entry.CreatedAt,
+			}
+		}
+		s.scratches = append(s.scratches, *scratch)
+	}
+
+	logger.Info().Int("scratch_count", len(s.scratches)).Msg("Store data loaded successfully with new metadata system")
 	return nil
 }
 
 func (s *Store) save() error {
 	logger := logging.GetLogger("store")
+
+	if s.useNewMetadata {
+		return s.saveWithNewMetadata()
+	}
 
 	path, err := s.getMetadataPathWithStore()
 	if err != nil {
@@ -142,6 +287,17 @@ func (s *Store) save() error {
 	return nil
 }
 
+// saveWithNewMetadata saves using the new metadata system
+func (s *Store) saveWithNewMetadata() error {
+	logger := logging.GetLogger("store")
+	logger.Debug().Msg("Saving store data using new metadata system")
+
+	// This is now a no-op as individual operations update metadata
+	// The index is updated with each operation
+	logger.Debug().Msg("Save called but using new metadata system (no-op)")
+	return nil
+}
+
 func (s *Store) AddScratch(scratch Scratch) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -149,11 +305,27 @@ func (s *Store) AddScratch(scratch Scratch) error {
 	logger := logging.GetLogger("store")
 	logger.Info().Str("scratch_id", scratch.ID).Str("title", scratch.Title).Msg("Adding new scratch")
 
+	if s.useNewMetadata {
+		// Save individual metadata file
+		if err := s.metadataManager.SaveScratchMetadata(&scratch); err != nil {
+			logger.Error().Err(err).Str("scratch_id", scratch.ID).Msg("Failed to save scratch metadata")
+			return err
+		}
+
+		// Update index
+		if err := s.metadataManager.UpdateIndexEntry(&scratch); err != nil {
+			logger.Error().Err(err).Str("scratch_id", scratch.ID).Msg("Failed to update index")
+			return err
+		}
+	}
+
 	s.scratches = append(s.scratches, scratch)
 
-	if err := s.save(); err != nil {
-		logger.Error().Err(err).Str("scratch_id", scratch.ID).Msg("Failed to save after adding scratch")
-		return err
+	if !s.useNewMetadata {
+		if err := s.save(); err != nil {
+			logger.Error().Err(err).Str("scratch_id", scratch.ID).Msg("Failed to save after adding scratch")
+			return err
+		}
 	}
 
 	logger.Info().Str("scratch_id", scratch.ID).Int("total_count", len(s.scratches)).Msg("Scratch added successfully")
@@ -167,6 +339,20 @@ func (s *Store) RemoveScratch(id string) error {
 	logger := logging.GetLogger("store")
 	oldCount := len(s.scratches)
 	logger.Info().Str("scratch_id", id).Int("current_count", oldCount).Msg("Removing scratch")
+
+	if s.useNewMetadata {
+		// Delete individual metadata file
+		if err := s.metadataManager.DeleteScratchMetadata(id); err != nil {
+			logger.Error().Err(err).Str("scratch_id", id).Msg("Failed to delete scratch metadata")
+			return err
+		}
+
+		// Remove from index
+		if err := s.metadataManager.RemoveIndexEntry(id); err != nil {
+			logger.Error().Err(err).Str("scratch_id", id).Msg("Failed to update index")
+			return err
+		}
+	}
 
 	var newScratches []Scratch
 	found := false
@@ -186,9 +372,11 @@ func (s *Store) RemoveScratch(id string) error {
 	s.scratches = newScratches
 	newCount := len(s.scratches)
 
-	if err := s.save(); err != nil {
-		logger.Error().Err(err).Str("scratch_id", id).Msg("Failed to save after removing scratch")
-		return err
+	if !s.useNewMetadata {
+		if err := s.save(); err != nil {
+			logger.Error().Err(err).Str("scratch_id", id).Msg("Failed to save after removing scratch")
+			return err
+		}
 	}
 
 	logger.Info().Str("scratch_id", id).Int("old_count", oldCount).Int("new_count", newCount).Bool("found", found).Msg("Scratch removal completed")
@@ -201,6 +389,23 @@ func (s *Store) UpdateScratch(scratchToUpdate Scratch) error {
 
 	logger := logging.GetLogger("store")
 	logger.Info().Str("scratch_id", scratchToUpdate.ID).Str("title", scratchToUpdate.Title).Msg("Updating scratch")
+
+	if s.useNewMetadata {
+		// Update timestamp
+		scratchToUpdate.UpdatedAt = time.Now()
+
+		// Save individual metadata file
+		if err := s.metadataManager.SaveScratchMetadata(&scratchToUpdate); err != nil {
+			logger.Error().Err(err).Str("scratch_id", scratchToUpdate.ID).Msg("Failed to save scratch metadata")
+			return err
+		}
+
+		// Update index
+		if err := s.metadataManager.UpdateIndexEntry(&scratchToUpdate); err != nil {
+			logger.Error().Err(err).Str("scratch_id", scratchToUpdate.ID).Msg("Failed to update index")
+			return err
+		}
+	}
 
 	found := false
 	for i, scratch := range s.scratches {
@@ -216,9 +421,11 @@ func (s *Store) UpdateScratch(scratchToUpdate Scratch) error {
 		logger.Warn().Str("scratch_id", scratchToUpdate.ID).Msg("Scratch not found for update")
 	}
 
-	if err := s.save(); err != nil {
-		logger.Error().Err(err).Str("scratch_id", scratchToUpdate.ID).Msg("Failed to save after updating scratch")
-		return err
+	if !s.useNewMetadata {
+		if err := s.save(); err != nil {
+			logger.Error().Err(err).Str("scratch_id", scratchToUpdate.ID).Msg("Failed to save after updating scratch")
+			return err
+		}
 	}
 
 	logger.Info().Str("scratch_id", scratchToUpdate.ID).Bool("found", found).Msg("Scratch update completed")
@@ -273,8 +480,19 @@ func GetScratchFilePathWithConfig(id string, cfg *config.Config) (string, error)
 		return "", err
 	}
 
+	// Check if new metadata system is in use
+	metadataManager := NewMetadataManager(cfg.FileSystem, path)
+	filesPath := metadataManager.GetFilesPath()
+	if _, err := cfg.FileSystem.Stat(filesPath); err == nil {
+		// New structure exists, use it
+		filePath := cfg.FileSystem.Join(filesPath, id)
+		logger.Debug().Str("scratch_id", id).Str("file_path", filePath).Msg("Resolved scratch file path (new structure)")
+		return filePath, nil
+	}
+
+	// Fall back to old structure
 	filePath := cfg.FileSystem.Join(path, id)
-	logger.Debug().Str("scratch_id", id).Str("file_path", filePath).Msg("Resolved scratch file path")
+	logger.Debug().Str("scratch_id", id).Str("file_path", filePath).Msg("Resolved scratch file path (legacy structure)")
 	return filePath, nil
 }
 
@@ -296,16 +514,34 @@ func (s *Store) getMetadataPathWithStore() (string, error) {
 	return getMetadataPathWithConfig(s.cfg)
 }
 
+// RebuildIndex rebuilds the master index from individual metadata files
+func (s *Store) RebuildIndex() error {
+	if !s.useNewMetadata {
+		return fmt.Errorf("new metadata system not in use")
+	}
+
+	return s.metadataManager.RebuildIndex()
+}
+
 // withFileLock performs an operation with file-based locking to prevent concurrent metadata corruption
 func (s *Store) withFileLock(operation func() error) error {
 	logger := logging.GetLogger("store")
 
-	metadataPath, err := s.getMetadataPathWithStore()
-	if err != nil {
-		return err
+	var lockPath string
+	var err error
+
+	if s.useNewMetadata {
+		// Lock on index file for new system
+		lockPath = s.metadataManager.GetIndexPath()
+	} else {
+		// Lock on metadata.json for old system
+		lockPath, err = s.getMetadataPathWithStore()
+		if err != nil {
+			return err
+		}
 	}
 
-	lock := filelock.New(metadataPath)
+	lock := filelock.New(lockPath)
 
 	// Try to acquire lock with 5 second timeout
 	if err := lock.Lock(5 * time.Second); err != nil {
@@ -351,6 +587,19 @@ func (s *Store) AddScratchAtomic(scratch Scratch) error {
 		}
 
 		logger.Info().Str("scratch_id", scratch.ID).Str("title", scratch.Title).Msg("Adding new scratch atomically")
+
+		if s.useNewMetadata {
+			// Save individual metadata file (no lock needed for individual file)
+			if err := s.metadataManager.SaveScratchMetadata(&scratch); err != nil {
+				return err
+			}
+
+			// Update index (already within lock)
+			if err := s.metadataManager.UpdateIndexEntry(&scratch); err != nil {
+				return err
+			}
+		}
+
 		s.scratches = append(s.scratches, scratch)
 		return nil
 	})
@@ -382,6 +631,18 @@ func (s *Store) RemoveScratchAtomic(id string) error {
 			logger.Warn().Str("scratch_id", id).Msg("Scratch not found for removal")
 		}
 
+		if s.useNewMetadata && found {
+			// Delete individual metadata file
+			if err := s.metadataManager.DeleteScratchMetadata(id); err != nil {
+				return err
+			}
+
+			// Remove from index
+			if err := s.metadataManager.RemoveIndexEntry(id); err != nil {
+				return err
+			}
+		}
+
 		s.scratches = newScratches
 		return nil
 	})
@@ -411,6 +672,21 @@ func (s *Store) UpdateScratchAtomic(scratchToUpdate Scratch) error {
 			logger.Warn().Str("scratch_id", scratchToUpdate.ID).Msg("Scratch not found for update")
 		}
 
+		if s.useNewMetadata && found {
+			// Update timestamp
+			scratchToUpdate.UpdatedAt = time.Now()
+
+			// Save individual metadata file
+			if err := s.metadataManager.SaveScratchMetadata(&scratchToUpdate); err != nil {
+				return err
+			}
+
+			// Update index
+			if err := s.metadataManager.UpdateIndexEntry(&scratchToUpdate); err != nil {
+				return err
+			}
+		}
+
 		return nil
 	})
 }
@@ -425,6 +701,37 @@ func (s *Store) SaveScratchesAtomic(scratches []Scratch) error {
 	return s.withFileLock(func() error {
 		logger := logging.GetLogger("store")
 		logger.Info().Int("old_count", len(s.scratches)).Int("new_count", len(scratches)).Msg("Bulk replacing scratches atomically")
+
+		if s.useNewMetadata {
+			// Rebuild metadata within lock
+			// Create new index
+			index := &Index{
+				Version:   indexVersion,
+				UpdatedAt: time.Now(),
+				Scratches: make(map[string]IndexEntry),
+			}
+
+			// Save all individual metadata files
+			for _, scratch := range scratches {
+				if err := s.metadataManager.SaveScratchMetadata(&scratch); err != nil {
+					logger.Error().Err(err).Str("scratch_id", scratch.ID).Msg("Failed to save scratch metadata during bulk save")
+					continue
+				}
+
+				// Add to index
+				index.Scratches[scratch.ID] = IndexEntry{
+					Project:   scratch.Project,
+					Title:     scratch.Title,
+					CreatedAt: scratch.CreatedAt,
+				}
+			}
+
+			// Save index
+			if err := s.metadataManager.SaveIndex(index); err != nil {
+				return err
+			}
+		}
+
 		s.scratches = scratches
 		return nil
 	})
