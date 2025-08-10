@@ -23,6 +23,8 @@ type FileSystem interface {
 	MkdirAll(path string, perm os.FileMode) error
 	// Join joins path elements
 	Join(elem ...string) string
+	// ReadDir reads the named directory
+	ReadDir(path string) ([]os.DirEntry, error)
 }
 
 // OSFileSystem implements FileSystem using real OS operations
@@ -101,6 +103,20 @@ func (fs *OSFileSystem) MkdirAll(path string, perm os.FileMode) error {
 
 func (fs *OSFileSystem) Join(elem ...string) string {
 	return filepath.Join(elem...)
+}
+
+func (fs *OSFileSystem) ReadDir(path string) ([]os.DirEntry, error) {
+	logger := logging.GetLogger("filesystem.os")
+	logger.Debug().Str("path", path).Msg("Reading directory")
+
+	entries, err := os.ReadDir(path)
+	if err != nil {
+		logger.Error().Err(err).Str("path", path).Msg("Failed to read directory")
+		return nil, err
+	}
+
+	logger.Debug().Str("path", path).Int("entries", len(entries)).Msg("Directory read successfully")
+	return entries, nil
 }
 
 // MemoryFileSystem implements FileSystem in memory
@@ -228,6 +244,61 @@ func (fs *MemoryFileSystem) Join(elem ...string) string {
 	return filepath.Join(elem...)
 }
 
+func (fs *MemoryFileSystem) ReadDir(path string) ([]os.DirEntry, error) {
+	fs.mu.RLock()
+	defer fs.mu.RUnlock()
+
+	if !fs.dirExists(path) {
+		return nil, &os.PathError{Op: "readdir", Path: path, Err: os.ErrNotExist}
+	}
+
+	// Collect all entries in this directory
+	entries := make([]os.DirEntry, 0)
+	seen := make(map[string]bool)
+
+	// Check files
+	for filePath := range fs.files {
+		dir := filepath.Dir(filePath)
+		if dir == path {
+			name := filepath.Base(filePath)
+			if !seen[name] {
+				seen[name] = true
+				entries = append(entries, &memDirEntry{
+					name:  name,
+					isDir: false,
+					info: &memFileInfo{
+						name: name,
+						size: int64(len(fs.files[filePath])),
+						mode: 0644,
+					},
+				})
+			}
+		}
+	}
+
+	// Check subdirectories
+	for dirPath := range fs.dirs {
+		parent := filepath.Dir(dirPath)
+		if parent == path && dirPath != path {
+			name := filepath.Base(dirPath)
+			if !seen[name] {
+				seen[name] = true
+				entries = append(entries, &memDirEntry{
+					name:  name,
+					isDir: true,
+					info: &memFileInfo{
+						name:  name,
+						mode:  os.ModeDir | 0755,
+						isDir: true,
+					},
+				})
+			}
+		}
+	}
+
+	return entries, nil
+}
+
 func (fs *MemoryFileSystem) dirExists(path string) bool {
 	if path == "/" || path == "." {
 		return true
@@ -249,6 +320,18 @@ func (fi *memFileInfo) Mode() os.FileMode  { return fi.mode }
 func (fi *memFileInfo) ModTime() time.Time { return time.Now() }
 func (fi *memFileInfo) IsDir() bool        { return fi.isDir }
 func (fi *memFileInfo) Sys() interface{}   { return nil }
+
+// memDirEntry implements os.DirEntry for in-memory files
+type memDirEntry struct {
+	name  string
+	isDir bool
+	info  os.FileInfo
+}
+
+func (de *memDirEntry) Name() string               { return de.name }
+func (de *memDirEntry) IsDir() bool                { return de.isDir }
+func (de *memDirEntry) Type() os.FileMode          { return de.info.Mode().Type() }
+func (de *memDirEntry) Info() (os.FileInfo, error) { return de.info, nil }
 
 // Reset clears all files and directories in the memory file system
 func (fs *MemoryFileSystem) Reset() {
