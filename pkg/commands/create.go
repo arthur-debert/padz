@@ -58,7 +58,7 @@ func CreateWithTitle(s *store.Store, project string, content []byte, providedTit
 		return err
 	}
 
-	if err := s.AddScratch(scratch); err != nil {
+	if err := s.AddScratchAtomic(scratch); err != nil {
 		return err
 	}
 
@@ -116,7 +116,7 @@ func CreateWithTitleAndContent(s *store.Store, project string, title string, ini
 		return err
 	}
 
-	if err := s.AddScratch(scratch); err != nil {
+	if err := s.AddScratchAtomic(scratch); err != nil {
 		return err
 	}
 

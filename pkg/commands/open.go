@@ -27,7 +27,7 @@ func Open(s *store.Store, all bool, project string, indexStr string) error {
 		if err := deleteScratchFile(scratchToOpen.ID); err != nil {
 			return err
 		}
-		return s.RemoveScratch(scratchToOpen.ID)
+		return s.RemoveScratchAtomic(scratchToOpen.ID)
 	}
 
 	if err := saveScratchFile(scratchToOpen.ID, trimmedContent); err != nil {
@@ -35,5 +35,5 @@ func Open(s *store.Store, all bool, project string, indexStr string) error {
 	}
 
 	scratchToOpen.Title = getTitle(trimmedContent)
-	return s.UpdateScratch(*scratchToOpen)
+	return s.UpdateScratchAtomic(*scratchToOpen)
 }

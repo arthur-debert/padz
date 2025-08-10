@@ -4,9 +4,11 @@ import (
 	"encoding/json"
 	"os"
 	"sync"
+	"time"
 
 	"github.com/adrg/xdg"
 	"github.com/arthur-debert/padz/pkg/config"
+	"github.com/arthur-debert/padz/pkg/filelock"
 	"github.com/arthur-debert/padz/pkg/filesystem"
 	"github.com/arthur-debert/padz/pkg/logging"
 )
@@ -292,4 +294,118 @@ func getMetadataPathWithConfig(cfg *config.Config) (string, error) {
 
 func (s *Store) getMetadataPathWithStore() (string, error) {
 	return getMetadataPathWithConfig(s.cfg)
+}
+
+// withFileLock performs an operation with file-based locking to prevent concurrent metadata corruption
+func (s *Store) withFileLock(operation func() error) error {
+	logger := logging.GetLogger("store")
+
+	metadataPath, err := s.getMetadataPathWithStore()
+	if err != nil {
+		return err
+	}
+
+	lock := filelock.New(metadataPath)
+
+	// Try to acquire lock with 5 second timeout
+	if err := lock.Lock(5 * time.Second); err != nil {
+		logger.Error().Err(err).Msg("Failed to acquire file lock")
+		return err
+	}
+	defer func() {
+		if unlockErr := lock.Unlock(); unlockErr != nil {
+			logger.Error().Err(unlockErr).Msg("Failed to release file lock")
+		}
+	}()
+
+	// Reload the latest data while holding the lock
+	if err := s.load(); err != nil {
+		return err
+	}
+
+	// Perform the operation
+	if err := operation(); err != nil {
+		return err
+	}
+
+	// Save the changes
+	return s.save()
+}
+
+// AddScratchAtomic adds a scratch with file locking to prevent concurrent conflicts
+func (s *Store) AddScratchAtomic(scratch Scratch) error {
+	return s.withFileLock(func() error {
+		logger := logging.GetLogger("store")
+
+		// Check for duplicates
+		for _, existing := range s.scratches {
+			if existing.ID == scratch.ID {
+				logger.Warn().Str("scratch_id", scratch.ID).Msg("Scratch with this ID already exists, skipping add")
+				return nil
+			}
+		}
+
+		logger.Info().Str("scratch_id", scratch.ID).Str("title", scratch.Title).Msg("Adding new scratch atomically")
+		s.scratches = append(s.scratches, scratch)
+		return nil
+	})
+}
+
+// RemoveScratchAtomic removes a scratch with file locking
+func (s *Store) RemoveScratchAtomic(id string) error {
+	return s.withFileLock(func() error {
+		logger := logging.GetLogger("store")
+
+		var newScratches []Scratch
+		found := false
+
+		for _, scratch := range s.scratches {
+			if scratch.ID != id {
+				newScratches = append(newScratches, scratch)
+			} else {
+				found = true
+				logger.Debug().Str("scratch_id", id).Str("title", scratch.Title).Msg("Found scratch to remove")
+			}
+		}
+
+		if !found {
+			logger.Warn().Str("scratch_id", id).Msg("Scratch not found for removal")
+		}
+
+		s.scratches = newScratches
+		return nil
+	})
+}
+
+// UpdateScratchAtomic updates a scratch with file locking
+func (s *Store) UpdateScratchAtomic(scratchToUpdate Scratch) error {
+	return s.withFileLock(func() error {
+		logger := logging.GetLogger("store")
+
+		found := false
+		for i, scratch := range s.scratches {
+			if scratch.ID == scratchToUpdate.ID {
+				logger.Debug().Str("scratch_id", scratchToUpdate.ID).Msg("Found scratch to update")
+				s.scratches[i] = scratchToUpdate
+				found = true
+				break
+			}
+		}
+
+		if !found {
+			logger.Warn().Str("scratch_id", scratchToUpdate.ID).Msg("Scratch not found for update")
+		}
+
+		return nil
+	})
+}
+
+// SaveScratchesAtomic performs bulk update with file locking
+func (s *Store) SaveScratchesAtomic(scratches []Scratch) error {
+	return s.withFileLock(func() error {
+		logger := logging.GetLogger("store")
+		logger.Info().Int("old_count", len(s.scratches)).Int("new_count", len(scratches)).Msg("Bulk replacing scratches atomically")
+		s.scratches = scratches
+		return nil
+	})
 }

@@ -55,7 +55,7 @@ func Nuke(s *store.Store, all bool, project string) (*NukeResult, error) {
 	// Remove all scratches from the store
 	if all {
 		// Clear all scratches
-		if err := s.SaveScratches([]store.Scratch{}); err != nil {
+		if err := s.SaveScratchesAtomic([]store.Scratch{}); err != nil {
 			return nil, err
 		}
 	} else {
@@ -73,7 +73,7 @@ func Nuke(s *store.Store, all bool, project string) (*NukeResult, error) {
 				remainingScratches = append(remainingScratches, scratch)
 			}
 		}
-		if err := s.SaveScratches(remainingScratches); err != nil {
+		if err := s.SaveScratchesAtomic(remainingScratches); err != nil {
 			return nil, err
 		}
 	}

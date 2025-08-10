@@ -15,7 +15,7 @@ func Delete(s *store.Store, all bool, project string, indexStr string) error {
 		return err
 	}
 
-	return s.RemoveScratch(scratchToDelete.ID)
+	return s.RemoveScratchAtomic(scratchToDelete.ID)
 }
 
 func deleteScratchFile(id string) error {
