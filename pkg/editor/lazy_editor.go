@@ -20,13 +20,7 @@ func LaunchAndExit(scratchID string, content []byte) error {
 func LaunchAndExitWithConfig(scratchID string, content []byte, cfg *config.Config) error {
 	logger := logging.GetLogger("editor")
 
-	editor := os.Getenv("EDITOR")
-	if editor == "" {
-		editor = "vim" // default to vim
-		logger.Debug().Str("editor", editor).Msg("Using default editor")
-	} else {
-		logger.Debug().Str("editor", editor).Msg("Using EDITOR environment variable")
-	}
+	editor := GetEditor()
 
 	// Get the final path for the scratch file
 	var path string

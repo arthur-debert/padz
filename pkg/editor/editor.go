@@ -10,13 +10,7 @@ import (
 func OpenInEditor(content []byte) ([]byte, error) {
 	logger := logging.GetLogger("editor")
 
-	editor := os.Getenv("EDITOR")
-	if editor == "" {
-		editor = "vim" // default to vim
-		logger.Debug().Str("editor", editor).Msg("Using default editor")
-	} else {
-		logger.Debug().Str("editor", editor).Msg("Using EDITOR environment variable")
-	}
+	editor := GetEditor()
 
 	logger.Info().Str("editor", editor).Int("content_size", len(content)).Msg("Starting editor session")
 
