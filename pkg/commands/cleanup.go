@@ -26,5 +26,5 @@ func Cleanup(s *store.Store, days int) error {
 		}
 	}
 
-	return s.SaveScratches(scratchesToKeep)
+	return s.SaveScratchesAtomic(scratchesToKeep)
 }

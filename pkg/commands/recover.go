@@ -186,7 +186,7 @@ func Recover(s *store.Store, options RecoveryOptions) (*RecoveryResult, error) {
 			}
 		}
 
-		if err := s.SaveScratches(cleanedScratches); err != nil {
+		if err := s.SaveScratchesAtomic(cleanedScratches); err != nil {
 			log.Error().Err(err).Msg("Failed to save cleaned metadata")
 			result.Errors = append(result.Errors, RecoveryError{
 				Type:    "save_error",
