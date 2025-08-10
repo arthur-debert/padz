@@ -39,6 +39,11 @@ func newDeleteCmd() *cobra.Command {
 				log.Fatal().Err(err).Msg("Failed to get current project")
 			}
 
+			// Run discovery before deleting
+			if err := s.RunDiscoveryBeforeCommand(); err != nil {
+				log.Warn().Err(err).Msg("Failed to run discovery")
+			}
+
 			err = commands.Delete(s, all, proj, args[0])
 
 			// Format output

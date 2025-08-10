@@ -43,6 +43,11 @@ func newViewCmd() *cobra.Command {
 				log.Fatal().Err(err).Msg("Operation failed")
 			}
 
+			// Run discovery before viewing
+			if err := s.RunDiscoveryBeforeCommand(); err != nil {
+				log.Warn().Err(err).Msg("Failed to run discovery")
+			}
+
 			content, err := commands.View(s, all, global, proj, args[0])
 			if err != nil {
 				log.Fatal().Err(err).Msg("Operation failed")
