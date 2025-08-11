@@ -1,0 +1,13 @@
+# CLOC configuration for separating Go test files from regular Go files
+# 
+# Usage examples:
+# 
+# Count only regular Go files (excluding *_test.go):
+# cloc --not-match-f='.*_test\.go$' pkg
+# 
+# Count only test files (*_test.go):
+# cloc --match-f='.*_test\.go$' pkg
+# 
+# With --by-file option:
+# cloc --by-file --not-match-f='.*_test\.go$' pkg
+# cloc --by-file --match-f='.*_test\.go$' pkg

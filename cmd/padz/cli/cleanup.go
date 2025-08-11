@@ -8,8 +8,8 @@ import (
 	"github.com/arthur-debert/padz/pkg/commands"
 	"github.com/arthur-debert/padz/pkg/output"
 	"github.com/arthur-debert/padz/pkg/store"
-	"log"
 
+	"github.com/rs/zerolog/log"
 	"github.com/spf13/cobra"
 )
 
@@ -24,7 +24,7 @@ func newCleanupCmd() *cobra.Command {
 
 			s, err := store.NewStore()
 			if err != nil {
-				log.Fatal(err)
+				log.Fatal().Err(err).Msg("Failed to initialize store")
 			}
 
 			err = commands.Cleanup(s, days)
@@ -32,7 +32,7 @@ func newCleanupCmd() *cobra.Command {
 			// Format output
 			format, formatErr := output.GetFormat(outputFormat)
 			if formatErr != nil {
-				log.Fatal(formatErr)
+				log.Fatal().Err(formatErr).Msg("Failed to get output format")
 			}
 
 			if err != nil {

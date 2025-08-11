@@ -8,7 +8,7 @@ import (
 	"github.com/arthur-debert/padz/pkg/output"
 	"github.com/arthur-debert/padz/pkg/project"
 	"github.com/arthur-debert/padz/pkg/store"
-	"log"
+	"github.com/rs/zerolog/log"
 	"os"
 
 	"github.com/spf13/cobra"
@@ -16,35 +16,45 @@ import (
 
 // newOpenCmd creates and returns a new open command
 func newOpenCmd() *cobra.Command {
-	return &cobra.Command{
+	cmd := &cobra.Command{
 		Use:   OpenUse,
 		Short: OpenShort,
 		Long:  OpenLong,
 		Args:  cobra.ExactArgs(1),
 		Run: func(cmd *cobra.Command, args []string) {
 			all, _ := cmd.Flags().GetBool("all")
+			lazy, _ := cmd.Flags().GetBool("lazy")
 
 			s, err := store.NewStore()
 			if err != nil {
-				log.Fatal(err)
+				log.Fatal().Err(err).Msg("Operation failed")
 			}
 
 			dir, err := os.Getwd()
 			if err != nil {
-				log.Fatal(err)
+				log.Fatal().Err(err).Msg("Operation failed")
 			}
 
 			proj, err := project.GetCurrentProject(dir)
 			if err != nil {
-				log.Fatal(err)
+				log.Fatal().Err(err).Msg("Operation failed")
 			}
 
-			err = commands.Open(s, all, proj, args[0])
+			// Run discovery before opening
+			if err := s.RunDiscoveryBeforeCommand(); err != nil {
+				log.Warn().Err(err).Msg("Failed to run discovery")
+			}
+
+			if lazy {
+				err = commands.OpenLazy(s, all, proj, args[0])
+			} else {
+				err = commands.Open(s, all, proj, args[0])
+			}
 
 			// Format output
 			format, formatErr := output.GetFormat(outputFormat)
 			if formatErr != nil {
-				log.Fatal(formatErr)
+				log.Fatal().Err(formatErr).Msg("Failed to get output format")
 			}
 
 			if err != nil {
@@ -54,4 +64,8 @@ func newOpenCmd() *cobra.Command {
 			handleTerminalSuccess(OpenSuccess, format)
 		},
 	}
+
+	cmd.Flags().Bool("lazy", false, "Launch editor and exit immediately (non-blocking)")
+
+	return cmd
 }

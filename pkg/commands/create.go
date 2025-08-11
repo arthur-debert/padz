@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"crypto/sha1"
 	"fmt"
+	"github.com/arthur-debert/padz/pkg/clipboard"
 	"github.com/arthur-debert/padz/pkg/config"
 	"github.com/arthur-debert/padz/pkg/editor"
 	"github.com/arthur-debert/padz/pkg/store"
@@ -15,9 +16,19 @@ import (
 )
 
 func Create(s *store.Store, project string, content []byte) error {
+	return CreateWithTitle(s, project, content, "")
+}
+
+// CreateWithTitle creates a scratch with an optional pre-defined title
+func CreateWithTitle(s *store.Store, project string, content []byte, providedTitle string) error {
 	var err error
 	if len(content) == 0 {
-		content, err = editor.OpenInEditor(nil)
+		// If we have a provided title, show it in the editor
+		var initialContent []byte
+		if providedTitle != "" {
+			initialContent = []byte(providedTitle + "\n\n")
+		}
+		content, err = editor.OpenInEditor(initialContent)
 		if err != nil {
 			return err
 		}
@@ -28,7 +39,12 @@ func Create(s *store.Store, project string, content []byte) error {
 		return nil // Don't save empty scratches
 	}
 
-	title := getTitle(trimmedContent)
+	// Use provided title if available, otherwise extract from content
+	title := providedTitle
+	if title == "" {
+		title = getTitle(trimmedContent)
+	}
+
 	id := fmt.Sprintf("%x", sha1.Sum(trimmedContent))
 
 	scratch := store.Scratch{
@@ -42,7 +58,72 @@ func Create(s *store.Store, project string, content []byte) error {
 		return err
 	}
 
-	return s.AddScratch(scratch)
+	if err := s.AddScratchAtomic(scratch); err != nil {
+		return err
+	}
+
+	// Copy content to clipboard
+	_ = clipboard.Copy(trimmedContent)
+
+	return nil
+}
+
+// CreateWithTitleAndContent creates a scratch with a title and optional initial content
+func CreateWithTitleAndContent(s *store.Store, project string, title string, initialContent []byte) error {
+	var err error
+	var content []byte
+
+	// Prepare initial content for editor
+	var editorContent []byte
+	if title != "" && len(initialContent) > 0 {
+		// Both title and initial content provided
+		editorContent = []byte(title + "\n\n" + string(initialContent))
+	} else if title != "" {
+		// Only title provided
+		editorContent = []byte(title + "\n\n")
+	} else if len(initialContent) > 0 {
+		// Only initial content provided
+		editorContent = initialContent
+	}
+
+	// Open editor with prepared content
+	content, err = editor.OpenInEditor(editorContent)
+	if err != nil {
+		return err
+	}
+
+	trimmedContent := trim(content)
+	if len(trimmedContent) == 0 {
+		return nil // Don't save empty scratches
+	}
+
+	// Use provided title if available, otherwise extract from content
+	finalTitle := title
+	if finalTitle == "" {
+		finalTitle = getTitle(trimmedContent)
+	}
+
+	id := fmt.Sprintf("%x", sha1.Sum(trimmedContent))
+
+	scratch := store.Scratch{
+		ID:        id,
+		Project:   project,
+		Title:     finalTitle,
+		CreatedAt: time.Now(),
+	}
+
+	if err := saveScratchFile(id, trimmedContent); err != nil {
+		return err
+	}
+
+	if err := s.AddScratchAtomic(scratch); err != nil {
+		return err
+	}
+
+	// Copy content to clipboard
+	_ = clipboard.Copy(trimmedContent)
+
+	return nil
 }
 
 func getTitle(content []byte) string {

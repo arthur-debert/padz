@@ -1,10 +1,10 @@
 # Development Documentation
 
-This directory contains development-specific documentation for the my-cli project.
+This directory contains development-specific documentation for the padz project.
 
 ## Structure
 
-- `README.md` - This file, overview of development documentation
+- `README.md` - This file provides an overview of development documentation
 - Additional development guides and documentation can be added here
 
 ## Placeholder

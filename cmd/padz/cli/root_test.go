@@ -29,7 +29,7 @@ func TestCommandGroups(t *testing.T) {
 	}
 
 	// Check that single scratch commands are in the right group
-	singleCommands := []string{"open", "peek", "view", "delete"}
+	singleCommands := []string{"create", "open", "peek", "view", "delete"}
 	for _, cmd := range singleCommands {
 		if !strings.Contains(output, cmd) {
 			t.Errorf("Expected command '%s' in help output", cmd)
@@ -37,7 +37,7 @@ func TestCommandGroups(t *testing.T) {
 	}
 
 	// Check that multiple scratch commands are in the right group
-	multipleCommands := []string{"ls", "cleanup", "search"}
+	multipleCommands := []string{"ls", "cleanup", "nuke"}
 	for _, cmd := range multipleCommands {
 		if !strings.Contains(output, cmd) {
 			t.Errorf("Expected command '%s' in help output", cmd)
@@ -52,17 +52,20 @@ func TestCommandGroups(t *testing.T) {
 	// Commands in main help don't show parameters, only in individual help
 
 	// Check for usage examples
-	if !strings.Contains(output, "$ padz                    # edit a new scratch in $EDITOR") {
+	if !strings.Contains(output, "$ padz                  # Lists scratches with an index to be used in open, view, delete:") {
 		t.Error("Expected usage example '$ padz' in help output")
 	}
-	if !strings.Contains(output, "$ padz ls                 # Lists scratches") {
-		t.Error("Expected usage example '$ padz ls' in help output")
+	if !strings.Contains(output, "$ padz create             # create a new scratch in $EDITOR") {
+		t.Error("Expected usage example '$ padz create' in help output")
+	}
+	if !strings.Contains(output, "$ padz \"My scratch title. Can have content\"  # shortcut to create") {
+		t.Error("Expected usage example '$ padz \"My scratch title...\"' in help output")
 	}
 	if !strings.Contains(output, "$ padz view <index>       # views in shell") {
 		t.Error("Expected usage example '$ padz view <index>' in help output")
 	}
-	if !strings.Contains(output, "$ padz search \"<term>\"    # search for scratches") {
-		t.Error("Expected usage example '$ padz search' in help output")
+	if !strings.Contains(output, "$ padz ls -s \"<term>\"     # search for scratches") {
+		t.Error("Expected usage example '$ padz ls -s' in help output")
 	}
 }
 
