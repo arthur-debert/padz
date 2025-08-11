@@ -160,14 +160,13 @@ func shouldRunLs(args []string) bool {
 		return true // No args = ls
 	}
 
-	// Only run ls if we have flags that start with - or --
+	// Check if first arg is a flag (starts with -)
 	// This allows: padz -s "term", padz --search="term", padz -a, etc.
-	for _, arg := range args {
-		if !strings.HasPrefix(arg, "-") {
-			return false
-		}
+	if strings.HasPrefix(args[0], "-") {
+		return true
 	}
-	return true
+
+	return false
 }
 
 // shouldRunCreate determines if the arguments indicate a create command
