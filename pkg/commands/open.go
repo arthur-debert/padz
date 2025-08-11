@@ -37,3 +37,19 @@ func Open(s *store.Store, all bool, project string, indexStr string) error {
 	scratchToOpen.Title = getTitle(trimmedContent)
 	return s.UpdateScratchAtomic(*scratchToOpen)
 }
+
+// OpenLazy opens a scratch in the editor and exits immediately (non-blocking)
+func OpenLazy(s *store.Store, all bool, project string, indexStr string) error {
+	scratchToOpen, err := GetScratchByIndex(s, all, false, project, indexStr)
+	if err != nil {
+		return err
+	}
+
+	content, err := readScratchFile(scratchToOpen.ID)
+	if err != nil {
+		return err
+	}
+
+	// Launch editor and exit immediately
+	return editor.LaunchAndExit(scratchToOpen.ID, content)
+}

@@ -42,6 +42,11 @@ The output includes the index, the relative time of creation, and the title of t
 				log.Fatal().Err(err).Msg("Failed to get current project")
 			}
 
+			// Run discovery before listing
+			if err := s.RunDiscoveryBeforeCommand(); err != nil {
+				log.Warn().Err(err).Msg("Failed to run discovery")
+			}
+
 			scratches := commands.Ls(s, all, global, proj)
 
 			// Format output

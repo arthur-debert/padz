@@ -42,6 +42,11 @@ func newSearchCmd() *cobra.Command {
 				log.Fatal().Err(err).Msg("Operation failed")
 			}
 
+			// Run discovery before searching
+			if err := s.RunDiscoveryBeforeCommand(); err != nil {
+				log.Warn().Err(err).Msg("Failed to run discovery")
+			}
+
 			// Use SearchWithIndices to get results with correct positional indices
 			searchResults, err := commands.SearchWithIndices(s, all, global, proj, args[0])
 			if err != nil {
