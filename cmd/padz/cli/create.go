@@ -63,8 +63,9 @@ Examples:
 					initialContent = []byte(strings.Join(args, " "))
 				}
 			} else if len(args) > 0 {
-				// No --title flag, args become the title
-				title = strings.Join(args, " ")
+				// No --title flag, check for punctuation-based split
+				fullText := strings.Join(args, " ")
+				title, initialContent = splitTitleAndContent(fullText)
 			}
 
 			// If content was piped, use it
@@ -80,4 +81,32 @@ Examples:
 			}
 		},
 	}
+}
+
+// splitTitleAndContent splits input text at the first sentence-ending punctuation
+func splitTitleAndContent(text string) (string, []byte) {
+	// Find first occurrence of . ! or ?
+	punctMarks := []string{".", "!", "?"}
+	earliestIndex := -1
+
+	for _, mark := range punctMarks {
+		if idx := strings.Index(text, mark); idx != -1 && (earliestIndex == -1 || idx < earliestIndex) {
+			earliestIndex = idx
+		}
+	}
+
+	if earliestIndex != -1 {
+		// Split at punctuation
+		title := strings.TrimSpace(text[:earliestIndex])
+		content := strings.TrimSpace(text[earliestIndex+1:])
+
+		if content != "" {
+			return title, []byte(content)
+		}
+		// If no content after punctuation, use full text as title
+		return text, nil
+	}
+
+	// No punctuation found, use entire text as title
+	return text, nil
 }
