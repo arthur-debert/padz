@@ -131,14 +131,54 @@ func TestLaunchAndExit_NoEditor(t *testing.T) {
 	scratchID := "noeditor123"
 	content := []byte("No editor test")
 
-	// This might fail if vim is not available, so we just check it doesn't panic
-	_ = LaunchAndExitWithConfig(scratchID, content, cfg)
+	// Create a script that acts as our test editor
+	testEditorPath := filepath.Join(tmpDir, "test-editor.sh")
+	testEditorScript := `#!/bin/sh
+echo "TEST_EDITOR_CALLED" > ` + filepath.Join(tmpDir, "editor-called.txt") + `
+exit 0`
+	err = os.WriteFile(testEditorPath, []byte(testEditorScript), 0755)
+	require.NoError(t, err)
 
-	// If vim is available, file should exist
+	// Override PATH to ensure our test editor is not found (testing fallback to vim)
+	originalPath := os.Getenv("PATH")
+	defer func() { _ = os.Setenv("PATH", originalPath) }()
+
+	// First test: verify vim is used as default when EDITOR is not set
+	_ = LaunchAndExitWithConfig(scratchID, content, cfg)
+	// We can't easily test if vim was actually called without mocking exec.Command
+	// But we can verify the file was created
 	filePath := filepath.Join(filesDir, scratchID)
-	if _, err := os.Stat(filePath); err == nil {
-		savedContent, err := os.ReadFile(filePath)
-		require.NoError(t, err)
-		assert.Equal(t, content, savedContent)
-	}
+	assert.FileExists(t, filePath)
+	savedContent, err := os.ReadFile(filePath)
+	require.NoError(t, err)
+	assert.Equal(t, content, savedContent)
+}
+
+func TestGetEditor(t *testing.T) {
+	t.Run("DefaultsToVim", func(t *testing.T) {
+		originalEditor := os.Getenv("EDITOR")
+		defer func() { _ = os.Setenv("EDITOR", originalEditor) }()
+		_ = os.Unsetenv("EDITOR")
+
+		editor := GetEditor()
+		assert.Equal(t, "vim", editor)
+	})
+
+	t.Run("UsesEDITOREnvironment", func(t *testing.T) {
+		originalEditor := os.Getenv("EDITOR")
+		defer func() { _ = os.Setenv("EDITOR", originalEditor) }()
+		_ = os.Setenv("EDITOR", "nano")
+
+		editor := GetEditor()
+		assert.Equal(t, "nano", editor)
+	})
+
+	t.Run("HandlesComplexEditorCommand", func(t *testing.T) {
+		originalEditor := os.Getenv("EDITOR")
+		defer func() { _ = os.Setenv("EDITOR", originalEditor) }()
+		_ = os.Setenv("EDITOR", "code --wait")
+
+		editor := GetEditor()
+		assert.Equal(t, "code --wait", editor)
+	})
 }

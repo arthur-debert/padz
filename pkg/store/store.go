@@ -246,7 +246,14 @@ func (s *Store) loadWithNewMetadata() error {
 				Project:   entry.Project,
 				Title:     entry.Title,
 				CreatedAt: entry.CreatedAt,
+				UpdatedAt: entry.CreatedAt, // Best guess - use creation time
+				Size:      0,               // Unknown without reading file
+				Checksum:  "",              // Unknown without reading file
 			}
+			logger.Warn().
+				Str("id", id).
+				Str("project", entry.Project).
+				Msg("Reconstructed scratch from index - metadata file missing")
 		}
 		s.scratches = append(s.scratches, *scratch)
 	}
