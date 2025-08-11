@@ -37,7 +37,7 @@ func TestCommandGroups(t *testing.T) {
 	}
 
 	// Check that multiple scratch commands are in the right group
-	multipleCommands := []string{"ls", "cleanup", "search"}
+	multipleCommands := []string{"ls", "cleanup", "nuke"}
 	for _, cmd := range multipleCommands {
 		if !strings.Contains(output, cmd) {
 			t.Errorf("Expected command '%s' in help output", cmd)
@@ -64,8 +64,8 @@ func TestCommandGroups(t *testing.T) {
 	if !strings.Contains(output, "$ padz view <index>       # views in shell") {
 		t.Error("Expected usage example '$ padz view <index>' in help output")
 	}
-	if !strings.Contains(output, "$ padz search \"<term>\"    # search for scratches") {
-		t.Error("Expected usage example '$ padz search' in help output")
+	if !strings.Contains(output, "$ padz ls -s \"<term>\"     # search for scratches") {
+		t.Error("Expected usage example '$ padz ls -s' in help output")
 	}
 }
 
