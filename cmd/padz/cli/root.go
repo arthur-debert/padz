@@ -1,6 +1,9 @@
 package cli
 
 import (
+	"os"
+	"strings"
+
 	"github.com/arthur-debert/padz/internal/version"
 	"github.com/arthur-debert/padz/pkg/logging"
 	"github.com/rs/zerolog/log"
@@ -22,11 +25,6 @@ func NewRootCmd() *cobra.Command {
 		CompletionOptions: cobra.CompletionOptions{
 			DisableDefaultCmd: true,
 		},
-		PersistentPreRun: func(cmd *cobra.Command, args []string) {
-			// Setup logging based on verbosity
-			logging.SetupLogger(verbosity)
-			log.Debug().Str("command", cmd.Name()).Msg("Command started")
-		},
 	}
 
 	// Setup persistent flags
@@ -38,14 +36,21 @@ func NewRootCmd() *cobra.Command {
 	var versionFlag bool
 	rootCmd.Flags().BoolVar(&versionFlag, "version", false, FlagVersionDesc)
 
+	// Set PersistentPreRun for logging
+	rootCmd.PersistentPreRun = func(cmd *cobra.Command, args []string) {
+		// Setup logging based on verbosity
+		logging.SetupLogger(verbosity)
+		log.Debug().Str("command", cmd.Name()).Msg("Command started")
+	}
+
+	// Handle version flag in Run function
 	rootCmd.Run = func(cmd *cobra.Command, args []string) {
 		if versionFlag {
 			cmd.Printf(VersionFormat, version.Version, version.Commit, version.Date)
 			return
 		}
-		// Run ls command when no command is provided
-		lsCmd := newLsCmd()
-		lsCmd.Run(lsCmd, args)
+		// This should not be reached normally due to our Execute() logic
+		_ = cmd.Help()
 	}
 
 	// Set up command groups
@@ -126,5 +131,56 @@ func NewRootCmd() *cobra.Command {
 // Execute adds all child commands to the root command and sets flags appropriately.
 // This is called by main.main(). It only needs to happen once to the rootCmd.
 func Execute() error {
+	args := os.Args[1:]
+
+	// Handle version flag specially
+	for _, arg := range args {
+		if arg == "--version" {
+			rootCmd := NewRootCmd()
+			rootCmd.SetArgs(args)
+			return rootCmd.Execute()
+		}
+	}
+
+	// If no args, run ls command
+	if len(args) == 0 {
+		os.Args = append([]string{os.Args[0], "ls"}, args...)
+	} else if shouldRunCreate(args) {
+		// Check if we should intercept for create command
+		// Prepend "create" to args and let cobra handle it normally
+		os.Args = append([]string{os.Args[0], "create"}, args...)
+	}
+
 	return NewRootCmd().Execute()
+}
+
+// shouldRunCreate determines if the arguments indicate a create command
+func shouldRunCreate(args []string) bool {
+	if len(args) == 0 {
+		return false
+	}
+
+	// Check if first arg is a known command or reserved word
+	commands := []string{"ls", "view", "open", "peek", "delete", "path",
+		"cleanup", "search", "nuke", "recover", "create", "new", "n",
+		"version", "help", "completion"}
+
+	firstArg := strings.ToLower(args[0])
+	for _, cmd := range commands {
+		if firstArg == cmd {
+			return false
+		}
+	}
+
+	// If we have multiple args or a single quoted string with multiple words
+	if len(args) > 1 {
+		return true
+	}
+
+	// Check if single arg contains multiple words (was quoted)
+	if len(args) == 1 && strings.Contains(args[0], " ") {
+		return true
+	}
+
+	return false
 }
