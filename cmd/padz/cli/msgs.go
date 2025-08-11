@@ -11,7 +11,7 @@ const (
   $ padz create             # create a new scratch in $EDITOR
   $ padz "My scratch title. Can have content"  # shortcut to create
   $ padz view <index>       # views in shell
-  $ padz search "<term>"    # search for scratches containing term`
+  $ padz ls -s "<term>"     # search for scratches containing term`
 
 	// Root command error messages
 	ErrFailedToInitStore     = "Failed to initialize store"
