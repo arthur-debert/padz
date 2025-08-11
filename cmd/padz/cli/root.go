@@ -36,6 +36,11 @@ func NewRootCmd() *cobra.Command {
 	var versionFlag bool
 	rootCmd.Flags().BoolVar(&versionFlag, "version", false, FlagVersionDesc)
 
+	// Add hidden search flag to allow naked -s invocation
+	var searchFlag string
+	rootCmd.Flags().StringVarP(&searchFlag, "search", "s", "", "Search for scratches (redirects to ls -s)")
+	rootCmd.Flags().Lookup("search").Hidden = true
+
 	// Set PersistentPreRun for logging
 	rootCmd.PersistentPreRun = func(cmd *cobra.Command, args []string) {
 		// Setup logging based on verbosity
@@ -137,16 +142,32 @@ func Execute() error {
 		}
 	}
 
-	// If no args, run ls command
-	if len(args) == 0 {
+	// Determine which command to run
+	if shouldRunLs(args) {
+		// Run ls command (handles: no args, or only search flags)
 		os.Args = append([]string{os.Args[0], "ls"}, args...)
 	} else if shouldRunCreate(args) {
-		// Check if we should intercept for create command
-		// Prepend "create" to args and let cobra handle it normally
+		// Run create command (handles: quoted strings or multiple args)
 		os.Args = append([]string{os.Args[0], "create"}, args...)
 	}
 
 	return NewRootCmd().Execute()
+}
+
+// shouldRunLs determines if the arguments indicate an ls command
+func shouldRunLs(args []string) bool {
+	if len(args) == 0 {
+		return true // No args = ls
+	}
+
+	// Only run ls if we have flags that start with - or --
+	// This allows: padz -s "term", padz --search="term", padz -a, etc.
+	for _, arg := range args {
+		if !strings.HasPrefix(arg, "-") {
+			return false
+		}
+	}
+	return true
 }
 
 // shouldRunCreate determines if the arguments indicate a create command
