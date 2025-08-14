@@ -96,6 +96,19 @@ const (
 	CleanupSuccessFormat = "Cleaned up scratches older than %d days."
 )
 
+// Copy command messages
+const (
+	CopyUse   = "copy <index>"
+	CopyShort = "Copy a scratch to the clipboard"
+	CopyLong  = `Copy the content of a scratch to the system clipboard.
+
+The scratch is identified by its index number from the 'padz ls' output.
+Use the --all flag to select from all scratches across all projects.`
+
+	ErrFailedToCopyScratch   = "Failed to copy scratch to clipboard"
+	SuccessCopiedToClipboard = "Copied to clipboard"
+)
+
 // Search command messages
 const (
 	SearchUse   = "search [term]"
