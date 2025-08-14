@@ -1,6 +1,8 @@
 package commands
 
 import (
+	"strings"
+
 	"github.com/arthur-debert/padz/pkg/editor"
 	"github.com/arthur-debert/padz/pkg/store"
 )
@@ -16,7 +18,14 @@ func Open(s *store.Store, all bool, project string, indexStr string) error {
 		return err
 	}
 
-	newContent, err := editor.OpenInEditor(content)
+	// Determine extension based on content
+	extension := ".txt"
+	contentStr := strings.TrimSpace(string(content))
+	if strings.HasPrefix(contentStr, "#") {
+		extension = ".md"
+	}
+
+	newContent, err := editor.OpenInEditorWithExtension(content, extension)
 	if err != nil {
 		return err
 	}

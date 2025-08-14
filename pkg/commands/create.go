@@ -28,7 +28,14 @@ func CreateWithTitle(s *store.Store, project string, content []byte, providedTit
 		if providedTitle != "" {
 			initialContent = []byte(providedTitle + "\n\n")
 		}
-		content, err = editor.OpenInEditor(initialContent)
+
+		// Determine extension based on title
+		extension := ".txt"
+		if strings.HasPrefix(strings.TrimSpace(providedTitle), "#") {
+			extension = ".md"
+		}
+
+		content, err = editor.OpenInEditorWithExtension(initialContent, extension)
 		if err != nil {
 			return err
 		}
@@ -86,8 +93,14 @@ func CreateWithTitleAndContent(s *store.Store, project string, title string, ini
 		editorContent = initialContent
 	}
 
+	// Determine extension based on title
+	extension := ".txt"
+	if strings.HasPrefix(strings.TrimSpace(title), "#") {
+		extension = ".md"
+	}
+
 	// Open editor with prepared content
-	content, err = editor.OpenInEditor(editorContent)
+	content, err = editor.OpenInEditorWithExtension(editorContent, extension)
 	if err != nil {
 		return err
 	}
