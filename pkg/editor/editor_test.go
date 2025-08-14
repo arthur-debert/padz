@@ -367,3 +367,96 @@ func TestOpenInEditor_PathLookup(t *testing.T) {
 		t.Errorf("unexpected error with 'true' command: %v", err)
 	}
 }
+
+func TestOpenInEditorWithExtension_ExtensionHandling(t *testing.T) {
+	oldEditor := os.Getenv("EDITOR")
+	defer func() { _ = os.Setenv("EDITOR", oldEditor) }()
+
+	// Create a mock editor that records the filename
+	editorScript := `#!/bin/bash
+echo "$1" > "$1.filename"
+echo "mock editor output" > "$1"
+`
+	mockEditor := createExecutableScript(t, editorScript)
+	defer func() { _ = os.Remove(mockEditor) }()
+
+	_ = os.Setenv("EDITOR", mockEditor)
+
+	tests := []struct {
+		name          string
+		content       []byte
+		extensionHint string
+		expectedExt   string
+	}{
+		{
+			name:          "explicit .txt extension",
+			content:       []byte("plain text"),
+			extensionHint: ".txt",
+			expectedExt:   ".txt",
+		},
+		{
+			name:          "explicit .md extension",
+			content:       []byte("# Markdown"),
+			extensionHint: ".md",
+			expectedExt:   ".md",
+		},
+		{
+			name:          "auto-detect markdown from content",
+			content:       []byte("# This is markdown"),
+			extensionHint: "",
+			expectedExt:   ".md",
+		},
+		{
+			name:          "auto-detect markdown with spaces",
+			content:       []byte("  # This is markdown with spaces"),
+			extensionHint: "",
+			expectedExt:   ".md",
+		},
+		{
+			name:          "default to txt for plain content",
+			content:       []byte("This is plain text"),
+			extensionHint: "",
+			expectedExt:   ".txt",
+		},
+		{
+			name:          "empty content defaults to txt",
+			content:       []byte(""),
+			extensionHint: "",
+			expectedExt:   ".txt",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, err := OpenInEditorWithExtension(tt.content, tt.extensionHint)
+			if err != nil {
+				t.Errorf("unexpected error: %v", err)
+				return
+			}
+
+			// Check if a temp file with the expected extension was created
+			// by looking at temp files in the system
+			tmpDir := os.TempDir()
+			entries, err := os.ReadDir(tmpDir)
+			if err != nil {
+				t.Errorf("couldn't read temp dir: %v", err)
+				return
+			}
+
+			found := false
+			for _, entry := range entries {
+				if strings.HasPrefix(entry.Name(), "scratch-") &&
+					strings.HasSuffix(entry.Name(), tt.expectedExt+".filename") {
+					found = true
+					// Cleanup the filename tracker
+					_ = os.Remove(tmpDir + "/" + entry.Name())
+					break
+				}
+			}
+
+			if !found {
+				t.Errorf("expected temp file with extension %s not found", tt.expectedExt)
+			}
+		})
+	}
+}

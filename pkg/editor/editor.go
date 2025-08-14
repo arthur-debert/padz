@@ -3,18 +3,36 @@ package editor
 import (
 	"os"
 	"os/exec"
+	"strings"
 
 	"github.com/arthur-debert/padz/pkg/logging"
 )
 
 func OpenInEditor(content []byte) ([]byte, error) {
+	return OpenInEditorWithExtension(content, "")
+}
+
+// OpenInEditorWithExtension opens content in editor with optional extension hint
+func OpenInEditorWithExtension(content []byte, extensionHint string) ([]byte, error) {
 	logger := logging.GetLogger("editor")
 
 	editor := GetEditor()
 
 	logger.Info().Str("editor", editor).Int("content_size", len(content)).Msg("Starting editor session")
 
-	tmpfile, err := os.CreateTemp("", "scratch-")
+	// Determine file extension
+	extension := extensionHint
+	if extension == "" {
+		// Default to .txt if no hint provided
+		extension = ".txt"
+		// Check if content starts with # for markdown
+		contentStr := strings.TrimSpace(string(content))
+		if strings.HasPrefix(contentStr, "#") {
+			extension = ".md"
+		}
+	}
+
+	tmpfile, err := os.CreateTemp("", "scratch-*"+extension)
 	if err != nil {
 		logger.Error().Err(err).Msg("Failed to create temporary file")
 		return nil, err
