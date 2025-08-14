@@ -105,6 +105,11 @@ func NewRootCmd() *cobra.Command {
 	pathCmd.Flags().BoolP("all", "a", false, FlagAllDesc)
 	rootCmd.AddCommand(pathCmd)
 
+	copyCmd := newCopyCmd()
+	copyCmd.GroupID = "single"
+	copyCmd.Flags().BoolP("all", "a", false, FlagAllDesc)
+	rootCmd.AddCommand(copyCmd)
+
 	// Multiple scratches commands
 	lsCmd := newLsCmd()
 	lsCmd.GroupID = "multiple"
@@ -194,7 +199,7 @@ func shouldRunCreate(args []string) bool {
 
 	// Check if first arg is a known command or reserved word
 	commands := []string{"ls", "view", "open", "peek", "delete", "path",
-		"cleanup", "search", "nuke", "recover", "create", "new", "n",
+		"copy", "cp", "cleanup", "search", "nuke", "recover", "create", "new", "n",
 		"version", "help", "completion"}
 
 	firstArg := strings.ToLower(args[0])
