@@ -2,9 +2,11 @@ package cli
 
 import (
 	"os"
+	"strconv"
 	"strings"
 
 	"github.com/arthur-debert/padz/internal/version"
+	"github.com/arthur-debert/padz/pkg/config"
 	"github.com/arthur-debert/padz/pkg/logging"
 	"github.com/rs/zerolog/log"
 	"github.com/spf13/cobra"
@@ -146,6 +148,10 @@ func Execute() error {
 	if shouldRunLs(args) {
 		// Run ls command (handles: no args, or only search flags)
 		os.Args = append([]string{os.Args[0], "ls"}, args...)
+	} else if shouldRunViewOrOpen(args) {
+		// Run view or open command (handles: single integer arg)
+		cmd := config.NakedIntCommand // "view" or "open"
+		os.Args = append([]string{os.Args[0], cmd}, args...)
 	} else if shouldRunCreate(args) {
 		// Run create command (handles: quoted strings or multiple args)
 		os.Args = append([]string{os.Args[0], "create"}, args...)
@@ -167,6 +173,17 @@ func shouldRunLs(args []string) bool {
 	}
 
 	return false
+}
+
+// shouldRunViewOrOpen determines if the arguments indicate a view/open command
+func shouldRunViewOrOpen(args []string) bool {
+	if len(args) != 1 {
+		return false
+	}
+
+	// Check if the single argument is a positive integer
+	num, err := strconv.Atoi(args[0])
+	return err == nil && num > 0
 }
 
 // shouldRunCreate determines if the arguments indicate a create command

@@ -4,6 +4,10 @@ import (
 	"github.com/arthur-debert/padz/pkg/filesystem"
 )
 
+// NakedIntCommand defines which command to run when using naked int invocation (e.g., padz 2)
+// Valid values: "view" or "open"
+const NakedIntCommand = "view"
+
 // Config holds the application configuration
 type Config struct {
 	FileSystem filesystem.FileSystem
