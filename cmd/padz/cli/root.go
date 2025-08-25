@@ -144,6 +144,12 @@ func NewRootCmd() *cobra.Command {
 	recoverCmd.GroupID = "multiple"
 	rootCmd.AddCommand(recoverCmd)
 
+	exportCmd := newExportCmd()
+	exportCmd.GroupID = "multiple"
+	exportCmd.Flags().BoolP("all", "a", false, FlagAllDesc)
+	exportCmd.Flags().BoolP("global", "g", false, FlagGlobalDesc)
+	rootCmd.AddCommand(exportCmd)
+
 	return rootCmd
 }
 
@@ -212,7 +218,7 @@ func shouldRunCreate(args []string) bool {
 	// Check if first arg is a known command or reserved word
 	commands := []string{"ls", "view", "open", "peek", "delete", "path",
 		"copy", "cp", "cleanup", "search", "nuke", "recover", "create", "new", "n",
-		"version", "help", "completion", "pin", "unpin"}
+		"version", "help", "completion", "pin", "unpin", "export"}
 
 	firstArg := strings.ToLower(args[0])
 	for _, cmd := range commands {
