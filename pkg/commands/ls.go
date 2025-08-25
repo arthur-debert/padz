@@ -25,6 +25,36 @@ func Ls(s *store.Store, all, global bool, project string) []store.Scratch {
 	return sortWithPinnedFirst(filtered)
 }
 
+// LsWithOriginalIndices returns scratches sorted with pinned first, plus a map of scratch IDs to their original chronological positions
+func LsWithOriginalIndices(s *store.Store, all, global bool, project string) ([]store.Scratch, map[string]int) {
+	scratches := s.GetScratches()
+
+	// First, get the chronologically sorted list to build the index map
+	var chronological []store.Scratch
+	if all {
+		chronological = sortByCreatedAtDesc(scratches)
+	} else {
+		var filtered []store.Scratch
+		for _, scratch := range scratches {
+			if global && scratch.Project == "global" {
+				filtered = append(filtered, scratch)
+			} else if !global && scratch.Project == project {
+				filtered = append(filtered, scratch)
+			}
+		}
+		chronological = sortByCreatedAtDesc(filtered)
+	}
+
+	// Build map of ID to chronological position
+	originalIndices := make(map[string]int)
+	for i, scratch := range chronological {
+		originalIndices[scratch.ID] = i + 1
+	}
+
+	// Return the pinned-first sorted list and the index map
+	return Ls(s, all, global, project), originalIndices
+}
+
 func sortByCreatedAtDesc(scratches []store.Scratch) []store.Scratch {
 	sorted := make([]store.Scratch, len(scratches))
 	copy(sorted, scratches)
