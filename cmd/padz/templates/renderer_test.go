@@ -78,10 +78,10 @@ func TestColumnWidthCalculation(t *testing.T) {
 		showProject bool
 		wantTitle   int
 	}{
-		{80, false, 56},  // 80 - 4 (id) - 16 (date) - 2 - 2 = 56
-		{80, true, 40},   // 80 - 4 (id) - 14 (proj) - 16 (date) - 2 - 2 - 2 = 40
-		{120, false, 96}, // 120 - 4 - 16 - 2 - 2 = 96
-		{120, true, 80},  // 120 - 4 - 14 - 16 - 2 - 2 - 2 = 80
+		{80, false, 49},  // 80 - 7 (id) - 20 (date) - 2 - 2 = 49
+		{80, true, 33},   // 80 - 7 (id) - 14 (proj) - 20 (date) - 2 - 2 - 2 = 33
+		{120, false, 89}, // 120 - 7 - 20 - 2 - 2 = 89
+		{120, true, 73},  // 120 - 7 - 14 - 20 - 2 - 2 - 2 = 73
 	}
 
 	for _, tt := range tests {

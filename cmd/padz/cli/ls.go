@@ -97,7 +97,7 @@ Search results are ranked by:
 			}
 
 			// Normal listing without search
-			scratches := commands.Ls(s, all, global, proj)
+			scratches, originalIndices := commands.LsWithOriginalIndices(s, all, global, proj)
 
 			// Format output
 			format, err := output.GetFormat(outputFormat)
@@ -119,7 +119,7 @@ Search results are ranked by:
 				if err != nil {
 					log.Fatal().Err(err).Msg("Failed to create terminal formatter")
 				}
-				if err := termFormatter.FormatList(scratches, all); err != nil {
+				if err := termFormatter.FormatListWithOriginalIndices(scratches, originalIndices, all); err != nil {
 					log.Fatal().Err(err).Msg("Failed to format list")
 				}
 			} else {

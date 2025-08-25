@@ -10,6 +10,8 @@ type Scratch struct {
 	UpdatedAt time.Time `json:"updated_at,omitempty"`
 	Size      int64     `json:"size,omitempty"`
 	Checksum  string    `json:"checksum,omitempty"`
+	IsPinned  bool      `json:"is_pinned,omitempty"`
+	PinnedAt  time.Time `json:"pinned_at,omitempty"`
 }
 
 // IndexEntry represents minimal scratch info for the master index
