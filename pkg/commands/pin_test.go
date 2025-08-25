@@ -226,15 +226,18 @@ func TestUnpin(t *testing.T) {
 			require.NoError(t, err)
 		}
 
-		// Unpin using p1 (should be pinned2 as it has newer PinnedAt)
+		// Unpin using p1 (should be pinned1 as it appears first in chronological order)
 		err = Unpin(st, false, false, project, "p1")
 		assert.NoError(t, err)
 
 		// Verify correct scratch was unpinned
 		updated := st.GetScratches()
 		for _, s := range updated {
-			if s.ID == "pinned2" {
+			if s.ID == "pinned1" {
 				assert.False(t, s.IsPinned)
+			}
+			if s.ID == "pinned2" {
+				assert.True(t, s.IsPinned) // This one should still be pinned
 			}
 		}
 	})
@@ -285,29 +288,29 @@ func TestGetScratchByIndex_PinnedIndices(t *testing.T) {
 		require.NoError(t, err)
 	}
 
-	// Test pinned indices
+	// Test pinned indices (in chronological order by CreatedAt)
 	t.Run("p1 returns first pinned", func(t *testing.T) {
 		scratch, err := GetScratchByIndex(st, false, false, project, "p1")
 		assert.NoError(t, err)
-		assert.Equal(t, "pinned-newer", scratch.ID) // Newer PinnedAt time
+		assert.Equal(t, "pinned-newer", scratch.ID) // First pinned in chronological order
 	})
 
 	t.Run("p2 returns second pinned", func(t *testing.T) {
 		scratch, err := GetScratchByIndex(st, false, false, project, "p2")
 		assert.NoError(t, err)
-		assert.Equal(t, "pinned-old", scratch.ID)
+		assert.Equal(t, "pinned-old", scratch.ID) // Second pinned in chronological order
 	})
 
-	t.Run("regular index 1 returns first in sorted list", func(t *testing.T) {
+	t.Run("regular index 1 returns first in chronological order", func(t *testing.T) {
 		scratch, err := GetScratchByIndex(st, false, false, project, "1")
 		assert.NoError(t, err)
-		assert.Equal(t, "pinned-newer", scratch.ID) // Pinned items come first
+		assert.Equal(t, "newest", scratch.ID) // First by creation time (newest)
 	})
 
-	t.Run("regular index 3 returns first non-pinned", func(t *testing.T) {
-		scratch, err := GetScratchByIndex(st, false, false, project, "3")
+	t.Run("regular index 4 returns oldest", func(t *testing.T) {
+		scratch, err := GetScratchByIndex(st, false, false, project, "4")
 		assert.NoError(t, err)
-		assert.Equal(t, "newest", scratch.ID) // First non-pinned by creation time
+		assert.Equal(t, "pinned-old", scratch.ID) // Last by creation time (oldest)
 	})
 
 	t.Run("invalid pinned index", func(t *testing.T) {
@@ -366,10 +369,10 @@ func TestLs_WithPinned(t *testing.T) {
 	// Get sorted list
 	result := Ls(st, false, false, project)
 
-	// Verify order: pinned first (by PinnedAt), then others (by CreatedAt)
+	// Verify order: chronological (by CreatedAt), pinned status doesn't affect order
 	assert.Equal(t, 4, len(result))
-	assert.Equal(t, "pinned1", result[0].ID) // Newer PinnedAt
-	assert.Equal(t, "pinned2", result[1].ID) // Older PinnedAt
-	assert.Equal(t, "newest", result[2].ID)  // Newest CreatedAt
-	assert.Equal(t, "middle", result[3].ID)  // Older CreatedAt
+	assert.Equal(t, "newest", result[0].ID)  // Newest CreatedAt
+	assert.Equal(t, "middle", result[1].ID)  // 24 hours ago
+	assert.Equal(t, "pinned1", result[2].ID) // 48 hours ago (pinned)
+	assert.Equal(t, "pinned2", result[3].ID) // 72 hours ago (pinned)
 }

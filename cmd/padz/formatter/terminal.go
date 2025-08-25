@@ -56,21 +56,6 @@ func (tf *TerminalFormatter) FormatList(scratches []store.Scratch, showProject b
 	return err
 }
 
-func (tf *TerminalFormatter) FormatListWithOriginalIndices(scratches []store.Scratch, originalIndices map[string]int, showProject bool) error {
-	// Convert []store.Scratch to []*store.Scratch
-	scratchPtrs := make([]*store.Scratch, len(scratches))
-	for i := range scratches {
-		scratchPtrs[i] = &scratches[i]
-	}
-
-	output, err := tf.renderer.RenderPadListWithOriginalIndices(scratchPtrs, originalIndices, showProject)
-	if err != nil {
-		return err
-	}
-	_, err = fmt.Fprintln(tf.writer, output)
-	return err
-}
-
 func (tf *TerminalFormatter) FormatSearchResults(results []commands.ScratchWithIndex, showProject bool) error {
 	// Convert to scratch pointers with indices
 	var lines []string

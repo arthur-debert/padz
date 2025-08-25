@@ -11,7 +11,7 @@ import (
 func Ls(s *store.Store, all, global bool, project string) []store.Scratch {
 	scratches := s.GetScratches()
 	if all {
-		return sortWithPinnedFirst(scratches)
+		return sortByCreatedAtDesc(scratches)
 	}
 
 	var filtered []store.Scratch
@@ -22,61 +22,13 @@ func Ls(s *store.Store, all, global bool, project string) []store.Scratch {
 			filtered = append(filtered, scratch)
 		}
 	}
-	return sortWithPinnedFirst(filtered)
-}
-
-// LsWithOriginalIndices returns scratches sorted with pinned first, plus a map of scratch IDs to their original chronological positions
-func LsWithOriginalIndices(s *store.Store, all, global bool, project string) ([]store.Scratch, map[string]int) {
-	scratches := s.GetScratches()
-
-	// First, get the chronologically sorted list to build the index map
-	var chronological []store.Scratch
-	if all {
-		chronological = sortByCreatedAtDesc(scratches)
-	} else {
-		var filtered []store.Scratch
-		for _, scratch := range scratches {
-			if global && scratch.Project == "global" {
-				filtered = append(filtered, scratch)
-			} else if !global && scratch.Project == project {
-				filtered = append(filtered, scratch)
-			}
-		}
-		chronological = sortByCreatedAtDesc(filtered)
-	}
-
-	// Build map of ID to chronological position
-	originalIndices := make(map[string]int)
-	for i, scratch := range chronological {
-		originalIndices[scratch.ID] = i + 1
-	}
-
-	// Return the pinned-first sorted list and the index map
-	return Ls(s, all, global, project), originalIndices
+	return sortByCreatedAtDesc(filtered)
 }
 
 func sortByCreatedAtDesc(scratches []store.Scratch) []store.Scratch {
 	sorted := make([]store.Scratch, len(scratches))
 	copy(sorted, scratches)
 	sort.Slice(sorted, func(i, j int) bool {
-		return sorted[i].CreatedAt.After(sorted[j].CreatedAt)
-	})
-	return sorted
-}
-
-func sortWithPinnedFirst(scratches []store.Scratch) []store.Scratch {
-	sorted := make([]store.Scratch, len(scratches))
-	copy(sorted, scratches)
-	sort.Slice(sorted, func(i, j int) bool {
-		// Pinned items come first
-		if sorted[i].IsPinned != sorted[j].IsPinned {
-			return sorted[i].IsPinned
-		}
-		// Among pinned items, sort by PinnedAt (newest first)
-		if sorted[i].IsPinned && sorted[j].IsPinned {
-			return sorted[i].PinnedAt.After(sorted[j].PinnedAt)
-		}
-		// Among non-pinned items, sort by CreatedAt (newest first)
 		return sorted[i].CreatedAt.After(sorted[j].CreatedAt)
 	})
 	return sorted
