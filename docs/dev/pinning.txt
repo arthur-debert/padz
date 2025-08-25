@@ -1,0 +1,74 @@
+Pinned Scratches - Design Specification
+
+Core Concept
+- Pinned scratches appear at the top of padz ls with special "p1", "p2" prefixes
+- They maintain their regular index numbers as well (dual-id system)
+- Maximum 5 pinned scratches (configurable constant)
+- Pinned scratches appear in both pinned section AND regular list
+
+Data Model Changes
+
+1. Update Scratch struct in models.go:
+   type Scratch struct {
+       // existing fields...
+       IsPinned bool      `json:"is_pinned,omitempty"`
+       PinnedAt time.Time `json:"pinned_at,omitempty"`
+   }
+
+2. Add constants in store.go:
+   const MaxPinnedScratches = 5
+
+Display Logic
+
+The Ls function should return scratches in this order:
+1. Pinned scratches (sorted by PinnedAt, newest first)
+2. All scratches (sorted by CreatedAt, newest first)
+
+Example output:
+⚲ p1. Important notes                                              3 days ago
+⚲ p2. Daily standup template                                       1 week ago
+
+1. Latest scratch                                                   1 hour ago
+2. Yesterday's work                                                 1 day ago
+3. Important notes                                              ⚲   3 days ago
+4. Another scratch                                                  4 days ago
+5. Daily standup template                                       ⚲   1 week ago
+
+Commands
+
+1. pin command: padz pin <id>
+   - Accepts regular index or hash ID
+   - Checks if already pinned
+   - Enforces MaxPinnedScratches limit
+   - Sets IsPinned=true and PinnedAt=now
+
+2. unpin command: padz unpin <id|p-id>
+   - Accepts regular index, pinned index (p1, p2), or hash ID
+   - Sets IsPinned=false, clears PinnedAt
+
+ID Resolution
+
+Update GetScratchByIndex to handle:
+- Regular indices (1, 2, 3...)
+- Pinned indices (p1, p2...)
+- Hash IDs (unchanged)
+
+Implementation Steps
+
+1. Store Layer:
+   - Add IsPinned/PinnedAt fields to Scratch
+   - Create GetPinnedScratches() method
+   - Add validation for max pinned limit
+
+2. Commands Layer:
+   - Update Ls to prepend pinned scratches
+   - Create Pin/Unpin commands
+   - Update index resolution logic
+
+3. CLI Layer:
+   - Add pin/unpin commands to CLI
+   - Update display template for pin indicator
+
+4. Search Behavior:
+   - Pinned scratches appear only once in search results
+   - Use regular index, not pinned index in search results
