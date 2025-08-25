@@ -110,6 +110,18 @@ func NewRootCmd() *cobra.Command {
 	copyCmd.Flags().BoolP("all", "a", false, FlagAllDesc)
 	rootCmd.AddCommand(copyCmd)
 
+	pinCmd := newPinCmd()
+	pinCmd.GroupID = "single"
+	pinCmd.Flags().BoolP("all", "a", false, FlagAllDesc)
+	pinCmd.Flags().BoolP("global", "g", false, FlagGlobalDesc)
+	rootCmd.AddCommand(pinCmd)
+
+	unpinCmd := newUnpinCmd()
+	unpinCmd.GroupID = "single"
+	unpinCmd.Flags().BoolP("all", "a", false, FlagAllDesc)
+	unpinCmd.Flags().BoolP("global", "g", false, FlagGlobalDesc)
+	rootCmd.AddCommand(unpinCmd)
+
 	// Multiple scratches commands
 	lsCmd := newLsCmd()
 	lsCmd.GroupID = "multiple"

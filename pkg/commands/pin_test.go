@@ -1,0 +1,375 @@
+package commands
+
+import (
+	"fmt"
+	"testing"
+	"time"
+
+	"github.com/arthur-debert/padz/pkg/store"
+	"github.com/arthur-debert/padz/pkg/testutil"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+)
+
+func TestPin(t *testing.T) {
+	t.Run("pin a scratch successfully", func(t *testing.T) {
+		cfg, cleanup := testutil.SetupTestEnvironment(t)
+		defer cleanup()
+
+		st, err := store.NewStoreWithConfig(cfg)
+		require.NoError(t, err)
+		project := "test-project"
+
+		// Create a scratch
+		scratch := store.Scratch{
+			ID:        "test123",
+			Project:   project,
+			Title:     "Test Scratch",
+			CreatedAt: time.Now(),
+		}
+		err = st.AddScratch(scratch)
+		require.NoError(t, err)
+
+		// Pin it
+		err = Pin(st, false, false, project, "1")
+		assert.NoError(t, err)
+
+		// Verify it's pinned
+		scratches := st.GetScratches()
+		assert.True(t, scratches[0].IsPinned)
+		assert.NotZero(t, scratches[0].PinnedAt)
+	})
+
+	t.Run("error when scratch already pinned", func(t *testing.T) {
+		cfg, cleanup := testutil.SetupTestEnvironment(t)
+		defer cleanup()
+
+		st, err := store.NewStoreWithConfig(cfg)
+		require.NoError(t, err)
+		project := "test-project"
+
+		// Create and add a pinned scratch
+		scratch := store.Scratch{
+			ID:        "test123",
+			Project:   project,
+			Title:     "Test Scratch",
+			CreatedAt: time.Now(),
+			IsPinned:  true,
+			PinnedAt:  time.Now(),
+		}
+		err = st.AddScratch(scratch)
+		require.NoError(t, err)
+
+		// Try to pin it again
+		err = Pin(st, false, false, project, "1")
+		assert.Error(t, err)
+		assert.Contains(t, err.Error(), "already pinned")
+	})
+
+	t.Run("error when max pinned scratches reached", func(t *testing.T) {
+		cfg, cleanup := testutil.SetupTestEnvironment(t)
+		defer cleanup()
+
+		st, err := store.NewStoreWithConfig(cfg)
+		require.NoError(t, err)
+		project := "test-project"
+
+		// Create max pinned scratches
+		for i := 0; i < store.MaxPinnedScratches; i++ {
+			scratch := store.Scratch{
+				ID:        fmt.Sprintf("test%d", i),
+				Project:   project,
+				Title:     "Test Scratch",
+				CreatedAt: time.Now().Add(-time.Duration(i) * time.Hour),
+				IsPinned:  true,
+				PinnedAt:  time.Now(),
+			}
+			err = st.AddScratch(scratch)
+			require.NoError(t, err)
+		}
+
+		// Create one more unpinned
+		scratch := store.Scratch{
+			ID:        "test-unpinned",
+			Project:   project,
+			Title:     "Test Scratch",
+			CreatedAt: time.Now().Add(-time.Duration(store.MaxPinnedScratches+1) * time.Hour),
+		}
+		err = st.AddScratch(scratch)
+		require.NoError(t, err)
+
+		// Try to pin it
+		err = Pin(st, false, false, project, fmt.Sprintf("%d", store.MaxPinnedScratches+1))
+		assert.Error(t, err)
+		assert.Contains(t, err.Error(), "maximum number of pinned scratches")
+	})
+
+	t.Run("pin by hash ID", func(t *testing.T) {
+		cfg, cleanup := testutil.SetupTestEnvironment(t)
+		defer cleanup()
+
+		st, err := store.NewStoreWithConfig(cfg)
+		require.NoError(t, err)
+		project := "test-project"
+
+		// Create a scratch
+		scratch := store.Scratch{
+			ID:        "abc123def456",
+			Project:   project,
+			Title:     "Test Scratch",
+			CreatedAt: time.Now(),
+		}
+		err = st.AddScratch(scratch)
+		require.NoError(t, err)
+
+		// Pin by partial hash
+		err = Pin(st, false, false, project, "abc123")
+		assert.NoError(t, err)
+
+		// Verify it's pinned
+		scratches := st.GetScratches()
+		assert.True(t, scratches[0].IsPinned)
+	})
+}
+
+func TestUnpin(t *testing.T) {
+	t.Run("unpin a scratch successfully", func(t *testing.T) {
+		cfg, cleanup := testutil.SetupTestEnvironment(t)
+		defer cleanup()
+
+		st, err := store.NewStoreWithConfig(cfg)
+		require.NoError(t, err)
+		project := "test-project"
+
+		// Create a pinned scratch
+		scratch := store.Scratch{
+			ID:        "test123",
+			Project:   project,
+			Title:     "Test Scratch",
+			CreatedAt: time.Now(),
+			IsPinned:  true,
+			PinnedAt:  time.Now(),
+		}
+		err = st.AddScratch(scratch)
+		require.NoError(t, err)
+
+		// Unpin it
+		err = Unpin(st, false, false, project, "1")
+		assert.NoError(t, err)
+
+		// Verify it's unpinned
+		scratches := st.GetScratches()
+		assert.False(t, scratches[0].IsPinned)
+		assert.Zero(t, scratches[0].PinnedAt)
+	})
+
+	t.Run("error when scratch not pinned", func(t *testing.T) {
+		cfg, cleanup := testutil.SetupTestEnvironment(t)
+		defer cleanup()
+
+		st, err := store.NewStoreWithConfig(cfg)
+		require.NoError(t, err)
+		project := "test-project"
+
+		// Create an unpinned scratch
+		scratch := store.Scratch{
+			ID:        "test123",
+			Project:   project,
+			Title:     "Test Scratch",
+			CreatedAt: time.Now(),
+		}
+		err = st.AddScratch(scratch)
+		require.NoError(t, err)
+
+		// Try to unpin it
+		err = Unpin(st, false, false, project, "1")
+		assert.Error(t, err)
+		assert.Contains(t, err.Error(), "not pinned")
+	})
+
+	t.Run("unpin by pinned index", func(t *testing.T) {
+		cfg, cleanup := testutil.SetupTestEnvironment(t)
+		defer cleanup()
+
+		st, err := store.NewStoreWithConfig(cfg)
+		require.NoError(t, err)
+		project := "test-project"
+
+		// Create multiple scratches, some pinned
+		scratches := []store.Scratch{
+			{
+				ID:        "pinned1",
+				Project:   project,
+				Title:     "Pinned 1",
+				CreatedAt: time.Now().Add(-1 * time.Hour),
+				IsPinned:  true,
+				PinnedAt:  time.Now().Add(-10 * time.Minute),
+			},
+			{
+				ID:        "pinned2",
+				Project:   project,
+				Title:     "Pinned 2",
+				CreatedAt: time.Now().Add(-2 * time.Hour),
+				IsPinned:  true,
+				PinnedAt:  time.Now().Add(-5 * time.Minute), // Newer pinned time
+			},
+			{
+				ID:        "unpinned",
+				Project:   project,
+				Title:     "Unpinned",
+				CreatedAt: time.Now(),
+			},
+		}
+
+		for _, s := range scratches {
+			err = st.AddScratch(s)
+			require.NoError(t, err)
+		}
+
+		// Unpin using p1 (should be pinned2 as it has newer PinnedAt)
+		err = Unpin(st, false, false, project, "p1")
+		assert.NoError(t, err)
+
+		// Verify correct scratch was unpinned
+		updated := st.GetScratches()
+		for _, s := range updated {
+			if s.ID == "pinned2" {
+				assert.False(t, s.IsPinned)
+			}
+		}
+	})
+}
+
+func TestGetScratchByIndex_PinnedIndices(t *testing.T) {
+	cfg, cleanup := testutil.SetupTestEnvironment(t)
+	defer cleanup()
+
+	st, err := store.NewStoreWithConfig(cfg)
+	require.NoError(t, err)
+	project := "test-project"
+
+	// Create scratches with specific order
+	scratches := []store.Scratch{
+		{
+			ID:        "newest",
+			Project:   project,
+			Title:     "Newest",
+			CreatedAt: time.Now(),
+		},
+		{
+			ID:        "pinned-old",
+			Project:   project,
+			Title:     "Old but pinned",
+			CreatedAt: time.Now().Add(-48 * time.Hour),
+			IsPinned:  true,
+			PinnedAt:  time.Now().Add(-10 * time.Minute),
+		},
+		{
+			ID:        "pinned-newer",
+			Project:   project,
+			Title:     "Pinned newer",
+			CreatedAt: time.Now().Add(-24 * time.Hour),
+			IsPinned:  true,
+			PinnedAt:  time.Now().Add(-5 * time.Minute),
+		},
+		{
+			ID:        "middle",
+			Project:   project,
+			Title:     "Middle",
+			CreatedAt: time.Now().Add(-12 * time.Hour),
+		},
+	}
+
+	for _, s := range scratches {
+		err = st.AddScratch(s)
+		require.NoError(t, err)
+	}
+
+	// Test pinned indices
+	t.Run("p1 returns first pinned", func(t *testing.T) {
+		scratch, err := GetScratchByIndex(st, false, false, project, "p1")
+		assert.NoError(t, err)
+		assert.Equal(t, "pinned-newer", scratch.ID) // Newer PinnedAt time
+	})
+
+	t.Run("p2 returns second pinned", func(t *testing.T) {
+		scratch, err := GetScratchByIndex(st, false, false, project, "p2")
+		assert.NoError(t, err)
+		assert.Equal(t, "pinned-old", scratch.ID)
+	})
+
+	t.Run("regular index 1 returns first in sorted list", func(t *testing.T) {
+		scratch, err := GetScratchByIndex(st, false, false, project, "1")
+		assert.NoError(t, err)
+		assert.Equal(t, "pinned-newer", scratch.ID) // Pinned items come first
+	})
+
+	t.Run("regular index 3 returns first non-pinned", func(t *testing.T) {
+		scratch, err := GetScratchByIndex(st, false, false, project, "3")
+		assert.NoError(t, err)
+		assert.Equal(t, "newest", scratch.ID) // First non-pinned by creation time
+	})
+
+	t.Run("invalid pinned index", func(t *testing.T) {
+		_, err := GetScratchByIndex(st, false, false, project, "p3")
+		assert.Error(t, err)
+		assert.Contains(t, err.Error(), "pinned index out of range")
+	})
+}
+
+func TestLs_WithPinned(t *testing.T) {
+	cfg, cleanup := testutil.SetupTestEnvironment(t)
+	defer cleanup()
+
+	st, err := store.NewStoreWithConfig(cfg)
+	require.NoError(t, err)
+	project := "test-project"
+
+	// Create scratches
+	now := time.Now()
+	scratches := []store.Scratch{
+		{
+			ID:        "newest",
+			Project:   project,
+			Title:     "Newest",
+			CreatedAt: now,
+		},
+		{
+			ID:        "pinned1",
+			Project:   project,
+			Title:     "Pinned 1",
+			CreatedAt: now.Add(-48 * time.Hour),
+			IsPinned:  true,
+			PinnedAt:  now.Add(-5 * time.Minute),
+		},
+		{
+			ID:        "middle",
+			Project:   project,
+			Title:     "Middle",
+			CreatedAt: now.Add(-24 * time.Hour),
+		},
+		{
+			ID:        "pinned2",
+			Project:   project,
+			Title:     "Pinned 2",
+			CreatedAt: now.Add(-72 * time.Hour),
+			IsPinned:  true,
+			PinnedAt:  now.Add(-10 * time.Minute),
+		},
+	}
+
+	for _, s := range scratches {
+		err = st.AddScratch(s)
+		require.NoError(t, err)
+	}
+
+	// Get sorted list
+	result := Ls(st, false, false, project)
+
+	// Verify order: pinned first (by PinnedAt), then others (by CreatedAt)
+	assert.Equal(t, 4, len(result))
+	assert.Equal(t, "pinned1", result[0].ID) // Newer PinnedAt
+	assert.Equal(t, "pinned2", result[1].ID) // Older PinnedAt
+	assert.Equal(t, "newest", result[2].ID)  // Newest CreatedAt
+	assert.Equal(t, "middle", result[3].ID)  // Older CreatedAt
+}

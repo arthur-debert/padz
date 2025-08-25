@@ -1,0 +1,18 @@
+The padz identifier system uses a clever dual-identifier approach:
+
+1. Hash IDs (Internal, Permanent)
+- SHA-1 hash of content, stored in /Users/adebert/h/padz/pkg/store/store.go:91
+- Never changes, used for file storage and deduplication
+- Example: a94a8fe5ccb19ba61c4c0873d391e987982fbbd3
+
+2. Integer Indices (User-facing, Dynamic)
+- Calculated on-the-fly based on position in sorted list
+- Always 1-based, with newest scratch as index 1
+- Maintained in idToIndex map during search operations /Users/adebert/h/padz/pkg/commands/search.go:54-57
+
+Key insight: When you run padz delete 15, padz:
+1. Gets all scratches via Ls() in creation order
+2. Maps position 15 to its hash ID
+3. Deletes using the hash ID
+
+During search, the system preserves original indices by creating the idToIndex map before filtering, ensuring stable references regardless of search results order.

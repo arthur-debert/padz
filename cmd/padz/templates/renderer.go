@@ -135,6 +135,7 @@ func (r *Renderer) RenderPadList(scratches []*store.Scratch, showProject bool) (
 	widths := calculateColumnWidths(termWidth, showProject)
 
 	var lines []string
+	pinnedCount := 0
 	for i, scratch := range scratches {
 		// Prepare data
 		index := i + 1
@@ -149,8 +150,14 @@ func (r *Renderer) RenderPadList(scratches []*store.Scratch, showProject bool) (
 		// Build line with proper column alignment (WITHOUT styling first)
 		var parts []string
 
-		// Index (right-aligned)
-		indexStr := fmt.Sprintf("%d.", index)
+		// Index (right-aligned) - handle pinned index
+		indexStr := ""
+		if scratch.IsPinned {
+			pinnedCount++
+			indexStr = fmt.Sprintf("p%d.", pinnedCount)
+		} else {
+			indexStr = fmt.Sprintf("%d.", index)
+		}
 		indexPadded := padLeft(indexStr, widths.ID-1) + " "
 
 		// Project (if showing)
@@ -164,8 +171,12 @@ func (r *Renderer) RenderPadList(scratches []*store.Scratch, showProject bool) (
 		title := truncateWithEllipsis(scratch.Title, widths.Title)
 		titlePadded := padRight(title, widths.Title) + "  "
 
-		// Time (prepare for right-alignment)
-		timePadded := padLeft(timeAgo, widths.Date)
+		// Time (prepare for right-alignment) - add pin indicator if pinned
+		timeStr := timeAgo
+		if scratch.IsPinned {
+			timeStr = "⚲ " + timeAgo
+		}
+		timePadded := padLeft(timeStr, widths.Date)
 
 		// Now apply styles to each part
 		indexStyle := styles.Get("padIndex")
@@ -184,7 +195,7 @@ func (r *Renderer) RenderPadList(scratches []*store.Scratch, showProject bool) (
 		parts = append(parts, strings.Replace(titlePadded, titleText, titleStyle.Render(titleText), 1))
 
 		timeStyle := styles.Get("padTime")
-		parts = append(parts, strings.Replace(timePadded, timeAgo, timeStyle.Render(timeAgo), 1))
+		parts = append(parts, strings.Replace(timePadded, timeStr, timeStyle.Render(timeStr), 1))
 
 		lines = append(lines, strings.Join(parts, ""))
 	}
@@ -219,8 +230,8 @@ func getTerminalWidth() int {
 // calculateColumnWidths determines the width for each column
 func calculateColumnWidths(termWidth int, showProject bool) columnWidths {
 	widths := columnWidths{
-		ID:   4,  // "99. " (2 digits + dot + space)
-		Date: 16, // "a long while ago"
+		ID:   5,  // "p99. " (p + 2 digits + dot + space)
+		Date: 18, // "⚲ a long while ago"
 	}
 
 	if showProject {

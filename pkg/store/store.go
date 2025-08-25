@@ -16,8 +16,9 @@ import (
 )
 
 const (
-	dataDirName      = "scratch"
-	metadataFileName = "metadata.json"
+	dataDirName        = "scratch"
+	metadataFileName   = "metadata.json"
+	MaxPinnedScratches = 5
 )
 
 type Store struct {
@@ -70,6 +71,21 @@ func (s *Store) GetScratches() []Scratch {
 	logger := logging.GetLogger("store")
 	logger.Debug().Int("scratch_count", len(s.scratches)).Msg("Retrieved all scratches")
 	return s.scratches
+}
+
+func (s *Store) GetPinnedScratches() []Scratch {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	logger := logging.GetLogger("store")
+	var pinned []Scratch
+	for _, scratch := range s.scratches {
+		if scratch.IsPinned {
+			pinned = append(pinned, scratch)
+		}
+	}
+	logger.Debug().Int("pinned_count", len(pinned)).Msg("Retrieved pinned scratches")
+	return pinned
 }
 
 func (s *Store) SaveScratches(scratches []Scratch) error {
