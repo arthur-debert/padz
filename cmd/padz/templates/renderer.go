@@ -135,7 +135,77 @@ func (r *Renderer) RenderPadList(scratches []*store.Scratch, showProject bool) (
 	widths := calculateColumnWidths(termWidth, showProject)
 
 	var lines []string
+
+	// First pass: render only pinned scratches with p1, p2 indices
 	pinnedCount := 0
+	hasPinned := false
+	for _, scratch := range scratches {
+		if !scratch.IsPinned {
+			continue
+		}
+		hasPinned = true
+		pinnedCount++
+
+		// Prepare data
+		projectName := ""
+		if scratch.Project == "global" {
+			projectName = "global"
+		} else if scratch.Project != "" {
+			projectName = filepath.Base(scratch.Project)
+		}
+		timeAgo := humanize.Time(scratch.CreatedAt)
+
+		// Build line with proper column alignment
+		var parts []string
+
+		// Pinned index with ⚲ prefix
+		indexStr := fmt.Sprintf("p%d.", pinnedCount)
+		fullIndexStr := "⚲ " + indexStr
+		// Pad based on visible width, not byte length
+		padding := widths.ID - lipgloss.Width(fullIndexStr)
+		indexPadded := strings.Repeat(" ", padding) + fullIndexStr
+
+		// Project (if showing)
+		projectPadded := ""
+		if showProject {
+			project := truncateWithEllipsis(projectName, widths.Project)
+			projectPadded = padRight(project, widths.Project) + "  "
+		}
+
+		// Title
+		title := truncateWithEllipsis(scratch.Title, widths.Title)
+		titlePadded := padRight(title, widths.Title) + "  "
+
+		// Time
+		timePadded := padLeft(timeAgo, widths.Date)
+
+		// Apply styles
+		indexStyle := styles.Get("padIndex")
+		parts = append(parts, strings.Replace(indexPadded, fullIndexStr, indexStyle.Render(fullIndexStr), 1))
+
+		if showProject && projectPadded != "" {
+			projectStyle := styles.Get("padProject")
+			projectText := strings.TrimSpace(projectPadded[:widths.Project])
+			parts = append(parts, strings.Replace(projectPadded, projectText, projectStyle.Render(projectText), 1))
+		}
+
+		titleStyle := styles.Get("padTitle")
+		titleText := strings.TrimSpace(titlePadded[:widths.Title])
+		parts = append(parts, strings.Replace(titlePadded, titleText, titleStyle.Render(titleText), 1))
+
+		timeStyle := styles.Get("padTime")
+		parts = append(parts, strings.Replace(timePadded, timeAgo, timeStyle.Render(timeAgo), 1))
+
+		lines = append(lines, strings.Join(parts, ""))
+	}
+
+	// Add separator if we have pinned items
+	if hasPinned {
+		lines = append(lines, "")
+		lines = append(lines, "")
+	}
+
+	// Second pass: render all scratches with regular indices
 	for i, scratch := range scratches {
 		// Prepare data
 		index := i + 1
@@ -147,17 +217,11 @@ func (r *Renderer) RenderPadList(scratches []*store.Scratch, showProject bool) (
 		}
 		timeAgo := humanize.Time(scratch.CreatedAt)
 
-		// Build line with proper column alignment (WITHOUT styling first)
+		// Build line with proper column alignment
 		var parts []string
 
-		// Index (right-aligned) - handle pinned index
-		indexStr := ""
-		if scratch.IsPinned {
-			pinnedCount++
-			indexStr = fmt.Sprintf("p%d.", pinnedCount)
-		} else {
-			indexStr = fmt.Sprintf("%d.", index)
-		}
+		// Regular index
+		indexStr := fmt.Sprintf("%d.", index)
 		indexPadded := padLeft(indexStr, widths.ID-1) + " "
 
 		// Project (if showing)
@@ -171,26 +235,24 @@ func (r *Renderer) RenderPadList(scratches []*store.Scratch, showProject bool) (
 		title := truncateWithEllipsis(scratch.Title, widths.Title)
 		titlePadded := padRight(title, widths.Title) + "  "
 
-		// Time (prepare for right-alignment) - add pin indicator if pinned
+		// Time - add pin indicator at the end if pinned
 		timeStr := timeAgo
 		if scratch.IsPinned {
-			timeStr = "⚲ " + timeAgo
+			timeStr = timeAgo + " ⚲"
 		}
 		timePadded := padLeft(timeStr, widths.Date)
 
-		// Now apply styles to each part
+		// Apply styles
 		indexStyle := styles.Get("padIndex")
 		parts = append(parts, strings.Replace(indexPadded, indexStr, indexStyle.Render(indexStr), 1))
 
 		if showProject && projectPadded != "" {
 			projectStyle := styles.Get("padProject")
-			// Find the actual project text within the padded string
 			projectText := strings.TrimSpace(projectPadded[:widths.Project])
 			parts = append(parts, strings.Replace(projectPadded, projectText, projectStyle.Render(projectText), 1))
 		}
 
 		titleStyle := styles.Get("padTitle")
-		// Find the actual title text within the padded string
 		titleText := strings.TrimSpace(titlePadded[:widths.Title])
 		parts = append(parts, strings.Replace(titlePadded, titleText, titleStyle.Render(titleText), 1))
 
@@ -230,8 +292,8 @@ func getTerminalWidth() int {
 // calculateColumnWidths determines the width for each column
 func calculateColumnWidths(termWidth int, showProject bool) columnWidths {
 	widths := columnWidths{
-		ID:   5,  // "p99. " (p + 2 digits + dot + space)
-		Date: 18, // "⚲ a long while ago"
+		ID:   7,  // "⚲ p99. " (⚲ + space + p + 2 digits + dot + space)
+		Date: 20, // "a long while ago ⚲"
 	}
 
 	if showProject {
