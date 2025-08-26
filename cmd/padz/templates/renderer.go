@@ -7,6 +7,7 @@ import (
 	"regexp"
 	"strings"
 	"text/template"
+	"time"
 
 	"github.com/arthur-debert/padz/cmd/padz/styles"
 	"github.com/arthur-debert/padz/pkg/store"
@@ -153,7 +154,7 @@ func (r *Renderer) RenderPadList(scratches []*store.Scratch, showProject bool) (
 		} else if scratch.Project != "" {
 			projectName = filepath.Base(scratch.Project)
 		}
-		timeAgo := humanize.Time(scratch.CreatedAt)
+		timeAgo := formatTimeAgo(scratch.CreatedAt)
 
 		// Build line with proper column alignment
 		var parts []string
@@ -176,8 +177,9 @@ func (r *Renderer) RenderPadList(scratches []*store.Scratch, showProject bool) (
 		title := truncateWithEllipsis(scratch.Title, widths.Title)
 		titlePadded := padRight(title, widths.Title) + "  "
 
-		// Time
-		timePadded := padLeft(timeAgo, widths.Date)
+		// Time - with ⚲ prefix for pinned items
+		timeStr := "⚲ " + timeAgo
+		timePadded := padLeft(timeStr, widths.Date)
 
 		// Apply styles
 		indexStyle := styles.Get("padIndex")
@@ -194,7 +196,9 @@ func (r *Renderer) RenderPadList(scratches []*store.Scratch, showProject bool) (
 		parts = append(parts, strings.Replace(titlePadded, titleText, titleStyle.Render(titleText), 1))
 
 		timeStyle := styles.Get("padTime")
-		parts = append(parts, strings.Replace(timePadded, timeAgo, timeStyle.Render(timeAgo), 1))
+		// Apply style only to the time part, preserving the ⚲ marker
+		styledTime := strings.Replace(timePadded, timeAgo, timeStyle.Render(timeAgo), 1)
+		parts = append(parts, styledTime)
 
 		lines = append(lines, strings.Join(parts, ""))
 	}
@@ -215,7 +219,7 @@ func (r *Renderer) RenderPadList(scratches []*store.Scratch, showProject bool) (
 		} else if scratch.Project != "" {
 			projectName = filepath.Base(scratch.Project)
 		}
-		timeAgo := humanize.Time(scratch.CreatedAt)
+		timeAgo := formatTimeAgo(scratch.CreatedAt)
 
 		// Build line with proper column alignment
 		var parts []string
@@ -235,10 +239,10 @@ func (r *Renderer) RenderPadList(scratches []*store.Scratch, showProject bool) (
 		title := truncateWithEllipsis(scratch.Title, widths.Title)
 		titlePadded := padRight(title, widths.Title) + "  "
 
-		// Time - add pin indicator at the end if pinned
+		// Time - add pin indicator before if pinned
 		timeStr := timeAgo
 		if scratch.IsPinned {
-			timeStr = timeAgo + " ⚲"
+			timeStr = "⚲ " + timeAgo
 		}
 		timePadded := padLeft(timeStr, widths.Date)
 
@@ -257,7 +261,9 @@ func (r *Renderer) RenderPadList(scratches []*store.Scratch, showProject bool) (
 		parts = append(parts, strings.Replace(titlePadded, titleText, titleStyle.Render(titleText), 1))
 
 		timeStyle := styles.Get("padTime")
-		parts = append(parts, strings.Replace(timePadded, timeStr, timeStyle.Render(timeStr), 1))
+		// Apply style only to the time part, preserving the ⚲ marker if present
+		styledTime := strings.Replace(timePadded, timeAgo, timeStyle.Render(timeAgo), 1)
+		parts = append(parts, styledTime)
 
 		lines = append(lines, strings.Join(parts, ""))
 	}
@@ -353,6 +359,27 @@ func padLeft(s string, width int) string {
 		return s
 	}
 	return strings.Repeat(" ", width-currentWidth) + s
+}
+
+// formatTimeAgo formats time with aligned units for better visual alignment
+func formatTimeAgo(t time.Time) string {
+	timeAgo := humanize.Time(t)
+
+	// Replace single digit numbers with padded versions for alignment
+	// This will convert "1 day ago" to " 1 day ago", "2 weeks ago" to " 2 weeks ago", etc.
+	re := regexp.MustCompile(`^(\d+)\s+(\w+)\s+ago$`)
+	matches := re.FindStringSubmatch(timeAgo)
+	if len(matches) == 3 {
+		num := matches[1]
+		unit := matches[2]
+
+		// Pad single digit numbers
+		if len(num) == 1 {
+			timeAgo = fmt.Sprintf(" %s %s ago", num, unit)
+		}
+	}
+
+	return timeAgo
 }
 
 func applyStyles(text string) string {
