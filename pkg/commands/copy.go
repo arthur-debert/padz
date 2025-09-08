@@ -6,8 +6,8 @@ import (
 )
 
 // Copy retrieves a scratch by index and copies its content to the clipboard
-func Copy(s *store.Store, all bool, project string, indexStr string) error {
-	scratch, err := GetScratchByIndex(s, all, false, project, indexStr)
+func Copy(s *store.Store, all bool, global bool, project string, indexStr string) error {
+	scratch, err := GetScratchByIndex(s, all, global, project, indexStr)
 	if err != nil {
 		return err
 	}

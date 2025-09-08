@@ -20,6 +20,7 @@ func newCopyCmd() *cobra.Command {
 		Args:    cobra.ExactArgs(1),
 		Run: func(cmd *cobra.Command, args []string) {
 			allFlag, _ := cmd.Flags().GetBool("all")
+			global, _ := cmd.Flags().GetBool("global")
 
 			s, err := store.NewStore()
 			if err != nil {
@@ -36,7 +37,7 @@ func newCopyCmd() *cobra.Command {
 				log.Fatal().Err(err).Msg(ErrFailedToGetProject)
 			}
 
-			if err := commands.Copy(s, allFlag, proj, args[0]); err != nil {
+			if err := commands.Copy(s, allFlag, global, proj, args[0]); err != nil {
 				log.Fatal().Err(err).Msg(ErrFailedToCopyScratch)
 			}
 

@@ -23,6 +23,7 @@ func newPathCmd() *cobra.Command {
 		Args:  cobra.ExactArgs(1),
 		Run: func(cmd *cobra.Command, args []string) {
 			all, _ := cmd.Flags().GetBool("all")
+			global, _ := cmd.Flags().GetBool("global")
 
 			s, err := store.NewStore()
 			if err != nil {
@@ -39,7 +40,7 @@ func newPathCmd() *cobra.Command {
 				log.Fatal().Err(err).Msg("Operation failed")
 			}
 
-			result, err := commands.Path(s, all, proj, args[0])
+			result, err := commands.Path(s, all, global, proj, args[0])
 
 			// Format output
 			format, formatErr := output.GetFormat(outputFormat)

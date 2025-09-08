@@ -7,8 +7,8 @@ import (
 	"github.com/arthur-debert/padz/pkg/store"
 )
 
-func Open(s *store.Store, all bool, project string, indexStr string) error {
-	scratchToOpen, err := GetScratchByIndex(s, all, false, project, indexStr)
+func Open(s *store.Store, all bool, global bool, project string, indexStr string) error {
+	scratchToOpen, err := GetScratchByIndex(s, all, global, project, indexStr)
 	if err != nil {
 		return err
 	}
@@ -48,8 +48,8 @@ func Open(s *store.Store, all bool, project string, indexStr string) error {
 }
 
 // OpenLazy opens a scratch in the editor and exits immediately (non-blocking)
-func OpenLazy(s *store.Store, all bool, project string, indexStr string) error {
-	scratchToOpen, err := GetScratchByIndex(s, all, false, project, indexStr)
+func OpenLazy(s *store.Store, all bool, global bool, project string, indexStr string) error {
+	scratchToOpen, err := GetScratchByIndex(s, all, global, project, indexStr)
 	if err != nil {
 		return err
 	}

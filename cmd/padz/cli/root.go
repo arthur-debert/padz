@@ -86,6 +86,7 @@ func NewRootCmd() *cobra.Command {
 	openCmd := newOpenCmd()
 	openCmd.GroupID = "single"
 	openCmd.Flags().BoolP("all", "a", false, FlagAllDesc)
+	openCmd.Flags().BoolP("global", "g", false, FlagGlobalDesc)
 	rootCmd.AddCommand(openCmd)
 
 	peekCmd := newPeekCmd()
@@ -98,16 +99,19 @@ func NewRootCmd() *cobra.Command {
 	deleteCmd := newDeleteCmd()
 	deleteCmd.GroupID = "single"
 	deleteCmd.Flags().BoolP("all", "a", false, FlagAllDesc)
+	deleteCmd.Flags().BoolP("global", "g", false, FlagGlobalDesc)
 	rootCmd.AddCommand(deleteCmd)
 
 	pathCmd := newPathCmd()
 	pathCmd.GroupID = "single"
 	pathCmd.Flags().BoolP("all", "a", false, FlagAllDesc)
+	pathCmd.Flags().BoolP("global", "g", false, FlagGlobalDesc)
 	rootCmd.AddCommand(pathCmd)
 
 	copyCmd := newCopyCmd()
 	copyCmd.GroupID = "single"
 	copyCmd.Flags().BoolP("all", "a", false, FlagAllDesc)
+	copyCmd.Flags().BoolP("global", "g", false, FlagGlobalDesc)
 	rootCmd.AddCommand(copyCmd)
 
 	pinCmd := newPinCmd()
