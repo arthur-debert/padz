@@ -12,17 +12,18 @@ import (
 func TestGlobalFlagConsistency(t *testing.T) {
 	// Commands that should have --global flag
 	commandsWithGlobal := map[string]bool{
-		"create": true,
-		"view":   true,
-		"open":   true, // Should have but currently doesn't
-		"peek":   true,
-		"delete": true, // Should have but currently doesn't
-		"path":   true, // Should have but currently doesn't
-		"copy":   true, // Should have but currently doesn't
-		"pin":    true,
-		"unpin":  true,
-		"ls":     true,
-		"export": true,
+		"create":         true,
+		"view":           true,
+		"open":           true,
+		"peek":           true,
+		"delete":         true,
+		"path":           true,
+		"copy":           true,
+		"pin":            true,
+		"unpin":          true,
+		"ls":             true,
+		"export":         true,
+		"show-data-file": true,
 	}
 
 	rootCmd := NewRootCmd()
