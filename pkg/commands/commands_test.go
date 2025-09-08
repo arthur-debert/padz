@@ -980,7 +980,7 @@ func TestDelete(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			initialCount := len(setup.Store.GetScratches())
 
-			err := Delete(setup.Store, false, tt.project, tt.indexStr)
+			err := Delete(setup.Store, false, false, tt.project, tt.indexStr)
 
 			if tt.expectError {
 				if err == nil {
@@ -1123,7 +1123,7 @@ func TestOpen(t *testing.T) {
 	}
 
 	// Test opening and editing the scratch
-	err = Open(setup.Store, false, "testproject", "1")
+	err = Open(setup.Store, false, false, "testproject", "1")
 	if err != nil {
 		t.Errorf("unexpected error opening scratch: %v", err)
 	}
@@ -1181,7 +1181,7 @@ func TestOpen_DeletesEmptyScratch(t *testing.T) {
 	}
 
 	// Open and edit (delete all content)
-	err = Open(setup.Store, false, "testproject", "1")
+	err = Open(setup.Store, false, false, "testproject", "1")
 	if err != nil {
 		t.Errorf("unexpected error opening scratch: %v", err)
 	}
