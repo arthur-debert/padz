@@ -227,7 +227,7 @@ func shouldRunCreate(args []string) bool {
 	// Check if first arg is a known command or reserved word
 	commands := []string{"ls", "view", "open", "peek", "delete", "path",
 		"copy", "cp", "cleanup", "search", "nuke", "recover", "create", "new", "n",
-		"version", "help", "completion", "pin", "unpin", "export"}
+		"version", "help", "completion", "pin", "unpin", "export", "show-data-file"}
 
 	firstArg := strings.ToLower(args[0])
 	for _, cmd := range commands {
