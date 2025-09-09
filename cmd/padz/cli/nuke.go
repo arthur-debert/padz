@@ -131,6 +131,9 @@ func newNukeCmd() *cobra.Command {
 					handleTerminalError(err, format)
 				}
 
+				// Show remaining list in verbose mode
+				ShowListAfterCommand(s, all, false, proj)
+
 				// Use the actual deleted count from the result
 				var successMsg string
 				if all {

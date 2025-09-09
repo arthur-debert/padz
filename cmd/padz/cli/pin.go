@@ -52,13 +52,27 @@ func runPin(cmd *cobra.Command, args []string) {
 		os.Exit(1)
 	}
 
+	// Get scratch details before pinning
+	scratch, err := commands.GetScratchByIndex(st, all, global, proj, args[0])
+	if err != nil {
+		log.Error().Err(err).Str("id", args[0]).Msg("Failed to get scratch")
+		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+		os.Exit(1)
+	}
+
 	if err := commands.Pin(st, all, global, proj, args[0]); err != nil {
 		log.Error().Err(err).Str("id", args[0]).Msg("Failed to pin scratch")
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 		os.Exit(1)
 	}
 
-	fmt.Println("Scratch pinned successfully")
+	// Show list in verbose mode
+	ShowListAfterCommand(st, all, global, proj)
+
+	// Show success message if not silent
+	if !IsSilentMode() {
+		fmt.Printf("Scratch \"%s\" pinned successfully\n", scratch.Title)
+	}
 }
 
 // newUnpinCmd creates the unpin command
@@ -102,11 +116,25 @@ func runUnpin(cmd *cobra.Command, args []string) {
 		os.Exit(1)
 	}
 
+	// Get scratch details before unpinning
+	scratch, err := commands.GetScratchByIndex(st, all, global, proj, args[0])
+	if err != nil {
+		log.Error().Err(err).Str("id", args[0]).Msg("Failed to get scratch")
+		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+		os.Exit(1)
+	}
+
 	if err := commands.Unpin(st, all, global, proj, args[0]); err != nil {
 		log.Error().Err(err).Str("id", args[0]).Msg("Failed to unpin scratch")
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 		os.Exit(1)
 	}
 
-	fmt.Println("Scratch unpinned successfully")
+	// Show list in verbose mode
+	ShowListAfterCommand(st, all, global, proj)
+
+	// Show success message if not silent
+	if !IsSilentMode() {
+		fmt.Printf("Scratch \"%s\" unpinned successfully\n", scratch.Title)
+	}
 }

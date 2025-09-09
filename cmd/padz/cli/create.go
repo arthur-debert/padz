@@ -1,10 +1,12 @@
 package cli
 
 import (
+	"fmt"
 	"os"
 	"strings"
 
 	"github.com/arthur-debert/padz/pkg/commands"
+	"github.com/arthur-debert/padz/pkg/output"
 	"github.com/arthur-debert/padz/pkg/project"
 	"github.com/arthur-debert/padz/pkg/store"
 	"github.com/rs/zerolog/log"
@@ -78,6 +80,23 @@ Examples:
 				if err := commands.CreateWithTitleAndContent(s, proj, title, initialContent); err != nil {
 					log.Fatal().Err(err).Msg(ErrFailedToCreateNote)
 				}
+			}
+
+			// Show list in verbose mode
+			ShowListAfterCommand(s, false, globalFlag, proj)
+
+			// Show success message if not silent
+			if !IsSilentMode() {
+				format, err := output.GetFormat(outputFormat)
+				if err != nil {
+					log.Fatal().Err(err).Msg("Failed to get output format")
+				}
+
+				successMsg := "Scratch created successfully"
+				if title != "" {
+					successMsg = fmt.Sprintf("Scratch \"%s\" created successfully", title)
+				}
+				handleTerminalSuccess(successMsg, format)
 			}
 		},
 	}

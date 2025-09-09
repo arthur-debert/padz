@@ -37,7 +37,12 @@ func newCleanupCmd() *cobra.Command {
 
 			if err != nil {
 				handleTerminalError(err, format)
+				return
 			}
+
+			// Show remaining list in verbose mode
+			// For cleanup, we show all scratches since it affects all projects
+			ShowListAfterCommand(s, true, false, "")
 
 			message := fmt.Sprintf(CleanupSuccessFormat, days)
 			handleTerminalSuccess(message, format)
