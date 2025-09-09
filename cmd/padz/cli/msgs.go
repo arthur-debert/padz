@@ -139,3 +139,14 @@ Use --all to delete all scratches across all scopes.`
 	NukeNoPadsFound = "No pads found to delete."
 	NukeCancelled   = "Nuke cancelled."
 )
+
+// ShowDataFile command messages
+const (
+	ShowDataFileUse   = "show-data-file"
+	ShowDataFileShort = "Show the path to the data directory used by padz"
+	ShowDataFileLong  = `Show the path to the data directory used by padz.
+
+This command displays the directory where padz stores all scratch files and metadata.
+Note that both global and local scratches are stored in the same location - the --global
+flag only affects which scratches are filtered/displayed, not where they are stored.`
+)
