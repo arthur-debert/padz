@@ -63,7 +63,7 @@ func TestHelpCommand(t *testing.T) {
 		},
 		{
 			name: "command help shows flags",
-			args: []string{"help", "ls"},
+			args: []string{"help", "list"},
 			shouldContain: []string{
 				"Flags:",
 				"--all",

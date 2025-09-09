@@ -14,8 +14,9 @@ import (
 // newPinCmd creates the pin command
 func newPinCmd() *cobra.Command {
 	return &cobra.Command{
-		Use:   "pin <id>",
-		Short: "Pin a scratch to the top of the list",
+		Use:     "pin <id>",
+		Aliases: []string{"p"},
+		Short:   "Pin a scratch to the top of the list (p)",
 		Long: `Pin a scratch to the top of the list. Pinned scratches appear with a special
 prefix (p1, p2, etc.) and are always shown first when listing scratches.
 
@@ -78,8 +79,9 @@ func runPin(cmd *cobra.Command, args []string) {
 // newUnpinCmd creates the unpin command
 func newUnpinCmd() *cobra.Command {
 	return &cobra.Command{
-		Use:   "unpin <id>",
-		Short: "Unpin a scratch",
+		Use:     "unpin <id>",
+		Aliases: []string{"u"},
+		Short:   "Unpin a scratch (u)",
 		Long: `Unpin a scratch. The scratch will return to its normal position
 in the chronological list.
 

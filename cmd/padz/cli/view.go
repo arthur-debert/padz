@@ -22,10 +22,11 @@ import (
 // newViewCmd creates and returns a new view command
 func newViewCmd() *cobra.Command {
 	return &cobra.Command{
-		Use:   ViewUse,
-		Short: ViewShort,
-		Long:  ViewLong,
-		Args:  cobra.ExactArgs(1),
+		Use:     ViewUse,
+		Aliases: []string{"v"},
+		Short:   ViewShort,
+		Long:    ViewLong,
+		Args:    cobra.ExactArgs(1),
 		Run: func(cmd *cobra.Command, args []string) {
 			all, _ := cmd.Flags().GetBool("all")
 			global, _ := cmd.Flags().GetBool("global")
