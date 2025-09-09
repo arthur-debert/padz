@@ -221,6 +221,11 @@ func shouldRunLs(args []string) bool {
 		return true // No args = ls
 	}
 
+	// Don't run ls for help flags
+	if len(args) > 0 && (args[0] == "--help" || args[0] == "-h") {
+		return false
+	}
+
 	// Check if first arg is a flag (starts with -)
 	// This allows: padz -s "term", padz --search="term", padz -a, etc.
 	if strings.HasPrefix(args[0], "-") {
