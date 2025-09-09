@@ -4,12 +4,13 @@ Copyright © 2025 YOUR NAME HERE <EMAIL ADDRESS>
 package cli
 
 import (
+	"fmt"
+	"os"
+
 	"github.com/arthur-debert/padz/pkg/commands"
 	"github.com/arthur-debert/padz/pkg/output"
 	"github.com/arthur-debert/padz/pkg/project"
 	"github.com/arthur-debert/padz/pkg/store"
-	"os"
-
 	"github.com/rs/zerolog/log"
 	"github.com/spf13/cobra"
 )
@@ -45,6 +46,21 @@ func newDeleteCmd() *cobra.Command {
 				log.Warn().Err(err).Msg("Failed to run discovery")
 			}
 
+			// Get the scratch details before deleting (for the success message)
+			scratch, err := commands.GetScratchByIndex(s, all, global, proj, args[0])
+			if err != nil {
+				// Format output
+				format, formatErr := output.GetFormat(outputFormat)
+				if formatErr != nil {
+					log.Fatal().Err(formatErr).Msg("Failed to get output format")
+				}
+				handleTerminalError(err, format)
+				return
+			}
+
+			scratchTitle := scratch.Title
+
+			// Delete the scratch
 			err = commands.Delete(s, all, global, proj, args[0])
 
 			// Format output
@@ -55,9 +71,15 @@ func newDeleteCmd() *cobra.Command {
 
 			if err != nil {
 				handleTerminalError(err, format)
+				return
 			}
 
-			handleTerminalSuccess(DeleteSuccess, format)
+			// Show list in verbose mode (before success message)
+			ShowListAfterCommand(s, all, global, proj)
+
+			// Show success message with scratch title
+			successMsg := fmt.Sprintf("The padz \"%s\" has been deleted", scratchTitle)
+			handleTerminalSuccess(successMsg, format)
 		},
 	}
 }

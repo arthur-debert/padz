@@ -15,6 +15,8 @@ import (
 var (
 	verbosity    int
 	outputFormat string
+	silent       bool
+	verbose      bool
 )
 
 // NewRootCmd creates and returns the root command
@@ -30,9 +32,13 @@ func NewRootCmd() *cobra.Command {
 	}
 
 	// Setup persistent flags
-	rootCmd.PersistentFlags().CountVarP(&verbosity, "verbose", "v", FlagVerboseDesc)
-	rootCmd.PersistentFlags().Lookup("verbose").Hidden = true
+	rootCmd.PersistentFlags().CountVarP(&verbosity, "verbosity", "v", FlagVerboseDesc)
+	rootCmd.PersistentFlags().Lookup("verbosity").Hidden = true
 	rootCmd.PersistentFlags().StringVarP(&outputFormat, "format", "f", "term", FlagFormatDesc)
+
+	// Output mode flags (mutually exclusive)
+	rootCmd.PersistentFlags().BoolVar(&silent, "silent", false, "Suppress list output after commands")
+	rootCmd.PersistentFlags().BoolVar(&verbose, "verbose", false, "Show list output after commands (default)")
 
 	// Add version flag
 	var versionFlag bool
@@ -43,11 +49,21 @@ func NewRootCmd() *cobra.Command {
 	rootCmd.Flags().StringVarP(&searchFlag, "search", "s", "", "Search for scratches (redirects to ls -s)")
 	rootCmd.Flags().Lookup("search").Hidden = true
 
-	// Set PersistentPreRun for logging
+	// Set PersistentPreRun for logging and output mode
 	rootCmd.PersistentPreRun = func(cmd *cobra.Command, args []string) {
 		// Setup logging based on verbosity
 		logging.SetupLogger(verbosity)
 		log.Debug().Str("command", cmd.Name()).Msg("Command started")
+
+		// Handle output mode flags
+		if silent && verbose {
+			log.Fatal().Msg("Cannot use both --silent and --verbose flags")
+		}
+
+		// Default to verbose if neither flag is set
+		if !silent && !verbose {
+			verbose = true
+		}
 	}
 
 	// Handle version flag in Run function
