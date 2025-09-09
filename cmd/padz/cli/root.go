@@ -150,6 +150,13 @@ func NewRootCmd() *cobra.Command {
 	lsCmd.Flags().StringP("search", "s", "", "Search for scratches containing the given term")
 	rootCmd.AddCommand(lsCmd)
 
+	searchCmd := newSearchCmd()
+	searchCmd.GroupID = "multiple"
+	searchCmd.Flags().BoolP("all", "a", false, FlagAllDesc)
+	searchCmd.Flags().BoolP("global", "g", false, FlagGlobalDesc)
+	searchCmd.Flags().StringP("project", "p", "", "Limit search to specific project")
+	rootCmd.AddCommand(searchCmd)
+
 	cleanupCmd := newCleanupCmd()
 	cleanupCmd.GroupID = "multiple"
 	cleanupCmd.Flags().IntP("days", "d", 30, FlagDaysDesc)
