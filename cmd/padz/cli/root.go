@@ -3,6 +3,7 @@ package cli
 import (
 	"os"
 	"strconv"
+	"time"
 
 	"github.com/arthur-debert/padz/internal/version"
 	"github.com/arthur-debert/padz/pkg/commands"
@@ -67,9 +68,15 @@ func NewRootCmd() *cobra.Command {
 		}
 
 		// Run auto-cleanup for soft-deleted items (non-blocking, best effort)
-		// Skip for help, completion, and version commands
-		if cmd.Name() != "help" && cmd.Name() != "completion" && !cmd.Flags().Changed("version") {
+		// Skip for help, completion, version commands, and commands that need immediate store access
+		skipAutoCleanup := cmd.Name() == "help" || cmd.Name() == "completion" || cmd.Flags().Changed("version") ||
+			cmd.Name() == "delete" || cmd.Name() == "restore" || cmd.Name() == "flush" || cmd.Name() == "nuke"
+
+		if !skipAutoCleanup {
 			go func() {
+				// Small delay to let the main command complete first and avoid lock contention
+				time.Sleep(100 * time.Millisecond)
+
 				s, err := store.NewStore()
 				if err != nil {
 					log.Debug().Err(err).Msg("Failed to initialize store for auto-cleanup")
