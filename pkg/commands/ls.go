@@ -52,6 +52,11 @@ func LsWithMode(s *store.Store, all, global bool, project string, mode ListMode)
 		}
 	}
 
+	// For ListModeAll, sort by most recent activity to intermingle active and deleted items
+	if mode == ListModeAll {
+		return sortByMostRecentActivity(filtered)
+	}
+
 	return sortByCreatedAtDesc(filtered)
 }
 
@@ -60,6 +65,28 @@ func sortByCreatedAtDesc(scratches []store.Scratch) []store.Scratch {
 	copy(sorted, scratches)
 	sort.Slice(sorted, func(i, j int) bool {
 		return sorted[i].CreatedAt.After(sorted[j].CreatedAt)
+	})
+	return sorted
+}
+
+// sortByMostRecentActivity sorts scratches by their most recent activity
+// (creation date for active items, deletion date for deleted items)
+func sortByMostRecentActivity(scratches []store.Scratch) []store.Scratch {
+	sorted := make([]store.Scratch, len(scratches))
+	copy(sorted, scratches)
+	sort.Slice(sorted, func(i, j int) bool {
+		// Get the most recent activity date for each scratch
+		iTime := sorted[i].CreatedAt
+		if sorted[i].IsDeleted && sorted[i].DeletedAt != nil {
+			iTime = *sorted[i].DeletedAt
+		}
+
+		jTime := sorted[j].CreatedAt
+		if sorted[j].IsDeleted && sorted[j].DeletedAt != nil {
+			jTime = *sorted[j].DeletedAt
+		}
+
+		return iTime.After(jTime)
 	})
 	return sorted
 }

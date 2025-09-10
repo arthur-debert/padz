@@ -66,7 +66,8 @@ Search results are ranked by:
 			var mode commands.ListMode
 			if showDeleted {
 				mode = commands.ListModeDeleted
-			} else if includeDeleted {
+			} else if includeDeleted || all {
+				// --all flag also shows deleted items intermingled with active ones
 				mode = commands.ListModeAll
 			} else {
 				mode = commands.ListModeActive
