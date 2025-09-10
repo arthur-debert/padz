@@ -17,8 +17,8 @@ import (
 func newCreateCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:     "create [words...]",
-		Aliases: []string{"new", "n"},
-		Short:   "Create a new scratch",
+		Aliases: []string{"new", "n", "c"},
+		Short:   "Create a new scratch (new, n, c)",
 		Long: `Create a new scratch in the current project or global scope.
 
 If no content is piped, opens your default editor to write the scratch.

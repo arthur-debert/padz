@@ -16,9 +16,10 @@ import (
 // newCleanupCmd creates and returns a new cleanup command
 func newCleanupCmd() *cobra.Command {
 	return &cobra.Command{
-		Use:   CleanupUse,
-		Short: CleanupShort,
-		Long:  CleanupLong,
+		Use:     CleanupUse,
+		Aliases: []string{"clean"},
+		Short:   CleanupShort,
+		Long:    CleanupLong,
 		Run: func(cmd *cobra.Command, args []string) {
 			days, _ := cmd.Flags().GetInt("days")
 

@@ -18,10 +18,11 @@ import (
 // newDeleteCmd creates and returns a new delete command
 func newDeleteCmd() *cobra.Command {
 	return &cobra.Command{
-		Use:   DeleteUse,
-		Short: DeleteShort,
-		Long:  DeleteLong,
-		Args:  cobra.ExactArgs(1),
+		Use:     DeleteUse,
+		Aliases: []string{"rm", "d", "del"},
+		Short:   DeleteShort,
+		Long:    DeleteLong,
+		Args:    cobra.ExactArgs(1),
 		Run: func(cmd *cobra.Command, args []string) {
 			all, _ := cmd.Flags().GetBool("all")
 			global, _ := cmd.Flags().GetBool("global")

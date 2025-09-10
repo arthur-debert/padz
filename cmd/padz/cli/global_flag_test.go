@@ -146,7 +146,7 @@ func TestCommandsHaveConsistentGlobalBehavior(t *testing.T) {
 		{"copy", true, true},
 		{"pin", true, true},
 		{"unpin", true, true},
-		{"ls", true, true},
+		{"list", true, true},
 		{"export", true, true},
 	}
 

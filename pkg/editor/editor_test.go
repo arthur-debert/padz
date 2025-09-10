@@ -182,22 +182,44 @@ func TestOpenInEditor_TempFileCleanup(t *testing.T) {
 	oldEditor := os.Getenv("EDITOR")
 	defer func() { _ = os.Setenv("EDITOR", oldEditor) }()
 
-	testEditor := createMockEditor(t)
-	defer func() { _ = os.Remove(testEditor) }()
+	// Track the temp file that gets created
+	trackerFile, err := os.CreateTemp("", "tracker-*.txt")
+	if err != nil {
+		t.Fatalf("failed to create tracker file: %v", err)
+	}
+	trackerPath := trackerFile.Name()
+	_ = trackerFile.Close()
+	defer func() { _ = os.Remove(trackerPath) }()
 
-	_ = os.Setenv("EDITOR", testEditor)
+	// Create a mock editor that saves the temp file path
+	testEditor := fmt.Sprintf(`#!/bin/bash
+echo "$1" > %s
+echo "mock editor output" > "$1"
+`, trackerPath)
 
-	tempFilesBefore := countTempFiles(t)
+	editorPath := createExecutableScript(t, testEditor)
+	defer func() { _ = os.Remove(editorPath) }()
 
-	_, err := OpenInEditor([]byte("test content"))
+	_ = os.Setenv("EDITOR", editorPath)
+
+	_, err = OpenInEditor([]byte("test content"))
 	if err != nil {
 		t.Errorf("unexpected error: %v", err)
 	}
 
-	tempFilesAfter := countTempFiles(t)
+	// Read the temp file path that was passed to the editor
+	data, err := os.ReadFile(trackerPath)
+	if err != nil {
+		t.Fatalf("failed to read tracker file: %v", err)
+	}
 
-	if tempFilesAfter > tempFilesBefore {
-		t.Errorf("temp files not cleaned up: before=%d, after=%d", tempFilesBefore, tempFilesAfter)
+	tempFilePath := strings.TrimSpace(string(data))
+
+	// Check if the temp file was cleaned up
+	if _, err := os.Stat(tempFilePath); err == nil {
+		t.Errorf("temp file %s was not cleaned up", tempFilePath)
+	} else if !os.IsNotExist(err) {
+		t.Errorf("unexpected error checking temp file: %v", err)
 	}
 }
 
@@ -290,23 +312,6 @@ func createExecutableScript(t *testing.T, content string) string {
 	}
 
 	return tmpFile.Name()
-}
-
-func countTempFiles(t *testing.T) int {
-	tmpDir := os.TempDir()
-	entries, err := os.ReadDir(tmpDir)
-	if err != nil {
-		t.Logf("couldn't read temp dir: %v", err)
-		return 0
-	}
-
-	count := 0
-	for _, entry := range entries {
-		if strings.HasPrefix(entry.Name(), "scratch-") {
-			count++
-		}
-	}
-	return count
 }
 
 func TestOpenInEditor_EditorWithArguments(t *testing.T) {

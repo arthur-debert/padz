@@ -54,14 +54,14 @@ The output includes the index, the relative time of creation, and the title of t
 // View command messages
 const (
 	ViewUse   = "view <index>"
-	ViewShort = "View a scratch"
+	ViewShort = "View a scratch (v)"
 	ViewLong  = "View the content of a scratch identified by its index."
 )
 
 // Open command messages
 const (
 	OpenUse   = "open <index>"
-	OpenShort = "Open a scratch in $EDITOR"
+	OpenShort = "Open a scratch in $EDITOR (o, e)"
 	OpenLong  = "Open a scratch, identified by its index, in $EDITOR."
 
 	OpenSuccess = "Scratch updated."
@@ -79,7 +79,7 @@ const (
 // Delete command messages
 const (
 	DeleteUse   = "delete <index>"
-	DeleteShort = "Delete a scratch"
+	DeleteShort = "Delete a scratch (rm, d, del)"
 	DeleteLong  = "Delete a scratch identified by its index."
 
 	DeleteSuccess = "Scratch deleted."
@@ -88,7 +88,7 @@ const (
 // Cleanup command messages
 const (
 	CleanupUse   = "cleanup"
-	CleanupShort = "Cleanup old scratches"
+	CleanupShort = "Cleanup old scratches (clean)"
 	CleanupLong  = "Cleanup scratches older than a specified number of days."
 
 	FlagDaysDesc = "Delete scratches older than this many days"
@@ -99,7 +99,7 @@ const (
 // Copy command messages
 const (
 	CopyUse   = "copy <index>"
-	CopyShort = "Copy a scratch to the clipboard"
+	CopyShort = "Copy a scratch to the clipboard (cp)"
 	CopyLong  = `Copy the content of a scratch to the system clipboard.
 
 The scratch is identified by its index number from the 'padz ls' output.

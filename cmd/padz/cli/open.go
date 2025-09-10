@@ -17,10 +17,11 @@ import (
 // newOpenCmd creates and returns a new open command
 func newOpenCmd() *cobra.Command {
 	cmd := &cobra.Command{
-		Use:   OpenUse,
-		Short: OpenShort,
-		Long:  OpenLong,
-		Args:  cobra.ExactArgs(1),
+		Use:     OpenUse,
+		Aliases: []string{"o", "e"},
+		Short:   OpenShort,
+		Long:    OpenLong,
+		Args:    cobra.ExactArgs(1),
 		Run: func(cmd *cobra.Command, args []string) {
 			all, _ := cmd.Flags().GetBool("all")
 			global, _ := cmd.Flags().GetBool("global")

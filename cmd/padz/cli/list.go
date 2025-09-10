@@ -16,11 +16,12 @@ import (
 	"github.com/spf13/cobra"
 )
 
-// newLsCmd creates and returns a new ls command
+// newLsCmd creates and returns a new list command
 func newLsCmd() *cobra.Command {
 	return &cobra.Command{
-		Use:   "ls",
-		Short: "Lists all scratches for the current project",
+		Use:     "list",
+		Aliases: []string{"ls"},
+		Short:   "Lists all scratches for the current project (ls)",
 		Long: `Lists all scratches for the current project.
 The output includes the index, the relative time of creation, and the title of the scratch.
 
