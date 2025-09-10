@@ -83,15 +83,10 @@ func TestHelpCommand(t *testing.T) {
 			rootCmd.SetOut(buf)
 			rootCmd.SetErr(buf)
 
-			// Simulate Execute() logic for help flags
-			args := tt.args
-			if len(args) > 0 && (args[0] == "--help" || args[0] == "-h") {
-				// Don't modify args for help flags
-			} else if shouldRunLs(args) {
-				args = append([]string{"ls"}, args...)
-			}
+			// Use the same command resolution as Execute()
+			resolvedArgs := resolveCommand(tt.args)
 
-			rootCmd.SetArgs(args)
+			rootCmd.SetArgs(resolvedArgs)
 			err := rootCmd.Execute()
 
 			// Help command returns no error

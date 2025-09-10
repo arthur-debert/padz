@@ -3,7 +3,6 @@ package cli
 import (
 	"os"
 	"strconv"
-	"strings"
 
 	"github.com/arthur-debert/padz/internal/version"
 	"github.com/arthur-debert/padz/pkg/config"
@@ -190,90 +189,62 @@ func NewRootCmd() *cobra.Command {
 func Execute() error {
 	args := os.Args[1:]
 
-	// Handle version flag specially
-	for _, arg := range args {
-		if arg == "--version" {
-			rootCmd := NewRootCmd()
-			rootCmd.SetArgs(args)
-			return rootCmd.Execute()
+	// Resolve the command to run based on arguments
+	resolvedArgs := resolveCommand(args)
+
+	// Create root command and execute with resolved args
+	rootCmd := NewRootCmd()
+	rootCmd.SetArgs(resolvedArgs)
+	return rootCmd.Execute()
+}
+
+// resolveCommand determines the appropriate command based on the given arguments.
+// It returns the potentially modified argument list with an explicit command inserted.
+func resolveCommand(args []string) []string {
+	// Case 1: No arguments -> run list command
+	if len(args) == 0 {
+		return []string{"list"}
+	}
+
+	// Case 2: Single integer argument -> run view/open command
+	if len(args) == 1 {
+		if num, err := strconv.Atoi(args[0]); err == nil && num > 0 {
+			cmd := config.NakedIntCommand // "view" or "open"
+			return append([]string{cmd}, args...)
 		}
 	}
 
-	// Determine which command to run
-	if shouldRunLs(args) {
-		// Run ls command (handles: no args, or only search flags)
-		os.Args = append([]string{os.Args[0], "ls"}, args...)
-	} else if shouldRunViewOrOpen(args) {
-		// Run view or open command (handles: single integer arg)
-		cmd := config.NakedIntCommand // "view" or "open"
-		os.Args = append([]string{os.Args[0], cmd}, args...)
-	} else if shouldRunCreate(args) {
-		// Run create command (handles: quoted strings or multiple args)
-		os.Args = append([]string{os.Args[0], "create"}, args...)
+	// Case 3: Check if first arg is a flag (starts with -)
+	if len(args) > 0 && len(args[0]) > 0 && args[0][0] == '-' {
+		// Special handling for help and version flags
+		if args[0] == "--help" || args[0] == "-h" || args[0] == "--version" {
+			return args // Let Cobra handle these
+		}
+		// Check if it's a create flag (-t for title)
+		if args[0] == "-t" || args[0] == "--title" {
+			return append([]string{"create"}, args...)
+		}
+		// Other flags imply list command
+		return append([]string{"list"}, args...)
 	}
 
-	return NewRootCmd().Execute()
-}
+	// Case 4: Check if first arg is a known command (including help)
+	if len(args) > 0 {
+		rootCmd := NewRootCmd()
 
-// shouldRunLs determines if the arguments indicate an ls command
-func shouldRunLs(args []string) bool {
-	if len(args) == 0 {
-		return true // No args = ls
-	}
+		// Check for built-in commands that Cobra handles
+		if args[0] == "help" || args[0] == "completion" {
+			return args
+		}
 
-	// Don't run ls for help flags
-	if len(args) > 0 && (args[0] == "--help" || args[0] == "-h") {
-		return false
-	}
-
-	// Check if first arg is a flag (starts with -)
-	// This allows: padz -s "term", padz --search="term", padz -a, etc.
-	if strings.HasPrefix(args[0], "-") {
-		return true
-	}
-
-	return false
-}
-
-// shouldRunViewOrOpen determines if the arguments indicate a view/open command
-func shouldRunViewOrOpen(args []string) bool {
-	if len(args) != 1 {
-		return false
-	}
-
-	// Check if the single argument is a positive integer
-	num, err := strconv.Atoi(args[0])
-	return err == nil && num > 0
-}
-
-// shouldRunCreate determines if the arguments indicate a create command
-func shouldRunCreate(args []string) bool {
-	if len(args) == 0 {
-		return false
-	}
-
-	// Check if first arg is a known command or reserved word
-	commands := []string{"list", "ls", "view", "v", "open", "o", "e", "peek",
-		"delete", "rm", "d", "del", "path", "copy", "cp", "cleanup", "clean",
-		"search", "nuke", "recover", "create", "new", "n", "c", "pin", "p",
-		"unpin", "u", "export", "show-data-file", "version", "help", "completion"}
-
-	firstArg := strings.ToLower(args[0])
-	for _, cmd := range commands {
-		if firstArg == cmd {
-			return false
+		// Try to find the command
+		cmd, _, err := rootCmd.Find(args)
+		if err == nil && cmd != nil && cmd.Name() != rootCmd.Name() {
+			// Found a valid subcommand (not root)
+			return args
 		}
 	}
 
-	// If we have multiple args or a single quoted string with multiple words
-	if len(args) > 1 {
-		return true
-	}
-
-	// Check if single arg contains multiple words (was quoted)
-	if len(args) == 1 && strings.Contains(args[0], " ") {
-		return true
-	}
-
-	return false
+	// Case 5: No valid command found, assume it's a create command
+	return append([]string{"create"}, args...)
 }
