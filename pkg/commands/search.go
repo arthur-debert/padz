@@ -24,7 +24,12 @@ type searchResult struct {
 }
 
 func Search(s *store.Store, all, global bool, project, term string) ([]store.Scratch, error) {
-	scratches := Ls(s, all, global, project)
+	return SearchWithMode(s, all, global, project, term, ListModeActive)
+}
+
+// SearchWithMode performs a search with delete filtering options
+func SearchWithMode(s *store.Store, all, global bool, project, term string, mode ListMode) ([]store.Scratch, error) {
+	scratches := LsWithMode(s, all, global, project, mode)
 
 	re, err := regexp.Compile(term)
 	if err != nil {
@@ -47,8 +52,13 @@ func Search(s *store.Store, all, global bool, project, term string) ([]store.Scr
 
 // SearchWithIndices performs a search and returns results with their correct positional indices
 func SearchWithIndices(s *store.Store, all, global bool, project, term string) ([]ScratchWithIndex, error) {
+	return SearchWithIndicesMode(s, all, global, project, term, ListModeActive)
+}
+
+// SearchWithIndicesMode performs a search with mode and returns results with their correct positional indices
+func SearchWithIndicesMode(s *store.Store, all, global bool, project, term string, mode ListMode) ([]ScratchWithIndex, error) {
 	// Get all scratches in the correct order
-	allScratches := Ls(s, all, global, project)
+	allScratches := LsWithMode(s, all, global, project, mode)
 
 	// Create a map of ID to index for quick lookup
 	idToIndex := make(map[string]int)

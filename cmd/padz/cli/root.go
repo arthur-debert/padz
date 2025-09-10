@@ -5,8 +5,10 @@ import (
 	"strconv"
 
 	"github.com/arthur-debert/padz/internal/version"
+	"github.com/arthur-debert/padz/pkg/commands"
 	"github.com/arthur-debert/padz/pkg/config"
 	"github.com/arthur-debert/padz/pkg/logging"
+	"github.com/arthur-debert/padz/pkg/store"
 	"github.com/rs/zerolog/log"
 	"github.com/spf13/cobra"
 )
@@ -62,6 +64,28 @@ func NewRootCmd() *cobra.Command {
 		// Default to verbose if neither flag is set
 		if !silent && !verbose {
 			verbose = true
+		}
+
+		// Run auto-cleanup for soft-deleted items (non-blocking, best effort)
+		// Skip for help, completion, and version commands
+		if cmd.Name() != "help" && cmd.Name() != "completion" && !cmd.Flags().Changed("version") {
+			go func() {
+				s, err := store.NewStore()
+				if err != nil {
+					log.Debug().Err(err).Msg("Failed to initialize store for auto-cleanup")
+					return
+				}
+
+				// Auto-cleanup soft-deleted items older than 7 days
+				opts := commands.CleanupOptions{
+					DaysForActive:  999999, // Don't auto-cleanup active items
+					DaysForDeleted: 7,      // Auto-cleanup soft-deleted items after 7 days
+				}
+
+				if err := commands.CleanupWithOptions(s, opts); err != nil {
+					log.Debug().Err(err).Msg("Auto-cleanup failed")
+				}
+			}()
 		}
 	}
 
@@ -147,6 +171,8 @@ func NewRootCmd() *cobra.Command {
 	lsCmd.Flags().BoolP("all", "a", false, FlagAllDesc)
 	lsCmd.Flags().BoolP("global", "g", false, FlagGlobalDesc)
 	lsCmd.Flags().StringP("search", "s", "", "Search for scratches containing the given term")
+	lsCmd.Flags().Bool("deleted", false, "Show only soft-deleted scratches")
+	lsCmd.Flags().Bool("include-deleted", false, "Include soft-deleted scratches in listing")
 	rootCmd.AddCommand(lsCmd)
 
 	searchCmd := newSearchCmd()
@@ -169,6 +195,14 @@ func NewRootCmd() *cobra.Command {
 	recoverCmd := newRecoverCmd()
 	recoverCmd.GroupID = "multiple"
 	rootCmd.AddCommand(recoverCmd)
+
+	flushCmd := newFlushCmd()
+	flushCmd.GroupID = "multiple"
+	rootCmd.AddCommand(flushCmd)
+
+	restoreCmd := newRestoreCmd()
+	restoreCmd.GroupID = "multiple"
+	rootCmd.AddCommand(restoreCmd)
 
 	exportCmd := newExportCmd()
 	exportCmd.GroupID = "multiple"

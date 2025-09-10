@@ -993,14 +993,34 @@ func TestDelete(t *testing.T) {
 				return
 			}
 
-			if len(setup.Store.GetScratches()) != initialCount-1 {
-				t.Errorf("expected scratch count to decrease by 1")
+			// With soft delete, count should remain the same
+			if len(setup.Store.GetScratches()) != initialCount {
+				t.Errorf("expected scratch count to remain the same with soft delete")
 			}
 
-			// Verify file was deleted
+			// Verify file still exists (soft delete)
 			path, _ := store.GetScratchFilePathWithConfig(testScratch.ID, setup.Config)
-			if _, err := setup.Config.FileSystem.Stat(path); err == nil {
-				t.Errorf("expected scratch file to be deleted")
+			if _, err := setup.Config.FileSystem.Stat(path); err != nil {
+				t.Errorf("expected scratch file to still exist after soft delete")
+			}
+
+			// Verify scratch is marked as deleted
+			scratches := setup.Store.GetScratches()
+			found := false
+			for _, s := range scratches {
+				if s.ID == testScratch.ID {
+					found = true
+					if !s.IsDeleted {
+						t.Errorf("expected scratch to be marked as deleted")
+					}
+					if s.DeletedAt == nil {
+						t.Errorf("expected DeletedAt to be set")
+					}
+					break
+				}
+			}
+			if !found {
+				t.Errorf("expected to find the soft-deleted scratch")
 			}
 		})
 	}
@@ -1186,10 +1206,19 @@ func TestOpen_DeletesEmptyScratch(t *testing.T) {
 		t.Errorf("unexpected error opening scratch: %v", err)
 	}
 
-	// Verify the scratch was deleted
+	// Verify the scratch was soft-deleted
 	scratches := setup.Store.GetScratches()
-	if len(scratches) != 0 {
-		t.Errorf("expected scratch to be deleted, but found %d scratches", len(scratches))
+	if len(scratches) != 1 {
+		t.Errorf("expected 1 scratch (soft-deleted), but found %d scratches", len(scratches))
+		return
+	}
+
+	scratch := scratches[0]
+	if !scratch.IsDeleted {
+		t.Errorf("expected scratch to be marked as deleted")
+	}
+	if scratch.DeletedAt == nil {
+		t.Errorf("expected DeletedAt to be set")
 	}
 }
 

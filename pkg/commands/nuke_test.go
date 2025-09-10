@@ -72,10 +72,21 @@ func TestNuke(t *testing.T) {
 			t.Errorf("Expected project name %s, got %s", project1, result.ProjectName)
 		}
 
-		// Verify only project1 scratches were deleted
+		// Verify project1 scratches were soft-deleted
 		remaining := setup.Store.GetScratches()
-		if len(remaining) != 6 { // 2 from project2 + 4 global
-			t.Errorf("Expected 6 remaining scratches, got %d", len(remaining))
+		if len(remaining) != 9 { // all still exist but 3 are soft-deleted
+			t.Errorf("Expected 9 total scratches, got %d", len(remaining))
+		}
+
+		// Count soft-deleted scratches
+		deletedCount := 0
+		for _, s := range remaining {
+			if s.Project == project1 && s.IsDeleted {
+				deletedCount++
+			}
+		}
+		if deletedCount != 3 {
+			t.Errorf("Expected 3 soft-deleted project1 scratches, got %d", deletedCount)
 		}
 	})
 
@@ -92,10 +103,21 @@ func TestNuke(t *testing.T) {
 			t.Errorf("Expected scope 'global', got %s", result.Scope)
 		}
 
-		// Verify only global scratches were deleted
+		// Verify global scratches were soft-deleted
 		remaining := setup.Store.GetScratches()
-		if len(remaining) != 2 { // 2 from project2
-			t.Errorf("Expected 2 remaining scratches, got %d", len(remaining))
+		if len(remaining) != 9 { // all still exist but 4 more are soft-deleted
+			t.Errorf("Expected 9 total scratches, got %d", len(remaining))
+		}
+
+		// Count soft-deleted global scratches
+		deletedCount := 0
+		for _, s := range remaining {
+			if s.Project == globalProject && s.IsDeleted {
+				deletedCount++
+			}
+		}
+		if deletedCount != 4 {
+			t.Errorf("Expected 4 soft-deleted global scratches, got %d", deletedCount)
 		}
 	})
 
@@ -113,17 +135,28 @@ func TestNuke(t *testing.T) {
 		if err != nil {
 			t.Fatalf("Failed to nuke all: %v", err)
 		}
-		if result.DeletedCount != 4 { // 2 from project2 + 2 new
+		if result.DeletedCount != 4 { // 2 from project2 + 2 new (not already deleted)
 			t.Errorf("Expected 4 deleted, got %d", result.DeletedCount)
 		}
 		if result.Scope != "all" {
 			t.Errorf("Expected scope 'all', got %s", result.Scope)
 		}
 
-		// Verify all scratches were deleted
+		// Verify all scratches were soft-deleted
 		remaining := setup.Store.GetScratches()
-		if len(remaining) != 0 {
-			t.Errorf("Expected 0 remaining scratches, got %d", len(remaining))
+		if len(remaining) != 11 { // all still exist but all are soft-deleted
+			t.Errorf("Expected 11 total scratches, got %d", len(remaining))
+		}
+
+		// Count active scratches (should be 0)
+		activeCount := 0
+		for _, s := range remaining {
+			if !s.IsDeleted {
+				activeCount++
+			}
+		}
+		if activeCount != 0 {
+			t.Errorf("Expected 0 active scratches, got %d", activeCount)
 		}
 	})
 

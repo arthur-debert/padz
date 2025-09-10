@@ -112,13 +112,19 @@ func (r *Renderer) RenderPadListItem(scratch *store.Scratch, showProject bool, i
 		projectName = filepath.Base(scratch.Project)
 	}
 
+	// Use deletion time for deleted items
+	timeAgo := humanize.Time(scratch.CreatedAt)
+	if scratch.IsDeleted && scratch.DeletedAt != nil {
+		timeAgo = "deleted " + humanize.Time(*scratch.DeletedAt)
+	}
+
 	item := PadListItem{
 		ID:          scratch.ID,
 		Title:       scratch.Title,
 		Project:     scratch.Project,
 		ProjectName: projectName,
 		ShowProject: showProject,
-		TimeAgo:     humanize.Time(scratch.CreatedAt),
+		TimeAgo:     timeAgo,
 		Index:       index,
 	}
 
@@ -127,7 +133,16 @@ func (r *Renderer) RenderPadListItem(scratch *store.Scratch, showProject bool, i
 		return "", fmt.Errorf("failed to execute template: %w", err)
 	}
 
-	return applyStyles(buf.String()), nil
+	result := buf.String()
+
+	// Apply strikethrough and muted style for deleted items
+	if scratch.IsDeleted {
+		result = applyDeletedStyles(result)
+	} else {
+		result = applyStyles(result)
+	}
+
+	return result, nil
 }
 
 func (r *Renderer) RenderPadList(scratches []*store.Scratch, showProject bool) (string, error) {
@@ -209,23 +224,42 @@ func (r *Renderer) RenderPadList(scratches []*store.Scratch, showProject bool) (
 		lines = append(lines, "")
 	}
 
-	// Second pass: render all scratches with regular indices
-	for i, scratch := range scratches {
+	// Second pass: render all scratches with regular or deleted indices
+	regularIndex := 0
+	deletedIndex := 0
+
+	for _, scratch := range scratches {
 		// Prepare data
-		index := i + 1
 		projectName := ""
 		if scratch.Project == "global" {
 			projectName = "global"
 		} else if scratch.Project != "" {
 			projectName = filepath.Base(scratch.Project)
 		}
-		timeAgo := formatTimeAgo(scratch.CreatedAt)
+
+		// Use appropriate time based on deletion status
+		var timeAgo string
+		if scratch.IsDeleted && scratch.DeletedAt != nil {
+			timeAgo = formatTimeAgo(*scratch.DeletedAt)
+		} else {
+			timeAgo = formatTimeAgo(scratch.CreatedAt)
+		}
 
 		// Build line with proper column alignment
 		var parts []string
 
-		// Regular index
-		indexStr := fmt.Sprintf("%d.", index)
+		// Index based on deletion status
+		var indexStr string
+		var isDeleted bool
+		if scratch.IsDeleted {
+			deletedIndex++
+			indexStr = fmt.Sprintf("d%d.", deletedIndex)
+			isDeleted = true
+		} else {
+			regularIndex++
+			indexStr = fmt.Sprintf("%d.", regularIndex)
+			isDeleted = false
+		}
 		indexPadded := padLeft(indexStr, widths.ID-1) + " "
 
 		// Project (if showing)
@@ -239,31 +273,55 @@ func (r *Renderer) RenderPadList(scratches []*store.Scratch, showProject bool) (
 		title := truncateWithEllipsis(scratch.Title, widths.Title)
 		titlePadded := padRight(title, widths.Title) + "  "
 
-		// Time - add pin indicator before if pinned
+		// Time - add indicators
 		timeStr := timeAgo
-		if scratch.IsPinned {
+		if scratch.IsDeleted {
+			timeStr = "deleted " + timeAgo
+		} else if scratch.IsPinned {
 			timeStr = "⚲ " + timeAgo
 		}
 		timePadded := padLeft(timeStr, widths.Date)
 
-		// Apply styles
-		indexStyle := styles.Get("padIndex")
-		parts = append(parts, strings.Replace(indexPadded, indexStr, indexStyle.Render(indexStr), 1))
+		// Apply styles based on deletion status
+		if isDeleted {
+			// For deleted items, use muted style with strikethrough
+			mutedStyle := styles.Get("muted").Strikethrough(true)
 
-		if showProject && projectPadded != "" {
-			projectStyle := styles.Get("padProject")
-			projectText := strings.TrimSpace(projectPadded[:widths.Project])
-			parts = append(parts, strings.Replace(projectPadded, projectText, projectStyle.Render(projectText), 1))
+			// Index
+			parts = append(parts, strings.Replace(indexPadded, indexStr, mutedStyle.Render(indexStr), 1))
+
+			// Project (if showing)
+			if showProject && projectPadded != "" {
+				projectText := strings.TrimSpace(projectPadded[:widths.Project])
+				parts = append(parts, strings.Replace(projectPadded, projectText, mutedStyle.Render(projectText), 1))
+			}
+
+			// Title
+			titleText := strings.TrimSpace(titlePadded[:widths.Title])
+			parts = append(parts, strings.Replace(titlePadded, titleText, mutedStyle.Render(titleText), 1))
+
+			// Time
+			parts = append(parts, mutedStyle.Render(strings.TrimSpace(timePadded)))
+		} else {
+			// Regular styling for non-deleted items
+			indexStyle := styles.Get("padIndex")
+			parts = append(parts, strings.Replace(indexPadded, indexStr, indexStyle.Render(indexStr), 1))
+
+			if showProject && projectPadded != "" {
+				projectStyle := styles.Get("padProject")
+				projectText := strings.TrimSpace(projectPadded[:widths.Project])
+				parts = append(parts, strings.Replace(projectPadded, projectText, projectStyle.Render(projectText), 1))
+			}
+
+			titleStyle := styles.Get("padTitle")
+			titleText := strings.TrimSpace(titlePadded[:widths.Title])
+			parts = append(parts, strings.Replace(titlePadded, titleText, titleStyle.Render(titleText), 1))
+
+			timeStyle := styles.Get("padTime")
+			// Apply style only to the time part, preserving the ⚲ marker if present
+			styledTime := strings.Replace(timePadded, timeAgo, timeStyle.Render(timeAgo), 1)
+			parts = append(parts, styledTime)
 		}
-
-		titleStyle := styles.Get("padTitle")
-		titleText := strings.TrimSpace(titlePadded[:widths.Title])
-		parts = append(parts, strings.Replace(titlePadded, titleText, titleStyle.Render(titleText), 1))
-
-		timeStyle := styles.Get("padTime")
-		// Apply style only to the time part, preserving the ⚲ marker if present
-		styledTime := strings.Replace(timePadded, timeAgo, timeStyle.Render(timeAgo), 1)
-		parts = append(parts, styledTime)
 
 		lines = append(lines, strings.Join(parts, ""))
 	}
@@ -425,6 +483,27 @@ func applyStyles(text string) string {
 		after := result[contentEnd+len(closeTag):]
 		result = before + styled + after
 	}
+
+	return result
+}
+
+// applyDeletedStyles applies styles for deleted items with strikethrough and muted colors
+func applyDeletedStyles(text string) string {
+	// First apply regular styles
+	result := applyStyles(text)
+
+	// Apply strikethrough to the entire line
+	mutedStyle := styles.Get("muted").Strikethrough(true)
+
+	// For deleted items, we want to override specific styles with muted versions
+	// Find all instances of the styled content
+	re := regexp.MustCompile(`\x1b\[[0-9;]+m([^\x1b]+)\x1b\[0m`)
+	result = re.ReplaceAllStringFunc(result, func(match string) string {
+		// Extract the content between ANSI codes
+		content := re.FindStringSubmatch(match)[1]
+		// Apply muted style with strikethrough
+		return mutedStyle.Render(content)
+	})
 
 	return result
 }

@@ -1,9 +1,8 @@
 package commands
 
 import (
-	"fmt"
 	"github.com/arthur-debert/padz/pkg/store"
-	"os"
+	"time"
 )
 
 // NukeResult contains the result of a nuke operation
@@ -13,69 +12,65 @@ type NukeResult struct {
 	ProjectName  string
 }
 
-// Nuke deletes all scratches in the specified scope
+// Nuke soft-deletes all scratches in the specified scope
 func Nuke(s *store.Store, all bool, project string) (*NukeResult, error) {
-	var scratchesToDelete []store.Scratch
+	var scratchesToSoftDelete []store.Scratch
 	result := &NukeResult{}
+	now := time.Now()
 
+	scratches := s.GetScratches()
+
+	// Count only non-deleted scratches for the result
+	for _, scratch := range scratches {
+		if scratch.IsDeleted {
+			continue // Skip already deleted items
+		}
+
+		if all {
+			// Soft delete all non-deleted scratches across all scopes
+			scratchesToSoftDelete = append(scratchesToSoftDelete, scratch)
+		} else if project == "" && scratch.Project == "global" {
+			// Soft delete only global scratches
+			scratchesToSoftDelete = append(scratchesToSoftDelete, scratch)
+		} else if project != "" && scratch.Project == project {
+			// Soft delete only project-specific scratches
+			scratchesToSoftDelete = append(scratchesToSoftDelete, scratch)
+		}
+	}
+
+	// Set the scope and count
 	if all {
-		// Delete all scratches across all scopes
-		scratchesToDelete = s.GetScratches()
 		result.Scope = "all"
-		result.DeletedCount = len(scratchesToDelete)
 	} else if project == "" {
-		// Delete only global scratches
-		for _, scratch := range s.GetScratches() {
-			if scratch.Project == "global" {
-				scratchesToDelete = append(scratchesToDelete, scratch)
-			}
-		}
 		result.Scope = "global"
-		result.DeletedCount = len(scratchesToDelete)
 	} else {
-		// Delete only project-specific scratches
-		for _, scratch := range s.GetScratches() {
-			if scratch.Project == project {
-				scratchesToDelete = append(scratchesToDelete, scratch)
-			}
-		}
 		result.Scope = "project"
 		result.ProjectName = project
-		result.DeletedCount = len(scratchesToDelete)
+	}
+	result.DeletedCount = len(scratchesToSoftDelete)
+
+	// Soft delete the scratches
+	for i := range scratchesToSoftDelete {
+		scratchesToSoftDelete[i].IsDeleted = true
+		scratchesToSoftDelete[i].DeletedAt = &now
 	}
 
-	// Delete the scratch files
-	for _, scratch := range scratchesToDelete {
-		if err := deleteScratchFile(scratch.ID); err != nil {
-			// Continue deleting even if one fails
-			fmt.Fprintf(os.Stderr, "Warning: failed to delete file for scratch %s: %v\n", scratch.ID, err)
+	// Update all scratches with soft-deleted ones
+	updated := make([]store.Scratch, len(scratches))
+	copy(updated, scratches)
+
+	// Update the scratches that were soft-deleted
+	for _, toDelete := range scratchesToSoftDelete {
+		for j := range updated {
+			if updated[j].ID == toDelete.ID {
+				updated[j] = toDelete
+				break
+			}
 		}
 	}
 
-	// Remove all scratches from the store
-	if all {
-		// Clear all scratches
-		if err := s.SaveScratchesAtomic([]store.Scratch{}); err != nil {
-			return nil, err
-		}
-	} else {
-		// Keep only scratches not in the delete list
-		var remainingScratches []store.Scratch
-		for _, scratch := range s.GetScratches() {
-			shouldDelete := false
-			for _, toDelete := range scratchesToDelete {
-				if scratch.ID == toDelete.ID {
-					shouldDelete = true
-					break
-				}
-			}
-			if !shouldDelete {
-				remainingScratches = append(remainingScratches, scratch)
-			}
-		}
-		if err := s.SaveScratchesAtomic(remainingScratches); err != nil {
-			return nil, err
-		}
+	if err := s.SaveScratchesAtomic(updated); err != nil {
+		return nil, err
 	}
 
 	return result, nil

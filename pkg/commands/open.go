@@ -32,11 +32,8 @@ func Open(s *store.Store, all bool, global bool, project string, indexStr string
 
 	trimmedContent := trim(newContent)
 	if len(trimmedContent) == 0 {
-		// If the file is empty, delete the scratch
-		if err := deleteScratchFile(scratchToOpen.ID); err != nil {
-			return err
-		}
-		return s.RemoveScratchAtomic(scratchToOpen.ID)
+		// If the file is empty, soft delete the scratch
+		return Delete(s, all, global, project, indexStr)
 	}
 
 	if err := saveScratchFile(scratchToOpen.ID, trimmedContent); err != nil {

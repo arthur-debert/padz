@@ -39,6 +39,8 @@ Search results are ranked by:
 			all, _ := cmd.Flags().GetBool("all")
 			global, _ := cmd.Flags().GetBool("global")
 			searchTerm, _ := cmd.Flags().GetString("search")
+			showDeleted, _ := cmd.Flags().GetBool("deleted")
+			includeDeleted, _ := cmd.Flags().GetBool("include-deleted")
 
 			s, err := store.NewStore()
 			if err != nil {
@@ -60,9 +62,19 @@ Search results are ranked by:
 				log.Warn().Err(err).Msg("Failed to run discovery")
 			}
 
+			// Determine list mode based on flags
+			var mode commands.ListMode
+			if showDeleted {
+				mode = commands.ListModeDeleted
+			} else if includeDeleted {
+				mode = commands.ListModeAll
+			} else {
+				mode = commands.ListModeActive
+			}
+
 			// If search term provided, use search functionality
 			if searchTerm != "" {
-				searchResults, err := commands.SearchWithIndices(s, all, global, proj, searchTerm)
+				searchResults, err := commands.SearchWithIndicesMode(s, all, global, proj, searchTerm, mode)
 				if err != nil {
 					log.Fatal().Err(err).Msg("Failed to search")
 				}
@@ -98,7 +110,7 @@ Search results are ranked by:
 			}
 
 			// Normal listing without search
-			scratches := commands.Ls(s, all, global, proj)
+			scratches := commands.LsWithMode(s, all, global, proj, mode)
 
 			// Format output
 			format, err := output.GetFormat(outputFormat)
