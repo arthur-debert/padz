@@ -140,7 +140,7 @@ func TestStoreManager_getStorePath(t *testing.T) {
 	t.Run("global scope path with configured DataPath", func(t *testing.T) {
 		path, err := sm.getStorePath("global", "")
 		require.NoError(t, err)
-		expected := filepath.Join(env.BaseDir, "data", "scratch", "global")
+		expected := filepath.Join(env.BaseDir, "data", "global")
 		assert.Equal(t, expected, path)
 	})
 
@@ -160,7 +160,7 @@ func TestStoreManager_getStorePath(t *testing.T) {
 		require.NoError(t, err)
 		// Path should be from XDG but still a valid path
 		assert.NotEmpty(t, path)
-		assert.Contains(t, path, "scratch/global")
+		assert.Contains(t, path, "global")
 	})
 
 	t.Run("project scope path", func(t *testing.T) {

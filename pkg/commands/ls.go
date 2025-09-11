@@ -2,10 +2,11 @@ package commands
 
 import (
 	"fmt"
-	"github.com/arthur-debert/padz/pkg/store"
 	"sort"
 	"strconv"
 	"strings"
+
+	"github.com/arthur-debert/padz/pkg/store"
 )
 
 // ListMode defines how to filter deleted items
@@ -20,6 +21,75 @@ const (
 func Ls(s *store.Store, all, global bool, project string) []store.Scratch {
 	// Default behavior - exclude deleted items
 	return LsWithMode(s, all, global, project, ListModeActive)
+}
+
+// LsWithStoreManager lists scratches using the new StoreManager approach
+func LsWithStoreManager(workingDir string, globalFlag, allFlag bool, mode ListMode) (interface{}, error) {
+	sm := store.NewStoreManager()
+
+	if allFlag {
+		// Cross-scope operation: get all available scopes
+		scopes := []string{"global"} // Always include global
+
+		// Find project scopes by examining working directory
+		if !globalFlag {
+			// Try to get current project scope
+			_, currentScope, err := sm.GetCurrentStore(workingDir, false)
+			if err == nil && currentScope != "global" {
+				// Add current project scope
+				scopes = append(scopes, currentScope)
+			}
+
+			// TODO: In future, we might want to discover all project scopes
+			// For now, we include global + current project when --all is used
+		}
+
+		// Create working directories map
+		workingDirs := make(map[string]string)
+		workingDirs["global"] = ""
+		if len(scopes) > 1 {
+			workingDirs[scopes[1]] = workingDir // Current project
+		}
+
+		// Create merged store for cross-scope operations
+		mergedStore, err := store.NewMergedStore(sm, scopes, workingDirs)
+		if err != nil {
+			return nil, fmt.Errorf("failed to create merged store: %w", err)
+		}
+
+		// Get scoped scratches
+		includeDeleted := (mode == ListModeDeleted || mode == ListModeAll)
+		scopedScratches := mergedStore.GetAllScratches(includeDeleted)
+
+		// Filter based on mode
+		var filtered []store.ScopedScratch
+		for _, scratch := range scopedScratches {
+			switch mode {
+			case ListModeActive:
+				if !scratch.IsDeleted {
+					filtered = append(filtered, scratch)
+				}
+			case ListModeDeleted:
+				if scratch.IsDeleted {
+					filtered = append(filtered, scratch)
+				}
+			case ListModeAll:
+				filtered = append(filtered, scratch)
+			}
+		}
+
+		return filtered, nil
+	} else {
+		// Single-scope operation
+		currentStore, currentScope, err := sm.GetCurrentStore(workingDir, globalFlag)
+		if err != nil {
+			return nil, fmt.Errorf("failed to get current store: %w", err)
+		}
+
+		// Use the existing LsWithMode logic but with the scope-specific store
+		scratches := LsWithMode(currentStore, false, currentScope == "global", currentScope, mode)
+		return scratches, nil
+	}
 }
 
 // LsWithMode lists scratches with delete filtering options
@@ -189,4 +259,64 @@ func ResolveScratchID(s *store.Store, all, global bool, project string, id strin
 	}
 
 	return nil, fmt.Errorf("scratch not found: %s", id)
+}
+
+// ResolveScratchWithStoreManager resolves various ID formats including scoped IDs (scope:index) using StoreManager
+func ResolveScratchWithStoreManager(workingDir string, globalFlag bool, id string) (*store.ScopedScratch, error) {
+	sm := store.NewStoreManager()
+
+	// Check if this is a scoped ID (contains colon)
+	if strings.Contains(id, ":") {
+		parts := strings.SplitN(id, ":", 2)
+		if len(parts) == 2 {
+			scope := parts[0]
+
+			// Create working directories map for the specific scope
+			workingDirs := make(map[string]string)
+			if scope == "global" {
+				workingDirs[scope] = ""
+			} else {
+				// For project scopes, we need to find the project directory
+				// For now, assume current working directory belongs to the requested scope
+				workingDirs[scope] = workingDir
+			}
+
+			// Create merged store with just this scope
+			mergedStore, err := store.NewMergedStore(sm, []string{scope}, workingDirs)
+			if err != nil {
+				return nil, fmt.Errorf("failed to create merged store for scope %s: %w", scope, err)
+			}
+
+			// Use the MergedStore's scoped ID resolution
+			return mergedStore.GetScopedScratch(id)
+		}
+	}
+
+	// Non-scoped ID: resolve in current scope
+	currentStore, currentScope, err := sm.GetCurrentStore(workingDir, globalFlag)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get current store: %w", err)
+	}
+
+	// Use existing resolution logic
+	scratch, err := ResolveScratchID(currentStore, false, currentScope == "global", currentScope, id)
+	if err != nil {
+		return nil, err
+	}
+
+	// Convert to ScopedScratch format
+	// We need to determine the index within the current scope
+	scratches := LsWithMode(currentStore, false, currentScope == "global", currentScope, ListModeActive)
+	for i, s := range scratches {
+		if s.ID == scratch.ID {
+			return &store.ScopedScratch{
+				Scratch:  scratch,
+				Scope:    currentScope,
+				ScopedID: fmt.Sprintf("%s:%d", currentScope, i+1),
+				Index:    i + 1,
+			}, nil
+		}
+	}
+
+	return nil, fmt.Errorf("scratch not found in current scope: %s", id)
 }

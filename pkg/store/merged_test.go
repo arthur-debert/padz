@@ -285,12 +285,14 @@ func TestMergedStore_Integration(t *testing.T) {
 		Project:   "webapp",
 		Title:     "Fix login bug",
 		CreatedAt: now.Add(-3 * time.Hour),
+		UpdatedAt: now.Add(-3 * time.Hour),
 	}
 	webappScratch2 := Scratch{
 		ID:        "webapp-2",
 		Project:   "webapp",
 		Title:     "Add dark mode",
 		CreatedAt: now.Add(-1 * time.Hour),
+		UpdatedAt: now.Add(-1 * time.Hour),
 	}
 	require.NoError(t, webappStore.AddScratch(webappScratch1))
 	require.NoError(t, webappStore.AddScratch(webappScratch2))
@@ -305,6 +307,7 @@ func TestMergedStore_Integration(t *testing.T) {
 		Project:   "mobile",
 		Title:     "Push notifications",
 		CreatedAt: now.Add(-2 * time.Hour),
+		UpdatedAt: now.Add(-2 * time.Hour),
 	}
 	require.NoError(t, mobileStore.AddScratch(mobileScratch))
 
@@ -317,6 +320,7 @@ func TestMergedStore_Integration(t *testing.T) {
 		Project:   "global",
 		Title:     "Weekend plans",
 		CreatedAt: now,
+		UpdatedAt: now,
 	}
 	require.NoError(t, globalStore.AddScratch(globalScratch))
 
@@ -341,8 +345,14 @@ func TestMergedStore_Integration(t *testing.T) {
 		scopedIDs[i] = scratch.ScopedID
 	}
 
+	// Expected order by creation time (most recent first):
+	// 1. "Weekend plans" (now)
+	// 2. "Add dark mode" (now - 1 hour)
+	// 3. "Push notifications" (now - 2 hours)
+	// 4. "Fix login bug" (now - 3 hours)
 	expectedTitles := []string{"Weekend plans", "Add dark mode", "Push notifications", "Fix login bug"}
 	expectedScopedIDs := []string{"global:1", "webapp:1", "mobile:1", "webapp:2"}
+
 	assert.Equal(t, expectedTitles, titles)
 	assert.Equal(t, expectedScopedIDs, scopedIDs)
 

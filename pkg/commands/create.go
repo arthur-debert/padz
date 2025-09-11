@@ -19,6 +19,20 @@ func Create(s *store.Store, project string, content []byte) error {
 	return CreateWithTitle(s, project, content, "")
 }
 
+// CreateWithStoreManager creates a scratch using the StoreManager approach
+func CreateWithStoreManager(workingDir string, globalFlag bool, content []byte, title string) error {
+	sm := store.NewStoreManager()
+
+	// Get the appropriate store based on flags
+	currentStore, _, err := sm.GetCurrentStore(workingDir, globalFlag)
+	if err != nil {
+		return fmt.Errorf("failed to get current store: %w", err)
+	}
+
+	// Use the existing CreateWithTitle logic
+	return CreateWithTitle(currentStore, "dummy", content, title) // project is not used in CreateWithTitle
+}
+
 // CreateWithTitle creates a scratch with an optional pre-defined title
 func CreateWithTitle(s *store.Store, project string, content []byte, providedTitle string) error {
 	var err error

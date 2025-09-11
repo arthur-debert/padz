@@ -59,7 +59,7 @@ func (ms *MergedStore) GetAllScratches(includeDeleted bool) []ScopedScratch {
 		// Use centralized filtering and sorting logic
 		filtered := ms.getSortedFilteredScratches(store, includeDeleted)
 
-		// Convert to ScopedScratch with proper indexing
+		// Convert to ScopedScratch with proper indexing (per-scope)
 		for i, scratch := range filtered {
 			scopedScratch := ScopedScratch{
 				Scratch:  &scratch,
@@ -73,7 +73,9 @@ func (ms *MergedStore) GetAllScratches(includeDeleted bool) []ScopedScratch {
 
 	// Sort all scratches by most recent activity across scopes
 	sort.Slice(result, func(i, j int) bool {
-		return getMostRecentTime(result[i].Scratch).After(getMostRecentTime(result[j].Scratch))
+		timeI := getMostRecentTime(result[i].Scratch)
+		timeJ := getMostRecentTime(result[j].Scratch)
+		return timeI.After(timeJ)
 	})
 
 	return result

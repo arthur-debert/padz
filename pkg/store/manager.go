@@ -115,7 +115,7 @@ func (sm *StoreManager) getStorePath(scope, projectDir string) (string, error) {
 
 	if scope == "global" {
 		// Global scope: use configured data path with global subdirectory
-		return cfg.FileSystem.Join(cfg.DataPath, "scratch", "global"), nil
+		return cfg.FileSystem.Join(cfg.DataPath, "global"), nil
 	}
 
 	// Project scope: find git root and use .padz directory
@@ -151,11 +151,71 @@ func (sm *StoreManager) findGitRoot(startDir string) (string, error) {
 func NewStoreAtPath(storagePath string) (*Store, error) {
 	cfg := config.GetConfig()
 
-	// Create a new config with the specific storage path
-	storeConfig := &config.Config{
-		FileSystem: cfg.FileSystem,
-		DataPath:   storagePath,
+	// The issue is that store.load() calls getMetadataPathWithConfig which calls GetScratchPathWithConfig(cfg)
+	// GetScratchPathWithConfig does: cfg.FileSystem.Join(cfg.DataPath, "scratch")
+	// So we need cfg.DataPath such that when "scratch" is appended, we get storagePath
+	//
+	// For storagePath="/test/projects/webapp/.padz/scratch/webapp", we need:
+	// cfg.DataPath="/test/projects/webapp/.padz/scratch/webapp" - "scratch" = "/test/projects/webapp/.padz" + "/webapp"
+	// Actually, let's back up: what we want is for GetScratchPathWithConfig to return storagePath exactly
+	//
+	// GetScratchPathWithConfig returns: cfg.DataPath + "/scratch"
+	// So if we want it to return storagePath, we need: cfg.DataPath = storagePath - "/scratch"
+	//
+	// For storagePath="/test/projects/webapp/.padz/scratch/webapp"
+	// We need cfg.DataPath="/test/projects/webapp/.padz/scratch/webapp" with no "scratch" appended
+	// But the function always appends "scratch", so we need:
+	// cfg.DataPath = "/test/projects/webapp/.padz" and the function will make it "/test/projects/webapp/.padz/scratch"
+	// But we want "/test/projects/webapp/.padz/scratch/webapp", so this doesn't work.
+	//
+	// The issue is that GetScratchPathWithConfig assumes a certain directory structure.
+	// Let me instead create a config where DataPath is set such that DataPath+"scratch" = storagePath
+
+	// If storagePath = "/a/b/c", we want DataPath such that DataPath + "scratch" = "/a/b/c"
+	// So DataPath = "/a/b/c" - "scratch"
+	// We need to remove the "scratch" suffix if it exists, or set parent appropriately
+
+	// Check if storagePath ends with "scratch" - if so, use the parent
+	var dataPath string
+	if filepath.Base(storagePath) == "scratch" {
+		// storagePath = "/a/b/scratch", so DataPath = "/a/b"
+		dataPath = filepath.Dir(storagePath)
+	} else {
+		// storagePath = "/a/b/webapp", we want DataPath + "scratch" = "/a/b/webapp"
+		// This means DataPath = "/a/b/webapp" - "scratch"
+		// Since "scratch" is appended as a path component, we need:
+		// DataPath = parent of (storagePath - last component) + remaining
+		// This is complex. Let me use a simpler approach:
+		// Set DataPath to storagePath itself, and the function will create storagePath/scratch
+		// But that's not what we want.
+		//
+		// Actually, let me just override the "scratch" part. Since we can't easily make
+		// GetScratchPathWithConfig return the exact path, let's set:
+		dataPath = filepath.Dir(storagePath) // Parent directory
 	}
 
-	return NewStoreWithConfig(storeConfig)
+	// Create a custom config
+	customConfig := &config.Config{
+		FileSystem: cfg.FileSystem,
+		DataPath:   dataPath,
+	}
+
+	// Create the Store with custom config
+	store := &Store{
+		fs:  cfg.FileSystem,
+		cfg: customConfig,
+	}
+
+	// Initialize metadata manager with the exact storage path
+	store.metadataManager = NewMetadataManager(cfg.FileSystem, storagePath)
+
+	// Force new metadata system for stores created with explicit paths
+	// This avoids the legacy path resolution issues in GetScratchPathWithConfig
+	store.useNewMetadata = true
+
+	if err := store.load(); err != nil {
+		return nil, err
+	}
+
+	return store, nil
 }
