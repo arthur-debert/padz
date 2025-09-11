@@ -8,8 +8,6 @@ import (
 	"github.com/arthur-debert/padz/cmd/padz/formatter"
 	"github.com/arthur-debert/padz/pkg/commands"
 	"github.com/arthur-debert/padz/pkg/output"
-	"github.com/arthur-debert/padz/pkg/project"
-	"github.com/arthur-debert/padz/pkg/store"
 	"github.com/rs/zerolog/log"
 	"os"
 	"strings"
@@ -25,21 +23,10 @@ func newPeekCmd() *cobra.Command {
 		Long:  PeekLong,
 		Args:  cobra.ExactArgs(1),
 		Run: func(cmd *cobra.Command, args []string) {
-			all, _ := cmd.Flags().GetBool("all")
 			global, _ := cmd.Flags().GetBool("global")
 			lines, _ := cmd.Flags().GetInt("lines")
 
-			s, err := store.NewStore()
-			if err != nil {
-				log.Fatal().Err(err).Msg("Operation failed")
-			}
-
 			dir, err := os.Getwd()
-			if err != nil {
-				log.Fatal().Err(err).Msg("Operation failed")
-			}
-
-			proj, err := project.GetCurrentProject(dir)
 			if err != nil {
 				log.Fatal().Err(err).Msg("Operation failed")
 			}
@@ -53,7 +40,7 @@ func newPeekCmd() *cobra.Command {
 			if format == output.PlainFormat || format == output.TermFormat {
 				// Use terminal formatter for both plain and term formats
 				// Terminal detection will automatically strip formatting when piped
-				content, err := commands.View(s, all, global, proj, args[0])
+				content, err := commands.ViewWithStoreManager(dir, global, args[0])
 				if err != nil {
 					log.Fatal().Err(err).Msg("Operation failed")
 				}
@@ -93,7 +80,7 @@ func newPeekCmd() *cobra.Command {
 				}
 			} else {
 				// For JSON format, use existing peek logic
-				content, err := commands.Peek(s, all, global, proj, args[0], lines)
+				content, err := commands.PeekWithStoreManager(dir, global, args[0], lines)
 				if err != nil {
 					log.Fatal().Err(err).Msg("Operation failed")
 				}
