@@ -5,6 +5,7 @@ import (
 	"strconv"
 	"time"
 
+	"github.com/arthur-debert/padz/cmd/padz/store2"
 	"github.com/arthur-debert/padz/internal/version"
 	"github.com/arthur-debert/padz/pkg/commands"
 	"github.com/arthur-debert/padz/pkg/config"
@@ -217,6 +218,10 @@ func NewRootCmd() *cobra.Command {
 	showDataFileCmd := newShowDataFileCmd()
 	showDataFileCmd.Flags().BoolP("global", "g", false, FlagGlobalDesc)
 	rootCmd.AddCommand(showDataFileCmd)
+
+	// Experimental v2 store implementation
+	store2Cmd := store2.NewStore2Command()
+	rootCmd.AddCommand(store2Cmd)
 
 	return rootCmd
 }
