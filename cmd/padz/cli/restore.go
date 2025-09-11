@@ -21,16 +21,24 @@ func newRestoreCmd() *cobra.Command {
 	var newerThanStr string
 
 	cmd := &cobra.Command{
-		Use:     "restore [id]",
+		Use:     "restore [id...]",
 		Aliases: []string{"undelete", "recover"},
 		Short:   "Restore soft-deleted scratches",
 		Long: `Restore soft-deleted scratches back to active state.
 
 Examples:
   padz restore d1               # Restore specific deleted scratch
+  padz restore d1 d2 d3         # Restore multiple deleted scratches
   padz restore --newer-than 1h  # Restore scratches deleted less than 1 hour ago
   padz restore --all            # Restore all deleted scratches from all projects`,
+		Args: cobra.MinimumNArgs(0),
 		Run: func(cmd *cobra.Command, args []string) {
+			// Format output
+			format, formatErr := output.GetFormat(outputFormat)
+			if formatErr != nil {
+				log.Fatal().Err(formatErr).Msg("Failed to get output format")
+			}
+
 			// Parse duration if provided
 			var newerThan time.Duration
 			if newerThanStr != "" {
@@ -64,18 +72,31 @@ Examples:
 				proj = currentProj
 			}
 
-			// If a specific ID is provided, restore that one
+			// If specific IDs are provided, restore those
 			if len(args) > 0 {
-				err = commands.Restore(s, all, global, proj, args[0], 0)
+				restoredTitles, err := commands.RestoreMultiple(s, all, global, proj, args)
+				if err != nil {
+					handleTerminalError(err, format)
+					return
+				}
+
+				// Show list after restore in verbose mode
+				ShowListAfterCommand(s, all, global, proj)
+
+				// Success message
+				var message string
+				if len(restoredTitles) == 0 {
+					message = "No deleted scratches to restore"
+				} else if len(restoredTitles) == 1 {
+					message = fmt.Sprintf("Successfully restored scratch: %s", restoredTitles[0])
+				} else {
+					message = fmt.Sprintf("Successfully restored %d scratches", len(restoredTitles))
+				}
+				handleTerminalSuccess(message, format)
+				return
 			} else {
 				// Otherwise restore based on criteria
 				err = commands.Restore(s, all, global, proj, "", newerThan)
-			}
-
-			// Format output
-			format, formatErr := output.GetFormat(outputFormat)
-			if formatErr != nil {
-				log.Fatal().Err(formatErr).Msg("Failed to get output format")
 			}
 
 			if err != nil {

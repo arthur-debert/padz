@@ -14,14 +14,18 @@ import (
 // newPinCmd creates the pin command
 func newPinCmd() *cobra.Command {
 	return &cobra.Command{
-		Use:     "pin <id>",
+		Use:     "pin <id> [id...]",
 		Aliases: []string{"p"},
-		Short:   "Pin a scratch to the top of the list (p)",
-		Long: `Pin a scratch to the top of the list. Pinned scratches appear with a special
+		Short:   "Pin one or more scratches to the top of the list (p)",
+		Long: `Pin one or more scratches to the top of the list. Pinned scratches appear with a special
 prefix (p1, p2, etc.) and are always shown first when listing scratches.
 
-Maximum of 5 scratches can be pinned at once.`,
-		Args: cobra.ExactArgs(1),
+Maximum of 5 scratches can be pinned at once.
+
+Examples:
+  padz pin 1        # Pin a single scratch
+  padz pin 1 3 5    # Pin multiple scratches`,
+		Args: cobra.MinimumNArgs(1),
 		Run:  runPin,
 	}
 }
@@ -53,16 +57,10 @@ func runPin(cmd *cobra.Command, args []string) {
 		os.Exit(1)
 	}
 
-	// Get scratch details before pinning
-	scratch, err := commands.GetScratchByIndex(st, all, global, proj, args[0])
+	// Pin multiple scratches
+	pinnedTitles, err := commands.PinMultiple(st, all, global, proj, args)
 	if err != nil {
-		log.Error().Err(err).Str("id", args[0]).Msg("Failed to get scratch")
-		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
-		os.Exit(1)
-	}
-
-	if err := commands.Pin(st, all, global, proj, args[0]); err != nil {
-		log.Error().Err(err).Str("id", args[0]).Msg("Failed to pin scratch")
+		log.Error().Err(err).Msg("Failed to pin scratches")
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 		os.Exit(1)
 	}
@@ -72,21 +70,31 @@ func runPin(cmd *cobra.Command, args []string) {
 
 	// Show success message if not silent
 	if !IsSilentMode() {
-		fmt.Printf("Scratch \"%s\" pinned successfully\n", scratch.Title)
+		if len(pinnedTitles) == 0 {
+			fmt.Println("No scratches were pinned (already pinned)")
+		} else if len(pinnedTitles) == 1 {
+			fmt.Printf("Scratch \"%s\" pinned successfully\n", pinnedTitles[0])
+		} else {
+			fmt.Printf("%d scratches pinned successfully\n", len(pinnedTitles))
+		}
 	}
 }
 
 // newUnpinCmd creates the unpin command
 func newUnpinCmd() *cobra.Command {
 	return &cobra.Command{
-		Use:     "unpin <id>",
+		Use:     "unpin <id> [id...]",
 		Aliases: []string{"u"},
-		Short:   "Unpin a scratch (u)",
-		Long: `Unpin a scratch. The scratch will return to its normal position
+		Short:   "Unpin one or more scratches (u)",
+		Long: `Unpin one or more scratches. The scratches will return to their normal position
 in the chronological list.
 
-You can use either the regular index, pinned index (p1, p2), or hash ID.`,
-		Args: cobra.ExactArgs(1),
+You can use either the regular index, pinned index (p1, p2), or hash ID.
+
+Examples:
+  padz unpin p1        # Unpin a single scratch
+  padz unpin p1 p2 3   # Unpin multiple scratches`,
+		Args: cobra.MinimumNArgs(1),
 		Run:  runUnpin,
 	}
 }
@@ -118,16 +126,10 @@ func runUnpin(cmd *cobra.Command, args []string) {
 		os.Exit(1)
 	}
 
-	// Get scratch details before unpinning
-	scratch, err := commands.GetScratchByIndex(st, all, global, proj, args[0])
+	// Unpin multiple scratches
+	unpinnedTitles, err := commands.UnpinMultiple(st, all, global, proj, args)
 	if err != nil {
-		log.Error().Err(err).Str("id", args[0]).Msg("Failed to get scratch")
-		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
-		os.Exit(1)
-	}
-
-	if err := commands.Unpin(st, all, global, proj, args[0]); err != nil {
-		log.Error().Err(err).Str("id", args[0]).Msg("Failed to unpin scratch")
+		log.Error().Err(err).Msg("Failed to unpin scratches")
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 		os.Exit(1)
 	}
@@ -137,6 +139,12 @@ func runUnpin(cmd *cobra.Command, args []string) {
 
 	// Show success message if not silent
 	if !IsSilentMode() {
-		fmt.Printf("Scratch \"%s\" unpinned successfully\n", scratch.Title)
+		if len(unpinnedTitles) == 0 {
+			fmt.Println("No scratches were unpinned (not pinned)")
+		} else if len(unpinnedTitles) == 1 {
+			fmt.Printf("Scratch \"%s\" unpinned successfully\n", unpinnedTitles[0])
+		} else {
+			fmt.Printf("%d scratches unpinned successfully\n", len(unpinnedTitles))
+		}
 	}
 }

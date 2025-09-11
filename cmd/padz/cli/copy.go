@@ -17,7 +17,7 @@ func newCopyCmd() *cobra.Command {
 		Aliases: []string{"cp"},
 		Short:   CopyShort,
 		Long:    CopyLong,
-		Args:    cobra.ExactArgs(1),
+		Args:    cobra.MinimumNArgs(1),
 		Run: func(cmd *cobra.Command, args []string) {
 			allFlag, _ := cmd.Flags().GetBool("all")
 			global, _ := cmd.Flags().GetBool("global")
@@ -37,11 +37,16 @@ func newCopyCmd() *cobra.Command {
 				log.Fatal().Err(err).Msg(ErrFailedToGetProject)
 			}
 
-			if err := commands.Copy(s, allFlag, global, proj, args[0]); err != nil {
+			count, err := commands.CopyMultiple(s, allFlag, global, proj, args)
+			if err != nil {
 				log.Fatal().Err(err).Msg(ErrFailedToCopyScratch)
 			}
 
-			log.Info().Msg(SuccessCopiedToClipboard)
+			if count == 1 {
+				log.Info().Msg(SuccessCopiedToClipboard)
+			} else {
+				log.Info().Msgf("Copied %d scratches to clipboard", count)
+			}
 		},
 	}
 }
