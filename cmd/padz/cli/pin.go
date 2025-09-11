@@ -5,8 +5,6 @@ import (
 	"os"
 
 	"github.com/arthur-debert/padz/pkg/commands"
-	"github.com/arthur-debert/padz/pkg/project"
-	"github.com/arthur-debert/padz/pkg/store"
 	"github.com/rs/zerolog/log"
 	"github.com/spf13/cobra"
 )
@@ -33,7 +31,6 @@ Examples:
 func runPin(cmd *cobra.Command, args []string) {
 	log.Debug().Msg("Starting pin command")
 
-	all, _ := cmd.Flags().GetBool("all")
 	global, _ := cmd.Flags().GetBool("global")
 
 	dir, err := os.Getwd()
@@ -41,32 +38,16 @@ func runPin(cmd *cobra.Command, args []string) {
 		log.Fatal().Err(err).Msg("Failed to get current working directory")
 	}
 
-	proj, err := project.GetCurrentProject(dir)
-	if err != nil {
-		log.Fatal().Err(err).Msg("Failed to get current project")
-	}
-
-	if global {
-		proj = "global"
-	}
-
-	st, err := store.NewStore()
-	if err != nil {
-		log.Error().Err(err).Msg("Failed to create store")
-		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
-		os.Exit(1)
-	}
-
-	// Pin multiple scratches
-	pinnedTitles, err := commands.PinMultiple(st, all, global, proj, args)
+	// Pin multiple scratches using StoreManager
+	pinnedTitles, err := commands.PinMultipleWithStoreManager(dir, global, args)
 	if err != nil {
 		log.Error().Err(err).Msg("Failed to pin scratches")
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 		os.Exit(1)
 	}
 
-	// Show list in verbose mode
-	ShowListAfterCommand(st, all, global, proj)
+	// Show list after command
+	ShowListAfterCommandWithStoreManager(dir, global, false)
 
 	// Show success message if not silent
 	if !IsSilentMode() {
@@ -102,7 +83,6 @@ Examples:
 func runUnpin(cmd *cobra.Command, args []string) {
 	log.Debug().Msg("Starting unpin command")
 
-	all, _ := cmd.Flags().GetBool("all")
 	global, _ := cmd.Flags().GetBool("global")
 
 	dir, err := os.Getwd()
@@ -110,32 +90,16 @@ func runUnpin(cmd *cobra.Command, args []string) {
 		log.Fatal().Err(err).Msg("Failed to get current working directory")
 	}
 
-	proj, err := project.GetCurrentProject(dir)
-	if err != nil {
-		log.Fatal().Err(err).Msg("Failed to get current project")
-	}
-
-	if global {
-		proj = "global"
-	}
-
-	st, err := store.NewStore()
-	if err != nil {
-		log.Error().Err(err).Msg("Failed to create store")
-		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
-		os.Exit(1)
-	}
-
-	// Unpin multiple scratches
-	unpinnedTitles, err := commands.UnpinMultiple(st, all, global, proj, args)
+	// Unpin multiple scratches using StoreManager
+	unpinnedTitles, err := commands.UnpinMultipleWithStoreManager(dir, global, args)
 	if err != nil {
 		log.Error().Err(err).Msg("Failed to unpin scratches")
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 		os.Exit(1)
 	}
 
-	// Show list in verbose mode
-	ShowListAfterCommand(st, all, global, proj)
+	// Show list after command
+	ShowListAfterCommandWithStoreManager(dir, global, false)
 
 	// Show success message if not silent
 	if !IsSilentMode() {

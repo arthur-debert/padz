@@ -7,8 +7,6 @@ import (
 
 	"github.com/arthur-debert/padz/pkg/commands"
 	"github.com/arthur-debert/padz/pkg/output"
-	"github.com/arthur-debert/padz/pkg/project"
-	"github.com/arthur-debert/padz/pkg/store"
 	"github.com/rs/zerolog/log"
 	"github.com/spf13/cobra"
 )
@@ -32,23 +30,9 @@ Examples:
 			globalFlag, _ := cmd.Flags().GetBool("global")
 			titleFlag, _ := cmd.Flags().GetString("title")
 
-			s, err := store.NewStore()
-			if err != nil {
-				log.Fatal().Err(err).Msg(ErrFailedToInitStore)
-			}
-
 			dir, err := os.Getwd()
 			if err != nil {
 				log.Fatal().Err(err).Msg(ErrFailedToGetWorkingDir)
-			}
-
-			proj := "global"
-			if !globalFlag {
-				currentProj, err := project.GetCurrentProject(dir)
-				if err != nil {
-					log.Fatal().Err(err).Msg(ErrFailedToGetProject)
-				}
-				proj = currentProj
 			}
 
 			pipedContent := commands.ReadContentFromPipe()
@@ -72,18 +56,18 @@ Examples:
 
 			// If content was piped, use it
 			if len(pipedContent) > 0 {
-				if err := commands.CreateWithTitle(s, proj, pipedContent, title); err != nil {
+				if err := commands.CreateWithStoreManager(dir, globalFlag, pipedContent, title); err != nil {
 					log.Fatal().Err(err).Msg(ErrFailedToCreateNote)
 				}
 			} else {
 				// No piped content, use initial content if any
-				if err := commands.CreateWithTitleAndContent(s, proj, title, initialContent); err != nil {
+				if err := commands.CreateWithStoreManager(dir, globalFlag, initialContent, title); err != nil {
 					log.Fatal().Err(err).Msg(ErrFailedToCreateNote)
 				}
 			}
 
-			// Show list in verbose mode
-			ShowListAfterCommand(s, false, globalFlag, proj)
+			// Show list after command
+			ShowListAfterCommandWithStoreManager(dir, globalFlag, false)
 
 			// Show success message if not silent
 			if !IsSilentMode() {

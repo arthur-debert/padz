@@ -8,7 +8,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/adrg/xdg"
 	"github.com/arthur-debert/padz/pkg/config"
 	"github.com/arthur-debert/padz/pkg/filelock"
 	"github.com/arthur-debert/padz/pkg/filesystem"
@@ -28,6 +27,53 @@ type Store struct {
 	cfg             *config.Config
 	metadataManager *MetadataManager
 	useNewMetadata  bool // Flag to enable new metadata system
+}
+
+// GetBasePath returns the base storage path for this store
+func (s *Store) GetBasePath() string {
+	if s.metadataManager != nil {
+		return s.metadataManager.basePath
+	}
+	return ""
+}
+
+// SaveScratchContent saves the content for a scratch
+func (s *Store) SaveScratchContent(id string, content []byte) error {
+	basePath := s.GetBasePath()
+	if basePath == "" {
+		return fmt.Errorf("no base path available for store")
+	}
+
+	filePath := s.fs.Join(basePath, "files", id)
+
+	// Ensure the files directory exists
+	filesDir := s.fs.Join(basePath, "files")
+	if err := s.fs.MkdirAll(filesDir, 0755); err != nil {
+		return fmt.Errorf("failed to create files directory: %w", err)
+	}
+
+	return s.fs.WriteFile(filePath, content, 0644)
+}
+
+// ReadScratchContent reads the content for a scratch
+func (s *Store) ReadScratchContent(id string) ([]byte, error) {
+	basePath := s.GetBasePath()
+	if basePath == "" {
+		return nil, fmt.Errorf("no base path available for store")
+	}
+
+	filePath := s.fs.Join(basePath, "files", id)
+	return s.fs.ReadFile(filePath)
+}
+
+// GetScratchFilePath returns the file path for a scratch in this store
+func (s *Store) GetScratchFilePath(id string) (string, error) {
+	basePath := s.GetBasePath()
+	if basePath == "" {
+		return "", fmt.Errorf("no base path available for store")
+	}
+
+	return s.fs.Join(basePath, "files", id), nil
 }
 
 func NewStore() (*Store, error) {
@@ -462,22 +508,10 @@ func GetScratchPath() (string, error) {
 
 func GetScratchPathWithConfig(cfg *config.Config) (string, error) {
 	logger := logging.GetLogger("store.path")
-	var path string
-	var err error
 
-	if cfg.DataPath != "" {
-		// Use configured path for testing
-		path = cfg.FileSystem.Join(cfg.DataPath, dataDirName)
-		logger.Debug().Str("path", path).Msg("Using configured data path")
-	} else {
-		// Use XDG for production
-		path, err = xdg.DataFile(dataDirName)
-		if err != nil {
-			logger.Error().Err(err).Msg("Failed to get XDG data file path")
-			return "", err
-		}
-		logger.Debug().Str("path", path).Msg("Using XDG data path")
-	}
+	// DataPath is always properly configured at config initialization time
+	path := cfg.FileSystem.Join(cfg.DataPath, dataDirName)
+	logger.Debug().Str("path", path).Msg("Using configured data path")
 
 	logger.Debug().Str("path", path).Msg("Creating scratch directory if needed")
 	if err := cfg.FileSystem.MkdirAll(path, 0755); err != nil {

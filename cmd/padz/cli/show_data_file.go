@@ -6,7 +6,6 @@ import (
 
 	"github.com/arthur-debert/padz/pkg/commands"
 	"github.com/arthur-debert/padz/pkg/output"
-	"github.com/arthur-debert/padz/pkg/store"
 	"github.com/rs/zerolog/log"
 
 	"github.com/spf13/cobra"
@@ -20,15 +19,15 @@ func newShowDataFileCmd() *cobra.Command {
 		Long:  ShowDataFileLong,
 		Args:  cobra.NoArgs,
 		Run: func(cmd *cobra.Command, args []string) {
-			// Note: the global flag doesn't affect the data file location
-			// All scratches are stored in the same place
+			global, _ := cmd.Flags().GetBool("global")
 
-			s, err := store.NewStore()
+			// Get current directory
+			dir, err := os.Getwd()
 			if err != nil {
-				log.Fatal().Err(err).Msg("Failed to initialize store")
+				log.Fatal().Err(err).Msg("Failed to get current working directory")
 			}
 
-			result, err := commands.ShowDataFile(s)
+			result, err := commands.ShowDataFileWithStoreManager(dir, global)
 			if err != nil {
 				log.Fatal().Err(err).Msg("Failed to get data file path")
 			}

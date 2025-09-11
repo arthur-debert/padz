@@ -5,13 +5,12 @@ package cli
 
 import (
 	"fmt"
+	"os"
+
 	"github.com/arthur-debert/padz/cmd/padz/formatter"
 	"github.com/arthur-debert/padz/pkg/commands"
 	"github.com/arthur-debert/padz/pkg/output"
-	"github.com/arthur-debert/padz/pkg/project"
 	"github.com/arthur-debert/padz/pkg/store"
-	"os"
-
 	"github.com/rs/zerolog/log"
 	"github.com/spf13/cobra"
 )
@@ -42,24 +41,9 @@ Search results are ranked by:
 			showDeleted, _ := cmd.Flags().GetBool("deleted")
 			includeDeleted, _ := cmd.Flags().GetBool("include-deleted")
 
-			s, err := store.NewStore()
-			if err != nil {
-				log.Fatal().Err(err).Msg("Failed to initialize store")
-			}
-
 			dir, err := os.Getwd()
 			if err != nil {
 				log.Fatal().Err(err).Msg("Failed to get current working directory")
-			}
-
-			proj, err := project.GetCurrentProject(dir)
-			if err != nil {
-				log.Fatal().Err(err).Msg("Failed to get current project")
-			}
-
-			// Run discovery before listing
-			if err := s.RunDiscoveryBeforeCommand(); err != nil {
-				log.Warn().Err(err).Msg("Failed to run discovery")
 			}
 
 			// Determine list mode based on flags
@@ -73,45 +57,30 @@ Search results are ranked by:
 				mode = commands.ListModeActive
 			}
 
-			// If search term provided, use search functionality
+			// For now, skip search functionality - we'll update it in Phase 2
 			if searchTerm != "" {
-				searchResults, err := commands.SearchWithIndicesMode(s, all, global, proj, searchTerm, mode)
-				if err != nil {
-					log.Fatal().Err(err).Msg("Failed to search")
-				}
-
-				// Format search results
-				format, err := output.GetFormat(outputFormat)
-				if err != nil {
-					log.Fatal().Err(err).Msg("Failed to get output format")
-				}
-
-				if len(searchResults) == 0 && (format == output.PlainFormat || format == output.TermFormat) {
-					fmt.Println("No scratches found matching your search.")
-					return
-				}
-
-				// Use terminal formatter for both plain and term formats
-				if format == output.PlainFormat || format == output.TermFormat {
-					termFormatter, err := formatter.NewTerminalFormatter(nil)
-					if err != nil {
-						log.Fatal().Err(err).Msg("Failed to create terminal formatter")
-					}
-					if err := termFormatter.FormatSearchResults(searchResults, all); err != nil {
-						log.Fatal().Err(err).Msg("Failed to format search results")
-					}
-				} else {
-					// JSON format should output the ScratchWithIndex objects
-					outputFormatter := output.NewFormatter(format, nil)
-					if err := outputFormatter.FormatSearchResults(searchResults, all); err != nil {
-						log.Fatal().Err(err).Msg("Failed to format search results")
-					}
-				}
+				fmt.Println("Search functionality with StoreManager is not yet implemented. Please use without search for now.")
 				return
 			}
 
-			// Normal listing without search
-			scratches := commands.LsWithMode(s, all, global, proj, mode)
+			// Use the new StoreManager approach for listing
+			result, err := commands.LsWithStoreManager(dir, global, all, mode)
+			if err != nil {
+				log.Fatal().Err(err).Msg("Failed to list scratches")
+			}
+
+			var scratches []store.Scratch
+			var scopedScratches []store.ScopedScratch
+
+			// Handle different result types
+			switch r := result.(type) {
+			case []store.Scratch:
+				scratches = r
+			case []store.ScopedScratch:
+				scopedScratches = r
+			default:
+				log.Fatal().Msg("Unexpected result type from LsWithStoreManager")
+			}
 
 			// Format output
 			format, err := output.GetFormat(outputFormat)
@@ -119,7 +88,8 @@ Search results are ranked by:
 				log.Fatal().Err(err).Msg("Failed to get output format")
 			}
 
-			if len(scratches) == 0 {
+			// Check if we have any results
+			if len(scratches) == 0 && len(scopedScratches) == 0 {
 				if format == output.PlainFormat || format == output.TermFormat {
 					fmt.Println("Nothing here, create your first scratch with `padz create` or `padz help` for assistance.")
 				}
@@ -133,14 +103,50 @@ Search results are ranked by:
 				if err != nil {
 					log.Fatal().Err(err).Msg("Failed to create terminal formatter")
 				}
-				if err := termFormatter.FormatList(scratches, all); err != nil {
-					log.Fatal().Err(err).Msg("Failed to format list")
+
+				// Handle scoped vs regular scratches
+				if len(scopedScratches) > 0 {
+					// For now, convert ScopedScratches to regular scratches for display
+					// In Phase 3, we'll update the formatter to show scope information
+					convertedScratches := make([]store.Scratch, len(scopedScratches))
+					for i, scoped := range scopedScratches {
+						convertedScratches[i] = *scoped.Scratch
+					}
+					if err := termFormatter.FormatList(convertedScratches, all); err != nil {
+						log.Fatal().Err(err).Msg("Failed to format scoped list")
+					}
+					// Print scope information as a temporary solution
+					fmt.Printf("\nShowing results from scopes: ")
+					seenScopes := make(map[string]bool)
+					for _, scoped := range scopedScratches {
+						if !seenScopes[scoped.Scope] {
+							fmt.Printf("%s ", scoped.Scope)
+							seenScopes[scoped.Scope] = true
+						}
+					}
+					fmt.Println()
+				} else {
+					if err := termFormatter.FormatList(scratches, all); err != nil {
+						log.Fatal().Err(err).Msg("Failed to format list")
+					}
 				}
 			} else {
 				// JSON format uses the standard formatter
-				formatter := output.NewFormatter(format, nil)
-				if err := formatter.FormatList(scratches, all); err != nil {
-					log.Fatal().Err(err).Msg("Failed to format list")
+				outputFormatter := output.NewFormatter(format, nil)
+				if len(scopedScratches) > 0 {
+					// Convert to something JSON-serializable
+					// For now, just output the scratches without scope info
+					convertedScratches := make([]store.Scratch, len(scopedScratches))
+					for i, scoped := range scopedScratches {
+						convertedScratches[i] = *scoped.Scratch
+					}
+					if err := outputFormatter.FormatList(convertedScratches, all); err != nil {
+						log.Fatal().Err(err).Msg("Failed to format scoped list as JSON")
+					}
+				} else {
+					if err := outputFormatter.FormatList(scratches, all); err != nil {
+						log.Fatal().Err(err).Msg("Failed to format list as JSON")
+					}
 				}
 			}
 		},

@@ -7,7 +7,6 @@ import (
 
 	"github.com/arthur-debert/padz/pkg/commands"
 	"github.com/arthur-debert/padz/pkg/output"
-	"github.com/arthur-debert/padz/pkg/store"
 	"github.com/rs/zerolog/log"
 	"github.com/spf13/cobra"
 )
@@ -32,11 +31,12 @@ With appropriate flags, it can:
 			recoverOrphans, _ := cmd.Flags().GetBool("recover-orphans")
 			cleanMissing, _ := cmd.Flags().GetBool("clean-missing")
 			defaultProject, _ := cmd.Flags().GetString("project")
+			global, _ := cmd.Flags().GetBool("global")
 
-			// Initialize store
-			s, err := store.NewStore()
+			// Get current directory
+			dir, err := os.Getwd()
 			if err != nil {
-				log.Fatal().Err(err).Msg("Failed to initialize store")
+				log.Fatal().Err(err).Msg("Failed to get current working directory")
 			}
 
 			// Configure recovery options
@@ -52,8 +52,8 @@ With appropriate flags, it can:
 				log.Info().Msg("Running in dry-run mode - no changes will be made")
 			}
 
-			// Run recovery
-			result, err := commands.Recover(s, options)
+			// Run recovery using StoreManager
+			result, err := commands.RecoverWithStoreManager(dir, global, options)
 			if err != nil {
 				log.Fatal().Err(err).Msg("Recovery failed")
 			}

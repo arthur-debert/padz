@@ -8,8 +8,6 @@ import (
 	"github.com/arthur-debert/padz/cmd/padz/formatter"
 	"github.com/arthur-debert/padz/pkg/commands"
 	"github.com/arthur-debert/padz/pkg/output"
-	"github.com/arthur-debert/padz/pkg/project"
-	"github.com/arthur-debert/padz/pkg/store"
 	"github.com/rs/zerolog/log"
 	"github.com/spf13/cobra"
 )
@@ -17,7 +15,6 @@ import (
 // newSearchCmd creates a new search command
 func newSearchCmd() *cobra.Command {
 	var all, global bool
-	var projectFlag string
 
 	cmd := &cobra.Command{
 		Use:   "search [term]",
@@ -44,35 +41,16 @@ You can also use regular expressions:
 				Str("term", searchTerm).
 				Bool("all", all).
 				Bool("global", global).
-				Str("project", projectFlag).
 				Msg("Searching scratches")
 
-			s, err := store.NewStore()
-			if err != nil {
-				log.Fatal().Err(err).Msg("Failed to initialize store")
-			}
-
-			// Get current directory and project
+			// Get current directory
 			dir, err := os.Getwd()
 			if err != nil {
 				log.Fatal().Err(err).Msg("Failed to get current working directory")
 			}
 
-			proj := projectFlag
-			if proj == "" {
-				p, err := project.GetCurrentProject(dir)
-				if err != nil {
-					log.Fatal().Err(err).Msg("Failed to get current project")
-				}
-				proj = p
-			}
-
-			// Run discovery before searching
-			if err := s.RunDiscoveryBeforeCommand(); err != nil {
-				log.Warn().Err(err).Msg("Failed to run discovery")
-			}
-
-			results, err := commands.SearchWithIndices(s, all, global, proj, searchTerm)
+			// Use StoreManager approach for searching
+			results, err := commands.SearchWithIndicesWithStoreManager(dir, global, searchTerm, all)
 			if err != nil {
 				log.Error().Err(err).Msg("Failed to search scratches")
 				return err

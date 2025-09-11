@@ -9,8 +9,6 @@ import (
 
 	"github.com/arthur-debert/padz/pkg/commands"
 	"github.com/arthur-debert/padz/pkg/output"
-	"github.com/arthur-debert/padz/pkg/project"
-	"github.com/arthur-debert/padz/pkg/store"
 	"github.com/spf13/cobra"
 )
 
@@ -22,25 +20,14 @@ func newPathCmd() *cobra.Command {
 		Long:  `Get the full path to a scratch file identified by its index.`,
 		Args:  cobra.ExactArgs(1),
 		Run: func(cmd *cobra.Command, args []string) {
-			all, _ := cmd.Flags().GetBool("all")
 			global, _ := cmd.Flags().GetBool("global")
-
-			s, err := store.NewStore()
-			if err != nil {
-				log.Fatal().Err(err).Msg("Operation failed")
-			}
 
 			dir, err := os.Getwd()
 			if err != nil {
 				log.Fatal().Err(err).Msg("Operation failed")
 			}
 
-			proj, err := project.GetCurrentProject(dir)
-			if err != nil {
-				log.Fatal().Err(err).Msg("Operation failed")
-			}
-
-			result, err := commands.Path(s, all, global, proj, args[0])
+			result, err := commands.PathWithStoreManager(dir, global, args[0])
 
 			// Format output
 			format, formatErr := output.GetFormat(outputFormat)

@@ -7,8 +7,6 @@ import (
 
 	"github.com/arthur-debert/padz/pkg/commands"
 	"github.com/arthur-debert/padz/pkg/output"
-	"github.com/arthur-debert/padz/pkg/project"
-	"github.com/arthur-debert/padz/pkg/store"
 	"github.com/arthur-debert/padz/pkg/utils"
 	"github.com/rs/zerolog/log"
 	"github.com/spf13/cobra"
@@ -49,72 +47,46 @@ Examples:
 				}
 			}
 
-			s, err := store.NewStore()
-			if err != nil {
-				log.Fatal().Err(err).Msg("Failed to initialize store")
-			}
-
 			// Get current directory
 			dir, err := os.Getwd()
 			if err != nil {
 				log.Fatal().Err(err).Msg("Failed to get current working directory")
 			}
 
-			// Determine project
-			proj := ""
-			if projectFlag != "" {
-				proj = projectFlag
-			} else if !global && !all {
-				currentProj, err := project.GetCurrentProject(dir)
-				if err != nil {
-					log.Fatal().Err(err).Msg("Failed to get current project")
-				}
-				proj = currentProj
-			}
+			var restoredTitles []string
 
 			// If specific IDs are provided, restore those
 			if len(args) > 0 {
-				restoredTitles, err := commands.RestoreMultiple(s, all, global, proj, args)
+				restoredTitles, err = commands.RestoreMultipleWithStoreManager(dir, global, args)
 				if err != nil {
 					handleTerminalError(err, format)
 					return
 				}
-
-				// Show list after restore in verbose mode
-				ShowListAfterCommand(s, all, global, proj)
-
-				// Success message
-				var message string
-				if len(restoredTitles) == 0 {
-					message = "No deleted scratches to restore"
-				} else if len(restoredTitles) == 1 {
-					message = fmt.Sprintf("Successfully restored scratch: %s", restoredTitles[0])
-				} else {
-					message = fmt.Sprintf("Successfully restored %d scratches", len(restoredTitles))
-				}
-				handleTerminalSuccess(message, format)
-				return
 			} else {
 				// Otherwise restore based on criteria
-				err = commands.Restore(s, all, global, proj, "", newerThan)
+				restoredTitles, err = commands.RestoreWithStoreManager(dir, global, newerThan)
+				if err != nil {
+					handleTerminalError(err, format)
+					return
+				}
 			}
 
-			if err != nil {
-				handleTerminalError(err, format)
-				return
-			}
-
-			// Show list after restore in verbose mode
-			ShowListAfterCommand(s, all, global, proj)
+			// Show list after command
+			ShowListAfterCommandWithStoreManager(dir, global, all)
 
 			// Success message
 			var message string
-			if len(args) > 0 {
-				message = fmt.Sprintf("Successfully restored scratch %s", args[0])
-			} else if newerThan > 0 {
-				message = fmt.Sprintf("Successfully restored scratches deleted within %s", utils.FormatDuration(newerThan))
+			if len(restoredTitles) == 0 {
+				message = "No deleted scratches to restore"
+			} else if len(restoredTitles) == 1 {
+				message = fmt.Sprintf("Successfully restored scratch: %s", restoredTitles[0])
 			} else {
-				message = "Successfully restored soft-deleted scratches"
+				message = fmt.Sprintf("Successfully restored %d scratches", len(restoredTitles))
+			}
+
+			// Show specific message for time-based restore
+			if len(args) == 0 && newerThan > 0 && len(restoredTitles) > 0 {
+				message = fmt.Sprintf("Successfully restored %d scratches deleted within %s", len(restoredTitles), utils.FormatDuration(newerThan))
 			}
 
 			handleTerminalSuccess(message, format)

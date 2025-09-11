@@ -2,6 +2,7 @@ package commands
 
 import (
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/arthur-debert/padz/pkg/store"
@@ -148,4 +149,234 @@ func Unpin(s *store.Store, all, global bool, project string, id string) error {
 		return fmt.Errorf("scratch is not pinned")
 	}
 	return nil
+}
+
+// PinMultipleWithStoreManager pins multiple scratches using StoreManager approach
+func PinMultipleWithStoreManager(workingDir string, globalFlag bool, ids []string) ([]string, error) {
+	if len(ids) == 0 {
+		return []string{}, nil
+	}
+
+	// Track unique IDs to handle duplicates
+	seen := make(map[string]bool)
+	uniqueIDs := make([]string, 0, len(ids))
+	for _, id := range ids {
+		if id == "" {
+			continue
+		}
+		if !seen[id] {
+			seen[id] = true
+			uniqueIDs = append(uniqueIDs, id)
+		}
+	}
+
+	// Group operations by store for efficiency
+	type storeUpdate struct {
+		store     *store.Store
+		scratches []*store.Scratch
+	}
+	storeUpdates := make(map[string]*storeUpdate)
+
+	// Resolve all IDs and group by store
+	var errors []string
+	sm := store.NewStoreManager()
+
+	for _, id := range uniqueIDs {
+		scopedScratch, err := ResolveScratchWithStoreManager(workingDir, globalFlag, id)
+		if err != nil {
+			errors = append(errors, fmt.Sprintf("%s: %v", id, err))
+			continue
+		}
+
+		// Skip already pinned items
+		if scopedScratch.IsPinned {
+			continue
+		}
+
+		// Get the store for this scope
+		var currentStore *store.Store
+		if strings.HasPrefix(scopedScratch.Scope, "project:") {
+			currentStore, err = sm.GetProjectStore(scopedScratch.Scope, workingDir)
+			if err != nil {
+				errors = append(errors, fmt.Sprintf("%s: failed to get project store: %v", id, err))
+				continue
+			}
+		} else {
+			currentStore, err = sm.GetGlobalStore()
+			if err != nil {
+				errors = append(errors, fmt.Sprintf("%s: failed to get global store: %v", id, err))
+				continue
+			}
+		}
+
+		storeKey := scopedScratch.Scope
+		if _, exists := storeUpdates[storeKey]; !exists {
+			storeUpdates[storeKey] = &storeUpdate{
+				store:     currentStore,
+				scratches: []*store.Scratch{},
+			}
+		}
+
+		storeUpdates[storeKey].scratches = append(storeUpdates[storeKey].scratches, scopedScratch.Scratch)
+	}
+
+	// If any errors occurred, return nil with combined error message
+	if len(errors) > 0 {
+		return nil, fmt.Errorf("failed to resolve IDs: %s", strings.Join(errors, "; "))
+	}
+
+	// Check total pinned count across all stores
+	totalCurrentPinned := 0
+	for _, update := range storeUpdates {
+		currentPinned := update.store.GetPinnedScratches()
+		totalCurrentPinned += len(currentPinned)
+	}
+
+	// Count new pins needed
+	newPinsNeeded := 0
+	for _, update := range storeUpdates {
+		for _, scratch := range update.scratches {
+			if !scratch.IsPinned {
+				newPinsNeeded++
+			}
+		}
+	}
+
+	// Check if we'll exceed the limit
+	if totalCurrentPinned+newPinsNeeded > store.MaxPinnedScratches {
+		availableSlots := store.MaxPinnedScratches - totalCurrentPinned
+		if availableSlots <= 0 {
+			return nil, fmt.Errorf("maximum number of pinned scratches (%d) already reached", store.MaxPinnedScratches)
+		}
+		return nil, fmt.Errorf("cannot pin %d scratches: only %d slots available (max %d)",
+			newPinsNeeded, availableSlots, store.MaxPinnedScratches)
+	}
+
+	// Perform pinning for each store
+	now := time.Now()
+	var pinnedTitles []string
+
+	for _, update := range storeUpdates {
+		// Get all current scratches from this store
+		allScratches := update.store.GetScratches()
+
+		// Update the scratches that need to be pinned
+		for i := range allScratches {
+			for _, toPin := range update.scratches {
+				if allScratches[i].ID == toPin.ID && !allScratches[i].IsPinned {
+					allScratches[i].IsPinned = true
+					allScratches[i].PinnedAt = now
+					pinnedTitles = append(pinnedTitles, allScratches[i].Title)
+				}
+			}
+		}
+
+		// Save all scratches back to this store
+		if err := update.store.SaveScratchesAtomic(allScratches); err != nil {
+			return nil, fmt.Errorf("failed to pin scratches in store %s: %w", update.store.GetBasePath(), err)
+		}
+	}
+
+	return pinnedTitles, nil
+}
+
+// UnpinMultipleWithStoreManager unpins multiple scratches using StoreManager approach
+func UnpinMultipleWithStoreManager(workingDir string, globalFlag bool, ids []string) ([]string, error) {
+	if len(ids) == 0 {
+		return []string{}, nil
+	}
+
+	// Track unique IDs to handle duplicates
+	seen := make(map[string]bool)
+	uniqueIDs := make([]string, 0, len(ids))
+	for _, id := range ids {
+		if id == "" {
+			continue
+		}
+		if !seen[id] {
+			seen[id] = true
+			uniqueIDs = append(uniqueIDs, id)
+		}
+	}
+
+	// Group operations by store for efficiency
+	type storeUpdate struct {
+		store     *store.Store
+		scratches []*store.Scratch
+	}
+	storeUpdates := make(map[string]*storeUpdate)
+
+	// Resolve all IDs and group by store
+	var errors []string
+	sm := store.NewStoreManager()
+
+	for _, id := range uniqueIDs {
+		scopedScratch, err := ResolveScratchWithStoreManager(workingDir, globalFlag, id)
+		if err != nil {
+			errors = append(errors, fmt.Sprintf("%s: %v", id, err))
+			continue
+		}
+
+		// Skip non-pinned items
+		if !scopedScratch.IsPinned {
+			continue
+		}
+
+		// Get the store for this scope
+		var currentStore *store.Store
+		if strings.HasPrefix(scopedScratch.Scope, "project:") {
+			currentStore, err = sm.GetProjectStore(scopedScratch.Scope, workingDir)
+			if err != nil {
+				errors = append(errors, fmt.Sprintf("%s: failed to get project store: %v", id, err))
+				continue
+			}
+		} else {
+			currentStore, err = sm.GetGlobalStore()
+			if err != nil {
+				errors = append(errors, fmt.Sprintf("%s: failed to get global store: %v", id, err))
+				continue
+			}
+		}
+
+		storeKey := scopedScratch.Scope
+		if _, exists := storeUpdates[storeKey]; !exists {
+			storeUpdates[storeKey] = &storeUpdate{
+				store:     currentStore,
+				scratches: []*store.Scratch{},
+			}
+		}
+
+		storeUpdates[storeKey].scratches = append(storeUpdates[storeKey].scratches, scopedScratch.Scratch)
+	}
+
+	// If any errors occurred, return nil with combined error message
+	if len(errors) > 0 {
+		return nil, fmt.Errorf("failed to resolve IDs: %s", strings.Join(errors, "; "))
+	}
+
+	// Perform unpinning for each store
+	var unpinnedTitles []string
+
+	for _, update := range storeUpdates {
+		// Get all current scratches from this store
+		allScratches := update.store.GetScratches()
+
+		// Update the scratches that need to be unpinned
+		for i := range allScratches {
+			for _, toUnpin := range update.scratches {
+				if allScratches[i].ID == toUnpin.ID && allScratches[i].IsPinned {
+					allScratches[i].IsPinned = false
+					allScratches[i].PinnedAt = time.Time{} // Zero value
+					unpinnedTitles = append(unpinnedTitles, allScratches[i].Title)
+				}
+			}
+		}
+
+		// Save all scratches back to this store
+		if err := update.store.SaveScratchesAtomic(allScratches); err != nil {
+			return nil, fmt.Errorf("failed to unpin scratches in store %s: %w", update.store.GetBasePath(), err)
+		}
+	}
+
+	return unpinnedTitles, nil
 }

@@ -5,17 +5,15 @@ package cli
 
 import (
 	"fmt"
-	"github.com/arthur-debert/padz/cmd/padz/formatter"
-	"github.com/arthur-debert/padz/pkg/commands"
-	"github.com/arthur-debert/padz/pkg/output"
-	"github.com/arthur-debert/padz/pkg/project"
-	"github.com/arthur-debert/padz/pkg/store"
-	"github.com/charmbracelet/x/term"
-	"github.com/rs/zerolog/log"
 	"os"
 	"os/exec"
 	"strings"
 
+	"github.com/arthur-debert/padz/cmd/padz/formatter"
+	"github.com/arthur-debert/padz/pkg/commands"
+	"github.com/arthur-debert/padz/pkg/output"
+	"github.com/charmbracelet/x/term"
+	"github.com/rs/zerolog/log"
 	"github.com/spf13/cobra"
 )
 
@@ -28,30 +26,16 @@ func newViewCmd() *cobra.Command {
 		Long:    ViewLong,
 		Args:    cobra.MinimumNArgs(1),
 		Run: func(cmd *cobra.Command, args []string) {
-			all, _ := cmd.Flags().GetBool("all")
+			//all, _ := cmd.Flags().GetBool("all") // TODO: Implement --all flag with StoreManager
 			global, _ := cmd.Flags().GetBool("global")
-
-			s, err := store.NewStore()
-			if err != nil {
-				log.Fatal().Err(err).Msg("Operation failed")
-			}
 
 			dir, err := os.Getwd()
 			if err != nil {
 				log.Fatal().Err(err).Msg("Operation failed")
 			}
 
-			proj, err := project.GetCurrentProject(dir)
-			if err != nil {
-				log.Fatal().Err(err).Msg("Operation failed")
-			}
-
-			// Run discovery before viewing
-			if err := s.RunDiscoveryBeforeCommand(); err != nil {
-				log.Warn().Err(err).Msg("Failed to run discovery")
-			}
-
-			content, err := commands.ViewMultiple(s, all, global, proj, args)
+			// Always use StoreManager approach for consistency
+			content, err := commands.ViewMultipleWithStoreManager(dir, global, args)
 			if err != nil {
 				log.Fatal().Err(err).Msg("Operation failed")
 			}

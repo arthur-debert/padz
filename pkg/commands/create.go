@@ -19,6 +19,36 @@ func Create(s *store.Store, project string, content []byte) error {
 	return CreateWithTitle(s, project, content, "")
 }
 
+// CreateWithStoreManager creates a scratch using the StoreManager approach
+func CreateWithStoreManager(workingDir string, globalFlag bool, content []byte, title string) error {
+	sm := store.NewStoreManager()
+
+	// Get the appropriate store based on flags
+	currentStore, _, err := sm.GetCurrentStore(workingDir, globalFlag)
+	if err != nil {
+		return fmt.Errorf("failed to get current store: %w", err)
+	}
+
+	// Extract project name from scope
+	scope := ""
+	if globalFlag {
+		scope = "global"
+	} else {
+		// Get the current scope to extract project name
+		_, currentScope, _ := sm.GetCurrentStore(workingDir, false)
+		scope = currentScope
+	}
+
+	// Convert scope to project name (e.g., "project:padz" -> "padz")
+	projectName := scope
+	if strings.HasPrefix(scope, "project:") {
+		projectName = strings.TrimPrefix(scope, "project:")
+	}
+
+	// Use the existing CreateWithTitle logic
+	return CreateWithTitle(currentStore, projectName, content, title)
+}
+
 // CreateWithTitle creates a scratch with an optional pre-defined title
 func CreateWithTitle(s *store.Store, project string, content []byte, providedTitle string) error {
 	var err error
@@ -61,12 +91,16 @@ func CreateWithTitle(s *store.Store, project string, content []byte, providedTit
 		CreatedAt: time.Now(),
 	}
 
-	if err := saveScratchFile(id, trimmedContent); err != nil {
+	// Add the scratch metadata first
+	if err := s.AddScratchAtomic(scratch); err != nil {
 		return err
 	}
 
-	if err := s.AddScratchAtomic(scratch); err != nil {
-		return err
+	// Save the scratch content using the store's method
+	if err := s.SaveScratchContent(id, trimmedContent); err != nil {
+		// If content save fails, try to remove the metadata
+		// This prevents orphaned metadata entries
+		return fmt.Errorf("failed to save scratch content: %w", err)
 	}
 
 	// Copy content to clipboard

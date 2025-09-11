@@ -7,8 +7,6 @@ import (
 
 	"github.com/arthur-debert/padz/pkg/commands"
 	"github.com/arthur-debert/padz/pkg/output"
-	"github.com/arthur-debert/padz/pkg/project"
-	"github.com/arthur-debert/padz/pkg/store"
 	"github.com/arthur-debert/padz/pkg/utils"
 	"github.com/rs/zerolog/log"
 	"github.com/spf13/cobra"
@@ -17,7 +15,6 @@ import (
 // newFlushCmd creates and returns a new flush command
 func newFlushCmd() *cobra.Command {
 	var all, global bool
-	var projectFlag string
 	var olderThanStr string
 
 	cmd := &cobra.Command{
@@ -44,32 +41,15 @@ Examples:
 				}
 			}
 
-			s, err := store.NewStore()
-			if err != nil {
-				log.Fatal().Err(err).Msg("Failed to initialize store")
-			}
-
 			// Get current directory
 			dir, err := os.Getwd()
 			if err != nil {
 				log.Fatal().Err(err).Msg("Failed to get current working directory")
 			}
 
-			// Determine project
-			proj := ""
-			if projectFlag != "" {
-				proj = projectFlag
-			} else if !global && !all {
-				currentProj, err := project.GetCurrentProject(dir)
-				if err != nil {
-					log.Fatal().Err(err).Msg("Failed to get current project")
-				}
-				proj = currentProj
-			}
-
 			// If specific IDs are provided, flush those
 			if len(args) > 0 {
-				flushedCount, err := commands.FlushMultiple(s, all, global, proj, args)
+				flushedCount, err := commands.FlushMultipleWithStoreManager(dir, global, args)
 
 				// Format output
 				format, formatErr := output.GetFormat(outputFormat)
@@ -96,7 +76,7 @@ Examples:
 				return
 			} else {
 				// Otherwise flush based on criteria
-				err = commands.Flush(s, all, global, proj, "", olderThan)
+				err = commands.FlushWithStoreManager(dir, global, all, olderThan)
 			}
 
 			// Format output
@@ -126,7 +106,6 @@ Examples:
 
 	cmd.Flags().BoolVarP(&all, "all", "a", false, "Flush from all projects")
 	cmd.Flags().BoolVarP(&global, "global", "g", false, "Flush from global scope")
-	cmd.Flags().StringVarP(&projectFlag, "project", "p", "", "Flush from specific project")
 	cmd.Flags().StringVar(&olderThanStr, "older-than", "", "Flush only items deleted more than duration ago (e.g., 7d, 24h)")
 
 	return cmd
