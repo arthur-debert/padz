@@ -6,6 +6,7 @@ package cli
 import (
 	"fmt"
 	"os"
+	"strings"
 
 	"github.com/arthur-debert/padz/pkg/commands"
 	"github.com/arthur-debert/padz/pkg/output"
@@ -27,28 +28,44 @@ func newDeleteCmd() *cobra.Command {
 			all, _ := cmd.Flags().GetBool("all")
 			global, _ := cmd.Flags().GetBool("global")
 
-			s, err := store.NewStore()
-			if err != nil {
-				log.Fatal().Err(err).Msg("Failed to initialize store")
-			}
-
 			dir, err := os.Getwd()
 			if err != nil {
 				log.Fatal().Err(err).Msg("Failed to get current working directory")
 			}
 
-			proj, err := project.GetCurrentProject(dir)
-			if err != nil {
-				log.Fatal().Err(err).Msg("Failed to get current project")
+			// Check if any of the args contain scoped IDs (scope:index)
+			hasScopedIDs := false
+			for _, arg := range args {
+				if strings.Contains(arg, ":") {
+					hasScopedIDs = true
+					break
+				}
 			}
 
-			// Run discovery before deleting
-			if err := s.RunDiscoveryBeforeCommand(); err != nil {
-				log.Warn().Err(err).Msg("Failed to run discovery")
-			}
+			var deletedTitles []string
+			if hasScopedIDs {
+				// Use StoreManager approach for scoped IDs
+				deletedTitles, err = commands.DeleteMultipleWithStoreManager(dir, global, args)
+			} else {
+				// Use legacy approach for backward compatibility
+				s, err := store.NewStore()
+				if err != nil {
+					log.Fatal().Err(err).Msg("Failed to initialize store")
+				}
 
-			// Delete multiple scratches
-			deletedTitles, err := commands.DeleteMultiple(s, all, global, proj, args)
+				proj, err := project.GetCurrentProject(dir)
+				if err != nil {
+					log.Fatal().Err(err).Msg("Failed to get current project")
+				}
+
+				// Run discovery before deleting
+				if err := s.RunDiscoveryBeforeCommand(); err != nil {
+					log.Warn().Err(err).Msg("Failed to run discovery")
+				}
+
+				// Delete multiple scratches
+				deletedTitles, _ = commands.DeleteMultiple(s, all, global, proj, args)
+			}
 
 			// Format output
 			format, formatErr := output.GetFormat(outputFormat)
@@ -62,7 +79,16 @@ func newDeleteCmd() *cobra.Command {
 			}
 
 			// Show list in verbose mode (before success message)
-			ShowListAfterCommand(s, all, global, proj)
+			if !hasScopedIDs {
+				// Only show list for legacy approach (when we have s and proj available)
+				s, err := store.NewStore()
+				if err == nil {
+					proj, err := project.GetCurrentProject(dir)
+					if err == nil {
+						ShowListAfterCommand(s, all, global, proj)
+					}
+				}
+			}
 
 			// Show success message with scratch titles
 			var successMsg string

@@ -87,7 +87,12 @@ func LsWithStoreManager(workingDir string, globalFlag, allFlag bool, mode ListMo
 		}
 
 		// Use the existing LsWithMode logic but with the scope-specific store
-		scratches := LsWithMode(currentStore, false, currentScope == "global", currentScope, mode)
+		// Extract project name from scope (e.g., "project:padz" -> "padz", "global" -> "global")
+		projectName := currentScope
+		if strings.HasPrefix(currentScope, "project:") {
+			projectName = strings.TrimPrefix(currentScope, "project:")
+		}
+		scratches := LsWithMode(currentStore, false, currentScope == "global", projectName, mode)
 		return scratches, nil
 	}
 }
@@ -298,15 +303,21 @@ func ResolveScratchWithStoreManager(workingDir string, globalFlag bool, id strin
 		return nil, fmt.Errorf("failed to get current store: %w", err)
 	}
 
+	// Extract project name from scope
+	projectName := currentScope
+	if strings.HasPrefix(currentScope, "project:") {
+		projectName = strings.TrimPrefix(currentScope, "project:")
+	}
+
 	// Use existing resolution logic
-	scratch, err := ResolveScratchID(currentStore, false, currentScope == "global", currentScope, id)
+	scratch, err := ResolveScratchID(currentStore, false, currentScope == "global", projectName, id)
 	if err != nil {
 		return nil, err
 	}
 
 	// Convert to ScopedScratch format
 	// We need to determine the index within the current scope
-	scratches := LsWithMode(currentStore, false, currentScope == "global", currentScope, ListModeActive)
+	scratches := LsWithMode(currentStore, false, currentScope == "global", projectName, ListModeActive)
 	for i, s := range scratches {
 		if s.ID == scratch.ID {
 			return &store.ScopedScratch{

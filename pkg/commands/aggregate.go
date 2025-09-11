@@ -8,6 +8,13 @@ import (
 	"github.com/arthur-debert/padz/pkg/store"
 )
 
+// ScopedScratchWithStore pairs a scratch with its originating store
+type ScopedScratchWithStore struct {
+	Scratch *store.Scratch
+	Store   *store.Store
+	Scope   string
+}
+
 // AggregateOptions configures how multiple scratch contents are combined
 type AggregateOptions struct {
 	// IncludeHeaders adds scratch metadata (title, date, etc) before each content
@@ -156,6 +163,37 @@ func AggregateScratchContents(scratches []*store.Scratch, options AggregateOptio
 		content, err := readScratchFile(scratch.ID)
 		if err != nil {
 			return nil, fmt.Errorf("failed to read scratch %s: %w", scratch.ID[:8], err)
+		}
+		contents[i] = string(content)
+	}
+
+	return &AggregatedContent{
+		Scratches: scratches,
+		Contents:  contents,
+		Options:   options,
+	}, nil
+}
+
+// AggregateScratchContentsWithStoreManager reads and aggregates content from multiple scratches using StoreManager
+func AggregateScratchContentsWithStoreManager(sm *store.StoreManager, workingDir string, globalFlag bool, scopedScratches []ScopedScratchWithStore, options AggregateOptions) (*AggregatedContent, error) {
+	if len(scopedScratches) == 0 {
+		return &AggregatedContent{
+			Scratches: []*store.Scratch{},
+			Contents:  []string{},
+			Options:   options,
+		}, nil
+	}
+
+	scratches := make([]*store.Scratch, len(scopedScratches))
+	contents := make([]string, len(scopedScratches))
+
+	for i, ss := range scopedScratches {
+		scratches[i] = ss.Scratch
+
+		// Read content using the store's method
+		content, err := ss.Store.ReadScratchContent(ss.Scratch.ID)
+		if err != nil {
+			return nil, fmt.Errorf("failed to read scratch %s: %w", ss.Scratch.ID[:8], err)
 		}
 		contents[i] = string(content)
 	}

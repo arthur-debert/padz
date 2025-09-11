@@ -29,6 +29,53 @@ type Store struct {
 	useNewMetadata  bool // Flag to enable new metadata system
 }
 
+// GetBasePath returns the base storage path for this store
+func (s *Store) GetBasePath() string {
+	if s.metadataManager != nil {
+		return s.metadataManager.basePath
+	}
+	return ""
+}
+
+// SaveScratchContent saves the content for a scratch
+func (s *Store) SaveScratchContent(id string, content []byte) error {
+	basePath := s.GetBasePath()
+	if basePath == "" {
+		return fmt.Errorf("no base path available for store")
+	}
+
+	filePath := s.fs.Join(basePath, "files", id)
+
+	// Ensure the files directory exists
+	filesDir := s.fs.Join(basePath, "files")
+	if err := s.fs.MkdirAll(filesDir, 0755); err != nil {
+		return fmt.Errorf("failed to create files directory: %w", err)
+	}
+
+	return s.fs.WriteFile(filePath, content, 0644)
+}
+
+// ReadScratchContent reads the content for a scratch
+func (s *Store) ReadScratchContent(id string) ([]byte, error) {
+	basePath := s.GetBasePath()
+	if basePath == "" {
+		return nil, fmt.Errorf("no base path available for store")
+	}
+
+	filePath := s.fs.Join(basePath, "files", id)
+	return s.fs.ReadFile(filePath)
+}
+
+// GetScratchFilePath returns the file path for a scratch in this store
+func (s *Store) GetScratchFilePath(id string) (string, error) {
+	basePath := s.GetBasePath()
+	if basePath == "" {
+		return "", fmt.Errorf("no base path available for store")
+	}
+
+	return s.fs.Join(basePath, "files", id), nil
+}
+
 func NewStore() (*Store, error) {
 	logger := logging.GetLogger("store")
 	logger.Info().Msg("Initializing new store")
