@@ -2,7 +2,9 @@ package store2
 
 import (
 	"fmt"
+	"os"
 
+	"github.com/arthur-debert/padz/pkg/store2"
 	"github.com/spf13/cobra"
 )
 
@@ -14,15 +16,102 @@ func newListCommand() *cobra.Command {
 		Short: "List pads from the v2 store",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if all {
-				fmt.Println("Store2 List: would list pads from all scopes")
-			} else {
-				fmt.Println("Store2 List: would list pads from current scope")
+				// List from all scopes
+				return listAllScopes()
 			}
-			return nil
+
+			// List from current scope only
+			dir, err := os.Getwd()
+			if err != nil {
+				return fmt.Errorf("failed to get current directory: %w", err)
+			}
+
+			scope, err := store2.DetectScope(dir)
+			if err != nil {
+				return fmt.Errorf("failed to detect scope: %w", err)
+			}
+
+			return listScope(scope)
 		},
 	}
 
 	cmd.Flags().BoolVar(&all, "all", false, "List pads from all scopes")
 
 	return cmd
+}
+
+func listScope(scope string) error {
+	// Get store path
+	storePath, err := store2.GetStorePath(scope)
+	if err != nil {
+		return fmt.Errorf("failed to get store path: %w", err)
+	}
+
+	// Create store
+	store, err := store2.NewStore(storePath)
+	if err != nil {
+		return fmt.Errorf("failed to create store: %w", err)
+	}
+
+	// List pads
+	pads, err := store.List()
+	if err != nil {
+		return fmt.Errorf("failed to list pads: %w", err)
+	}
+
+	// Display
+	fmt.Printf("=== Pads in scope '%s' ===\n\n", scope)
+	if len(pads) == 0 {
+		fmt.Println("No pads found")
+		return nil
+	}
+
+	for _, pad := range pads {
+		title := pad.Title
+		if title == "" {
+			title = "(untitled)"
+		}
+		fmt.Printf("%3d. %-50s %s\n", pad.UserID, title, pad.CreatedAt.Format("2006-01-02 15:04"))
+	}
+
+	return nil
+}
+
+func listAllScopes() error {
+	// Get base store directory
+	baseDir, err := store2.GetStorePath("")
+	if err != nil {
+		return fmt.Errorf("failed to get base store path: %w", err)
+	}
+
+	// Find all scope directories
+	entries, err := os.ReadDir(baseDir)
+	if err != nil {
+		if os.IsNotExist(err) {
+			fmt.Println("No stores found")
+			return nil
+		}
+		return fmt.Errorf("failed to read store directory: %w", err)
+	}
+
+	first := true
+	for _, entry := range entries {
+		if !entry.IsDir() {
+			continue
+		}
+
+		scope := entry.Name()
+		if !first {
+			fmt.Println() // Add spacing between scopes
+		}
+		first = false
+
+		if err := listScope(scope); err != nil {
+			// Log error but continue with other scopes
+			fmt.Printf("Error listing scope '%s': %v\n", scope, err)
+			continue
+		}
+	}
+
+	return nil
 }
