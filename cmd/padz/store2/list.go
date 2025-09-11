@@ -78,38 +78,46 @@ func listScope(scope string) error {
 }
 
 func listAllScopes() error {
-	// Get base store directory
-	baseDir, err := store2.GetStorePath("")
-	if err != nil {
-		return fmt.Errorf("failed to get base store path: %w", err)
-	}
+	dispatcher := store2.NewDispatcher()
 
-	// Find all scope directories
-	entries, err := os.ReadDir(baseDir)
-	if err != nil {
-		if os.IsNotExist(err) {
-			fmt.Println("No stores found")
-			return nil
-		}
-		return fmt.Errorf("failed to read store directory: %w", err)
+	results, errors := dispatcher.ListAllScopes()
+
+	// Display results
+	if len(results) == 0 {
+		fmt.Println("No stores found")
+		return nil
 	}
 
 	first := true
-	for _, entry := range entries {
-		if !entry.IsDir() {
-			continue
-		}
-
-		scope := entry.Name()
+	for scope, pads := range results {
 		if !first {
 			fmt.Println() // Add spacing between scopes
 		}
 		first = false
 
-		if err := listScope(scope); err != nil {
-			// Log error but continue with other scopes
-			fmt.Printf("Error listing scope '%s': %v\n", scope, err)
+		fmt.Printf("=== Pads in scope '%s' ===\n\n", scope)
+		if len(pads) == 0 {
+			fmt.Println("No pads found")
 			continue
+		}
+
+		for _, pad := range pads {
+			title := pad.Title
+			if title == "" {
+				title = "(untitled)"
+			}
+			fmt.Printf("%3d. %-50s %s\n", pad.UserID, title, pad.CreatedAt.Format("2006-01-02 15:04"))
+		}
+	}
+
+	// Display errors as summary at the end
+	if len(errors) > 0 {
+		if len(results) > 0 {
+			fmt.Println() // Add spacing
+		}
+		fmt.Printf("Encountered %d error(s) while listing scopes:\n", len(errors))
+		for _, err := range errors {
+			fmt.Printf("  - %v\n", err)
 		}
 	}
 

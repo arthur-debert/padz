@@ -129,16 +129,16 @@ func TestList(t *testing.T) {
 		t.Fatalf("Expected 3 pads, got %d", len(pads))
 	}
 
-	// Verify ordering (newest first)
-	if pads[0].UserID != 1 {
-		t.Errorf("Expected newest pad to have UserID 1, got %d", pads[0].UserID)
+	// Verify ordering (newest first by UserID - higher UserID = newer)
+	if pads[0].UserID != 3 {
+		t.Errorf("Expected newest pad to have UserID 3, got %d", pads[0].UserID)
 	}
 
-	// Verify all pads are present and properly indexed
+	// Verify descending UserID order (newest to oldest)
+	expectedUserIDs := []int{3, 2, 1}
 	for i, pad := range pads {
-		expectedID := i + 1
-		if pad.UserID != expectedID {
-			t.Errorf("Pad %d: expected UserID %d, got %d", i, expectedID, pad.UserID)
+		if pad.UserID != expectedUserIDs[i] {
+			t.Errorf("Pad %d: expected UserID %d, got %d", i, expectedUserIDs[i], pad.UserID)
 		}
 	}
 }

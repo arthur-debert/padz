@@ -15,16 +15,11 @@ func (s *Store) List() ([]*Pad, error) {
 		pads = append(pads, pad)
 	}
 
-	// Sort by creation time, newest first
+	// Sort by UserID (which is assigned at creation time and stays stable)
+	// Higher UserID means newer (since we increment NextID)
 	sort.Slice(pads, func(i, j int) bool {
-		return pads[i].CreatedAt.After(pads[j].CreatedAt)
+		return pads[i].UserID > pads[j].UserID
 	})
-
-	// Re-index user IDs based on sort order
-	// This ensures the newest pad is always ID 1
-	for i, pad := range pads {
-		pad.UserID = i + 1
-	}
 
 	return pads, nil
 }

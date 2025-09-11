@@ -9,6 +9,8 @@ import (
 	"path/filepath"
 	"sync"
 	"time"
+
+	"github.com/google/uuid"
 )
 
 // Pad represents a single piece of stored content
@@ -113,10 +115,9 @@ func (s *Store) saveMetadata() error {
 	return nil
 }
 
-// generateID generates a unique ID for content
+// generateID generates a unique UUID for content
 func generateID(content string) string {
-	h := sha256.Sum256([]byte(content + time.Now().String()))
-	return hex.EncodeToString(h[:8]) // Use first 8 bytes for shorter IDs
+	return uuid.New().String()
 }
 
 // calculateChecksum calculates SHA256 checksum of content
