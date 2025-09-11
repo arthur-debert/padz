@@ -9,7 +9,6 @@ import (
 	"github.com/arthur-debert/padz/pkg/commands"
 	"github.com/arthur-debert/padz/pkg/config"
 	"github.com/arthur-debert/padz/pkg/logging"
-	"github.com/arthur-debert/padz/pkg/store"
 	"github.com/rs/zerolog/log"
 	"github.com/spf13/cobra"
 )
@@ -77,19 +76,16 @@ func NewRootCmd() *cobra.Command {
 				// Small delay to let the main command complete first and avoid lock contention
 				time.Sleep(100 * time.Millisecond)
 
-				s, err := store.NewStore()
+				// Get current directory
+				dir, err := os.Getwd()
 				if err != nil {
-					log.Debug().Err(err).Msg("Failed to initialize store for auto-cleanup")
+					log.Debug().Err(err).Msg("Failed to get working directory for auto-cleanup")
 					return
 				}
 
-				// Auto-cleanup soft-deleted items older than 7 days
-				opts := commands.CleanupOptions{
-					DaysForActive:  999999, // Don't auto-cleanup active items
-					DaysForDeleted: 7,      // Auto-cleanup soft-deleted items after 7 days
-				}
-
-				if err := commands.CleanupWithOptions(s, opts); err != nil {
+				// Auto-cleanup soft-deleted items older than 7 days using StoreManager
+				// This will cleanup in the current project store
+				if _, err := commands.CleanupWithStoreManager(dir, 7); err != nil {
 					log.Debug().Err(err).Msg("Auto-cleanup failed")
 				}
 			}()

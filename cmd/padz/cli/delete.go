@@ -6,12 +6,9 @@ package cli
 import (
 	"fmt"
 	"os"
-	"strings"
 
 	"github.com/arthur-debert/padz/pkg/commands"
 	"github.com/arthur-debert/padz/pkg/output"
-	"github.com/arthur-debert/padz/pkg/project"
-	"github.com/arthur-debert/padz/pkg/store"
 	"github.com/rs/zerolog/log"
 	"github.com/spf13/cobra"
 )
@@ -33,39 +30,8 @@ func newDeleteCmd() *cobra.Command {
 				log.Fatal().Err(err).Msg("Failed to get current working directory")
 			}
 
-			// Check if any of the args contain scoped IDs (scope:index)
-			hasScopedIDs := false
-			for _, arg := range args {
-				if strings.Contains(arg, ":") {
-					hasScopedIDs = true
-					break
-				}
-			}
-
-			var deletedTitles []string
-			if hasScopedIDs {
-				// Use StoreManager approach for scoped IDs
-				deletedTitles, err = commands.DeleteMultipleWithStoreManager(dir, global, args)
-			} else {
-				// Use legacy approach for backward compatibility
-				s, err := store.NewStore()
-				if err != nil {
-					log.Fatal().Err(err).Msg("Failed to initialize store")
-				}
-
-				proj, err := project.GetCurrentProject(dir)
-				if err != nil {
-					log.Fatal().Err(err).Msg("Failed to get current project")
-				}
-
-				// Run discovery before deleting
-				if err := s.RunDiscoveryBeforeCommand(); err != nil {
-					log.Warn().Err(err).Msg("Failed to run discovery")
-				}
-
-				// Delete multiple scratches
-				deletedTitles, _ = commands.DeleteMultiple(s, all, global, proj, args)
-			}
+			// Always use StoreManager approach
+			deletedTitles, err := commands.DeleteMultipleWithStoreManager(dir, global, args)
 
 			// Format output
 			format, formatErr := output.GetFormat(outputFormat)
