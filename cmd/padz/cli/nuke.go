@@ -6,17 +6,14 @@ package cli
 import (
 	"bufio"
 	"fmt"
-	"github.com/rs/zerolog/log"
 	"os"
-	"path/filepath"
 	"strings"
 
 	"github.com/arthur-debert/padz/cmd/padz/formatter"
 	"github.com/arthur-debert/padz/pkg/commands"
 	"github.com/arthur-debert/padz/pkg/output"
-	"github.com/arthur-debert/padz/pkg/project"
 	"github.com/arthur-debert/padz/pkg/store"
-
+	"github.com/rs/zerolog/log"
 	"github.com/spf13/cobra"
 )
 
@@ -28,18 +25,9 @@ func newNukeCmd() *cobra.Command {
 		Long:  NukeLong,
 		Run: func(cmd *cobra.Command, args []string) {
 			all, _ := cmd.Flags().GetBool("all")
-
-			s, err := store.NewStore()
-			if err != nil {
-				log.Fatal().Err(err).Msg("Operation failed")
-			}
+			global, _ := cmd.Flags().GetBool("global")
 
 			dir, err := os.Getwd()
-			if err != nil {
-				log.Fatal().Err(err).Msg("Operation failed")
-			}
-
-			proj, err := project.GetCurrentProject(dir)
 			if err != nil {
 				log.Fatal().Err(err).Msg("Operation failed")
 			}
@@ -61,27 +49,38 @@ func newNukeCmd() *cobra.Command {
 				return
 			}
 
-			// First, get the count of pads to delete
+			// First, get the count of pads to delete using StoreManager to count scratches
+			// This is a simplified approach that gets an estimate
 			var count int
 			var confirmMsg string
+			var scope string
 
-			// Count the pads that would be deleted
+			sm := store.NewStoreManager()
+
 			if all {
-				count = len(s.GetScratches())
-			} else if proj == "" {
-				// Count global pads
-				for _, scratch := range s.GetScratches() {
-					if scratch.Project == "global" {
-						count++
-					}
+				// Count from both global and current project stores
+				globalStore, err := sm.GetGlobalStore()
+				if err != nil {
+					log.Fatal().Err(err).Msg("Operation failed")
+				}
+
+				count = countActiveScratches(globalStore)
+				scope = "all"
+
+				// Try to count current project store too if different from global
+				currentStore, _, err := sm.GetCurrentStore(dir, false)
+				if err == nil && currentStore != globalStore {
+					count += countActiveScratches(currentStore)
 				}
 			} else {
-				// Count project pads
-				for _, scratch := range s.GetScratches() {
-					if scratch.Project == proj {
-						count++
-					}
+				// Count from specific store based on global flag
+				currentStore, currentScope, err := sm.GetCurrentStore(dir, global)
+				if err != nil {
+					log.Fatal().Err(err).Msg("Operation failed")
 				}
+
+				count = countActiveScratches(currentStore)
+				scope = currentScope
 			}
 
 			// Check if there are any pads to delete
@@ -93,11 +92,14 @@ func newNukeCmd() *cobra.Command {
 			// Prepare confirmation message based on scope
 			if all {
 				confirmMsg = fmt.Sprintf(NukeConfirmAll, count)
-			} else if proj == "" {
+			} else if scope == "global" {
 				confirmMsg = fmt.Sprintf(NukeConfirmGlobal, count)
 			} else {
-				// For project scope, extract just the project name from the path
-				projectName := filepath.Base(proj)
+				// For project scope, extract project name from scope
+				projectName := scope
+				if strings.HasPrefix(scope, "project:") {
+					projectName = strings.TrimPrefix(scope, "project:")
+				}
 				confirmMsg = fmt.Sprintf(NukeConfirmProject, count, projectName)
 			}
 
@@ -125,14 +127,13 @@ func newNukeCmd() *cobra.Command {
 					return
 				}
 
-				// Actually perform the nuke operation
-				result, err := commands.Nuke(s, all, proj)
+				// Actually perform the nuke operation using StoreManager
+				result, err := commands.NukeWithStoreManager(dir, global, all)
 				if err != nil {
 					handleTerminalError(err, format)
 				}
 
-				// Show remaining list in verbose mode
-				ShowListAfterCommand(s, all, false, proj)
+				// TODO: Update ShowListAfterCommand to use StoreManager
 
 				// Use the actual deleted count from the result
 				var successMsg string
@@ -141,12 +142,22 @@ func newNukeCmd() *cobra.Command {
 				} else if result.Scope == "global" {
 					successMsg = fmt.Sprintf(NukeSuccessGlobal, result.DeletedCount)
 				} else {
-					projectName := filepath.Base(result.ProjectName)
-					successMsg = fmt.Sprintf(NukeSuccessProject, result.DeletedCount, projectName)
+					successMsg = fmt.Sprintf(NukeSuccessProject, result.DeletedCount, result.ProjectName)
 				}
 
 				handleTerminalSuccess(successMsg, format)
 			}
 		},
 	}
+}
+
+// countActiveScratches counts non-deleted scratches in a store
+func countActiveScratches(s *store.Store) int {
+	count := 0
+	for _, scratch := range s.GetScratches() {
+		if !scratch.IsDeleted {
+			count++
+		}
+	}
+	return count
 }
