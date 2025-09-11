@@ -5,10 +5,10 @@ package cli
 
 import (
 	"fmt"
+	"os"
+
 	"github.com/arthur-debert/padz/pkg/commands"
 	"github.com/arthur-debert/padz/pkg/output"
-	"github.com/arthur-debert/padz/pkg/store"
-
 	"github.com/rs/zerolog/log"
 	"github.com/spf13/cobra"
 )
@@ -23,12 +23,14 @@ func newCleanupCmd() *cobra.Command {
 		Run: func(cmd *cobra.Command, args []string) {
 			days, _ := cmd.Flags().GetInt("days")
 
-			s, err := store.NewStore()
+			// Get current directory
+			dir, err := os.Getwd()
 			if err != nil {
-				log.Fatal().Err(err).Msg("Failed to initialize store")
+				log.Fatal().Err(err).Msg("Failed to get current working directory")
 			}
 
-			err = commands.Cleanup(s, days)
+			// Use StoreManager approach for cleanup
+			deletedCount, err := commands.CleanupWithStoreManager(dir, days)
 
 			// Format output
 			format, formatErr := output.GetFormat(outputFormat)
@@ -41,11 +43,10 @@ func newCleanupCmd() *cobra.Command {
 				return
 			}
 
-			// Show remaining list in verbose mode
-			// For cleanup, we show all scratches since it affects all projects
-			ShowListAfterCommand(s, true, false, "")
+			// TODO: Update ShowListAfterCommand to use StoreManager
 
-			message := fmt.Sprintf(CleanupSuccessFormat, days)
+			// Show success message with count of deleted items
+			message := fmt.Sprintf("Cleanup completed successfully. Permanently deleted %d old scratches (older than %d days).", deletedCount, days)
 			handleTerminalSuccess(message, format)
 		},
 	}
