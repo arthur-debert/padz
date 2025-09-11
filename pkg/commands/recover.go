@@ -370,3 +370,73 @@ func recoverOrphanedFile(s *store.Store, orphan OrphanedFile, project string) er
 
 	return s.AddScratch(scratch)
 }
+
+// RecoverWithStoreManager performs a recovery operation using StoreManager
+func RecoverWithStoreManager(workingDir string, globalFlag bool, options RecoveryOptions) (*RecoveryResult, error) {
+	sm := store.NewStoreManager()
+
+	log.Info().
+		Bool("dry_run", options.DryRun).
+		Bool("recover_orphans", options.RecoverOrphans).
+		Bool("clean_missing", options.CleanMissing).
+		Str("default_project", options.DefaultProject).
+		Bool("global", globalFlag).
+		Msg("Starting recovery operation with StoreManager")
+
+	startTime := time.Now()
+	result := &RecoveryResult{
+		OrphanedFiles:  []OrphanedFile{},
+		MissingFiles:   []MissingFile{},
+		RecoveredFiles: []RecoveredFile{},
+		Errors:         []RecoveryError{},
+		Summary: RecoverySummary{
+			StartTime: startTime,
+		},
+	}
+
+	// Set default project if not specified
+	if options.DefaultProject == "" {
+		options.DefaultProject = "recovered"
+	}
+
+	// Determine which store to recover
+	var targetStore *store.Store
+	var storeScope string
+	var err error
+
+	if globalFlag {
+		targetStore, err = sm.GetGlobalStore()
+		if err != nil {
+			return nil, fmt.Errorf("failed to get global store: %w", err)
+		}
+		storeScope = "global"
+	} else {
+		// Use current project store
+		targetStore, storeScope, err = sm.GetCurrentStore(workingDir, false)
+		if err != nil {
+			return nil, fmt.Errorf("failed to get current store: %w", err)
+		}
+	}
+
+	log.Info().Str("scope", storeScope).Msg("Running recovery on store")
+
+	// Run the existing recovery logic on the target store
+	storeResult, err := Recover(targetStore, options)
+	if err != nil {
+		return nil, fmt.Errorf("recovery failed for %s store: %w", storeScope, err)
+	}
+
+	// Copy the results (since we're only operating on one store at a time)
+	*result = *storeResult
+
+	log.Info().
+		Int("orphaned", result.Summary.TotalOrphaned).
+		Int("missing", result.Summary.TotalMissing).
+		Int("recovered", result.Summary.TotalRecovered).
+		Int("errors", result.Summary.TotalErrors).
+		Str("duration", result.Summary.Duration).
+		Str("scope", storeScope).
+		Msg("Recovery operation completed for store")
+
+	return result, nil
+}
