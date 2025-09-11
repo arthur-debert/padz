@@ -25,3 +25,19 @@ func Path(s *store.Store, all bool, global bool, project string, indexStr string
 
 	return &PathResult{Path: path}, nil
 }
+
+// PathWithStoreManager returns the full path to a scratch file using StoreManager
+func PathWithStoreManager(workingDir string, globalFlag bool, indexStr string) (*PathResult, error) {
+	// Resolve the scratch
+	scopedScratch, err := ResolveScratchWithStoreManager(workingDir, globalFlag, indexStr)
+	if err != nil {
+		return nil, err
+	}
+
+	path, err := store.GetScratchFilePath(scopedScratch.ID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get scratch file path: %w", err)
+	}
+
+	return &PathResult{Path: path}, nil
+}
