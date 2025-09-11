@@ -61,10 +61,16 @@ func (ms *MergedStore) GetAllScratches(includeDeleted bool) []ScopedScratch {
 
 		// Convert to ScopedScratch with proper indexing (per-scope)
 		for i, scratch := range filtered {
+			// Use simplified scope for ScopedID (e.g., "proj1" instead of "project:proj1")
+			simplifiedScope := scope
+			if strings.HasPrefix(scope, "project:") {
+				simplifiedScope = strings.TrimPrefix(scope, "project:")
+			}
+
 			scopedScratch := ScopedScratch{
 				Scratch:  &scratch,
 				Scope:    scope,
-				ScopedID: fmt.Sprintf("%s:%d", scope, i+1),
+				ScopedID: fmt.Sprintf("%s:%d", simplifiedScope, i+1),
 				Index:    i + 1,
 			}
 			result = append(result, scopedScratch)
@@ -81,7 +87,7 @@ func (ms *MergedStore) GetAllScratches(includeDeleted bool) []ScopedScratch {
 	return result
 }
 
-// GetScopedScratch resolves a scoped ID (like "global:1") to a specific scratch
+// GetScopedScratch resolves a scoped ID (like "global:1" or "padz:1") to a specific scratch
 func (ms *MergedStore) GetScopedScratch(scopedID string) (*ScopedScratch, error) {
 	parts := strings.SplitN(scopedID, ":", 2)
 	if len(parts) != 2 {
@@ -91,7 +97,13 @@ func (ms *MergedStore) GetScopedScratch(scopedID string) (*ScopedScratch, error)
 	scope := parts[0]
 	indexStr := parts[1]
 
-	store, exists := ms.stores[scope]
+	// Normalize scope format for store lookup
+	storeKey := scope
+	if scope != "global" && !strings.HasPrefix(scope, "project:") {
+		storeKey = fmt.Sprintf("project:%s", scope)
+	}
+
+	store, exists := ms.stores[storeKey]
 	if !exists {
 		return nil, fmt.Errorf("scope %s not found in merged store", scope)
 	}
@@ -113,7 +125,7 @@ func (ms *MergedStore) GetScopedScratch(scopedID string) (*ScopedScratch, error)
 
 	return &ScopedScratch{
 		Scratch:  scratch,
-		Scope:    scope,
+		Scope:    storeKey, // Use the normalized scope for consistency
 		ScopedID: scopedID,
 		Index:    index,
 	}, nil

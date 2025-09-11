@@ -79,7 +79,7 @@ func TestStoreManager_GetStore_Deprecated(t *testing.T) {
 
 	t.Run("legacy GetStore still works for project", func(t *testing.T) {
 		projectDir := env.GetProjectDir("myproject")
-		store, err := sm.GetStore("myproject", projectDir)
+		store, err := sm.GetStore("project:myproject", projectDir)
 		require.NoError(t, err)
 		assert.NotNil(t, store)
 	})
@@ -89,7 +89,7 @@ func TestStoreManager_GetStore_Deprecated(t *testing.T) {
 		require.NoError(t, err)
 
 		projectDir := env.GetProjectDir("myproject")
-		projectStore, err := sm.GetStore("myproject", projectDir)
+		projectStore, err := sm.GetStore("project:myproject", projectDir)
 		require.NoError(t, err)
 
 		assert.NotSame(t, globalStore, projectStore)
@@ -114,7 +114,7 @@ func TestStoreManager_GetCurrentStore(t *testing.T) {
 		projectDir := env.GetProjectDir("myproject")
 		store, scope, err := sm.GetCurrentStore(projectDir, false)
 		require.NoError(t, err)
-		assert.Equal(t, "myproject", scope)
+		assert.Equal(t, "project:myproject", scope)
 		assert.NotNil(t, store)
 	})
 
@@ -226,11 +226,11 @@ func TestStoreManager_Integration(t *testing.T) {
 
 	// Get stores for different projects
 	proj1Dir := env.GetProjectDir("proj1")
-	proj1Store, err := sm.GetStore("proj1", proj1Dir)
+	proj1Store, err := sm.GetStore("project:proj1", proj1Dir)
 	require.NoError(t, err)
 
 	proj2Dir := env.GetProjectDir("proj2")
-	proj2Store, err := sm.GetStore("proj2", proj2Dir)
+	proj2Store, err := sm.GetStore("project:proj2", proj2Dir)
 	require.NoError(t, err)
 
 	globalStore, err := sm.GetStore("global", "")

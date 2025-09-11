@@ -78,14 +78,16 @@ func (sm *StoreManager) GetCurrentStore(workingDir string, globalFlag bool) (*St
 		scope = "global"
 		store, err = sm.GetGlobalStore()
 	} else {
-		scope, err = project.GetCurrentProject(workingDir)
-		if err != nil {
-			return nil, "", fmt.Errorf("failed to get current project: %w", err)
+		projectName, projectErr := project.GetCurrentProject(workingDir)
+		if projectErr != nil {
+			return nil, "", fmt.Errorf("failed to get current project: %w", projectErr)
 		}
 
-		if scope == "global" {
+		if projectName == "global" {
+			scope = "global"
 			store, err = sm.GetGlobalStore()
 		} else {
+			scope = fmt.Sprintf("project:%s", projectName)
 			store, err = sm.GetProjectStore(scope, workingDir)
 		}
 	}
@@ -124,7 +126,13 @@ func (sm *StoreManager) getStorePath(scope, projectDir string) (string, error) {
 		return "", fmt.Errorf("failed to find git root for project scope %s: %w", scope, err)
 	}
 
-	return cfg.FileSystem.Join(gitRoot, ".padz", "scratch", scope), nil
+	// Extract project name from scope (e.g., "project:myproject" -> "myproject")
+	projectName := scope
+	if len(scope) > 8 && scope[:8] == "project:" {
+		projectName = scope[8:]
+	}
+
+	return cfg.FileSystem.Join(gitRoot, ".padz", "scratch", projectName), nil
 }
 
 // findGitRoot traverses up the directory tree to find the git repository root

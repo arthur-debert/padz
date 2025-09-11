@@ -276,18 +276,24 @@ func ResolveScratchWithStoreManager(workingDir string, globalFlag bool, id strin
 		if len(parts) == 2 {
 			scope := parts[0]
 
+			// Normalize scope format for MergedStore
+			normalizedScope := scope
+			if scope != "global" && !strings.HasPrefix(scope, "project:") {
+				normalizedScope = fmt.Sprintf("project:%s", scope)
+			}
+
 			// Create working directories map for the specific scope
 			workingDirs := make(map[string]string)
-			if scope == "global" {
-				workingDirs[scope] = ""
+			if normalizedScope == "global" {
+				workingDirs[normalizedScope] = ""
 			} else {
 				// For project scopes, we need to find the project directory
 				// For now, assume current working directory belongs to the requested scope
-				workingDirs[scope] = workingDir
+				workingDirs[normalizedScope] = workingDir
 			}
 
 			// Create merged store with just this scope
-			mergedStore, err := store.NewMergedStore(sm, []string{scope}, workingDirs)
+			mergedStore, err := store.NewMergedStore(sm, []string{normalizedScope}, workingDirs)
 			if err != nil {
 				return nil, fmt.Errorf("failed to create merged store for scope %s: %w", scope, err)
 			}

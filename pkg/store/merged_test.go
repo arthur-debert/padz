@@ -19,7 +19,7 @@ func TestMergedStore_GetAllScratches(t *testing.T) {
 	setupTestScratches := func() {
 		// Project 1 scratches
 		proj1Dir := env.GetProjectDir("proj1")
-		proj1Store, err := sm.GetStore("proj1", proj1Dir)
+		proj1Store, err := sm.GetStore("project:proj1", proj1Dir)
 		require.NoError(t, err)
 
 		proj1Scratch1 := Scratch{
@@ -39,7 +39,7 @@ func TestMergedStore_GetAllScratches(t *testing.T) {
 
 		// Project 2 scratches
 		proj2Dir := env.GetProjectDir("proj2")
-		proj2Store, err := sm.GetStore("proj2", proj2Dir)
+		proj2Store, err := sm.GetStore("project:proj2", proj2Dir)
 		require.NoError(t, err)
 
 		proj2Scratch := Scratch{
@@ -67,11 +67,11 @@ func TestMergedStore_GetAllScratches(t *testing.T) {
 
 	// Create merged store
 	workingDirs := map[string]string{
-		"proj1":  env.GetProjectDir("proj1"),
-		"proj2":  env.GetProjectDir("proj2"),
-		"global": "",
+		"project:proj1": env.GetProjectDir("proj1"),
+		"project:proj2": env.GetProjectDir("proj2"),
+		"global":        "",
 	}
-	mergedStore, err := NewMergedStore(sm, []string{"proj1", "proj2", "global"}, workingDirs)
+	mergedStore, err := NewMergedStore(sm, []string{"project:proj1", "project:proj2", "global"}, workingDirs)
 	require.NoError(t, err)
 
 	t.Run("get all scratches sorted by most recent", func(t *testing.T) {
@@ -85,15 +85,15 @@ func TestMergedStore_GetAllScratches(t *testing.T) {
 
 		assert.Equal(t, "Project 2 First", scratches[1].Title)
 		assert.Equal(t, "proj2:1", scratches[1].ScopedID)
-		assert.Equal(t, "proj2", scratches[1].Scope)
+		assert.Equal(t, "project:proj2", scratches[1].Scope)
 
 		assert.Equal(t, "Project 1 Second", scratches[2].Title)
 		assert.Equal(t, "proj1:1", scratches[2].ScopedID) // proj1 sorted internally by newest first
-		assert.Equal(t, "proj1", scratches[2].Scope)
+		assert.Equal(t, "project:proj1", scratches[2].Scope)
 
 		assert.Equal(t, "Project 1 First", scratches[3].Title)
 		assert.Equal(t, "proj1:2", scratches[3].ScopedID)
-		assert.Equal(t, "proj1", scratches[3].Scope)
+		assert.Equal(t, "project:proj1", scratches[3].Scope)
 	})
 
 	t.Run("scoped IDs are correctly formatted", func(t *testing.T) {
@@ -117,7 +117,7 @@ func TestMergedStore_GetScopedScratch(t *testing.T) {
 
 	// Setup test data
 	projectDir := env.GetProjectDir("myproject")
-	projectStore, err := sm.GetStore("myproject", projectDir)
+	projectStore, err := sm.GetStore("project:myproject", projectDir)
 	require.NoError(t, err)
 
 	testScratch := Scratch{
@@ -129,16 +129,16 @@ func TestMergedStore_GetScopedScratch(t *testing.T) {
 
 	// Create merged store
 	workingDirs := map[string]string{
-		"myproject": projectDir,
+		"project:myproject": projectDir,
 	}
-	mergedStore, err := NewMergedStore(sm, []string{"myproject"}, workingDirs)
+	mergedStore, err := NewMergedStore(sm, []string{"project:myproject"}, workingDirs)
 	require.NoError(t, err)
 
 	t.Run("valid scoped ID", func(t *testing.T) {
 		scopedScratch, err := mergedStore.GetScopedScratch("myproject:1")
 		require.NoError(t, err)
 		assert.Equal(t, "Test Scratch", scopedScratch.Title)
-		assert.Equal(t, "myproject", scopedScratch.Scope)
+		assert.Equal(t, "project:myproject", scopedScratch.Scope)
 		assert.Equal(t, "myproject:1", scopedScratch.ScopedID)
 		assert.Equal(t, 1, scopedScratch.Index)
 	})
@@ -169,15 +169,15 @@ func TestMergedStore_GetAvailableScopes(t *testing.T) {
 	sm := NewStoreManager()
 
 	workingDirs := map[string]string{
-		"proj1":  env.GetProjectDir("proj1"),
-		"proj2":  env.GetProjectDir("proj2"),
-		"global": "",
+		"project:proj1": env.GetProjectDir("proj1"),
+		"project:proj2": env.GetProjectDir("proj2"),
+		"global":        "",
 	}
-	mergedStore, err := NewMergedStore(sm, []string{"proj1", "proj2", "global"}, workingDirs)
+	mergedStore, err := NewMergedStore(sm, []string{"project:proj1", "project:proj2", "global"}, workingDirs)
 	require.NoError(t, err)
 
 	scopes := mergedStore.GetAvailableScopes()
-	expected := []string{"global", "proj1", "proj2"}
+	expected := []string{"global", "project:proj1", "project:proj2"}
 	assert.Equal(t, expected, scopes)
 }
 
@@ -277,7 +277,7 @@ func TestMergedStore_Integration(t *testing.T) {
 
 	// Webapp project
 	webappDir := env.GetProjectDir("webapp")
-	webappStore, err := sm.GetStore("webapp", webappDir)
+	webappStore, err := sm.GetStore("project:webapp", webappDir)
 	require.NoError(t, err)
 
 	webappScratch1 := Scratch{
@@ -299,7 +299,7 @@ func TestMergedStore_Integration(t *testing.T) {
 
 	// Mobile project
 	mobileDir := env.GetProjectDir("mobile")
-	mobileStore, err := sm.GetStore("mobile", mobileDir)
+	mobileStore, err := sm.GetStore("project:mobile", mobileDir)
 	require.NoError(t, err)
 
 	mobileScratch := Scratch{
@@ -326,11 +326,11 @@ func TestMergedStore_Integration(t *testing.T) {
 
 	// Create merged store
 	workingDirs := map[string]string{
-		"webapp": webappDir,
-		"mobile": mobileDir,
-		"global": "",
+		"project:webapp": webappDir,
+		"project:mobile": mobileDir,
+		"global":         "",
 	}
-	mergedStore, err := NewMergedStore(sm, []string{"webapp", "mobile", "global"}, workingDirs)
+	mergedStore, err := NewMergedStore(sm, []string{"project:webapp", "project:mobile", "global"}, workingDirs)
 	require.NoError(t, err)
 
 	// Test cross-scope listing
@@ -360,5 +360,5 @@ func TestMergedStore_Integration(t *testing.T) {
 	scopedScratch, err := mergedStore.GetScopedScratch("webapp:1")
 	require.NoError(t, err)
 	assert.Equal(t, "Add dark mode", scopedScratch.Title)
-	assert.Equal(t, "webapp", scopedScratch.Scope)
+	assert.Equal(t, "project:webapp", scopedScratch.Scope)
 }
