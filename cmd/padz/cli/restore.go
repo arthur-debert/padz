@@ -71,7 +71,8 @@ Examples:
 				}
 			}
 
-			// TODO: Update ShowListAfterCommand to use StoreManager
+			// Show list after command
+			ShowListAfterCommandWithStoreManager(dir, global, all)
 
 			// Success message
 			var message string

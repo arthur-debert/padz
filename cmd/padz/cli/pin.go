@@ -46,7 +46,8 @@ func runPin(cmd *cobra.Command, args []string) {
 		os.Exit(1)
 	}
 
-	// TODO: Update ShowListAfterCommand to use StoreManager
+	// Show list after command
+	ShowListAfterCommandWithStoreManager(dir, global, false)
 
 	// Show success message if not silent
 	if !IsSilentMode() {
@@ -97,7 +98,8 @@ func runUnpin(cmd *cobra.Command, args []string) {
 		os.Exit(1)
 	}
 
-	// TODO: Update ShowListAfterCommand to use StoreManager
+	// Show list after command
+	ShowListAfterCommandWithStoreManager(dir, global, false)
 
 	// Show success message if not silent
 	if !IsSilentMode() {

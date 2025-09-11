@@ -79,16 +79,7 @@ func newDeleteCmd() *cobra.Command {
 			}
 
 			// Show list in verbose mode (before success message)
-			if !hasScopedIDs {
-				// Only show list for legacy approach (when we have s and proj available)
-				s, err := store.NewStore()
-				if err == nil {
-					proj, err := project.GetCurrentProject(dir)
-					if err == nil {
-						ShowListAfterCommand(s, all, global, proj)
-					}
-				}
-			}
+			ShowListAfterCommandWithStoreManager(dir, global, all)
 
 			// Show success message with scratch titles
 			var successMsg string

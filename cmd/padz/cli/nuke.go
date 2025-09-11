@@ -133,7 +133,8 @@ func newNukeCmd() *cobra.Command {
 					handleTerminalError(err, format)
 				}
 
-				// TODO: Update ShowListAfterCommand to use StoreManager
+				// Show list after command
+				ShowListAfterCommandWithStoreManager(dir, global, all)
 
 				// Use the actual deleted count from the result
 				var successMsg string

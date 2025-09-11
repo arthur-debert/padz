@@ -43,7 +43,8 @@ func newCleanupCmd() *cobra.Command {
 				return
 			}
 
-			// TODO: Update ShowListAfterCommand to use StoreManager
+			// Show list after command
+			ShowListAfterCommandWithStoreManager(dir, false, false)
 
 			// Show success message with count of deleted items
 			message := fmt.Sprintf("Cleanup completed successfully. Permanently deleted %d old scratches (older than %d days).", deletedCount, days)

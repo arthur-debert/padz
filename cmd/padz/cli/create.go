@@ -66,8 +66,8 @@ Examples:
 				}
 			}
 
-			// TODO: Update ShowListAfterCommand to use StoreManager in Phase 2
-			// ShowListAfterCommand(s, false, globalFlag, proj)
+			// Show list after command
+			ShowListAfterCommandWithStoreManager(dir, globalFlag, false)
 
 			// Show success message if not silent
 			if !IsSilentMode() {
