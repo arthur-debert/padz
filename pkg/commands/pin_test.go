@@ -376,3 +376,305 @@ func TestLs_WithPinned(t *testing.T) {
 	assert.Equal(t, "pinned1", result[2].ID) // 48 hours ago (pinned)
 	assert.Equal(t, "pinned2", result[3].ID) // 72 hours ago (pinned)
 }
+
+func TestPinMultiple(t *testing.T) {
+	t.Run("pin multiple scratches successfully", func(t *testing.T) {
+		cfg, cleanup := testutil.SetupTestEnvironment(t)
+		defer cleanup()
+
+		st, err := store.NewStoreWithConfig(cfg)
+		require.NoError(t, err)
+		project := "test-project"
+
+		// Create multiple scratches
+		scratches := []store.Scratch{
+			{
+				ID:        "test1",
+				Project:   project,
+				Title:     "Test 1",
+				CreatedAt: time.Now(),
+			},
+			{
+				ID:        "test2",
+				Project:   project,
+				Title:     "Test 2",
+				CreatedAt: time.Now().Add(-1 * time.Hour),
+			},
+			{
+				ID:        "test3",
+				Project:   project,
+				Title:     "Test 3",
+				CreatedAt: time.Now().Add(-2 * time.Hour),
+			},
+		}
+
+		for _, s := range scratches {
+			err = st.AddScratch(s)
+			require.NoError(t, err)
+		}
+
+		// Pin multiple by index
+		pinnedTitles, err := PinMultiple(st, false, false, project, []string{"1", "3"})
+		assert.NoError(t, err)
+		assert.Equal(t, 2, len(pinnedTitles))
+		assert.Contains(t, pinnedTitles, "Test 1")
+		assert.Contains(t, pinnedTitles, "Test 3")
+
+		// Verify they're pinned
+		updatedScratches := st.GetScratches()
+		for _, s := range updatedScratches {
+			if s.ID == "test1" || s.ID == "test3" {
+				assert.True(t, s.IsPinned)
+				assert.NotZero(t, s.PinnedAt)
+			} else {
+				assert.False(t, s.IsPinned)
+			}
+		}
+	})
+
+	t.Run("skip already pinned scratches", func(t *testing.T) {
+		cfg, cleanup := testutil.SetupTestEnvironment(t)
+		defer cleanup()
+
+		st, err := store.NewStoreWithConfig(cfg)
+		require.NoError(t, err)
+		project := "test-project"
+
+		// Create scratches with one already pinned
+		scratches := []store.Scratch{
+			{
+				ID:        "test1",
+				Project:   project,
+				Title:     "Test 1",
+				CreatedAt: time.Now(),
+				IsPinned:  true,
+				PinnedAt:  time.Now(),
+			},
+			{
+				ID:        "test2",
+				Project:   project,
+				Title:     "Test 2",
+				CreatedAt: time.Now().Add(-1 * time.Hour),
+			},
+		}
+
+		for _, s := range scratches {
+			err = st.AddScratch(s)
+			require.NoError(t, err)
+		}
+
+		// Try to pin both
+		pinnedTitles, err := PinMultiple(st, false, false, project, []string{"1", "2"})
+		assert.NoError(t, err)
+		assert.Equal(t, 1, len(pinnedTitles)) // Only one newly pinned
+		assert.Contains(t, pinnedTitles, "Test 2")
+	})
+
+	t.Run("error when exceeding pin limit", func(t *testing.T) {
+		cfg, cleanup := testutil.SetupTestEnvironment(t)
+		defer cleanup()
+
+		st, err := store.NewStoreWithConfig(cfg)
+		require.NoError(t, err)
+		project := "test-project"
+
+		// Create scratches - MaxPinnedScratches already pinned, plus extras
+		for i := 0; i < store.MaxPinnedScratches+3; i++ {
+			scratch := store.Scratch{
+				ID:        fmt.Sprintf("test%d", i),
+				Project:   project,
+				Title:     fmt.Sprintf("Test %d", i),
+				CreatedAt: time.Now().Add(-time.Duration(i) * time.Hour),
+			}
+			// Pin the first MaxPinnedScratches
+			if i < store.MaxPinnedScratches-1 { // Leave one slot
+				scratch.IsPinned = true
+				scratch.PinnedAt = time.Now()
+			}
+			err = st.AddScratch(scratch)
+			require.NoError(t, err)
+		}
+
+		// Try to pin 2 more (should fail as only 1 slot available)
+		ids := []string{
+			fmt.Sprintf("%d", store.MaxPinnedScratches),
+			fmt.Sprintf("%d", store.MaxPinnedScratches+1),
+		}
+		_, err = PinMultiple(st, false, false, project, ids)
+		assert.Error(t, err)
+		assert.Contains(t, err.Error(), "only 1 slots available")
+	})
+
+	t.Run("handle duplicate IDs", func(t *testing.T) {
+		cfg, cleanup := testutil.SetupTestEnvironment(t)
+		defer cleanup()
+
+		st, err := store.NewStoreWithConfig(cfg)
+		require.NoError(t, err)
+		project := "test-project"
+
+		// Create a scratch
+		scratch := store.Scratch{
+			ID:        "test1",
+			Project:   project,
+			Title:     "Test 1",
+			CreatedAt: time.Now(),
+		}
+		err = st.AddScratch(scratch)
+		require.NoError(t, err)
+
+		// Pin with duplicate IDs
+		pinnedTitles, err := PinMultiple(st, false, false, project, []string{"1", "1", "1"})
+		assert.NoError(t, err)
+		assert.Equal(t, 1, len(pinnedTitles)) // Only one unique scratch pinned
+		assert.Contains(t, pinnedTitles, "Test 1")
+	})
+}
+
+func TestUnpinMultiple(t *testing.T) {
+	t.Run("unpin multiple scratches successfully", func(t *testing.T) {
+		cfg, cleanup := testutil.SetupTestEnvironment(t)
+		defer cleanup()
+
+		st, err := store.NewStoreWithConfig(cfg)
+		require.NoError(t, err)
+		project := "test-project"
+
+		// Create multiple pinned scratches
+		scratches := []store.Scratch{
+			{
+				ID:        "test1",
+				Project:   project,
+				Title:     "Test 1",
+				CreatedAt: time.Now(),
+				IsPinned:  true,
+				PinnedAt:  time.Now(),
+			},
+			{
+				ID:        "test2",
+				Project:   project,
+				Title:     "Test 2",
+				CreatedAt: time.Now().Add(-1 * time.Hour),
+				IsPinned:  true,
+				PinnedAt:  time.Now(),
+			},
+			{
+				ID:        "test3",
+				Project:   project,
+				Title:     "Test 3",
+				CreatedAt: time.Now().Add(-2 * time.Hour),
+				IsPinned:  true,
+				PinnedAt:  time.Now(),
+			},
+		}
+
+		for _, s := range scratches {
+			err = st.AddScratch(s)
+			require.NoError(t, err)
+		}
+
+		// Unpin multiple
+		unpinnedTitles, err := UnpinMultiple(st, false, false, project, []string{"p1", "p3"})
+		assert.NoError(t, err)
+		assert.Equal(t, 2, len(unpinnedTitles))
+		assert.Contains(t, unpinnedTitles, "Test 1")
+		assert.Contains(t, unpinnedTitles, "Test 3")
+
+		// Verify they're unpinned
+		updatedScratches := st.GetScratches()
+		for _, s := range updatedScratches {
+			switch s.ID {
+			case "test1", "test3":
+				assert.False(t, s.IsPinned)
+				assert.Zero(t, s.PinnedAt)
+			case "test2":
+				assert.True(t, s.IsPinned) // This one should still be pinned
+			}
+		}
+	})
+
+	t.Run("skip non-pinned scratches", func(t *testing.T) {
+		cfg, cleanup := testutil.SetupTestEnvironment(t)
+		defer cleanup()
+
+		st, err := store.NewStoreWithConfig(cfg)
+		require.NoError(t, err)
+		project := "test-project"
+
+		// Create scratches with one not pinned
+		scratches := []store.Scratch{
+			{
+				ID:        "test1",
+				Project:   project,
+				Title:     "Test 1",
+				CreatedAt: time.Now(),
+				IsPinned:  true,
+				PinnedAt:  time.Now(),
+			},
+			{
+				ID:        "test2",
+				Project:   project,
+				Title:     "Test 2",
+				CreatedAt: time.Now().Add(-1 * time.Hour),
+			},
+		}
+
+		for _, s := range scratches {
+			err = st.AddScratch(s)
+			require.NoError(t, err)
+		}
+
+		// Try to unpin both
+		unpinnedTitles, err := UnpinMultiple(st, false, false, project, []string{"1", "2"})
+		assert.NoError(t, err)
+		assert.Equal(t, 1, len(unpinnedTitles)) // Only one was actually pinned
+		assert.Contains(t, unpinnedTitles, "Test 1")
+	})
+
+	t.Run("unpin by mixed indices", func(t *testing.T) {
+		cfg, cleanup := testutil.SetupTestEnvironment(t)
+		defer cleanup()
+
+		st, err := store.NewStoreWithConfig(cfg)
+		require.NoError(t, err)
+		project := "test-project"
+
+		// Create scratches
+		scratches := []store.Scratch{
+			{
+				ID:        "test1",
+				Project:   project,
+				Title:     "Test 1",
+				CreatedAt: time.Now(),
+				IsPinned:  true,
+				PinnedAt:  time.Now(),
+			},
+			{
+				ID:        "test2",
+				Project:   project,
+				Title:     "Test 2",
+				CreatedAt: time.Now().Add(-1 * time.Hour),
+				IsPinned:  true,
+				PinnedAt:  time.Now(),
+			},
+			{
+				ID:        "test3",
+				Project:   project,
+				Title:     "Test 3",
+				CreatedAt: time.Now().Add(-2 * time.Hour),
+			},
+		}
+
+		for _, s := range scratches {
+			err = st.AddScratch(s)
+			require.NoError(t, err)
+		}
+
+		// Unpin using mixed indices (regular and pinned)
+		unpinnedTitles, err := UnpinMultiple(st, false, false, project, []string{"test1", "p2"})
+		assert.NoError(t, err)
+		assert.Equal(t, 2, len(unpinnedTitles))
+		assert.Contains(t, unpinnedTitles, "Test 1")
+		assert.Contains(t, unpinnedTitles, "Test 2")
+	})
+}

@@ -56,15 +56,15 @@ func TestCopyCommand(t *testing.T) {
 		t.Error("Expected Args to be set")
 	}
 
-	// Test that it requires exactly one argument
+	// Test that it requires at least one argument
 	if err := copyCmd.Args(copyCmd, []string{}); err == nil {
 		t.Error("Expected error with no arguments")
 	}
-	if err := copyCmd.Args(copyCmd, []string{"1", "2"}); err == nil {
-		t.Error("Expected error with multiple arguments")
-	}
 	if err := copyCmd.Args(copyCmd, []string{"1"}); err != nil {
 		t.Errorf("Expected no error with one argument, got: %v", err)
+	}
+	if err := copyCmd.Args(copyCmd, []string{"1", "2"}); err != nil {
+		t.Errorf("Expected no error with multiple arguments, got: %v", err)
 	}
 
 	// Test flags

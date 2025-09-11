@@ -22,7 +22,7 @@ func newDeleteCmd() *cobra.Command {
 		Aliases: []string{"rm", "d", "del"},
 		Short:   DeleteShort,
 		Long:    DeleteLong,
-		Args:    cobra.ExactArgs(1),
+		Args:    cobra.MinimumNArgs(1),
 		Run: func(cmd *cobra.Command, args []string) {
 			all, _ := cmd.Flags().GetBool("all")
 			global, _ := cmd.Flags().GetBool("global")
@@ -47,22 +47,8 @@ func newDeleteCmd() *cobra.Command {
 				log.Warn().Err(err).Msg("Failed to run discovery")
 			}
 
-			// Get the scratch details before deleting (for the success message)
-			scratch, err := commands.GetScratchByIndex(s, all, global, proj, args[0])
-			if err != nil {
-				// Format output
-				format, formatErr := output.GetFormat(outputFormat)
-				if formatErr != nil {
-					log.Fatal().Err(formatErr).Msg("Failed to get output format")
-				}
-				handleTerminalError(err, format)
-				return
-			}
-
-			scratchTitle := scratch.Title
-
-			// Delete the scratch
-			err = commands.Delete(s, all, global, proj, args[0])
+			// Delete multiple scratches
+			deletedTitles, err := commands.DeleteMultiple(s, all, global, proj, args)
 
 			// Format output
 			format, formatErr := output.GetFormat(outputFormat)
@@ -78,8 +64,15 @@ func newDeleteCmd() *cobra.Command {
 			// Show list in verbose mode (before success message)
 			ShowListAfterCommand(s, all, global, proj)
 
-			// Show success message with scratch title
-			successMsg := fmt.Sprintf("The padz \"%s\" has been deleted", scratchTitle)
+			// Show success message with scratch titles
+			var successMsg string
+			if len(deletedTitles) == 0 {
+				successMsg = "No scratches were deleted (already deleted or not found)"
+			} else if len(deletedTitles) == 1 {
+				successMsg = fmt.Sprintf("The padz \"%s\" has been deleted", deletedTitles[0])
+			} else {
+				successMsg = fmt.Sprintf("%d padz have been deleted", len(deletedTitles))
+			}
 			handleTerminalSuccess(successMsg, format)
 		},
 	}

@@ -22,7 +22,7 @@ func TestViewCommand(t *testing.T) {
 		t.Errorf("expected Long to be %q, got %q", ViewLong, cmd.Long)
 	}
 
-	// Test that it expects exactly one argument
+	// Test that it expects at least one argument
 	if err := cmd.Args(cmd, []string{}); err == nil {
 		t.Error("expected error with no arguments")
 	}
@@ -31,8 +31,8 @@ func TestViewCommand(t *testing.T) {
 		t.Errorf("unexpected error with one argument: %v", err)
 	}
 
-	if err := cmd.Args(cmd, []string{"1", "2"}); err == nil {
-		t.Error("expected error with two arguments")
+	if err := cmd.Args(cmd, []string{"1", "2"}); err != nil {
+		t.Errorf("unexpected error with multiple arguments: %v", err)
 	}
 }
 

@@ -19,12 +19,13 @@ func Export(s *store.Store, all, global bool, project string, ids []string, form
 		// Export all scratches
 		scratches = Ls(s, all, global, project)
 	} else {
-		// Export specific scratches
-		for _, id := range ids {
-			scratch, err := ResolveScratchID(s, all, global, project, id)
-			if err != nil {
-				return fmt.Errorf("scratch not found: %s", id)
-			}
+		// Export specific scratches using centralized resolution
+		resolvedScratches, err := ResolveMultipleIDs(s, all, global, project, ids)
+		if err != nil {
+			return err
+		}
+		// Convert pointers to values
+		for _, scratch := range resolvedScratches {
 			scratches = append(scratches, *scratch)
 		}
 	}

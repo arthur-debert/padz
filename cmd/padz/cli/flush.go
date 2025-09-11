@@ -21,7 +21,7 @@ func newFlushCmd() *cobra.Command {
 	var olderThanStr string
 
 	cmd := &cobra.Command{
-		Use:     "flush [id]",
+		Use:     "flush [id...]",
 		Aliases: []string{"purge"},
 		Short:   "Permanently delete soft-deleted scratches (hard delete)",
 		Long: `Permanently delete soft-deleted scratches from disk.
@@ -29,8 +29,10 @@ func newFlushCmd() *cobra.Command {
 Examples:
   padz flush                    # Flush all soft-deleted scratches
   padz flush d1                 # Flush specific deleted scratch
+  padz flush d1 d2 d3           # Flush multiple deleted scratches
   padz flush --older-than 7d    # Flush deleted scratches older than 7 days
   padz flush --older-than 24h   # Flush deleted scratches older than 24 hours`,
+		Args: cobra.MinimumNArgs(0),
 		Run: func(cmd *cobra.Command, args []string) {
 			// Parse duration if provided
 			var olderThan time.Duration
@@ -65,9 +67,33 @@ Examples:
 				proj = currentProj
 			}
 
-			// If a specific ID is provided, flush that one
+			// If specific IDs are provided, flush those
 			if len(args) > 0 {
-				err = commands.Flush(s, all, global, proj, args[0], 0)
+				flushedCount, err := commands.FlushMultiple(s, all, global, proj, args)
+
+				// Format output
+				format, formatErr := output.GetFormat(outputFormat)
+				if formatErr != nil {
+					log.Fatal().Err(formatErr).Msg("Failed to get output format")
+				}
+
+				if err != nil {
+					handleTerminalError(err, format)
+					return
+				}
+
+				// Success message
+				var message string
+				switch flushedCount {
+				case 0:
+					message = "No scratches were flushed"
+				case 1:
+					message = "Successfully flushed 1 scratch"
+				default:
+					message = fmt.Sprintf("Successfully flushed %d scratches", flushedCount)
+				}
+				handleTerminalSuccess(message, format)
+				return
 			} else {
 				// Otherwise flush based on criteria
 				err = commands.Flush(s, all, global, proj, "", olderThan)

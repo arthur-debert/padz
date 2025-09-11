@@ -1,29 +1,65 @@
 package commands
 
 import (
-	"fmt"
 	"time"
 
 	"github.com/arthur-debert/padz/pkg/store"
 )
 
-// Restore restores soft-deleted scratches
-func Restore(s *store.Store, all bool, global bool, project string, indexStr string, newerThan time.Duration) error {
-	// If a specific index is provided, restore that single scratch
-	if indexStr != "" {
-		scratch, err := GetScratchByIndex(s, all, global, project, indexStr)
-		if err != nil {
-			return err
-		}
+// RestoreMultiple restores multiple soft-deleted scratches by their IDs
+func RestoreMultiple(s *store.Store, all bool, global bool, project string, ids []string) ([]string, error) {
+	// Resolve all IDs first
+	scratches, err := ResolveMultipleIDs(s, all, global, project, ids)
+	if err != nil {
+		return nil, err
+	}
 
+	// Collect all scratches to restore
+	var scratchesToRestore []store.Scratch
+	var restoredTitles []string
+
+	for _, scratch := range scratches {
+		// Only restore items that are actually deleted
 		if !scratch.IsDeleted {
-			return fmt.Errorf("scratch %s is not deleted", indexStr)
+			continue
 		}
 
 		scratch.IsDeleted = false
 		scratch.DeletedAt = nil
+		scratchesToRestore = append(scratchesToRestore, *scratch)
+		restoredTitles = append(restoredTitles, scratch.Title)
+	}
 
-		return s.UpdateScratchAtomic(*scratch)
+	// Update all scratches atomically
+	if len(scratchesToRestore) > 0 {
+		// Get all current scratches
+		allScratches := s.GetScratches()
+
+		// Update the scratches that need to be restored
+		for i := range allScratches {
+			for _, toRestore := range scratchesToRestore {
+				if allScratches[i].ID == toRestore.ID {
+					allScratches[i] = toRestore
+					break
+				}
+			}
+		}
+
+		// Save atomically
+		if err := s.SaveScratchesAtomic(allScratches); err != nil {
+			return nil, err
+		}
+	}
+
+	return restoredTitles, nil
+}
+
+// Restore restores soft-deleted scratches
+func Restore(s *store.Store, all bool, global bool, project string, indexStr string, newerThan time.Duration) error {
+	// If a specific index is provided, restore that single scratch using RestoreMultiple
+	if indexStr != "" {
+		_, err := RestoreMultiple(s, all, global, project, []string{indexStr})
+		return err
 	}
 
 	// Otherwise, restore multiple scratches based on criteria
