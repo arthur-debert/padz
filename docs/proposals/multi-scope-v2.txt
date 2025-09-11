@@ -1,0 +1,55 @@
+Title: Multi-Scope Store Design v2
+
+Summary:
+This document proposes a refactor of the multi-scope store implementation. The current monolithic "merged store" will be replaced by a dispatcher model that orchestrates multiple, simpler, single-scope stores. This design aims to simplify the core store logic and improve maintainability.
+
+Core Concepts:
+
+1. Single-Scope Store:
+   - Each scope (e.g., "global", "project") will have its own completely independent store.
+   - A store is responsible for managing a single data directory and its associated metadata/index file.
+   - Crucially, a single-scope store has no knowledge of any other scopes.
+
+2. Dual ID System:
+   - The existing dual ID system will be maintained:
+     - A stable, hard-to-type UUID for internal consistency.
+     - A user-friendly, incremental integer ID for command-line interaction.
+
+3. Explicit vs. Implicit IDs:
+   - We will formalize the distinction between two types of user-facing IDs:
+     - Implicit ID: A simple integer (e.g., `4`). Its scope is inferred from the context (e.g., current directory).
+     - Explicit ID: An ID prefixed with its scope name (e.g., `global-4`, `proj-4`). This form is unambiguous.
+
+Dispatcher Logic (CLI / Command Layer):
+
+The primary change is moving the multi-scope complexity from the store itself to a higher-level dispatcher, which will operate at the command resolution layer.
+
+1. Contextual Operation:
+   - When a command is run that needs to consider multiple scopes (e.g., using an `--all` flag), the dispatcher logic is activated.
+
+2. ID Resolution:
+   - If a user provides an implicit ID, the dispatcher is responsible for resolving it into an explicit ID. The resolution logic (e.g., project scope takes precedence over global) will be centralized here.
+
+3. Targeted Operations (e.g., `open`, `delete`, `copy`):
+   - The dispatcher will parse the scope from the explicit ID.
+   - It will then select the correct single-scope store based on that scope.
+   - The operation (e.g., "fetch data for ID 4") is then passed to that simple store.
+
+4. Aggregate Operations (e.g., `list`, `search`):
+   - The dispatcher will iterate through all active scopes.
+   - It will execute the command (e.g., "list all pads") on each scope's store individually.
+   - The results from each store will be collected and merged at the very end for presentation to the user. Given the small expected data size, a simple concatenation of results is sufficient.
+
+Benefits of this Approach:
+
+1. Significant Simplification: The core store logic becomes trivial. All the complexity of merging, ID collision, and tracking data origins is removed from the data layer.
+
+2. Improved Separation of Concerns:
+   - The `Store` is only concerned with managing its own data.
+   - The `Dispatcher` is only concerned with routing requests to the correct store(s).
+
+3. Enhanced Testability:
+   - Single-scope stores can be tested in complete isolation.
+   - The dispatcher logic can be tested independently using mock stores.
+
+4. Increased Maintainability & Clarity: The overall data flow becomes much clearer (dispatch -> simple store -> result). This makes the codebase easier to understand, debug, and extend in the future.
