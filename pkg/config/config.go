@@ -1,6 +1,7 @@
 package config
 
 import (
+	"github.com/adrg/xdg"
 	"github.com/arthur-debert/padz/pkg/filesystem"
 )
 
@@ -16,9 +17,16 @@ type Config struct {
 
 // DefaultConfig returns the default configuration for production use
 func DefaultConfig() *Config {
+	// Resolve XDG data path at config initialization time
+	dataPath, err := xdg.DataFile("scratch")
+	if err != nil {
+		// Fallback to a reasonable default if XDG fails
+		dataPath = "~/.local/share/scratch"
+	}
+
 	return &Config{
 		FileSystem: filesystem.NewOSFileSystem(),
-		DataPath:   "", // Empty means use XDG default
+		DataPath:   dataPath,
 	}
 }
 

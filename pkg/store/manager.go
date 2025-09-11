@@ -5,7 +5,6 @@ import (
 	"path/filepath"
 	"sync"
 
-	"github.com/adrg/xdg"
 	"github.com/arthur-debert/padz/pkg/config"
 	"github.com/arthur-debert/padz/pkg/project"
 )
@@ -115,19 +114,8 @@ func (sm *StoreManager) getStorePath(scope, projectDir string) (string, error) {
 	cfg := config.GetConfig()
 
 	if scope == "global" {
-		// Global scope: always use the filesystem abstraction
-		if cfg.DataPath != "" {
-			// Use configured path (typically for testing)
-			return cfg.FileSystem.Join(cfg.DataPath, "scratch", "global"), nil
-		}
-
-		// For production without configured path, we need to get XDG path
-		// but still work within filesystem abstraction constraints
-		globalPath, err := xdg.DataFile("scratch/global")
-		if err != nil {
-			return "", fmt.Errorf("failed to get XDG data path: %w", err)
-		}
-		return globalPath, nil
+		// Global scope: use configured data path with global subdirectory
+		return cfg.FileSystem.Join(cfg.DataPath, "scratch", "global"), nil
 	}
 
 	// Project scope: find git root and use .padz directory

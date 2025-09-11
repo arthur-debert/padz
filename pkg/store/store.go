@@ -8,7 +8,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/adrg/xdg"
 	"github.com/arthur-debert/padz/pkg/config"
 	"github.com/arthur-debert/padz/pkg/filelock"
 	"github.com/arthur-debert/padz/pkg/filesystem"
@@ -462,22 +461,10 @@ func GetScratchPath() (string, error) {
 
 func GetScratchPathWithConfig(cfg *config.Config) (string, error) {
 	logger := logging.GetLogger("store.path")
-	var path string
-	var err error
 
-	if cfg.DataPath != "" {
-		// Use configured path for testing
-		path = cfg.FileSystem.Join(cfg.DataPath, dataDirName)
-		logger.Debug().Str("path", path).Msg("Using configured data path")
-	} else {
-		// Use XDG for production
-		path, err = xdg.DataFile(dataDirName)
-		if err != nil {
-			logger.Error().Err(err).Msg("Failed to get XDG data file path")
-			return "", err
-		}
-		logger.Debug().Str("path", path).Msg("Using XDG data path")
-	}
+	// DataPath is always properly configured at config initialization time
+	path := cfg.FileSystem.Join(cfg.DataPath, dataDirName)
+	logger.Debug().Str("path", path).Msg("Using configured data path")
 
 	logger.Debug().Str("path", path).Msg("Creating scratch directory if needed")
 	if err := cfg.FileSystem.MkdirAll(path, 0755); err != nil {
