@@ -189,7 +189,7 @@ func PinMultipleWithStoreManager(workingDir string, globalFlag bool, ids []strin
 		}
 
 		// Skip already pinned items
-		if scopedScratch.Scratch.IsPinned {
+		if scopedScratch.IsPinned {
 			continue
 		}
 
@@ -318,7 +318,7 @@ func UnpinMultipleWithStoreManager(workingDir string, globalFlag bool, ids []str
 		}
 
 		// Skip non-pinned items
-		if !scopedScratch.Scratch.IsPinned {
+		if !scopedScratch.IsPinned {
 			continue
 		}
 

@@ -157,7 +157,7 @@ func RestoreMultipleWithStoreManager(workingDir string, globalFlag bool, ids []s
 		}
 
 		// Skip non-deleted items
-		if !scopedScratch.Scratch.IsDeleted {
+		if !scopedScratch.IsDeleted {
 			continue
 		}
 
