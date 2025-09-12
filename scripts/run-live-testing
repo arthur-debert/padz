@@ -62,6 +62,37 @@ setup_directories() {
     echo -e "  ${BLUE}projectfoo:${NC} ${PROJECT_FOO}"
 }
 
+# Function to validate and setup padz binary
+setup_padz_binary() {
+    PADZ_BIN="${PROJECT_ROOT}/bin/padz"
+    
+    # Build padz if binary doesn't exist
+    if [[ ! -x "${PADZ_BIN}" ]]; then
+        echo -e "${YELLOW}Building padz binary...${NC}"
+        if (cd "${PROJECT_ROOT}" && ./scripts/build > /dev/null 2>&1); then
+            echo -e "${GREEN}✓ Padz binary built successfully${NC}"
+        else
+            echo -e "${RED}✗ Failed to build padz binary${NC}" >&2
+            return 1
+        fi
+    else
+        echo -e "${GREEN}✓ Padz binary found${NC}"
+    fi
+    
+    # Add project bin directory to PATH
+    export PATH="${PROJECT_ROOT}/bin:${PATH}"
+    
+    # Verify padz is accessible
+    if command -v padz >/dev/null 2>&1; then
+        echo -e "${GREEN}✓ Padz added to PATH${NC}"
+        echo -e "  ${BLUE}Using binary:${NC} $(which padz)"
+        echo -e "  ${BLUE}Version:${NC} $(padz --version 2>/dev/null | head -1 || echo 'unknown')"
+    else
+        echo -e "${RED}✗ Failed to add padz to PATH${NC}" >&2
+        return 1
+    fi
+}
+
 # Function to setup environment variables
 setup_environment() {
     # Set HOME to our isolated env-home directory
@@ -214,6 +245,7 @@ trap cleanup EXIT INT TERM
 echo -e "${BLUE}Setting up padz live testing environment...${NC}"
 setup_directories
 setup_environment
+setup_padz_binary
 
 # Verify XDG directories exist
 mkdir -p "${XDG_DATA_HOME}" "${XDG_CONFIG_HOME}" "${XDG_CACHE_HOME}" "${XDG_STATE_HOME}"
