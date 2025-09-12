@@ -1,0 +1,147 @@
+#!/usr/bin/env bash
+
+set -euo pipefail
+
+# ==============================================================================
+# Constants and Configuration
+# ==============================================================================
+
+# Get the project root directory (where this script is located)
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+
+# Colors for output
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+BLUE='\033[0;34m'
+RED='\033[0;31m'
+NC='\033[0m' # No Color
+GRAY='\033[0;90m'
+DIM="${GRAY}"
+
+# ==============================================================================
+# Functions
+# ==============================================================================
+
+# Function to show help
+show_help() {
+    echo "Usage: $(basename "${0}") [OPTIONS] [COMMAND]"
+    echo ""
+    echo "Launch an isolated test environment for padz development."
+    echo ""
+    echo "Arguments:"
+    echo "  COMMAND     Command or script to execute in the test environment"
+    echo "              If provided, runs the command and exits"
+    echo "              If omitted, starts an interactive shell"
+    echo ""
+    echo "Options:"
+    echo "  --output=FORMAT      Set output format for padz commands (json|text)"
+    echo "                       (default: text)"
+    echo "  --validate           Validate environment setup and exit"
+    echo "  --save-to=FILE       Save test output to specified file"
+    echo "  -h, --help           Show this help message"
+    echo ""
+    echo "Examples:"
+    echo "  $(basename "${0}")                    # Start interactive shell"
+    echo "  $(basename "${0}") 'padz list'        # Run command and exit"
+    echo "  $(basename "${0}") ./test-script.sh   # Run script and exit"
+    echo "  $(basename "${0}") --validate         # Check environment setup"
+    exit 0
+}
+
+# Function to setup test environment directories
+setup_directories() {
+    # Create all directories
+    mkdir -p "${ENV_HOME}" "${PROJECT_FOO}" || {
+        echo -e "${RED}Error: Failed to create test directories${NC}" >&2
+        return 1
+    }
+    
+    echo -e "${GREEN}✓ Created test directories:${NC}"
+    echo -e "  ${BLUE}env-home:${NC} ${ENV_HOME}"
+    echo -e "  ${BLUE}projectfoo:${NC} ${PROJECT_FOO}"
+}
+
+# Function to cleanup on exit
+cleanup() {
+    echo -e "\n${DIM}Cleaning up test environment...${NC}"
+    if [[ -d "${TEMP_BASE}" ]]; then
+        rm -rf "${TEMP_BASE}"
+        echo -e "${GREEN}Test environment cleaned up${NC}"
+    fi
+}
+
+# ==============================================================================
+# Main Script Logic
+# ==============================================================================
+
+# Parse arguments
+COMMAND_TO_RUN=""
+OUTPUT_FORMAT="text" # Default output format
+SAVE_TO_FILE=""
+VALIDATE_ONLY=false
+
+while [[ ${#} -gt 0 ]]; do
+    case "${1}" in
+    -h | --help)
+        show_help
+        ;;
+    --validate)
+        VALIDATE_ONLY=true
+        shift
+        ;;
+    --output=*)
+        # Handle --output=VALUE format
+        value="${1#*=}"
+        if [[ "$value" == "json" || "$value" == "text" ]]; then
+            OUTPUT_FORMAT="$value"
+            shift
+        else
+            echo -e "${RED}Error: Invalid output format '$value'. Valid formats are 'json' or 'text'.${NC}" >&2
+            exit 1
+        fi
+        ;;
+    --save-to=*)
+        # Handle --save-to=VALUE format
+        value="${1#*=}"
+        if [[ -n "$value" ]]; then
+            SAVE_TO_FILE="$value"
+            shift
+        else
+            echo -e "${RED}Error: --save-to= requires a value${NC}" >&2
+            exit 1
+        fi
+        ;;
+    *)
+        # Remaining arguments are the command to execute
+        COMMAND_TO_RUN="${*}"
+        break
+        ;;
+    esac
+done
+
+# Handle validate-only mode (placeholder for now)
+if [[ "${VALIDATE_ONLY}" == true ]]; then
+    echo -e "${GREEN}Environment validation not implemented yet${NC}"
+    exit 0
+fi
+
+# Create a unique temporary directory
+TEMP_BASE="$(mktemp -d)"
+
+# Define temporary directory structure
+ENV_HOME="${TEMP_BASE}/env-home"
+PROJECT_FOO="${TEMP_BASE}/projectfoo"
+
+# Set up trap to cleanup on exit
+trap cleanup EXIT INT TERM
+
+# Initialize test environment
+echo -e "${BLUE}Setting up padz live testing environment...${NC}"
+setup_directories
+
+echo -e "\n${GREEN}Basic environment setup complete!${NC}"
+echo -e "Temporary base: ${DIM}${TEMP_BASE}${NC}"
+
+# For now, just list the directories to verify
+ls -la "${TEMP_BASE}"
