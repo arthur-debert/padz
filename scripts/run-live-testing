@@ -86,6 +86,56 @@ setup_environment() {
     echo -e "  ${BLUE}XDG_DATA_HOME:${NC} ${XDG_DATA_HOME}"
 }
 
+# Function to display welcome message
+display_welcome() {
+    echo -e "\nWelcome to the isolated test environment for padz:\n"
+    echo -e "    ├── env-home ${DIM}\${HOME}${NC} (isolated home directory)"
+    echo -e "    └── projectfoo ${DIM}project directory${NC} *you are here*"
+    echo -e ""
+    echo -e "Environment setup:"
+    echo -e "  • ${GREEN}HOME:${NC} ${HOME}"
+    echo -e "  • ${GREEN}XDG_DATA_HOME:${NC} ${XDG_DATA_HOME}"
+    echo -e "  • ${GREEN}Padz data will be stored in:${NC} ${XDG_DATA_HOME}/padz/store/"
+    echo -e ""
+    echo -e "${YELLOW}Testing instructions:${NC}"
+    echo -e "  1. Use ${BLUE}padz${NC} commands to create/list project-bound pads"
+    echo -e "  2. Use ${BLUE}padz --global${NC} for global scope operations"
+    echo -e "  3. Use ${BLUE}padz --all${NC} to see pads from all scopes"
+    echo -e "  4. ${BLUE}cd \${HOME}${NC} to test default scope detection"
+    echo -e ""
+    echo -e "${DIM}Type 'exit' or press Ctrl+D to leave and cleanup${NC}\n"
+}
+
+# Function to launch interactive shell or execute command
+launch_shell() {
+    local command_to_run="${1:-}"
+
+    # Change to the project directory
+    cd "${PROJECT_FOO}" || {
+        echo -e "${RED}Error: Failed to change to project directory${NC}" >&2
+        exit 1
+    }
+
+    if [[ -n "${command_to_run}" ]]; then
+        # Execute the command and exit
+        echo -e "${DIM}Executing: ${command_to_run}${NC}\n"
+        
+        if [[ -n "${SAVE_TO_FILE}" ]]; then
+            # Save output to file
+            echo -e "${DIM}Saving output to: ${SAVE_TO_FILE}${NC}\n"
+            bash -c "${command_to_run}" | tee "${SAVE_TO_FILE}"
+        else
+            bash -c "${command_to_run}"
+        fi
+    else
+        # Start interactive shell
+        display_welcome
+        
+        # Start a new bash shell (without exec to ensure cleanup trap runs)
+        bash --norc
+    fi
+}
+
 # Function to cleanup on exit
 cleanup() {
     echo -e "\n${DIM}Cleaning up test environment...${NC}"
@@ -165,14 +215,10 @@ echo -e "${BLUE}Setting up padz live testing environment...${NC}"
 setup_directories
 setup_environment
 
-echo -e "\n${GREEN}Environment setup complete!${NC}"
-echo -e "Temporary base: ${DIM}${TEMP_BASE}${NC}"
-
 # Verify XDG directories exist
 mkdir -p "${XDG_DATA_HOME}" "${XDG_CONFIG_HOME}" "${XDG_CACHE_HOME}" "${XDG_STATE_HOME}"
 
-# For now, just list the directories to verify
-echo -e "\n${DIM}Directory structure:${NC}"
-ls -la "${TEMP_BASE}"
-echo -e "\n${DIM}HOME directory:${NC}"
-ls -la "${HOME}"
+echo -e "\n${GREEN}Environment setup complete!${NC}"
+
+# Launch shell or execute command
+launch_shell "${COMMAND_TO_RUN}"
