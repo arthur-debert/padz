@@ -158,9 +158,10 @@ display_welcome() {
     echo -e "${DIM}Type 'exit' or press Ctrl+D to leave and cleanup${NC}\n"
 }
 
-# Function to launch interactive shell or execute command
+# Function to launch interactive shell, execute command, or run script
 launch_shell() {
     local command_to_run="${1:-}"
+    local script_to_run="${2:-}"
 
     # Change to the project directory
     cd "${PROJECT_FOO}" || {
@@ -168,7 +169,21 @@ launch_shell() {
         exit 1
     }
 
-    if [[ -n "${command_to_run}" ]]; then
+    if [[ -n "${script_to_run}" ]]; then
+        # Execute a script file
+        echo -e "${DIM}Executing script: ${script_to_run}${NC}\n"
+        
+        # Make sure script is executable
+        chmod +x "${script_to_run}" 2>/dev/null || true
+        
+        if [[ -n "${SAVE_TO_FILE}" ]]; then
+            # Save output to file
+            echo -e "${DIM}Saving output to: ${SAVE_TO_FILE}${NC}\n"
+            bash "${script_to_run}" | tee "${SAVE_TO_FILE}"
+        else
+            bash "${script_to_run}"
+        fi
+    elif [[ -n "${command_to_run}" ]]; then
         # Execute the command and exit
         echo -e "${DIM}Executing: ${command_to_run}${NC}\n"
         
@@ -202,6 +217,7 @@ cleanup() {
 # ==============================================================================
 
 # Parse arguments
+SCRIPT_TO_RUN=""
 COMMAND_TO_RUN=""
 OUTPUT_FORMAT="text" # Default output format
 SAVE_TO_FILE=""
@@ -235,6 +251,22 @@ while [[ ${#} -gt 0 ]]; do
             shift
         else
             echo -e "${RED}Error: --save-to= requires a value${NC}" >&2
+            exit 1
+        fi
+        ;;
+    *.sh)
+        # Script file to execute
+        if [[ -z "${SCRIPT_TO_RUN}" ]]; then
+            SCRIPT_TO_RUN="${1}"
+            if [[ ! -f "${SCRIPT_TO_RUN}" ]]; then
+                echo -e "${RED}Error: Script file '${SCRIPT_TO_RUN}' does not exist${NC}" >&2
+                exit 1
+            fi
+            # Convert to absolute path
+            SCRIPT_TO_RUN="$(cd "$(dirname "${SCRIPT_TO_RUN}")" && pwd)/$(basename "${SCRIPT_TO_RUN}")"
+            shift
+        else
+            echo -e "${RED}Error: Multiple scripts specified${NC}" >&2
             exit 1
         fi
         ;;
@@ -274,5 +306,5 @@ mkdir -p "${XDG_DATA_HOME}" "${XDG_CONFIG_HOME}" "${XDG_CACHE_HOME}" "${XDG_STAT
 
 echo -e "\n${GREEN}Environment setup complete!${NC}"
 
-# Launch shell or execute command
-launch_shell "${COMMAND_TO_RUN}"
+# Launch shell, execute command, or run script
+launch_shell "${COMMAND_TO_RUN}" "${SCRIPT_TO_RUN}"
