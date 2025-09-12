@@ -14,6 +14,34 @@ func NewStore2Command() *cobra.Command {
 	cmd.AddCommand(newCreateCommand())
 	cmd.AddCommand(newViewCommand())
 	cmd.AddCommand(newListCommand())
+	cmd.AddCommand(newDeleteCommand())
+	cmd.AddCommand(newSearchCommand())
+	cmd.AddCommand(newCopyCommand())
 
 	return cmd
+}
+
+// Export individual commands for v2 migration
+func NewCreateCommand() *cobra.Command {
+	return newCreateCommand()
+}
+
+func NewViewCommand() *cobra.Command {
+	return newViewCommand()
+}
+
+func NewListCommand() *cobra.Command {
+	return newListCommand()
+}
+
+func NewDeleteCommand() *cobra.Command {
+	return newDeleteCommand()
+}
+
+func NewSearchCommand() *cobra.Command {
+	return newSearchCommand()
+}
+
+func NewCopyCommand() *cobra.Command {
+	return newCopyCommand()
 }

@@ -10,6 +10,7 @@ import (
 
 func newCreateCommand() *cobra.Command {
 	var title string
+	var global bool
 
 	cmd := &cobra.Command{
 		Use:   "create [content]",
@@ -18,15 +19,20 @@ func newCreateCommand() *cobra.Command {
 		RunE: func(cmd *cobra.Command, args []string) error {
 			content := args[0]
 
-			// Detect current scope
-			dir, err := os.Getwd()
-			if err != nil {
-				return fmt.Errorf("failed to get current directory: %w", err)
-			}
+			// Determine scope
+			var scope string
+			if global {
+				scope = "global"
+			} else {
+				dir, err := os.Getwd()
+				if err != nil {
+					return fmt.Errorf("failed to get current directory: %w", err)
+				}
 
-			scope, err := store2.DetectScope(dir)
-			if err != nil {
-				return fmt.Errorf("failed to detect scope: %w", err)
+				scope, err = store2.DetectScope(dir)
+				if err != nil {
+					return fmt.Errorf("failed to detect scope: %w", err)
+				}
 			}
 
 			// Create dispatcher and create pad
@@ -44,6 +50,7 @@ func newCreateCommand() *cobra.Command {
 	}
 
 	cmd.Flags().StringVarP(&title, "title", "t", "", "Title for the pad")
+	cmd.Flags().BoolVarP(&global, "global", "g", false, "Create pad in global scope")
 
 	return cmd
 }

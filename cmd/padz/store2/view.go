@@ -9,6 +9,9 @@ import (
 )
 
 func newViewCommand() *cobra.Command {
+	var global bool
+	var all bool
+
 	cmd := &cobra.Command{
 		Use:   "view [id]",
 		Short: "View a pad from the v2 store",
@@ -16,7 +19,13 @@ func newViewCommand() *cobra.Command {
 		RunE: func(cmd *cobra.Command, args []string) error {
 			idStr := args[0]
 
-			// Detect current scope
+			// Handle flags - global flag overrides ID resolution
+			if global {
+				// Force explicit global ID format
+				idStr = "global-" + idStr
+			}
+
+			// Detect current scope for implicit ID resolution
 			dir, err := os.Getwd()
 			if err != nil {
 				return fmt.Errorf("failed to get current directory: %w", err)
@@ -53,6 +62,9 @@ func newViewCommand() *cobra.Command {
 			return nil
 		},
 	}
+
+	cmd.Flags().BoolVarP(&global, "global", "g", false, "View pad from global scope")
+	cmd.Flags().BoolVarP(&all, "all", "a", false, "View pad from any scope (default behavior)")
 
 	return cmd
 }

@@ -218,6 +218,79 @@ func (d *Dispatcher) CreatePad(content, title, scope string) (*Pad, error) {
 	return pad, nil
 }
 
+// DeletePad deletes a pad using ID resolution
+func (d *Dispatcher) DeletePad(idStr string, currentScope string) (string, error) {
+	scopedID, err := d.ParseID(idStr, currentScope)
+	if err != nil {
+		return "", err
+	}
+
+	store, err := d.GetStore(scopedID.Scope)
+	if err != nil {
+		return "", fmt.Errorf("failed to get store for scope %s: %w", scopedID.Scope, err)
+	}
+
+	pad, err := store.Delete(scopedID.UserID)
+	if err != nil {
+		return "", fmt.Errorf("failed to delete pad %d from scope %s: %w", scopedID.UserID, scopedID.Scope, err)
+	}
+
+	return FormatExplicitID(scopedID.Scope, pad.UserID), nil
+}
+
+// SearchPads searches for pads in a specific scope
+func (d *Dispatcher) SearchPads(term, scope string) ([]*SearchResult, error) {
+	store, err := d.GetStore(scope)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get store for scope %s: %w", scope, err)
+	}
+
+	results, err := store.Search(term)
+	if err != nil {
+		return nil, fmt.Errorf("failed to search in scope %s: %w", scope, err)
+	}
+
+	return results, nil
+}
+
+// SearchAllScopes searches for pads across all available scopes
+func (d *Dispatcher) SearchAllScopes(term string) (map[string][]*SearchResult, []error) {
+	// Get base store directory to find all scopes
+	baseDir, err := GetStorePath("")
+	if err != nil {
+		return nil, []error{fmt.Errorf("failed to get base store path: %w", err)}
+	}
+
+	// Find all scope directories
+	entries, err := os.ReadDir(baseDir)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return make(map[string][]*SearchResult), nil
+		}
+		return nil, []error{fmt.Errorf("failed to read store directory: %w", err)}
+	}
+
+	results := make(map[string][]*SearchResult)
+	var errors []error
+
+	for _, entry := range entries {
+		if !entry.IsDir() {
+			continue
+		}
+
+		scope := entry.Name()
+		scopeResults, err := d.SearchPads(term, scope)
+		if err != nil {
+			errors = append(errors, fmt.Errorf("failed to search scope %s: %w", scope, err))
+			continue
+		}
+
+		results[scope] = scopeResults
+	}
+
+	return results, errors
+}
+
 // FormatExplicitID formats a pad's ID in explicit format
 func FormatExplicitID(scope string, userID int) string {
 	return fmt.Sprintf("%s-%d", scope, userID)

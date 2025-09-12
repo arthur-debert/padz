@@ -113,18 +113,40 @@ func NewRootCmd() *cobra.Command {
 		Title: GroupScratches,
 	})
 
-	// Single scratch commands
-	createCmd := newCreateCmd()
-	createCmd.GroupID = "single"
-	createCmd.Flags().BoolP("global", "g", false, "Create scratch in global scope")
-	createCmd.Flags().StringP("title", "t", "", "Title for the scratch")
-	rootCmd.AddCommand(createCmd)
+	// Use v2 store by default (Phase 5 migration complete)
+	// Set PADZ_USE_V1=true to fall back to legacy store
+	useV2 := os.Getenv("PADZ_USE_V1") != "true"
 
-	viewCmd := newViewCmd()
-	viewCmd.GroupID = "single"
-	viewCmd.Flags().BoolP("all", "a", false, FlagAllDesc)
-	viewCmd.Flags().BoolP("global", "g", false, FlagGlobalDesc)
-	rootCmd.AddCommand(viewCmd)
+	// Single scratch commands
+	if useV2 {
+		// Use v2 implementations
+		createCmd := store2.NewCreateCommand()
+		createCmd.GroupID = "single"
+		createCmd.Use = "create [content]"
+		createCmd.Aliases = []string{"new", "n", "c"}
+		createCmd.Short = "Create a new scratch (new, n, c)"
+		rootCmd.AddCommand(createCmd)
+
+		viewCmd := store2.NewViewCommand()
+		viewCmd.GroupID = "single"
+		viewCmd.Use = "view [id]"
+		viewCmd.Aliases = []string{"show", "s", "v"}
+		viewCmd.Short = "View a scratch (show, s, v)"
+		rootCmd.AddCommand(viewCmd)
+	} else {
+		// Use v1 implementations
+		createCmd := newCreateCmd()
+		createCmd.GroupID = "single"
+		createCmd.Flags().BoolP("global", "g", false, "Create scratch in global scope")
+		createCmd.Flags().StringP("title", "t", "", "Title for the scratch")
+		rootCmd.AddCommand(createCmd)
+
+		viewCmd := newViewCmd()
+		viewCmd.GroupID = "single"
+		viewCmd.Flags().BoolP("all", "a", false, FlagAllDesc)
+		viewCmd.Flags().BoolP("global", "g", false, FlagGlobalDesc)
+		rootCmd.AddCommand(viewCmd)
+	}
 
 	openCmd := newOpenCmd()
 	openCmd.GroupID = "single"
@@ -139,11 +161,7 @@ func NewRootCmd() *cobra.Command {
 	peekCmd.Flags().BoolP("global", "g", false, FlagGlobalDesc)
 	rootCmd.AddCommand(peekCmd)
 
-	deleteCmd := newDeleteCmd()
-	deleteCmd.GroupID = "single"
-	deleteCmd.Flags().BoolP("all", "a", false, FlagAllDesc)
-	deleteCmd.Flags().BoolP("global", "g", false, FlagGlobalDesc)
-	rootCmd.AddCommand(deleteCmd)
+	// Delete command will be added in the conditional section below
 
 	pathCmd := newPathCmd()
 	pathCmd.GroupID = "single"
@@ -170,21 +188,53 @@ func NewRootCmd() *cobra.Command {
 	rootCmd.AddCommand(unpinCmd)
 
 	// Multiple scratches commands
-	lsCmd := newLsCmd()
-	lsCmd.GroupID = "multiple"
-	lsCmd.Flags().BoolP("all", "a", false, FlagAllDesc)
-	lsCmd.Flags().BoolP("global", "g", false, FlagGlobalDesc)
-	lsCmd.Flags().StringP("search", "s", "", "Search for scratches containing the given term")
-	lsCmd.Flags().Bool("deleted", false, "Show only soft-deleted scratches")
-	lsCmd.Flags().Bool("include-deleted", false, "Include soft-deleted scratches in listing")
-	rootCmd.AddCommand(lsCmd)
+	if useV2 {
+		// Use v2 list command
+		lsCmd := store2.NewListCommand()
+		lsCmd.GroupID = "multiple"
+		lsCmd.Use = "list"
+		lsCmd.Aliases = []string{"ls", "l"}
+		lsCmd.Short = "List all scratches (ls, l)"
+		rootCmd.AddCommand(lsCmd)
 
-	searchCmd := newSearchCmd()
-	searchCmd.GroupID = "multiple"
-	searchCmd.Flags().BoolP("all", "a", false, FlagAllDesc)
-	searchCmd.Flags().BoolP("global", "g", false, FlagGlobalDesc)
-	searchCmd.Flags().StringP("project", "p", "", "Limit search to specific project")
-	rootCmd.AddCommand(searchCmd)
+		// Use v2 search command
+		searchCmd := store2.NewSearchCommand()
+		searchCmd.GroupID = "multiple"
+		searchCmd.Use = "search [term]"
+		searchCmd.Short = "Search for scratches containing the given term"
+		rootCmd.AddCommand(searchCmd)
+
+		// Use v2 delete command
+		deleteCmd := store2.NewDeleteCommand()
+		deleteCmd.GroupID = "single"
+		deleteCmd.Use = "delete [id]"
+		deleteCmd.Aliases = []string{"del", "rm", "d"}
+		deleteCmd.Short = "Delete a scratch (del, rm, d)"
+		rootCmd.AddCommand(deleteCmd)
+	} else {
+		// Use v1 implementations
+		lsCmd := newLsCmd()
+		lsCmd.GroupID = "multiple"
+		lsCmd.Flags().BoolP("all", "a", false, FlagAllDesc)
+		lsCmd.Flags().BoolP("global", "g", false, FlagGlobalDesc)
+		lsCmd.Flags().StringP("search", "s", "", "Search for scratches containing the given term")
+		lsCmd.Flags().Bool("deleted", false, "Show only soft-deleted scratches")
+		lsCmd.Flags().Bool("include-deleted", false, "Include soft-deleted scratches in listing")
+		rootCmd.AddCommand(lsCmd)
+
+		searchCmd := newSearchCmd()
+		searchCmd.GroupID = "multiple"
+		searchCmd.Flags().BoolP("all", "a", false, FlagAllDesc)
+		searchCmd.Flags().BoolP("global", "g", false, FlagGlobalDesc)
+		searchCmd.Flags().StringP("project", "p", "", "Limit search to specific project")
+		rootCmd.AddCommand(searchCmd)
+
+		deleteCmd := newDeleteCmd()
+		deleteCmd.GroupID = "single"
+		deleteCmd.Flags().BoolP("all", "a", false, FlagAllDesc)
+		deleteCmd.Flags().BoolP("global", "g", false, FlagGlobalDesc)
+		rootCmd.AddCommand(deleteCmd)
+	}
 
 	cleanupCmd := newCleanupCmd()
 	cleanupCmd.GroupID = "multiple"
@@ -219,9 +269,12 @@ func NewRootCmd() *cobra.Command {
 	showDataFileCmd.Flags().BoolP("global", "g", false, FlagGlobalDesc)
 	rootCmd.AddCommand(showDataFileCmd)
 
-	// Experimental v2 store implementation
-	store2Cmd := store2.NewStore2Command()
-	rootCmd.AddCommand(store2Cmd)
+	// Legacy store2 subcommand (for compatibility)
+	// Remove this in future versions once migration is complete
+	if !useV2 {
+		store2Cmd := store2.NewStore2Command()
+		rootCmd.AddCommand(store2Cmd)
+	}
 
 	return rootCmd
 }

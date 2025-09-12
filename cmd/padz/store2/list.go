@@ -10,32 +10,65 @@ import (
 
 func newListCommand() *cobra.Command {
 	var all bool
+	var global bool
+	var search string
 
 	cmd := &cobra.Command{
 		Use:   "list",
 		Short: "List pads from the v2 store",
 		RunE: func(cmd *cobra.Command, args []string) error {
+			// Handle search flag
+			if search != "" {
+				// Use search command functionality
+				if all || global {
+					return searchAllScopes(search)
+				}
+
+				// Search current scope
+				dir, err := os.Getwd()
+				if err != nil {
+					return fmt.Errorf("failed to get current directory: %w", err)
+				}
+
+				scope, err := store2.DetectScope(dir)
+				if err != nil {
+					return fmt.Errorf("failed to detect scope: %w", err)
+				}
+				if global {
+					scope = "global"
+				}
+
+				return searchScope(scope, search)
+			}
+
 			if all {
 				// List from all scopes
 				return listAllScopes()
 			}
 
-			// List from current scope only
-			dir, err := os.Getwd()
-			if err != nil {
-				return fmt.Errorf("failed to get current directory: %w", err)
-			}
+			// Determine scope
+			var scope string
+			if global {
+				scope = "global"
+			} else {
+				dir, err := os.Getwd()
+				if err != nil {
+					return fmt.Errorf("failed to get current directory: %w", err)
+				}
 
-			scope, err := store2.DetectScope(dir)
-			if err != nil {
-				return fmt.Errorf("failed to detect scope: %w", err)
+				scope, err = store2.DetectScope(dir)
+				if err != nil {
+					return fmt.Errorf("failed to detect scope: %w", err)
+				}
 			}
 
 			return listScope(scope)
 		},
 	}
 
-	cmd.Flags().BoolVar(&all, "all", false, "List pads from all scopes")
+	cmd.Flags().BoolVarP(&all, "all", "a", false, "List pads from all scopes")
+	cmd.Flags().BoolVarP(&global, "global", "g", false, "List pads from global scope")
+	cmd.Flags().StringVarP(&search, "search", "s", "", "Search for pads containing the given term")
 
 	return cmd
 }
