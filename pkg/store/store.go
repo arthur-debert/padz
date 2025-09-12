@@ -15,13 +15,17 @@ import (
 
 // Pad represents a single piece of stored content
 type Pad struct {
-	ID        string    `json:"id"`      // UUID for internal use
-	UserID    int       `json:"user_id"` // User-friendly integer ID
-	Content   string    `json:"-"`       // Content is stored separately
-	Title     string    `json:"title"`
-	CreatedAt time.Time `json:"created_at"`
-	Size      int64     `json:"size"`
-	Checksum  string    `json:"checksum"`
+	ID        string     `json:"id"`      // UUID for internal use
+	UserID    int        `json:"user_id"` // User-friendly integer ID
+	Content   string     `json:"-"`       // Content is stored separately
+	Title     string     `json:"title"`
+	CreatedAt time.Time  `json:"created_at"`
+	Size      int64      `json:"size"`
+	Checksum  string     `json:"checksum"`
+	IsDeleted bool       `json:"is_deleted,omitempty"`
+	DeletedAt *time.Time `json:"deleted_at,omitempty"`
+	IsPinned  bool       `json:"is_pinned,omitempty"`
+	PinnedAt  *time.Time `json:"pinned_at,omitempty"`
 }
 
 // Metadata holds the store's metadata

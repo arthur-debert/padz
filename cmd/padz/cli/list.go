@@ -12,6 +12,9 @@ func newListCommand() *cobra.Command {
 	var all bool
 	var global bool
 	var search string
+	var showDeleted bool
+	var includeDeleted bool
+	var showPinned bool
 
 	cmd := &cobra.Command{
 		Use:   "list",
@@ -43,7 +46,7 @@ func newListCommand() *cobra.Command {
 
 			if all {
 				// List from all scopes
-				return listAllScopes()
+				return listAllScopes(showDeleted, includeDeleted, showPinned)
 			}
 
 			// Determine scope
@@ -62,18 +65,21 @@ func newListCommand() *cobra.Command {
 				}
 			}
 
-			return listScope(scope)
+			return listScope(scope, showDeleted, includeDeleted, showPinned)
 		},
 	}
 
 	cmd.Flags().BoolVarP(&all, "all", "a", false, "List pads from all scopes")
 	cmd.Flags().BoolVarP(&global, "global", "g", false, "List pads from global scope")
 	cmd.Flags().StringVarP(&search, "search", "s", "", "Search for pads containing the given term")
+	cmd.Flags().BoolVar(&showDeleted, "deleted", false, "Show only deleted pads")
+	cmd.Flags().BoolVar(&includeDeleted, "include-deleted", false, "Include deleted pads in the list")
+	cmd.Flags().BoolVar(&showPinned, "pinned", false, "Show only pinned pads")
 
 	return cmd
 }
 
-func listScope(scope string) error {
+func listScope(scope string, showDeleted bool, includeDeleted bool, showPinned bool) error {
 	// Get store path
 	storePath, err := store.GetStorePath(scope)
 	if err != nil {
@@ -86,8 +92,17 @@ func listScope(scope string) error {
 		return fmt.Errorf("failed to create store: %w", err)
 	}
 
-	// List pads
-	pads, err := storeInstance.List()
+	// List pads based on flags
+	var pads []*store.Pad
+	if showDeleted {
+		pads, err = storeInstance.ListDeleted()
+	} else if showPinned {
+		pads, err = storeInstance.ListPinned()
+	} else if includeDeleted {
+		pads, err = storeInstance.ListAll()
+	} else {
+		pads, err = storeInstance.List()
+	}
 	if err != nil {
 		return fmt.Errorf("failed to list pads: %w", err)
 	}
@@ -99,22 +114,46 @@ func listScope(scope string) error {
 		return nil
 	}
 
-	for _, pad := range pads {
+	// Track deleted and pinned item indices separately for 'd' and 'p' prefixes
+	deletedIndex := 1
+	pinnedIndex := 1
+	for i, pad := range pads {
 		title := pad.Title
 		if title == "" {
 			title = "(untitled)"
 		}
-		explicitID := store.FormatExplicitID(scope, pad.UserID)
-		fmt.Printf("%10s. %-50s %s\n", explicitID, title, pad.CreatedAt.Format("2006-01-02 15:04"))
+
+		// Format ID based on item type
+		var displayID string
+		if pad.IsDeleted {
+			displayID = fmt.Sprintf("d%d", deletedIndex)
+			deletedIndex++
+		} else if pad.IsPinned && showPinned {
+			displayID = fmt.Sprintf("p%d", pinnedIndex)
+			pinnedIndex++
+		} else {
+			// For active items, show regular index
+			displayID = fmt.Sprintf("%d", i+1)
+		}
+
+		// Show status
+		status := ""
+		if pad.IsDeleted && pad.DeletedAt != nil {
+			status = fmt.Sprintf(" (deleted %s)", pad.DeletedAt.Format("2006-01-02 15:04"))
+		} else if pad.IsPinned && pad.PinnedAt != nil && !showPinned {
+			status = fmt.Sprintf(" (pinned %s)", pad.PinnedAt.Format("2006-01-02 15:04"))
+		}
+
+		fmt.Printf("%10s. %-40s %s%s\n", displayID, title, pad.CreatedAt.Format("2006-01-02 15:04"), status)
 	}
 
 	return nil
 }
 
-func listAllScopes() error {
+func listAllScopes(showDeleted bool, includeDeleted bool, showPinned bool) error {
 	dispatcher := store.NewDispatcher()
 
-	results, errors := dispatcher.ListAllScopes()
+	results, errors := dispatcher.ListAllScopes(showDeleted, includeDeleted, showPinned)
 
 	// Display results
 	if len(results) == 0 {
@@ -135,13 +174,37 @@ func listAllScopes() error {
 			continue
 		}
 
+		// Track deleted and pinned item indices separately for 'd' and 'p' prefixes
+		deletedIndex := 1
+		pinnedIndex := 1
 		for _, pad := range pads {
 			title := pad.Title
 			if title == "" {
 				title = "(untitled)"
 			}
-			explicitID := store.FormatExplicitID(scope, pad.UserID)
-			fmt.Printf("%10s. %-50s %s\n", explicitID, title, pad.CreatedAt.Format("2006-01-02 15:04"))
+
+			// Format ID based on item type
+			var displayID string
+			if pad.IsDeleted {
+				displayID = fmt.Sprintf("d%d", deletedIndex)
+				deletedIndex++
+			} else if pad.IsPinned && showPinned {
+				displayID = fmt.Sprintf("p%d", pinnedIndex)
+				pinnedIndex++
+			} else {
+				// For all scopes, use explicit ID format
+				displayID = store.FormatExplicitID(scope, pad.UserID)
+			}
+
+			// Show status
+			status := ""
+			if pad.IsDeleted && pad.DeletedAt != nil {
+				status = fmt.Sprintf(" (deleted %s)", pad.DeletedAt.Format("2006-01-02 15:04"))
+			} else if pad.IsPinned && pad.PinnedAt != nil && !showPinned {
+				status = fmt.Sprintf(" (pinned %s)", pad.PinnedAt.Format("2006-01-02 15:04"))
+			}
+
+			fmt.Printf("%10s. %-40s %s%s\n", displayID, title, pad.CreatedAt.Format("2006-01-02 15:04"), status)
 		}
 	}
 

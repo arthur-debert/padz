@@ -7,14 +7,14 @@ import (
 	"strconv"
 )
 
-// Get retrieves a pad by user ID
+// Get retrieves a non-deleted pad by user ID
 func (s *Store) Get(userID int) (*Pad, string, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
-	// Find pad by user ID
+	// Find pad by user ID (excluding deleted)
 	for _, pad := range s.metadata.Pads {
-		if pad.UserID == userID {
+		if pad.UserID == userID && !pad.IsDeleted {
 			// Load content
 			content, err := s.loadContent(pad.ID)
 			if err != nil {
@@ -44,6 +44,26 @@ func (s *Store) GetByID(id string) (*Pad, string, error) {
 	}
 
 	return pad, content, nil
+}
+
+// GetDeleted retrieves a deleted pad by user ID
+func (s *Store) GetDeleted(userID int) (*Pad, string, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	// Find pad by user ID (only deleted)
+	for _, pad := range s.metadata.Pads {
+		if pad.UserID == userID && pad.IsDeleted {
+			// Load content
+			content, err := s.loadContent(pad.ID)
+			if err != nil {
+				return nil, "", err
+			}
+			return pad, content, nil
+		}
+	}
+
+	return nil, "", fmt.Errorf("deleted pad with ID %d not found", userID)
 }
 
 // ParseID parses a user-provided ID which could be an integer or explicit scope ID

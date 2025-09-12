@@ -2,22 +2,19 @@ package store
 
 import (
 	"fmt"
-	"os"
-	"path/filepath"
+	"time"
 )
 
-// Delete removes a pad from the store
+// Delete soft deletes a pad from the store
 func (s *Store) Delete(userID int) (*Pad, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	// Find pad by user ID
+	// Find pad by user ID (excluding already deleted)
 	var targetPad *Pad
-	var targetID string
-	for id, pad := range s.metadata.Pads {
-		if pad.UserID == userID {
+	for _, pad := range s.metadata.Pads {
+		if pad.UserID == userID && !pad.IsDeleted {
 			targetPad = pad
-			targetID = id
 			break
 		}
 	}
@@ -26,12 +23,10 @@ func (s *Store) Delete(userID int) (*Pad, error) {
 		return nil, fmt.Errorf("pad with ID %d not found", userID)
 	}
 
-	// Remove content file
-	contentPath := filepath.Join(s.path, "data", targetID)
-	_ = os.Remove(contentPath) // Ignore errors - metadata cleanup is more important
-
-	// Remove from metadata
-	delete(s.metadata.Pads, targetID)
+	// Mark as deleted
+	now := time.Now()
+	targetPad.IsDeleted = true
+	targetPad.DeletedAt = &now
 
 	// Save metadata
 	if err := s.saveMetadata(); err != nil {

@@ -10,7 +10,7 @@ type SearchResult struct {
 	Content string
 }
 
-// Search returns pads that contain the search term
+// Search returns non-deleted pads that contain the search term
 func (s *Store) Search(term string) ([]*SearchResult, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
@@ -19,6 +19,11 @@ func (s *Store) Search(term string) ([]*SearchResult, error) {
 	lowerTerm := strings.ToLower(term)
 
 	for id, pad := range s.metadata.Pads {
+		// Skip deleted items
+		if pad.IsDeleted {
+			continue
+		}
+
 		// Load content to search
 		content, err := s.loadContent(id)
 		if err != nil {

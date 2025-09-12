@@ -7,12 +7,6 @@ import (
 	"strings"
 )
 
-// ScopedID represents a parsed ID with scope and user ID
-type ScopedID struct {
-	Scope  string
-	UserID int
-}
-
 // Dispatcher coordinates operations across multiple single-scope stores
 type Dispatcher struct {
 	stores map[string]*Store // cached stores by scope name
@@ -49,7 +43,7 @@ func (d *Dispatcher) GetStore(scope string) (*Store, error) {
 }
 
 // ListAllScopes returns pads from all available scopes
-func (d *Dispatcher) ListAllScopes() (map[string][]*Pad, []error) {
+func (d *Dispatcher) ListAllScopes(showDeleted bool, includeDeleted bool, showPinned bool) (map[string][]*Pad, []error) {
 	// Get base store directory to find all scopes
 	baseDir, err := GetStorePath("")
 	if err != nil {
@@ -80,7 +74,17 @@ func (d *Dispatcher) ListAllScopes() (map[string][]*Pad, []error) {
 			continue
 		}
 
-		pads, err := store.List()
+		// List pads based on flags
+		var pads []*Pad
+		if showDeleted {
+			pads, err = store.ListDeleted()
+		} else if showPinned {
+			pads, err = store.ListPinned()
+		} else if includeDeleted {
+			pads, err = store.ListAll()
+		} else {
+			pads, err = store.List()
+		}
 		if err != nil {
 			errors = append(errors, fmt.Errorf("failed to list pads in scope %s: %w", scope, err))
 			continue
@@ -92,9 +96,33 @@ func (d *Dispatcher) ListAllScopes() (map[string][]*Pad, []error) {
 	return results, errors
 }
 
-// ParseID parses an ID string into a ScopedID
-// Supports both explicit format (scope-id) and implicit format (just id)
-func (d *Dispatcher) ParseID(idStr string, currentScope string) (*ScopedID, error) {
+// IDType represents the type of ID (normal, deleted, pinned)
+type IDType int
+
+const (
+	IDTypeNormal IDType = iota
+	IDTypeDeleted
+	IDTypePinned
+)
+
+// ParsedID represents a fully parsed ID with type and scope
+type ParsedID struct {
+	Type   IDType
+	Scope  string
+	UserID int
+}
+
+// ParseID parses an ID string into a ParsedID
+// Supports:
+// - Normal IDs: "1", "2", "3"
+// - Deleted IDs: "d1", "d2", "d3"
+// - Pinned IDs: "p1", "p2", "p3" (for future use)
+// - Explicit format: "scope-1", "global-d1", etc.
+func (d *Dispatcher) ParseID(idStr string, currentScope string) (*ParsedID, error) {
+	var idType = IDTypeNormal
+	var scope string
+	var userIDStr string
+
 	// Check for explicit format (scope-id)
 	if strings.Contains(idStr, "-") {
 		parts := strings.SplitN(idStr, "-", 2)
@@ -102,41 +130,48 @@ func (d *Dispatcher) ParseID(idStr string, currentScope string) (*ScopedID, erro
 			return nil, fmt.Errorf("invalid explicit ID format: %s (expected scope-id)", idStr)
 		}
 
-		scope := parts[0]
-		userIDStr := parts[1]
-
-		userID, err := strconv.Atoi(userIDStr)
-		if err != nil {
-			return nil, fmt.Errorf("invalid user ID in explicit format: %s", userIDStr)
+		scope = parts[0]
+		userIDStr = parts[1]
+	} else {
+		// Implicit format - check for prefix
+		if strings.HasPrefix(idStr, "d") {
+			idType = IDTypeDeleted
+			userIDStr = idStr[1:]
+		} else if strings.HasPrefix(idStr, "p") {
+			idType = IDTypePinned
+			userIDStr = idStr[1:]
+		} else {
+			userIDStr = idStr
 		}
-
-		if userID <= 0 {
-			return nil, fmt.Errorf("user ID must be positive: %d", userID)
-		}
-
-		return &ScopedID{
-			Scope:  scope,
-			UserID: userID,
-		}, nil
 	}
 
-	// Implicit format - just an integer
-	userID, err := strconv.Atoi(idStr)
+	// Parse the numeric ID
+	userID, err := strconv.Atoi(userIDStr)
 	if err != nil {
-		return nil, fmt.Errorf("invalid ID format: %s (expected integer or scope-id)", idStr)
+		return nil, fmt.Errorf("invalid ID format: %s (expected integer or prefix+integer)", idStr)
 	}
 
 	if userID <= 0 {
 		return nil, fmt.Errorf("user ID must be positive: %d", userID)
 	}
 
-	// Resolve scope using precedence rules
-	resolvedScope, err := d.ResolveImplicitScope(userID, currentScope)
-	if err != nil {
-		return nil, fmt.Errorf("failed to resolve scope for ID %d: %w", userID, err)
+	// For explicit format, we already have the scope
+	if scope != "" {
+		return &ParsedID{
+			Type:   idType,
+			Scope:  scope,
+			UserID: userID,
+		}, nil
 	}
 
-	return &ScopedID{
+	// For implicit format, resolve scope
+	resolvedScope, err := d.ResolveImplicitScope(userID, currentScope, idType)
+	if err != nil {
+		return nil, fmt.Errorf("failed to resolve scope for ID %s: %w", idStr, err)
+	}
+
+	return &ParsedID{
+		Type:   idType,
 		Scope:  resolvedScope,
 		UserID: userID,
 	}, nil
@@ -144,12 +179,23 @@ func (d *Dispatcher) ParseID(idStr string, currentScope string) (*ScopedID, erro
 
 // ResolveImplicitScope resolves which scope to use for an implicit ID
 // Precedence: current scope > global scope
-func (d *Dispatcher) ResolveImplicitScope(userID int, currentScope string) (string, error) {
+func (d *Dispatcher) ResolveImplicitScope(userID int, currentScope string, idType IDType) (string, error) {
+	// Choose the right getter based on ID type
+	var getFunc func(*Store, int) (*Pad, string, error)
+	switch idType {
+	case IDTypeDeleted:
+		getFunc = (*Store).GetDeleted
+	case IDTypePinned:
+		getFunc = (*Store).GetPinned
+	default:
+		getFunc = (*Store).Get
+	}
+
 	// First, try current scope (highest precedence)
 	if currentScope != "" {
 		store, err := d.GetStore(currentScope)
 		if err == nil {
-			if _, _, err := store.Get(userID); err == nil {
+			if _, _, err := getFunc(store, userID); err == nil {
 				return currentScope, nil
 			}
 		}
@@ -158,13 +204,13 @@ func (d *Dispatcher) ResolveImplicitScope(userID int, currentScope string) (stri
 	// Then try global scope
 	globalStore, err := d.GetStore("global")
 	if err == nil {
-		if _, _, err := globalStore.Get(userID); err == nil {
+		if _, _, err := getFunc(globalStore, userID); err == nil {
 			return "global", nil
 		}
 	}
 
 	// Finally, check all other scopes
-	allResults, _ := d.ListAllScopes()
+	allResults, _ := d.ListAllScopes(false, false, false)
 	for scope := range allResults {
 		if scope == currentScope || scope == "global" {
 			continue // Already checked
@@ -175,32 +221,52 @@ func (d *Dispatcher) ResolveImplicitScope(userID int, currentScope string) (stri
 			continue
 		}
 
-		if _, _, err := store.Get(userID); err == nil {
+		if _, _, err := getFunc(store, userID); err == nil {
 			return scope, nil
 		}
 	}
 
-	return "", fmt.Errorf("pad with ID %d not found in any scope", userID)
+	var itemType string
+	switch idType {
+	case IDTypeDeleted:
+		itemType = "deleted pad"
+	case IDTypePinned:
+		itemType = "pinned pad"
+	default:
+		itemType = "pad"
+	}
+	return "", fmt.Errorf("%s with ID %d not found in any scope", itemType, userID)
 }
 
 // GetPad retrieves a pad using ID resolution
 func (d *Dispatcher) GetPad(idStr string, currentScope string) (*Pad, string, string, error) {
-	scopedID, err := d.ParseID(idStr, currentScope)
+	parsedID, err := d.ParseID(idStr, currentScope)
 	if err != nil {
 		return nil, "", "", err
 	}
 
-	store, err := d.GetStore(scopedID.Scope)
+	store, err := d.GetStore(parsedID.Scope)
 	if err != nil {
-		return nil, "", "", fmt.Errorf("failed to get store for scope %s: %w", scopedID.Scope, err)
+		return nil, "", "", fmt.Errorf("failed to get store for scope %s: %w", parsedID.Scope, err)
 	}
 
-	pad, content, err := store.Get(scopedID.UserID)
-	if err != nil {
-		return nil, "", "", fmt.Errorf("failed to get pad %d from scope %s: %w", scopedID.UserID, scopedID.Scope, err)
+	// Choose the right getter based on ID type
+	var pad *Pad
+	var content string
+	switch parsedID.Type {
+	case IDTypeDeleted:
+		pad, content, err = store.GetDeleted(parsedID.UserID)
+	case IDTypePinned:
+		pad, content, err = store.GetPinned(parsedID.UserID)
+	default:
+		pad, content, err = store.Get(parsedID.UserID)
 	}
 
-	return pad, content, scopedID.Scope, nil
+	if err != nil {
+		return nil, "", "", fmt.Errorf("failed to get pad %d from scope %s: %w", parsedID.UserID, parsedID.Scope, err)
+	}
+
+	return pad, content, parsedID.Scope, nil
 }
 
 // CreatePad creates a pad in the specified scope
@@ -220,22 +286,32 @@ func (d *Dispatcher) CreatePad(content, title, scope string) (*Pad, error) {
 
 // DeletePad deletes a pad using ID resolution
 func (d *Dispatcher) DeletePad(idStr string, currentScope string) (string, error) {
-	scopedID, err := d.ParseID(idStr, currentScope)
+	parsedID, err := d.ParseID(idStr, currentScope)
 	if err != nil {
 		return "", err
 	}
 
-	store, err := d.GetStore(scopedID.Scope)
+	store, err := d.GetStore(parsedID.Scope)
 	if err != nil {
-		return "", fmt.Errorf("failed to get store for scope %s: %w", scopedID.Scope, err)
+		return "", fmt.Errorf("failed to get store for scope %s: %w", parsedID.Scope, err)
 	}
 
-	pad, err := store.Delete(scopedID.UserID)
-	if err != nil {
-		return "", fmt.Errorf("failed to delete pad %d from scope %s: %w", scopedID.UserID, scopedID.Scope, err)
+	// For deleted items, we can't delete them again
+	if parsedID.Type == IDTypeDeleted {
+		return "", fmt.Errorf("item is already deleted")
 	}
 
-	return FormatExplicitID(scopedID.Scope, pad.UserID), nil
+	// For pinned items, we can't delete them by pinned ID
+	if parsedID.Type == IDTypePinned {
+		return "", fmt.Errorf("cannot delete item using pinned ID (use regular ID)")
+	}
+
+	pad, err := store.Delete(parsedID.UserID)
+	if err != nil {
+		return "", fmt.Errorf("failed to delete pad %d from scope %s: %w", parsedID.UserID, parsedID.Scope, err)
+	}
+
+	return FormatExplicitID(parsedID.Scope, pad.UserID), nil
 }
 
 // SearchPads searches for pads in a specific scope
