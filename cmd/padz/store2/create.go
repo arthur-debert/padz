@@ -18,7 +18,7 @@ func newCreateCommand() *cobra.Command {
 		RunE: func(cmd *cobra.Command, args []string) error {
 			content := args[0]
 
-			// Detect scope
+			// Detect current scope
 			dir, err := os.Getwd()
 			if err != nil {
 				return fmt.Errorf("failed to get current directory: %w", err)
@@ -29,25 +29,16 @@ func newCreateCommand() *cobra.Command {
 				return fmt.Errorf("failed to detect scope: %w", err)
 			}
 
-			// Get store path
-			storePath, err := store2.GetStorePath(scope)
-			if err != nil {
-				return fmt.Errorf("failed to get store path: %w", err)
-			}
-
-			// Create store
-			store, err := store2.NewStore(storePath)
-			if err != nil {
-				return fmt.Errorf("failed to create store: %w", err)
-			}
-
-			// Create pad
-			pad, err := store.Create(content, title)
+			// Create dispatcher and create pad
+			dispatcher := store2.NewDispatcher()
+			pad, err := dispatcher.CreatePad(content, title, scope)
 			if err != nil {
 				return fmt.Errorf("failed to create pad: %w", err)
 			}
 
-			fmt.Printf("Created pad %d in scope '%s'\n", pad.UserID, scope)
+			// Display with explicit ID format
+			explicitID := store2.FormatExplicitID(scope, pad.UserID)
+			fmt.Printf("Created pad %s\n", explicitID)
 			return nil
 		},
 	}
