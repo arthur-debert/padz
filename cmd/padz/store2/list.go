@@ -71,7 +71,8 @@ func listScope(scope string) error {
 		if title == "" {
 			title = "(untitled)"
 		}
-		fmt.Printf("%3d. %-50s %s\n", pad.UserID, title, pad.CreatedAt.Format("2006-01-02 15:04"))
+		explicitID := store2.FormatExplicitID(scope, pad.UserID)
+		fmt.Printf("%10s. %-50s %s\n", explicitID, title, pad.CreatedAt.Format("2006-01-02 15:04"))
 	}
 
 	return nil
@@ -106,7 +107,8 @@ func listAllScopes() error {
 			if title == "" {
 				title = "(untitled)"
 			}
-			fmt.Printf("%3d. %-50s %s\n", pad.UserID, title, pad.CreatedAt.Format("2006-01-02 15:04"))
+			explicitID := store2.FormatExplicitID(scope, pad.UserID)
+			fmt.Printf("%10s. %-50s %s\n", explicitID, title, pad.CreatedAt.Format("2006-01-02 15:04"))
 		}
 	}
 
