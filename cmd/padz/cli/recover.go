@@ -1,195 +1,183 @@
 package cli
 
 import (
-	"encoding/json"
 	"fmt"
 	"os"
+	"path/filepath"
 
-	"github.com/arthur-debert/padz/pkg/commands"
-	"github.com/arthur-debert/padz/pkg/output"
-	"github.com/rs/zerolog/log"
+	"github.com/arthur-debert/padz/pkg/store"
+	"github.com/google/uuid"
 	"github.com/spf13/cobra"
 )
 
-// newRecoverCmd creates and returns a new recover command
-func newRecoverCmd() *cobra.Command {
+func newRecoverCommand() *cobra.Command {
+	var dryRun bool
+
 	cmd := &cobra.Command{
 		Use:   "recover",
-		Short: "Recover orphaned scratch files and clean metadata",
-		Long: `Recover orphaned scratch files and clean metadata inconsistencies.
+		Short: "Recover orphaned content files",
+		Long: `Recover orphaned content files that have no corresponding metadata entries.
+This can happen if metadata becomes corrupted or if files are manually added to the data directory.
 
-This command scans for:
-- Orphaned files: Files on disk without metadata entries
-- Missing files: Metadata entries without corresponding files
-
-With appropriate flags, it can:
-- Add orphaned files back to metadata
-- Remove metadata entries for missing files
-- Run in dry-run mode to preview changes`,
-		Run: func(cmd *cobra.Command, args []string) {
-			dryRun, _ := cmd.Flags().GetBool("dry-run")
-			recoverOrphans, _ := cmd.Flags().GetBool("recover-orphans")
-			cleanMissing, _ := cmd.Flags().GetBool("clean-missing")
-			defaultProject, _ := cmd.Flags().GetString("project")
-			global, _ := cmd.Flags().GetBool("global")
-
-			// Get current directory
-			dir, err := os.Getwd()
-			if err != nil {
-				log.Fatal().Err(err).Msg("Failed to get current working directory")
-			}
-
-			// Configure recovery options
-			options := commands.RecoveryOptions{
-				DryRun:         dryRun,
-				RecoverOrphans: recoverOrphans,
-				CleanMissing:   cleanMissing,
-				DefaultProject: defaultProject,
-			}
-
-			// Log the operation mode
-			if dryRun {
-				log.Info().Msg("Running in dry-run mode - no changes will be made")
-			}
-
-			// Run recovery using StoreManager
-			result, err := commands.RecoverWithStoreManager(dir, global, options)
-			if err != nil {
-				log.Fatal().Err(err).Msg("Recovery failed")
-			}
-
-			// Format and display results
-			format, err := output.GetFormat(outputFormat)
-			if err != nil {
-				log.Fatal().Err(err).Msg("Invalid output format")
-			}
-
-			if format == output.JSONFormat {
-				// JSON output
-				if err := json.NewEncoder(os.Stdout).Encode(result); err != nil {
-					log.Fatal().Err(err).Msg("Failed to encode JSON output")
-				}
-			} else {
-				// Human-readable output
-				printRecoveryResult(result, dryRun)
-			}
-
-			// Exit with error code if there were errors
-			if len(result.Errors) > 0 {
-				os.Exit(1)
-			}
+The recover command will:
+- Find content files without metadata entries
+- Create new metadata entries for them
+- Assign new user-friendly IDs
+- Attempt to extract titles from content`,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return recoverAllScopes(dryRun)
 		},
 	}
 
-	// Add flags
-	cmd.Flags().Bool("dry-run", true, "Preview changes without making them")
-	cmd.Flags().Bool("recover-orphans", false, "Recover orphaned files by adding them to metadata")
-	cmd.Flags().Bool("clean-missing", false, "Remove metadata entries for missing files")
-	cmd.Flags().StringP("project", "p", "recovered", "Project name for recovered orphaned files")
+	cmd.Flags().BoolVar(&dryRun, "dry-run", false, "Show what would be recovered without making changes")
 
 	return cmd
 }
 
-// printRecoveryResult prints the recovery result in human-readable format
-func printRecoveryResult(result *commands.RecoveryResult, dryRun bool) {
-	// Print summary header
-	fmt.Println("Recovery Analysis Complete")
-	fmt.Println("==========================")
-	fmt.Printf("Duration: %s\n", result.Summary.Duration)
-	fmt.Println()
+func recoverAllScopes(dryRun bool) error {
+	// Get base store directory
+	baseDir, err := store.GetStorePath("")
+	if err != nil {
+		return fmt.Errorf("failed to get base store path: %w", err)
+	}
 
-	// Print orphaned files
-	if len(result.OrphanedFiles) > 0 {
-		fmt.Printf("Orphaned Files (found on disk without metadata): %d\n", len(result.OrphanedFiles))
-		fmt.Println("----------------------------------------------------")
-		for _, orphan := range result.OrphanedFiles {
-			fmt.Printf("  ID: %s\n", orphan.ID)
-			fmt.Printf("  Title: %s\n", orphan.Title)
-			fmt.Printf("  Size: %d bytes\n", orphan.Size)
-			fmt.Printf("  Modified: %s\n", orphan.ModTime.Format("2006-01-02 15:04:05"))
-			if orphan.Preview != "" {
-				fmt.Printf("  Preview:\n")
-				// Indent preview lines
-				lines := splitLines(orphan.Preview)
-				for i, line := range lines {
-					if i < 3 { // Limit preview to 3 lines
-						fmt.Printf("    %s\n", line)
-					}
-				}
-			}
-			fmt.Println()
+	// Find all scope directories
+	entries, err := os.ReadDir(baseDir)
+	if err != nil {
+		if os.IsNotExist(err) {
+			fmt.Println("No store directories found")
+			return nil
+		}
+		return fmt.Errorf("failed to read store directory: %w", err)
+	}
+
+	totalRecovered := 0
+
+	for _, entry := range entries {
+		if !entry.IsDir() {
+			continue
+		}
+
+		scope := entry.Name()
+		recovered, err := recoverScope(scope, dryRun)
+		if err != nil {
+			fmt.Printf("Warning: Failed to recover scope %s: %v\n", scope, err)
+			continue
+		}
+
+		totalRecovered += recovered
+	}
+
+	if totalRecovered == 0 {
+		fmt.Println("No orphaned files found to recover")
+	} else {
+		if dryRun {
+			fmt.Printf("Would recover %d orphaned files (dry run)\n", totalRecovered)
+		} else {
+			fmt.Printf("Successfully recovered %d orphaned files\n", totalRecovered)
 		}
 	}
 
-	// Print missing files
-	if len(result.MissingFiles) > 0 {
-		fmt.Printf("Missing Files (metadata without files): %d\n", len(result.MissingFiles))
-		fmt.Println("----------------------------------------")
-		for _, missing := range result.MissingFiles {
-			fmt.Printf("  ID: %s\n", missing.ID)
-			fmt.Printf("  Title: %s\n", missing.Title)
-			fmt.Printf("  Project: %s\n", missing.Project)
-			fmt.Printf("  Created: %s\n", missing.CreatedAt.Format("2006-01-02 15:04:05"))
-			fmt.Println()
-		}
-	}
-
-	// Print recovered files
-	if len(result.RecoveredFiles) > 0 {
-		fmt.Printf("Recovered Files: %d\n", len(result.RecoveredFiles))
-		fmt.Println("------------------")
-		for _, recovered := range result.RecoveredFiles {
-			fmt.Printf("  ID: %s\n", recovered.ID)
-			fmt.Printf("  Title: %s\n", recovered.Title)
-			fmt.Printf("  Project: %s\n", recovered.Project)
-			fmt.Printf("  Source: %s\n", recovered.Source)
-			fmt.Println()
-		}
-	}
-
-	// Print errors
-	if len(result.Errors) > 0 {
-		fmt.Printf("Errors Encountered: %d\n", len(result.Errors))
-		fmt.Println("---------------------")
-		for _, err := range result.Errors {
-			fmt.Printf("  Type: %s\n", err.Type)
-			fmt.Printf("  Message: %s\n", err.Message)
-			if err.FileID != "" {
-				fmt.Printf("  File ID: %s\n", err.FileID)
-			}
-			fmt.Println()
-		}
-	}
-
-	// Print action summary
-	fmt.Println("Summary")
-	fmt.Println("-------")
-	fmt.Printf("  Orphaned files found: %d\n", result.Summary.TotalOrphaned)
-	fmt.Printf("  Missing files found: %d\n", result.Summary.TotalMissing)
-	if !dryRun {
-		fmt.Printf("  Files recovered: %d\n", result.Summary.TotalRecovered)
-	}
-	fmt.Printf("  Errors: %d\n", result.Summary.TotalErrors)
-
-	if dryRun {
-		fmt.Println()
-		fmt.Println("This was a dry run. No changes were made.")
-		fmt.Println("To apply changes, run without --dry-run flag.")
-	}
+	return nil
 }
 
-// splitLines splits a string into lines
-func splitLines(s string) []string {
-	var lines []string
-	start := 0
-	for i := 0; i < len(s); i++ {
-		if s[i] == '\n' {
-			lines = append(lines, s[start:i])
-			start = i + 1
+func recoverScope(scope string, dryRun bool) (int, error) {
+	// Get store path
+	storePath, err := store.GetStorePath(scope)
+	if err != nil {
+		return 0, fmt.Errorf("failed to get store path for scope %s: %w", scope, err)
+	}
+
+	dataDir := filepath.Join(storePath, "data")
+
+	// Check if data directory exists
+	if _, err := os.Stat(dataDir); os.IsNotExist(err) {
+		return 0, nil // No data directory means no files to recover
+	}
+
+	// Create store
+	storeInstance, err := store.NewStore(storePath)
+	if err != nil {
+		return 0, fmt.Errorf("failed to create store for scope %s: %w", scope, err)
+	}
+
+	// Get all existing pads to build a set of known IDs
+	allPads, err := storeInstance.ListAll()
+	if err != nil {
+		return 0, fmt.Errorf("failed to list pads in scope %s: %w", scope, err)
+	}
+
+	knownIDs := make(map[string]bool)
+	for _, pad := range allPads {
+		knownIDs[pad.ID] = true
+	}
+
+	// Find orphaned files
+	entries, err := os.ReadDir(dataDir)
+	if err != nil {
+		return 0, fmt.Errorf("failed to read data directory: %w", err)
+	}
+
+	var orphanedFiles []string
+	for _, entry := range entries {
+		if entry.IsDir() {
+			continue
+		}
+
+		filename := entry.Name()
+
+		// Check if this file has a corresponding pad
+		if !knownIDs[filename] {
+			// Validate that it looks like a UUID
+			if _, err := uuid.Parse(filename); err == nil {
+				orphanedFiles = append(orphanedFiles, filename)
+			}
 		}
 	}
-	if start < len(s) {
-		lines = append(lines, s[start:])
+
+	if len(orphanedFiles) == 0 {
+		return 0, nil
 	}
-	return lines
+
+	fmt.Printf("=== Recovering scope '%s' ===\n", scope)
+	fmt.Printf("Found %d orphaned content files:\n", len(orphanedFiles))
+
+	recovered := 0
+	for _, fileID := range orphanedFiles {
+		filePath := filepath.Join(dataDir, fileID)
+
+		if dryRun {
+			fmt.Printf("  - Would recover %s\n", fileID)
+			recovered++
+			continue
+		}
+
+		// Read the content
+		content, err := os.ReadFile(filePath)
+		if err != nil {
+			fmt.Printf("  - Error reading %s: %v\n", fileID, err)
+			continue
+		}
+
+		// Extract title from content - use the same function from open.go
+		title := extractTitleFromContent(string(content))
+		if title == "" {
+			title = fmt.Sprintf("Recovered pad %s", fileID[:8])
+		}
+
+		// Create a new pad with the recovered content
+		newPad, err := storeInstance.Create(string(content), title)
+		if err != nil {
+			fmt.Printf("  - Error recovering %s: %v\n", fileID, err)
+			continue
+		}
+
+		_ = newPad // New pad created successfully
+
+		fmt.Printf("  + Recovered %s: %s\n", fileID, title)
+		recovered++
+	}
+
+	fmt.Printf("Recovered %d files in scope '%s'\n\n", recovered, scope)
+	return recovered, nil
 }

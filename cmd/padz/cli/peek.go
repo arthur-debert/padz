@@ -1,95 +1,120 @@
-/*
-Copyright © 2025 YOUR NAME HERE <EMAIL ADDRESS>
-*/
 package cli
 
 import (
-	"bufio"
-	"github.com/arthur-debert/padz/cmd/padz/formatter"
-	"github.com/arthur-debert/padz/pkg/commands"
-	"github.com/arthur-debert/padz/pkg/output"
-	"github.com/rs/zerolog/log"
+	"fmt"
 	"os"
 	"strings"
 
+	"github.com/arthur-debert/padz/pkg/store"
 	"github.com/spf13/cobra"
 )
 
-// newPeekCmd creates and returns a new peek command
-func newPeekCmd() *cobra.Command {
-	return &cobra.Command{
-		Use:   PeekUse,
-		Short: PeekShort,
-		Long:  PeekLong,
-		Args:  cobra.ExactArgs(1),
-		Run: func(cmd *cobra.Command, args []string) {
-			global, _ := cmd.Flags().GetBool("global")
-			lines, _ := cmd.Flags().GetInt("lines")
+func newPeekCommand() *cobra.Command {
+	var global bool
+	var lines int
 
+	cmd := &cobra.Command{
+		Use:   "peek <ID>...",
+		Short: "Preview pad contents without opening editor",
+		Long: `Show a preview of pad contents without opening them in an editor.
+By default shows the first 10 lines of each pad.`,
+		Args: cobra.MinimumNArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			// Detect current scope for implicit ID resolution
 			dir, err := os.Getwd()
 			if err != nil {
-				log.Fatal().Err(err).Msg("Operation failed")
+				return fmt.Errorf("failed to get current directory: %w", err)
 			}
 
-			// Format output
-			format, err := output.GetFormat(outputFormat)
+			currentScope, err := store.DetectScope(dir)
 			if err != nil {
-				log.Fatal().Err(err).Msg("Operation failed")
+				return fmt.Errorf("failed to detect scope: %w", err)
 			}
 
-			if format == output.PlainFormat || format == output.TermFormat {
-				// Use terminal formatter for both plain and term formats
-				// Terminal detection will automatically strip formatting when piped
-				content, err := commands.ViewWithStoreManager(dir, global, args[0])
+			// Create dispatcher
+			dispatcher := store.NewDispatcher()
+
+			// Preview each pad
+			for i, idStr := range args {
+				if i > 0 {
+					fmt.Println() // Add spacing between pads
+				}
+
+				// Handle global flag
+				if global {
+					idStr = "global-" + idStr
+				}
+
+				// Get pad content
+				pad, content, resolvedScope, err := dispatcher.GetPad(idStr, currentScope)
 				if err != nil {
-					log.Fatal().Err(err).Msg("Operation failed")
+					fmt.Printf("Error getting pad %s: %v\n", idStr, err)
+					continue
 				}
 
-				// Parse content into lines (excluding blank lines as per issue #12)
-				scanner := bufio.NewScanner(strings.NewReader(content))
-				var contentLines []string
-				for scanner.Scan() {
-					line := scanner.Text()
-					if strings.TrimSpace(line) != "" { // Skip blank lines
-						contentLines = append(contentLines, line)
-					}
+				// Display header
+				explicitID := store.FormatExplicitID(resolvedScope, pad.UserID)
+				fmt.Printf("=== %s ===\n", explicitID)
+				if pad.Title != "" {
+					fmt.Printf("Title: %s\n", pad.Title)
 				}
-
-				termFormatter, err := formatter.NewTerminalFormatter(nil)
-				if err != nil {
-					log.Fatal().Err(err).Msg("Operation failed")
+				fmt.Printf("Created: %s | Size: %d bytes",
+					pad.CreatedAt.Format("2006-01-02 15:04"),
+					pad.Size)
+				if resolvedScope != currentScope {
+					fmt.Printf(" | Scope: %s", resolvedScope)
 				}
+				if pad.IsPinned {
+					fmt.Printf(" | 📌 Pinned")
+				}
+				if pad.IsDeleted {
+					fmt.Printf(" | 🗑️ Deleted")
+				}
+				fmt.Println()
+				fmt.Println()
 
-				if len(contentLines) <= 2*lines {
-					// Show full content
-					if err := termFormatter.FormatContentView(strings.Join(contentLines, "\n")); err != nil {
-						log.Fatal().Err(err).Msg("Operation failed")
-					}
+				// Show content preview
+				if content == "" {
+					fmt.Println("(empty)")
 				} else {
-					// Show peek format with start/end content and skipped count
-					startLines := contentLines[:lines]
-					endLines := contentLines[len(contentLines)-lines:]
-					skippedLines := len(contentLines) - 2*lines
-
-					startContent := strings.Join(startLines, "\n") + "\n"
-					endContent := strings.Join(endLines, "\n")
-
-					if err := termFormatter.FormatContentPeek(startContent, endContent, true, skippedLines); err != nil {
-						log.Fatal().Err(err).Msg("Operation failed")
-					}
-				}
-			} else {
-				// For JSON format, use existing peek logic
-				content, err := commands.PeekWithStoreManager(dir, global, args[0], lines)
-				if err != nil {
-					log.Fatal().Err(err).Msg("Operation failed")
-				}
-
-				outputFormatter := output.NewFormatter(format, nil)
-				if err := outputFormatter.FormatString(content); err != nil {
-					log.Fatal().Err(err).Msg("Operation failed")
+					showContentPreview(content, lines)
 				}
 			}
+
+			return nil
 		},
+	}
+
+	cmd.Flags().BoolVarP(&global, "global", "g", false, "Peek from global scope")
+	cmd.Flags().IntVarP(&lines, "lines", "n", 10, "Number of lines to show (0 for all)")
+
+	return cmd
+}
+
+func showContentPreview(content string, maxLines int) {
+	contentLines := strings.Split(content, "\n")
+
+	// Determine how many lines to show
+	linesToShow := len(contentLines)
+	truncated := false
+	if maxLines > 0 && len(contentLines) > maxLines {
+		linesToShow = maxLines
+		truncated = true
+	}
+
+	// Show the content
+	for i := 0; i < linesToShow; i++ {
+		line := contentLines[i]
+		// Limit line length to avoid very long lines
+		if len(line) > 120 {
+			line = line[:120] + "..."
+		}
+		fmt.Println(line)
+	}
+
+	// Show truncation notice if needed
+	if truncated {
+		remaining := len(contentLines) - maxLines
+		fmt.Printf("\n... (%d more lines)\n", remaining)
 	}
 }

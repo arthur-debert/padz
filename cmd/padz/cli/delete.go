@@ -1,62 +1,55 @@
-/*
-Copyright © 2025 YOUR NAME HERE <EMAIL ADDRESS>
-*/
 package cli
 
 import (
 	"fmt"
 	"os"
 
-	"github.com/arthur-debert/padz/pkg/commands"
-	"github.com/arthur-debert/padz/pkg/output"
-	"github.com/rs/zerolog/log"
+	"github.com/arthur-debert/padz/pkg/store"
 	"github.com/spf13/cobra"
 )
 
-// newDeleteCmd creates and returns a new delete command
-func newDeleteCmd() *cobra.Command {
-	return &cobra.Command{
-		Use:     DeleteUse,
-		Aliases: []string{"rm", "d", "del"},
-		Short:   DeleteShort,
-		Long:    DeleteLong,
-		Args:    cobra.MinimumNArgs(1),
-		Run: func(cmd *cobra.Command, args []string) {
-			all, _ := cmd.Flags().GetBool("all")
-			global, _ := cmd.Flags().GetBool("global")
+func newDeleteCommand() *cobra.Command {
+	var global bool
+	var all bool
 
+	cmd := &cobra.Command{
+		Use:   "delete [id]",
+		Short: "Delete a pad",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			idStr := args[0]
+
+			// Handle global flag
+			if global {
+				// Force explicit global ID format
+				idStr = "global-" + idStr
+			}
+
+			// Detect current scope for implicit ID resolution
 			dir, err := os.Getwd()
 			if err != nil {
-				log.Fatal().Err(err).Msg("Failed to get current working directory")
+				return fmt.Errorf("failed to get current directory: %w", err)
 			}
 
-			// Always use StoreManager approach
-			deletedTitles, err := commands.DeleteMultipleWithStoreManager(dir, global, args)
-
-			// Format output
-			format, formatErr := output.GetFormat(outputFormat)
-			if formatErr != nil {
-				log.Fatal().Err(formatErr).Msg("Failed to get output format")
-			}
-
+			currentScope, err := store.DetectScope(dir)
 			if err != nil {
-				handleTerminalError(err, format)
-				return
+				return fmt.Errorf("failed to detect scope: %w", err)
 			}
 
-			// Show list in verbose mode (before success message)
-			ShowListAfterCommandWithStoreManager(dir, global, all)
-
-			// Show success message with scratch titles
-			var successMsg string
-			if len(deletedTitles) == 0 {
-				successMsg = "No scratches were deleted (already deleted or not found)"
-			} else if len(deletedTitles) == 1 {
-				successMsg = fmt.Sprintf("The padz \"%s\" has been deleted", deletedTitles[0])
-			} else {
-				successMsg = fmt.Sprintf("%d padz have been deleted", len(deletedTitles))
+			// Create dispatcher and delete pad
+			dispatcher := store.NewDispatcher()
+			explicitID, err := dispatcher.DeletePad(idStr, currentScope)
+			if err != nil {
+				return fmt.Errorf("failed to delete pad: %w", err)
 			}
-			handleTerminalSuccess(successMsg, format)
+
+			fmt.Printf("Deleted pad %s\n", explicitID)
+			return nil
 		},
 	}
+
+	cmd.Flags().BoolVarP(&global, "global", "g", false, "Delete pad from global scope")
+	cmd.Flags().BoolVarP(&all, "all", "a", false, "Delete pad from any scope (default behavior)")
+
+	return cmd
 }

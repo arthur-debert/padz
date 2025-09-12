@@ -5,12 +5,7 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/arthur-debert/padz/cmd/padz/store2"
-	"github.com/arthur-debert/padz/internal/version"
-	"github.com/arthur-debert/padz/pkg/commands"
-	"github.com/arthur-debert/padz/pkg/config"
-	"github.com/arthur-debert/padz/pkg/logging"
-	"github.com/rs/zerolog/log"
+	"github.com/arthur-debert/padz/pkg/store"
 	"github.com/spf13/cobra"
 )
 
@@ -23,6 +18,7 @@ var (
 
 // NewRootCmd creates and returns the root command
 func NewRootCmd() *cobra.Command {
+	// Create a fresh root command each time
 	rootCmd := &cobra.Command{
 		Use:               RootUse,
 		Short:             RootShort,
@@ -30,6 +26,33 @@ func NewRootCmd() *cobra.Command {
 		DisableAutoGenTag: true,
 		CompletionOptions: cobra.CompletionOptions{
 			DisableDefaultCmd: true,
+		},
+		PersistentPreRun: func(cmd *cobra.Command, args []string) {
+			// Handle output mode flags
+			if silent && verbose {
+				// Cannot use both --silent and --verbose flags
+				os.Exit(1)
+			}
+
+			// Default to verbose if neither flag is set
+			if !silent && !verbose {
+				verbose = true
+			}
+
+			// Run auto-cleanup for soft-deleted items (non-blocking, best effort)
+			// Skip for help, completion, version commands, and commands that need immediate store access
+			skipAutoCleanup := cmd.Name() == "help" || cmd.Name() == "completion" ||
+				cmd.Name() == "delete" || cmd.Name() == "restore" || cmd.Name() == "flush" || cmd.Name() == "nuke"
+
+			if !skipAutoCleanup {
+				go func() {
+					// Small delay to let the main command complete first and avoid lock contention
+					time.Sleep(100 * time.Millisecond)
+
+					// Auto-cleanup soft-deleted items older than 7 days
+					autoCleanupDeletedPads(7)
+				}()
+			}
 		},
 	}
 
@@ -48,186 +71,104 @@ func NewRootCmd() *cobra.Command {
 
 	// Add hidden search flag to allow naked -s invocation
 	var searchFlag string
-	rootCmd.Flags().StringVarP(&searchFlag, "search", "s", "", "Search for scratches (redirects to ls -s)")
+	rootCmd.Flags().StringVarP(&searchFlag, "search", "s", "", "Search for pads (redirects to list -s)")
 	rootCmd.Flags().Lookup("search").Hidden = true
-
-	// Set PersistentPreRun for logging and output mode
-	rootCmd.PersistentPreRun = func(cmd *cobra.Command, args []string) {
-		// Setup logging based on verbosity
-		logging.SetupLogger(verbosity)
-		log.Debug().Str("command", cmd.Name()).Msg("Command started")
-
-		// Handle output mode flags
-		if silent && verbose {
-			log.Fatal().Msg("Cannot use both --silent and --verbose flags")
-		}
-
-		// Default to verbose if neither flag is set
-		if !silent && !verbose {
-			verbose = true
-		}
-
-		// Run auto-cleanup for soft-deleted items (non-blocking, best effort)
-		// Skip for help, completion, version commands, and commands that need immediate store access
-		skipAutoCleanup := cmd.Name() == "help" || cmd.Name() == "completion" || cmd.Flags().Changed("version") ||
-			cmd.Name() == "delete" || cmd.Name() == "restore" || cmd.Name() == "flush" || cmd.Name() == "nuke"
-
-		if !skipAutoCleanup {
-			go func() {
-				// Small delay to let the main command complete first and avoid lock contention
-				time.Sleep(100 * time.Millisecond)
-
-				// Get current directory
-				dir, err := os.Getwd()
-				if err != nil {
-					log.Debug().Err(err).Msg("Failed to get working directory for auto-cleanup")
-					return
-				}
-
-				// Auto-cleanup soft-deleted items older than 7 days using StoreManager
-				// This will cleanup in the current project store
-				if _, err := commands.CleanupWithStoreManager(dir, 7); err != nil {
-					log.Debug().Err(err).Msg("Auto-cleanup failed")
-				}
-			}()
-		}
-	}
-
-	// Handle version flag in Run function
-	rootCmd.Run = func(cmd *cobra.Command, args []string) {
-		if versionFlag {
-			cmd.Printf(VersionFormat, version.Version, version.Commit, version.Date)
-			return
-		}
-		// This should not be reached normally due to our Execute() logic
-		_ = cmd.Help()
-	}
 
 	// Set up command groups
 	rootCmd.AddGroup(&cobra.Group{
 		ID:    "single",
-		Title: GroupSingleScratch,
+		Title: GroupSinglePad,
 	})
 	rootCmd.AddGroup(&cobra.Group{
 		ID:    "multiple",
-		Title: GroupScratches,
+		Title: GroupPads,
 	})
 
-	// Single scratch commands
-	createCmd := newCreateCmd()
+	// Single pad commands
+	createCmd := newCreateCommand()
 	createCmd.GroupID = "single"
-	createCmd.Flags().BoolP("global", "g", false, "Create scratch in global scope")
-	createCmd.Flags().StringP("title", "t", "", "Title for the scratch")
 	rootCmd.AddCommand(createCmd)
 
-	viewCmd := newViewCmd()
+	viewCmd := newViewCommand()
+	viewCmd.Aliases = []string{"v"}
 	viewCmd.GroupID = "single"
-	viewCmd.Flags().BoolP("all", "a", false, FlagAllDesc)
-	viewCmd.Flags().BoolP("global", "g", false, FlagGlobalDesc)
 	rootCmd.AddCommand(viewCmd)
 
-	openCmd := newOpenCmd()
+	openCmd := newOpenCommand()
+	openCmd.Aliases = []string{"o", "e"}
 	openCmd.GroupID = "single"
-	openCmd.Flags().BoolP("all", "a", false, FlagAllDesc)
-	openCmd.Flags().BoolP("global", "g", false, FlagGlobalDesc)
 	rootCmd.AddCommand(openCmd)
 
-	peekCmd := newPeekCmd()
+	peekCmd := newPeekCommand()
 	peekCmd.GroupID = "single"
-	peekCmd.Flags().IntP("lines", "n", 3, FlagLinesDesc)
-	peekCmd.Flags().BoolP("all", "a", false, FlagAllDesc)
-	peekCmd.Flags().BoolP("global", "g", false, FlagGlobalDesc)
 	rootCmd.AddCommand(peekCmd)
 
-	deleteCmd := newDeleteCmd()
+	deleteCmd := newDeleteCommand()
+	deleteCmd.Aliases = []string{"rm", "d", "del"}
 	deleteCmd.GroupID = "single"
-	deleteCmd.Flags().BoolP("all", "a", false, FlagAllDesc)
-	deleteCmd.Flags().BoolP("global", "g", false, FlagGlobalDesc)
 	rootCmd.AddCommand(deleteCmd)
 
-	pathCmd := newPathCmd()
+	pathCmd := newPathCommand()
 	pathCmd.GroupID = "single"
-	pathCmd.Flags().BoolP("all", "a", false, FlagAllDesc)
-	pathCmd.Flags().BoolP("global", "g", false, FlagGlobalDesc)
 	rootCmd.AddCommand(pathCmd)
 
-	copyCmd := newCopyCmd()
+	copyCmd := newCopyCommand()
+	copyCmd.Aliases = []string{"cp"}
 	copyCmd.GroupID = "single"
-	copyCmd.Flags().BoolP("all", "a", false, FlagAllDesc)
-	copyCmd.Flags().BoolP("global", "g", false, FlagGlobalDesc)
 	rootCmd.AddCommand(copyCmd)
 
-	pinCmd := newPinCmd()
+	pinCmd := newPinCommand()
 	pinCmd.GroupID = "single"
-	pinCmd.Flags().BoolP("all", "a", false, FlagAllDesc)
-	pinCmd.Flags().BoolP("global", "g", false, FlagGlobalDesc)
 	rootCmd.AddCommand(pinCmd)
 
-	unpinCmd := newUnpinCmd()
+	unpinCmd := newUnpinCommand()
 	unpinCmd.GroupID = "single"
-	unpinCmd.Flags().BoolP("all", "a", false, FlagAllDesc)
-	unpinCmd.Flags().BoolP("global", "g", false, FlagGlobalDesc)
 	rootCmd.AddCommand(unpinCmd)
 
-	// Multiple scratches commands
-	lsCmd := newLsCmd()
-	lsCmd.GroupID = "multiple"
-	lsCmd.Flags().BoolP("all", "a", false, FlagAllDesc)
-	lsCmd.Flags().BoolP("global", "g", false, FlagGlobalDesc)
-	lsCmd.Flags().StringP("search", "s", "", "Search for scratches containing the given term")
-	lsCmd.Flags().Bool("deleted", false, "Show only soft-deleted scratches")
-	lsCmd.Flags().Bool("include-deleted", false, "Include soft-deleted scratches in listing")
-	rootCmd.AddCommand(lsCmd)
+	// Multiple pads commands
+	listCmd := newListCommand()
+	listCmd.Aliases = []string{"ls"}
+	listCmd.GroupID = "multiple"
+	rootCmd.AddCommand(listCmd)
 
-	searchCmd := newSearchCmd()
+	searchCmd := newSearchCommand()
 	searchCmd.GroupID = "multiple"
-	searchCmd.Flags().BoolP("all", "a", false, FlagAllDesc)
-	searchCmd.Flags().BoolP("global", "g", false, FlagGlobalDesc)
-	searchCmd.Flags().StringP("project", "p", "", "Limit search to specific project")
 	rootCmd.AddCommand(searchCmd)
 
-	cleanupCmd := newCleanupCmd()
+	cleanupCmd := newCleanupCommand()
+	cleanupCmd.Aliases = []string{"clean"}
 	cleanupCmd.GroupID = "multiple"
-	cleanupCmd.Flags().IntP("days", "d", 30, FlagDaysDesc)
 	rootCmd.AddCommand(cleanupCmd)
 
-	nukeCmd := newNukeCmd()
+	nukeCmd := newNukeCommand()
 	nukeCmd.GroupID = "multiple"
-	nukeCmd.Flags().BoolP("all", "a", false, FlagAllDesc)
 	rootCmd.AddCommand(nukeCmd)
 
-	recoverCmd := newRecoverCmd()
-	recoverCmd.GroupID = "multiple"
-	rootCmd.AddCommand(recoverCmd)
-
-	flushCmd := newFlushCmd()
+	flushCmd := newFlushCommand()
 	flushCmd.GroupID = "multiple"
 	rootCmd.AddCommand(flushCmd)
 
-	restoreCmd := newRestoreCmd()
+	restoreCmd := newRestoreCommand()
 	restoreCmd.GroupID = "multiple"
 	rootCmd.AddCommand(restoreCmd)
 
-	exportCmd := newExportCmd()
+	exportCmd := newExportCommand()
 	exportCmd.GroupID = "multiple"
-	exportCmd.Flags().BoolP("all", "a", false, FlagAllDesc)
-	exportCmd.Flags().BoolP("global", "g", false, FlagGlobalDesc)
 	rootCmd.AddCommand(exportCmd)
 
-	// Utility commands (not grouped)
-	showDataFileCmd := newShowDataFileCmd()
-	showDataFileCmd.Flags().BoolP("global", "g", false, FlagGlobalDesc)
-	rootCmd.AddCommand(showDataFileCmd)
+	recoverCmd := newRecoverCommand()
+	recoverCmd.GroupID = "multiple"
+	rootCmd.AddCommand(recoverCmd)
 
-	// Experimental v2 store implementation
-	store2Cmd := store2.NewStore2Command()
-	rootCmd.AddCommand(store2Cmd)
+	// Utility commands (not grouped)
+	showDataFileCmd := newShowDataFileCommand()
+	rootCmd.AddCommand(showDataFileCmd)
 
 	return rootCmd
 }
 
 // Execute adds all child commands to the root command and sets flags appropriately.
-// This is called by main.main(). It only needs to happen once to the rootCmd.
+// This is called by main.main().
 func Execute() error {
 	args := os.Args[1:]
 
@@ -248,11 +189,10 @@ func resolveCommand(args []string) []string {
 		return []string{"list"}
 	}
 
-	// Case 2: Single integer argument -> run view/open command
+	// Case 2: Single integer argument -> run view command
 	if len(args) == 1 {
 		if num, err := strconv.Atoi(args[0]); err == nil && num > 0 {
-			cmd := config.NakedIntCommand // "view" or "open"
-			return append([]string{cmd}, args...)
+			return append([]string{"view"}, args...)
 		}
 	}
 
@@ -265,6 +205,10 @@ func resolveCommand(args []string) []string {
 		// Check if it's a create flag (-t for title)
 		if args[0] == "-t" || args[0] == "--title" {
 			return append([]string{"create"}, args...)
+		}
+		// Check if it's a search flag (-s)
+		if args[0] == "-s" || args[0] == "--search" {
+			return append([]string{"list"}, args...)
 		}
 		// Other flags imply list command
 		return append([]string{"list"}, args...)
@@ -289,4 +233,66 @@ func resolveCommand(args []string) []string {
 
 	// Case 5: No valid command found, assume it's a create command
 	return append([]string{"create"}, args...)
+}
+
+// autoCleanupDeletedPads automatically removes soft-deleted pads older than the specified days
+func autoCleanupDeletedPads(daysOld int) {
+	// Get base store directory
+	baseDir, err := store.GetStorePath("")
+	if err != nil {
+		return // Silently fail
+	}
+
+	// Find all scope directories
+	entries, err := os.ReadDir(baseDir)
+	if err != nil {
+		return // Silently fail
+	}
+
+	cutoffTime := time.Now().AddDate(0, 0, -daysOld)
+
+	for _, entry := range entries {
+		if !entry.IsDir() {
+			continue
+		}
+
+		scope := entry.Name()
+		storePath, err := store.GetStorePath(scope)
+		if err != nil {
+			continue
+		}
+
+		storeInstance, err := store.NewStore(storePath)
+		if err != nil {
+			continue
+		}
+
+		// Get deleted pads
+		deletedPads, err := storeInstance.ListDeleted()
+		if err != nil {
+			continue
+		}
+
+		// Flush pads older than cutoff
+		for _, pad := range deletedPads {
+			if pad.DeletedAt != nil && pad.DeletedAt.Before(cutoffTime) {
+				_, _ = storeInstance.Flush(pad.UserID) // Ignore errors
+			}
+		}
+	}
+}
+
+// IsVerboseMode returns true if verbose output is enabled
+func IsVerboseMode() bool {
+	return verbose && !silent
+}
+
+// IsSilentMode returns true if silent output is enabled
+func IsSilentMode() bool {
+	return silent
+}
+
+// GetOutputFormat returns the current output format
+func GetOutputFormat() string {
+	return outputFormat
 }

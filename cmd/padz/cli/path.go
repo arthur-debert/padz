@@ -1,60 +1,134 @@
-/*
-Copyright © 2025 YOUR NAME HERE <EMAIL ADDRESS>
-*/
 package cli
 
 import (
-	"github.com/rs/zerolog/log"
+	"fmt"
 	"os"
+	"path/filepath"
 
-	"github.com/arthur-debert/padz/pkg/commands"
-	"github.com/arthur-debert/padz/pkg/output"
+	"github.com/arthur-debert/padz/pkg/store"
 	"github.com/spf13/cobra"
 )
 
-// newPathCmd creates and returns a new path command
-func newPathCmd() *cobra.Command {
-	return &cobra.Command{
-		Use:   "path <index>",
-		Short: "Get the full path to a scratch",
-		Long:  `Get the full path to a scratch file identified by its index.`,
-		Args:  cobra.ExactArgs(1),
-		Run: func(cmd *cobra.Command, args []string) {
-			global, _ := cmd.Flags().GetBool("global")
+func newPathCommand() *cobra.Command {
+	var global bool
 
-			dir, err := os.Getwd()
-			if err != nil {
-				log.Fatal().Err(err).Msg("Operation failed")
+	cmd := &cobra.Command{
+		Use:   "path [ID]",
+		Short: "Show file system paths for pads or stores",
+		Long: `Show the file system paths for pads or stores.
+If no ID is provided, shows the current scope's store path.
+If an ID is provided, shows the path to that specific pad's content file.`,
+		Args: cobra.MaximumNArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			if len(args) == 0 {
+				// Show store path
+				return showStorePath(global)
 			}
 
-			result, err := commands.PathWithStoreManager(dir, global, args[0])
-
-			// Format output
-			format, formatErr := output.GetFormat(outputFormat)
-			if formatErr != nil {
-				log.Fatal().Err(formatErr).Msg("Failed to get output format")
-			}
-
-			formatter := output.NewFormatter(format, nil)
-
-			if err != nil {
-				if err := formatter.FormatError(err); err != nil {
-					log.Fatal().Err(err).Msg("Operation failed")
-				}
-				os.Exit(1)
-			}
-
-			// For path command, output the path directly in plain/term mode
-			if format == output.PlainFormat || format == output.TermFormat {
-				if err := formatter.FormatString(result.Path); err != nil {
-					log.Fatal().Err(err).Msg("Operation failed")
-				}
-			} else {
-				// For JSON, output the structured result
-				if err := formatter.FormatPath(result); err != nil {
-					log.Fatal().Err(err).Msg("Operation failed")
-				}
-			}
+			// Show pad file path
+			return showPadPath(args[0], global)
 		},
 	}
+
+	cmd.Flags().BoolVarP(&global, "global", "g", false, "Use global scope")
+
+	return cmd
+}
+
+func showStorePath(global bool) error {
+	var scope string
+	if global {
+		scope = "global"
+	} else {
+		dir, err := os.Getwd()
+		if err != nil {
+			return fmt.Errorf("failed to get current directory: %w", err)
+		}
+
+		scope, err = store.DetectScope(dir)
+		if err != nil {
+			return fmt.Errorf("failed to detect scope: %w", err)
+		}
+	}
+
+	storePath, err := store.GetStorePath(scope)
+	if err != nil {
+		return fmt.Errorf("failed to get store path: %w", err)
+	}
+
+	fmt.Printf("Store path for scope '%s':\n%s\n\n", scope, storePath)
+
+	// Show directory structure
+	fmt.Println("Directory structure:")
+	fmt.Printf("├── metadata.json    (pad metadata)\n")
+	fmt.Printf("└── data/           (pad content files)\n")
+
+	// Show if directory exists and basic stats
+	if stat, err := os.Stat(storePath); err != nil {
+		fmt.Printf("\nStatus: Directory does not exist\n")
+	} else {
+		fmt.Printf("\nStatus: Directory exists\n")
+		fmt.Printf("Created: %s\n", stat.ModTime().Format("2006-01-02 15:04:05"))
+
+		// Count content files
+		dataDir := filepath.Join(storePath, "data")
+		if entries, err := os.ReadDir(dataDir); err == nil {
+			fmt.Printf("Content files: %d\n", len(entries))
+		}
+	}
+
+	return nil
+}
+
+func showPadPath(idStr string, global bool) error {
+	// Detect current scope for implicit ID resolution
+	dir, err := os.Getwd()
+	if err != nil {
+		return fmt.Errorf("failed to get current directory: %w", err)
+	}
+
+	currentScope, err := store.DetectScope(dir)
+	if err != nil {
+		return fmt.Errorf("failed to detect scope: %w", err)
+	}
+
+	// Handle global flag
+	if global {
+		idStr = "global-" + idStr
+	}
+
+	// Create dispatcher and get pad
+	dispatcher := store.NewDispatcher()
+	pad, _, resolvedScope, err := dispatcher.GetPad(idStr, currentScope)
+	if err != nil {
+		return fmt.Errorf("failed to get pad: %w", err)
+	}
+
+	// Get store path for this pad's scope
+	storePath, err := store.GetStorePath(resolvedScope)
+	if err != nil {
+		return fmt.Errorf("failed to get store path: %w", err)
+	}
+
+	// Show pad information
+	explicitID := store.FormatExplicitID(resolvedScope, pad.UserID)
+	fmt.Printf("Pad %s: %s\n\n", explicitID, pad.Title)
+
+	// Show paths
+	contentPath := filepath.Join(storePath, "data", pad.ID)
+	metadataPath := filepath.Join(storePath, "metadata.json")
+
+	fmt.Printf("Content file path:\n%s\n\n", contentPath)
+	fmt.Printf("Metadata file path:\n%s\n\n", metadataPath)
+
+	// Show file status
+	if stat, err := os.Stat(contentPath); err != nil {
+		fmt.Printf("Content file status: MISSING\n")
+	} else {
+		fmt.Printf("Content file status: EXISTS\n")
+		fmt.Printf("Size: %d bytes\n", stat.Size())
+		fmt.Printf("Modified: %s\n", stat.ModTime().Format("2006-01-02 15:04:05"))
+	}
+
+	return nil
 }

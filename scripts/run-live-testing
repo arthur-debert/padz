@@ -1,0 +1,310 @@
+#!/usr/bin/env bash
+
+set -euo pipefail
+
+# ==============================================================================
+# Constants and Configuration
+# ==============================================================================
+
+# Get the project root directory (where this script is located)
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+
+# Colors for output
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+BLUE='\033[0;34m'
+RED='\033[0;31m'
+NC='\033[0m' # No Color
+GRAY='\033[0;90m'
+DIM="${GRAY}"
+
+# ==============================================================================
+# Functions
+# ==============================================================================
+
+# Function to show help
+show_help() {
+    echo "Usage: $(basename "${0}") [OPTIONS] [COMMAND]"
+    echo ""
+    echo "Launch an isolated test environment for padz development."
+    echo ""
+    echo "Arguments:"
+    echo "  COMMAND     Command or script to execute in the test environment"
+    echo "              If provided, runs the command and exits"
+    echo "              If omitted, starts an interactive shell"
+    echo ""
+    echo "Options:"
+    echo "  --output=FORMAT      Set output format for padz commands (json|text)"
+    echo "                       (default: text)"
+    echo "  --validate           Validate environment setup and exit"
+    echo "  --save-to=FILE       Save test output to specified file"
+    echo "  -h, --help           Show this help message"
+    echo ""
+    echo "Examples:"
+    echo "  $(basename "${0}")                    # Start interactive shell"
+    echo "  $(basename "${0}") 'padz list'        # Run command and exit"
+    echo "  $(basename "${0}") ./test-script.sh   # Run script and exit"
+    echo "  $(basename "${0}") --validate         # Check environment setup"
+    exit 0
+}
+
+# Function to setup test environment directories
+setup_directories() {
+    # Create all directories
+    mkdir -p "${ENV_HOME}" "${PROJECT_FOO}" || {
+        echo -e "${RED}Error: Failed to create test directories${NC}" >&2
+        return 1
+    }
+    
+    echo -e "${GREEN}✓ Created test directories:${NC}"
+    echo -e "  ${BLUE}env-home:${NC} ${ENV_HOME}"
+    echo -e "  ${BLUE}projectfoo:${NC} ${PROJECT_FOO}"
+}
+
+# Function to setup git repository in project directory
+setup_git_repo() {
+    # Create .git directory in project to trigger project-scope detection
+    local git_dir="${PROJECT_FOO}/.git"
+    mkdir -p "${git_dir}" || {
+        echo -e "${RED}Error: Failed to create .git directory${NC}" >&2
+        return 1
+    }
+    
+    # Create a minimal git config (not a full repo, just enough for scope detection)
+    cat > "${git_dir}/config" <<'EOF'
+[core]
+    repositoryformatversion = 0
+    filemode = true
+    bare = false
+EOF
+    
+    echo -e "${GREEN}✓ Created .git directory for scope detection${NC}"
+    echo -e "  ${BLUE}Project scope:${NC} projectfoo (auto-detected)"
+}
+
+# Function to validate and setup padz binary
+setup_padz_binary() {
+    PADZ_BIN="${PROJECT_ROOT}/bin/padz"
+    
+    # Build padz if binary doesn't exist
+    if [[ ! -x "${PADZ_BIN}" ]]; then
+        echo -e "${YELLOW}Building padz binary...${NC}"
+        if (cd "${PROJECT_ROOT}" && ./scripts/build > /dev/null 2>&1); then
+            echo -e "${GREEN}✓ Padz binary built successfully${NC}"
+        else
+            echo -e "${RED}✗ Failed to build padz binary${NC}" >&2
+            return 1
+        fi
+    else
+        echo -e "${GREEN}✓ Padz binary found${NC}"
+    fi
+    
+    # Add project bin directory to PATH
+    export PATH="${PROJECT_ROOT}/bin:${PATH}"
+    
+    # Verify padz is accessible
+    if command -v padz >/dev/null 2>&1; then
+        echo -e "${GREEN}✓ Padz added to PATH${NC}"
+        echo -e "  ${BLUE}Using binary:${NC} $(which padz)"
+        echo -e "  ${BLUE}Version:${NC} $(padz --version 2>/dev/null | head -1 || echo 'unknown')"
+    else
+        echo -e "${RED}✗ Failed to add padz to PATH${NC}" >&2
+        return 1
+    fi
+}
+
+# Function to setup environment variables
+setup_environment() {
+    # Set HOME to our isolated env-home directory
+    export HOME="${ENV_HOME}"
+    
+    # Set XDG_DATA_HOME to store padz data in env-home
+    export XDG_DATA_HOME="${ENV_HOME}/.local/share"
+    
+    # Set other XDG directories for completeness
+    export XDG_CONFIG_HOME="${ENV_HOME}/.config"
+    export XDG_CACHE_HOME="${ENV_HOME}/.cache"
+    export XDG_STATE_HOME="${ENV_HOME}/.local/state"
+    
+    # Set OUTPUT_FORMAT for script injection
+    export OUTPUT_FORMAT="${OUTPUT_FORMAT:-text}"
+    
+    # Create custom prompt to indicate test environment
+    export PS1="[padz-test] \W $ "
+    
+    echo -e "${GREEN}✓ Environment variables set:${NC}"
+    echo -e "  ${BLUE}HOME:${NC} ${HOME}"
+    echo -e "  ${BLUE}XDG_DATA_HOME:${NC} ${XDG_DATA_HOME}"
+}
+
+# Function to display welcome message
+display_welcome() {
+    echo -e "\nWelcome to the isolated test environment for padz:\n"
+    echo -e "    ├── env-home ${DIM}\${HOME}${NC} (isolated home directory)"
+    echo -e "    └── projectfoo ${DIM}project directory${NC} *you are here*"
+    echo -e ""
+    echo -e "Environment setup:"
+    echo -e "  • ${GREEN}HOME:${NC} ${HOME}"
+    echo -e "  • ${GREEN}XDG_DATA_HOME:${NC} ${XDG_DATA_HOME}"
+    echo -e "  • ${GREEN}Padz data will be stored in:${NC} ${XDG_DATA_HOME}/padz/store/"
+    echo -e ""
+    echo -e "${YELLOW}Testing instructions:${NC}"
+    echo -e "  1. Use ${BLUE}padz${NC} commands to create/list project-bound pads"
+    echo -e "  2. Use ${BLUE}padz --global${NC} for global scope operations"
+    echo -e "  3. Use ${BLUE}padz --all${NC} to see pads from all scopes"
+    echo -e "  4. ${BLUE}cd \${HOME}${NC} to test default scope detection"
+    echo -e ""
+    echo -e "${DIM}Type 'exit' or press Ctrl+D to leave and cleanup${NC}\n"
+}
+
+# Function to launch interactive shell, execute command, or run script
+launch_shell() {
+    local command_to_run="${1:-}"
+    local script_to_run="${2:-}"
+
+    # Change to the project directory
+    cd "${PROJECT_FOO}" || {
+        echo -e "${RED}Error: Failed to change to project directory${NC}" >&2
+        exit 1
+    }
+
+    if [[ -n "${script_to_run}" ]]; then
+        # Execute a script file
+        echo -e "${DIM}Executing script: ${script_to_run}${NC}\n"
+        
+        # Make sure script is executable
+        chmod +x "${script_to_run}" 2>/dev/null || true
+        
+        if [[ -n "${SAVE_TO_FILE}" ]]; then
+            # Save output to file
+            echo -e "${DIM}Saving output to: ${SAVE_TO_FILE}${NC}\n"
+            bash "${script_to_run}" | tee "${SAVE_TO_FILE}"
+        else
+            bash "${script_to_run}"
+        fi
+    elif [[ -n "${command_to_run}" ]]; then
+        # Execute the command and exit
+        echo -e "${DIM}Executing: ${command_to_run}${NC}\n"
+        
+        if [[ -n "${SAVE_TO_FILE}" ]]; then
+            # Save output to file
+            echo -e "${DIM}Saving output to: ${SAVE_TO_FILE}${NC}\n"
+            bash -c "${command_to_run}" | tee "${SAVE_TO_FILE}"
+        else
+            bash -c "${command_to_run}"
+        fi
+    else
+        # Start interactive shell
+        display_welcome
+        
+        # Start a new bash shell (without exec to ensure cleanup trap runs)
+        bash --norc
+    fi
+}
+
+# Function to cleanup on exit
+cleanup() {
+    echo -e "\n${DIM}Cleaning up test environment...${NC}"
+    if [[ -d "${TEMP_BASE}" ]]; then
+        rm -rf "${TEMP_BASE}"
+        echo -e "${GREEN}Test environment cleaned up${NC}"
+    fi
+}
+
+# ==============================================================================
+# Main Script Logic
+# ==============================================================================
+
+# Parse arguments
+SCRIPT_TO_RUN=""
+COMMAND_TO_RUN=""
+OUTPUT_FORMAT="text" # Default output format
+SAVE_TO_FILE=""
+VALIDATE_ONLY=false
+
+while [[ ${#} -gt 0 ]]; do
+    case "${1}" in
+    -h | --help)
+        show_help
+        ;;
+    --validate)
+        VALIDATE_ONLY=true
+        shift
+        ;;
+    --output=*)
+        # Handle --output=VALUE format
+        value="${1#*=}"
+        if [[ "$value" == "json" || "$value" == "text" ]]; then
+            OUTPUT_FORMAT="$value"
+            shift
+        else
+            echo -e "${RED}Error: Invalid output format '$value'. Valid formats are 'json' or 'text'.${NC}" >&2
+            exit 1
+        fi
+        ;;
+    --save-to=*)
+        # Handle --save-to=VALUE format
+        value="${1#*=}"
+        if [[ -n "$value" ]]; then
+            SAVE_TO_FILE="$value"
+            shift
+        else
+            echo -e "${RED}Error: --save-to= requires a value${NC}" >&2
+            exit 1
+        fi
+        ;;
+    *.sh)
+        # Script file to execute
+        if [[ -z "${SCRIPT_TO_RUN}" ]]; then
+            SCRIPT_TO_RUN="${1}"
+            if [[ ! -f "${SCRIPT_TO_RUN}" ]]; then
+                echo -e "${RED}Error: Script file '${SCRIPT_TO_RUN}' does not exist${NC}" >&2
+                exit 1
+            fi
+            # Convert to absolute path
+            SCRIPT_TO_RUN="$(cd "$(dirname "${SCRIPT_TO_RUN}")" && pwd)/$(basename "${SCRIPT_TO_RUN}")"
+            shift
+        else
+            echo -e "${RED}Error: Multiple scripts specified${NC}" >&2
+            exit 1
+        fi
+        ;;
+    *)
+        # Remaining arguments are the command to execute
+        COMMAND_TO_RUN="${*}"
+        break
+        ;;
+    esac
+done
+
+# Handle validate-only mode (placeholder for now)
+if [[ "${VALIDATE_ONLY}" == true ]]; then
+    echo -e "${GREEN}Environment validation not implemented yet${NC}"
+    exit 0
+fi
+
+# Create a unique temporary directory
+TEMP_BASE="$(mktemp -d)"
+
+# Define temporary directory structure
+ENV_HOME="${TEMP_BASE}/env-home"
+PROJECT_FOO="${TEMP_BASE}/projectfoo"
+
+# Set up trap to cleanup on exit
+trap cleanup EXIT INT TERM
+
+# Initialize test environment
+echo -e "${BLUE}Setting up padz live testing environment...${NC}"
+setup_directories
+setup_git_repo
+setup_environment
+setup_padz_binary
+
+# Verify XDG directories exist
+mkdir -p "${XDG_DATA_HOME}" "${XDG_CONFIG_HOME}" "${XDG_CACHE_HOME}" "${XDG_STATE_HOME}"
+
+echo -e "\n${GREEN}Environment setup complete!${NC}"
+
+# Launch shell, execute command, or run script
+launch_shell "${COMMAND_TO_RUN}" "${SCRIPT_TO_RUN}"

@@ -6,25 +6,19 @@ const (
 	RootShort = "padz create scratch pads, draft files using $EDITOR."
 	RootLong  = `padz create scratch pads, draft files using $EDITOR.
 
-  $ padz                  # Lists scratches with an index to be used in open, view, delete:
-      1. 10 minutes ago My first scratch note
-  $ padz create             # create a new scratch in $EDITOR
-  $ padz "My scratch title. Can have content"  # shortcut to create
+  $ padz                    # Lists pads with an index to be used in open, view, delete:
+      1. 10 minutes ago My first pad note
+  $ padz create             # create a new pad in $EDITOR
+  $ padz "My pad title. Can have content"  # shortcut to create
   $ padz view <index>       # views in shell
-  $ padz ls -s "<term>"     # search for scratches containing term`
-
-	// Root command error messages
-	ErrFailedToInitStore     = "Failed to initialize store"
-	ErrFailedToGetWorkingDir = "Failed to get working directory"
-	ErrFailedToGetProject    = "Failed to get current project"
-	ErrFailedToCreateNote    = "Failed to create note"
+  $ padz list -s "<term>"   # search for pads containing term`
 
 	// Version format
 	VersionFormat = "padz version %s (commit: %s, built: %s)\n"
 
 	// Command groups
-	GroupSingleScratch = "SINGLE SCRATCH:"
-	GroupScratches     = "SCRATCHES:"
+	GroupSinglePad = "SINGLE PAD:"
+	GroupPads      = "PADS:"
 )
 
 // Flag messages
@@ -35,105 +29,161 @@ const (
 	FlagVersionDesc = "Print version information"
 
 	// Common flags used across commands
-	FlagAllDesc          = "Show scratches from all projects"
-	FlagAllDescSearch    = "Search in all projects"
-	FlagGlobalDesc       = "Show only global scratches"
-	FlagGlobalDescSearch = "Search in global scratches only"
+	FlagAllDesc          = "Show pads from all scopes"
+	FlagAllDescSearch    = "Search in all scopes"
+	FlagGlobalDesc       = "Show only global pads"
+	FlagGlobalDescSearch = "Search in global pads only"
 )
 
-// LS command messages
+// List command messages
 const (
-	LsUse   = "ls"
-	LsShort = "Lists all scratches for the current project"
-	LsLong  = `Lists all scratches for the current project.
-The output includes the index, the relative time of creation, and the title of the scratch.`
+	ListUse   = "list"
+	ListAlias = "ls"
+	ListShort = "Lists all pads for the current scope"
+	ListLong  = `Lists all pads for the current scope.
+The output includes the index, the relative time of creation, and the title of the pad.`
 
-	LsNoScratchesFound = "No scratches found."
+	ListNoPadsFound = "No pads found."
 )
 
 // View command messages
 const (
-	ViewUse   = "view <index>"
-	ViewShort = "View a scratch (v)"
-	ViewLong  = "View the content of a scratch identified by its index."
+	ViewUse     = "view <index>"
+	ViewAliases = "v"
+	ViewShort   = "View a pad (v)"
+	ViewLong    = "View the content of a pad identified by its index."
 )
 
 // Open command messages
 const (
-	OpenUse   = "open <index>"
-	OpenShort = "Open a scratch in $EDITOR (o, e)"
-	OpenLong  = "Open a scratch, identified by its index, in $EDITOR."
+	OpenUse     = "open <index>"
+	OpenAliases = "o,e"
+	OpenShort   = "Open a pad in $EDITOR (o, e)"
+	OpenLong    = "Open a pad, identified by its index, in $EDITOR."
 
-	OpenSuccess = "Scratch updated."
+	OpenSuccess = "Pad updated."
 )
 
 // Peek command messages
 const (
 	PeekUse   = "peek <index>"
-	PeekShort = "Peek at a scratch"
-	PeekLong  = "Peek at the first and last lines of a scratch."
+	PeekShort = "Peek at a pad"
+	PeekLong  = "Peek at the first and last lines of a pad."
 
 	FlagLinesDesc = "Number of lines to show from the beginning and end"
 )
 
 // Delete command messages
 const (
-	DeleteUse   = "delete <index>"
-	DeleteShort = "Delete a scratch (rm, d, del)"
-	DeleteLong  = "Delete a scratch identified by its index."
+	DeleteUse     = "delete <index>"
+	DeleteAliases = "rm,d,del"
+	DeleteShort   = "Delete a pad (rm, d, del)"
+	DeleteLong    = "Delete a pad identified by its index."
 
-	DeleteSuccess = "Scratch deleted."
+	DeleteSuccess = "Pad deleted."
+)
+
+// Create command messages
+const (
+	CreateUse   = "create [content]"
+	CreateShort = "Create a new pad"
+	CreateLong  = `Create a new pad in $EDITOR or with provided content.
+
+If content is provided as arguments, it will be used as the initial content.
+Otherwise, $EDITOR will be opened for content creation.`
+
+	CreateSuccess = "Pad created."
 )
 
 // Cleanup command messages
 const (
-	CleanupUse   = "cleanup"
-	CleanupShort = "Cleanup old scratches (clean)"
-	CleanupLong  = "Cleanup scratches older than a specified number of days."
+	CleanupUse     = "cleanup"
+	CleanupAliases = "clean"
+	CleanupShort   = "Cleanup old pads (clean)"
+	CleanupLong    = "Cleanup pads older than a specified number of days."
 
-	FlagDaysDesc = "Delete scratches older than this many days"
+	FlagDaysDesc = "Delete pads older than this many days"
 
-	CleanupSuccessFormat = "Cleaned up scratches older than %d days."
+	CleanupSuccessFormat = "Cleaned up pads older than %d days."
 )
 
 // Copy command messages
 const (
-	CopyUse   = "copy <index>"
-	CopyShort = "Copy a scratch to the clipboard (cp)"
-	CopyLong  = `Copy the content of a scratch to the system clipboard.
+	CopyUse     = "copy <index>"
+	CopyAliases = "cp"
+	CopyShort   = "Copy a pad to the clipboard (cp)"
+	CopyLong    = `Copy the content of a pad to the system clipboard.
 
-The scratch is identified by its index number from the 'padz ls' output.
-Use the --all flag to select from all scratches across all projects.`
+The pad is identified by its index number from the 'padz list' output.
+Use the --all flag to select from all pads across all scopes.`
 
-	ErrFailedToCopyScratch   = "Failed to copy scratch to clipboard"
+	ErrFailedToCopyPad       = "Failed to copy pad to clipboard"
 	SuccessCopiedToClipboard = "Copied to clipboard"
 )
 
 // Search command messages
 const (
 	SearchUse   = "search [term]"
-	SearchShort = "Search for a scratch"
-	SearchLong  = "Search for a scratch by a regular expression."
+	SearchShort = "Search for a pad"
+	SearchLong  = "Search for a pad by a regular expression."
 
 	SearchNoMatchesFound = "No matches found."
+)
+
+// Pin/Unpin command messages
+const (
+	PinUse   = "pin <index>"
+	PinShort = "Pin pads for quick access"
+	PinLong  = "Pin one or more pads for quick access."
+
+	UnpinUse   = "unpin <index>"
+	UnpinShort = "Unpin pads"
+	UnpinLong  = "Unpin one or more pads."
+
+	PinSuccess   = "Pad pinned."
+	UnpinSuccess = "Pad unpinned."
+)
+
+// Export command messages
+const (
+	ExportUse   = "export <index>"
+	ExportShort = "Export pads to files"
+	ExportLong  = `Export one or more pads to files.
+
+Supported formats: txt (default), md (markdown)
+Files will be exported to the current directory unless specified otherwise.`
+
+	ExportSuccess = "Pad exported."
+)
+
+// Flush/Restore command messages
+const (
+	FlushUse   = "flush [index]"
+	FlushShort = "Permanently delete soft-deleted pads"
+	FlushLong  = "Permanently delete soft-deleted pads. Use --all to flush all deleted pads."
+
+	RestoreUse   = "restore <index>"
+	RestoreShort = "Restore soft-deleted pads"
+	RestoreLong  = "Restore one or more soft-deleted pads."
+
+	FlushSuccess   = "Pad permanently deleted."
+	RestoreSuccess = "Pad restored."
 )
 
 // Nuke command messages
 const (
 	NukeUse   = "nuke"
-	NukeShort = "Delete all scratches in the current scope"
-	NukeLong  = `Delete all scratches in the current scope (project or global).
-Use --all to delete all scratches across all scopes.`
+	NukeShort = "Delete all pads in the current scope"
+	NukeLong  = `Delete all pads in the current scope (project or global).
+Use --all to delete all pads across all scopes.`
 
 	// Confirmation prompts
-	NukeConfirmProject = "This will delete all %d pads in [%s]. Confirm? [y/N] "
-	NukeConfirmGlobal  = "This will delete all %d pads in global storage. Confirm? [y/N] "
-	NukeConfirmAll     = "This will delete all %d pads across all scopes, projects and global. Confirm? [y/N] "
+	NukeConfirmScope = "This will delete all %d pads in scope '%s'. Confirm? [y/N] "
+	NukeConfirmAll   = "This will delete all %d pads across all scopes. Confirm? [y/N] "
 
 	// Success messages
-	NukeSuccessProject = "Deleted all %d pads in [%s]."
-	NukeSuccessGlobal  = "Deleted all %d pads in global storage."
-	NukeSuccessAll     = "Deleted all %d pads across all scopes."
+	NukeSuccessScope = "Deleted all %d pads in scope '%s'."
+	NukeSuccessAll   = "Deleted all %d pads across all scopes."
 
 	// Other messages
 	NukeNoPadsFound = "No pads found to delete."
@@ -146,7 +196,17 @@ const (
 	ShowDataFileShort = "Show the path to the data directory used by padz"
 	ShowDataFileLong  = `Show the path to the data directory used by padz.
 
-This command displays the directory where padz stores all scratch files and metadata.
-Note that both global and local scratches are stored in the same location - the --global
-flag only affects which scratches are filtered/displayed, not where they are stored.`
+This command displays the directory where padz stores all pad files and metadata.
+Note that both global and local pads are stored in the same location - the --global
+flag only affects which pads are filtered/displayed, not where they are stored.`
+)
+
+// Path command messages
+const (
+	PathUse   = "path [index]"
+	PathShort = "Show file system paths for pads or stores"
+	PathLong  = `Show the file system paths for pads or stores.
+
+If no index is provided, shows the current scope's store path.
+If an index is provided, shows the path to that specific pad's content file.`
 )
