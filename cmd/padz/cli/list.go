@@ -3,6 +3,7 @@ package cli
 import (
 	"fmt"
 	"os"
+	"strings"
 
 	"github.com/arthur-debert/padz/pkg/store"
 	"github.com/spf13/cobra"
@@ -119,8 +120,12 @@ func listScope(scope string, showDeleted bool, includeDeleted bool, showPinned b
 	pinnedIndex := 1
 	for i, pad := range pads {
 		title := pad.Title
-		if title == "" {
+		// Trim whitespace and treat empty/whitespace-only as untitled
+		if strings.TrimSpace(title) == "" {
 			title = "(untitled)"
+		} else if len(title) > 40 {
+			// Truncate long titles with ellipsis
+			title = title[:37] + "..."
 		}
 
 		// Format ID based on item type
@@ -179,8 +184,12 @@ func listAllScopes(showDeleted bool, includeDeleted bool, showPinned bool) error
 		pinnedIndex := 1
 		for _, pad := range pads {
 			title := pad.Title
-			if title == "" {
+			// Trim whitespace and treat empty/whitespace-only as untitled
+			if strings.TrimSpace(title) == "" {
 				title = "(untitled)"
+			} else if len(title) > 40 {
+				// Truncate long titles with ellipsis
+				title = title[:37] + "..."
 			}
 
 			// Format ID based on item type
