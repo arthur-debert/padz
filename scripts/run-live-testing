@@ -62,6 +62,30 @@ setup_directories() {
     echo -e "  ${BLUE}projectfoo:${NC} ${PROJECT_FOO}"
 }
 
+# Function to setup environment variables
+setup_environment() {
+    # Set HOME to our isolated env-home directory
+    export HOME="${ENV_HOME}"
+    
+    # Set XDG_DATA_HOME to store padz data in env-home
+    export XDG_DATA_HOME="${ENV_HOME}/.local/share"
+    
+    # Set other XDG directories for completeness
+    export XDG_CONFIG_HOME="${ENV_HOME}/.config"
+    export XDG_CACHE_HOME="${ENV_HOME}/.cache"
+    export XDG_STATE_HOME="${ENV_HOME}/.local/state"
+    
+    # Set OUTPUT_FORMAT for script injection
+    export OUTPUT_FORMAT="${OUTPUT_FORMAT:-text}"
+    
+    # Create custom prompt to indicate test environment
+    export PS1="[padz-test] \W $ "
+    
+    echo -e "${GREEN}✓ Environment variables set:${NC}"
+    echo -e "  ${BLUE}HOME:${NC} ${HOME}"
+    echo -e "  ${BLUE}XDG_DATA_HOME:${NC} ${XDG_DATA_HOME}"
+}
+
 # Function to cleanup on exit
 cleanup() {
     echo -e "\n${DIM}Cleaning up test environment...${NC}"
@@ -139,9 +163,16 @@ trap cleanup EXIT INT TERM
 # Initialize test environment
 echo -e "${BLUE}Setting up padz live testing environment...${NC}"
 setup_directories
+setup_environment
 
-echo -e "\n${GREEN}Basic environment setup complete!${NC}"
+echo -e "\n${GREEN}Environment setup complete!${NC}"
 echo -e "Temporary base: ${DIM}${TEMP_BASE}${NC}"
 
+# Verify XDG directories exist
+mkdir -p "${XDG_DATA_HOME}" "${XDG_CONFIG_HOME}" "${XDG_CACHE_HOME}" "${XDG_STATE_HOME}"
+
 # For now, just list the directories to verify
+echo -e "\n${DIM}Directory structure:${NC}"
 ls -la "${TEMP_BASE}"
+echo -e "\n${DIM}HOME directory:${NC}"
+ls -la "${HOME}"
