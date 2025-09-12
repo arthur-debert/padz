@@ -62,6 +62,27 @@ setup_directories() {
     echo -e "  ${BLUE}projectfoo:${NC} ${PROJECT_FOO}"
 }
 
+# Function to setup git repository in project directory
+setup_git_repo() {
+    # Create .git directory in project to trigger project-scope detection
+    local git_dir="${PROJECT_FOO}/.git"
+    mkdir -p "${git_dir}" || {
+        echo -e "${RED}Error: Failed to create .git directory${NC}" >&2
+        return 1
+    }
+    
+    # Create a minimal git config (not a full repo, just enough for scope detection)
+    cat > "${git_dir}/config" <<'EOF'
+[core]
+    repositoryformatversion = 0
+    filemode = true
+    bare = false
+EOF
+    
+    echo -e "${GREEN}✓ Created .git directory for scope detection${NC}"
+    echo -e "  ${BLUE}Project scope:${NC} projectfoo (auto-detected)"
+}
+
 # Function to validate and setup padz binary
 setup_padz_binary() {
     PADZ_BIN="${PROJECT_ROOT}/bin/padz"
@@ -244,6 +265,7 @@ trap cleanup EXIT INT TERM
 # Initialize test environment
 echo -e "${BLUE}Setting up padz live testing environment...${NC}"
 setup_directories
+setup_git_repo
 setup_environment
 setup_padz_binary
 
