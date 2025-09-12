@@ -5,87 +5,138 @@ import (
 	"os"
 	"strings"
 
-	"github.com/arthur-debert/padz/cmd/padz/formatter"
-	"github.com/arthur-debert/padz/pkg/commands"
-	"github.com/arthur-debert/padz/pkg/output"
-	"github.com/rs/zerolog/log"
+	"github.com/arthur-debert/padz/pkg/store"
 	"github.com/spf13/cobra"
 )
 
-// newSearchCmd creates a new search command
-func newSearchCmd() *cobra.Command {
-	var all, global bool
+func newSearchCommand() *cobra.Command {
+	var all bool
 
 	cmd := &cobra.Command{
 		Use:   "search [term]",
-		Short: "Search for scratches containing the given term",
-		Long: `Search through scratch titles and content.
-
-The search term can be provided as a single quoted argument or as multiple arguments
-that will be joined with spaces. All text after 'search' is treated as the search term.
-
-Examples:
-  padz search "my term"
-  padz search my term
-  padz search This is a complex term
-
-You can also use regular expressions:
-  padz search "func.*main"
-  padz search TODO|FIXME`,
-		Args: cobra.MinimumNArgs(1),
+		Short: "Search for pads containing the specified term",
+		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			// Join all arguments as the search term
-			searchTerm := strings.Join(args, " ")
+			searchTerm := args[0]
 
-			log.Debug().
-				Str("term", searchTerm).
-				Bool("all", all).
-				Bool("global", global).
-				Msg("Searching scratches")
+			if all {
+				return searchAllScopes(searchTerm)
+			}
 
-			// Get current directory
+			// Search current scope only
 			dir, err := os.Getwd()
 			if err != nil {
-				log.Fatal().Err(err).Msg("Failed to get current working directory")
+				return fmt.Errorf("failed to get current directory: %w", err)
 			}
 
-			// Use StoreManager approach for searching
-			results, err := commands.SearchWithIndicesWithStoreManager(dir, global, searchTerm, all)
+			scope, err := store.DetectScope(dir)
 			if err != nil {
-				log.Error().Err(err).Msg("Failed to search scratches")
-				return err
+				return fmt.Errorf("failed to detect scope: %w", err)
 			}
 
-			// Format search results
-			format, err := output.GetFormat(outputFormat)
-			if err != nil {
-				log.Fatal().Err(err).Msg("Failed to get output format")
-			}
-
-			if len(results) == 0 && (format == output.PlainFormat || format == output.TermFormat) {
-				fmt.Println("No scratches found matching your search.")
-				return nil
-			}
-
-			// Use terminal formatter for both plain and term formats
-			if format == output.PlainFormat || format == output.TermFormat {
-				termFormatter, err := formatter.NewTerminalFormatter(nil)
-				if err != nil {
-					log.Fatal().Err(err).Msg("Failed to create terminal formatter")
-				}
-				if err := termFormatter.FormatSearchResults(results, all); err != nil {
-					log.Fatal().Err(err).Msg("Failed to format search results")
-				}
-			} else {
-				// JSON format should output the ScratchWithIndex objects
-				outputFormatter := output.NewFormatter(format, nil)
-				if err := outputFormatter.FormatSearchResults(results, all); err != nil {
-					log.Fatal().Err(err).Msg("Failed to format search results")
-				}
-			}
-			return nil
+			return searchScope(scope, searchTerm)
 		},
 	}
 
+	cmd.Flags().BoolVar(&all, "all", false, "Search pads from all scopes")
+
 	return cmd
+}
+
+func searchScope(scope, searchTerm string) error {
+	dispatcher := store.NewDispatcher()
+	results, err := dispatcher.SearchPads(searchTerm, scope)
+	if err != nil {
+		return fmt.Errorf("failed to search pads: %w", err)
+	}
+
+	fmt.Printf("=== Search results for '%s' in scope '%s' ===\n\n", searchTerm, scope)
+	if len(results) == 0 {
+		fmt.Println("No matches found")
+		return nil
+	}
+
+	for _, result := range results {
+		title := result.Title
+		if title == "" {
+			title = "(untitled)"
+		}
+		explicitID := store.FormatExplicitID(scope, result.UserID)
+
+		// Show a snippet of the matching content
+		snippet := getContentSnippet(result.Content, searchTerm)
+		fmt.Printf("%10s. %-30s %s\n", explicitID, title, result.CreatedAt.Format("2006-01-02 15:04"))
+		if snippet != "" {
+			fmt.Printf("           %s\n", snippet)
+		}
+		fmt.Println()
+	}
+
+	return nil
+}
+
+func searchAllScopes(searchTerm string) error {
+	dispatcher := store.NewDispatcher()
+	allResults, errors := dispatcher.SearchAllScopes(searchTerm)
+
+	// Display results
+	if len(allResults) == 0 {
+		fmt.Printf("No matches found for '%s' in any scope\n", searchTerm)
+		return nil
+	}
+
+	fmt.Printf("=== Search results for '%s' ===\n\n", searchTerm)
+	first := true
+	for scope, results := range allResults {
+		if len(results) == 0 {
+			continue
+		}
+
+		if !first {
+			fmt.Println()
+		}
+		first = false
+
+		fmt.Printf("--- Scope '%s' ---\n", scope)
+		for _, result := range results {
+			title := result.Title
+			if title == "" {
+				title = "(untitled)"
+			}
+			explicitID := store.FormatExplicitID(scope, result.UserID)
+
+			snippet := getContentSnippet(result.Content, searchTerm)
+			fmt.Printf("%10s. %-30s %s\n", explicitID, title, result.CreatedAt.Format("2006-01-02 15:04"))
+			if snippet != "" {
+				fmt.Printf("           %s\n", snippet)
+			}
+		}
+	}
+
+	// Display errors if any
+	if len(errors) > 0 {
+		fmt.Printf("\nEncountered %d error(s) while searching:\n", len(errors))
+		for _, err := range errors {
+			fmt.Printf("  - %v\n", err)
+		}
+	}
+
+	return nil
+}
+
+func getContentSnippet(content, searchTerm string) string {
+	lines := strings.Split(content, "\n")
+	lowerTerm := strings.ToLower(searchTerm)
+
+	for _, line := range lines {
+		if strings.Contains(strings.ToLower(line), lowerTerm) {
+			// Truncate long lines
+			if len(line) > 60 {
+				line = line[:60] + "..."
+			}
+			return strings.TrimSpace(line)
+		}
+	}
+
+	return ""
 }

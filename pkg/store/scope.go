@@ -1,4 +1,4 @@
-package store2
+package store
 
 import (
 	"os"
@@ -29,7 +29,7 @@ func DetectScope(dir string) (scope string, err error) {
 // GetStorePath returns the path for a store based on scope
 func GetStorePath(scope string) (string, error) {
 	// Use XDG data directory for macOS compatibility
-	baseDir, err := xdg.DataFile("padz/store2")
+	baseDir, err := xdg.DataFile("padz/store")
 	if err != nil {
 		return "", err
 	}

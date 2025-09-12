@@ -1,4 +1,4 @@
-package store2
+package store
 
 import (
 	"path/filepath"
@@ -20,11 +20,11 @@ func TestDispatcherStoreManagement(t *testing.T) {
 	}
 	dispatcher.stores["scope1"] = store1
 
-	store2, err := NewStore(scope2Dir)
+	storeB, err := NewStore(scope2Dir)
 	if err != nil {
-		t.Fatalf("Failed to create store2: %v", err)
+		t.Fatalf("Failed to create storeB: %v", err)
 	}
-	dispatcher.stores["scope2"] = store2
+	dispatcher.stores["scope2"] = storeB
 
 	// Test getting cached stores
 	retrievedStore1 := dispatcher.stores["scope1"]
@@ -33,12 +33,12 @@ func TestDispatcherStoreManagement(t *testing.T) {
 	}
 
 	retrievedStore2 := dispatcher.stores["scope2"]
-	if retrievedStore2 != store2 {
+	if retrievedStore2 != storeB {
 		t.Error("Store2 not properly cached")
 	}
 
 	// Verify stores are different
-	if store1 == store2 {
+	if store1 == storeB {
 		t.Error("Expected different store instances for different scopes")
 	}
 
@@ -48,9 +48,9 @@ func TestDispatcherStoreManagement(t *testing.T) {
 		t.Fatalf("Failed to create pad in store1: %v", err)
 	}
 
-	pad2, err := store2.Create("Content 2", "Title 2")
+	pad2, err := storeB.Create("Content 2", "Title 2")
 	if err != nil {
-		t.Fatalf("Failed to create pad in store2: %v", err)
+		t.Fatalf("Failed to create pad in storeB: %v", err)
 	}
 
 	// Verify pads are in correct stores
@@ -68,9 +68,9 @@ func TestDispatcherStoreManagement(t *testing.T) {
 		t.Fatalf("Failed to list pads from store1: %v", err)
 	}
 
-	pads2, err := store2.List()
+	pads2, err := storeB.List()
 	if err != nil {
-		t.Fatalf("Failed to list pads from store2: %v", err)
+		t.Fatalf("Failed to list pads from storeB: %v", err)
 	}
 
 	if len(pads1) != 1 || len(pads2) != 1 {
@@ -82,6 +82,6 @@ func TestDispatcherStoreManagement(t *testing.T) {
 	}
 
 	if pads2[0].Title != "Title 2" {
-		t.Errorf("Expected 'Title 2' in store2, got %s", pads2[0].Title)
+		t.Errorf("Expected 'Title 2' in storeB, got %s", pads2[0].Title)
 	}
 }

@@ -1,39 +1,50 @@
 package cli
 
 import (
+	"fmt"
 	"os"
 
-	"github.com/arthur-debert/padz/pkg/commands"
-	"github.com/rs/zerolog/log"
+	"github.com/arthur-debert/padz/pkg/store"
 	"github.com/spf13/cobra"
 )
 
-// newCopyCmd creates and returns a new copy command
-func newCopyCmd() *cobra.Command {
-	return &cobra.Command{
-		Use:     CopyUse,
-		Aliases: []string{"cp"},
-		Short:   CopyShort,
-		Long:    CopyLong,
-		Args:    cobra.MinimumNArgs(1),
-		Run: func(cmd *cobra.Command, args []string) {
-			global, _ := cmd.Flags().GetBool("global")
+func newCopyCommand() *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "copy [id]",
+		Short: "Copy pad content to clipboard (placeholder for now)",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			idStr := args[0]
 
+			// Detect current scope
 			dir, err := os.Getwd()
 			if err != nil {
-				log.Fatal().Err(err).Msg(ErrFailedToGetWorkingDir)
+				return fmt.Errorf("failed to get current directory: %w", err)
 			}
 
-			count, err := commands.CopyMultipleWithStoreManager(dir, global, args)
+			currentScope, err := store.DetectScope(dir)
 			if err != nil {
-				log.Fatal().Err(err).Msg(ErrFailedToCopyScratch)
+				return fmt.Errorf("failed to detect scope: %w", err)
 			}
 
-			if count == 1 {
-				log.Info().Msg(SuccessCopiedToClipboard)
-			} else {
-				log.Info().Msgf("Copied %d scratches to clipboard", count)
+			// Create dispatcher and get pad
+			dispatcher := store.NewDispatcher()
+			pad, content, resolvedScope, err := dispatcher.GetPad(idStr, currentScope)
+			if err != nil {
+				return fmt.Errorf("failed to get pad: %w", err)
 			}
+
+			// For now, just print the content (clipboard integration would need OS-specific code)
+			explicitID := store.FormatExplicitID(resolvedScope, pad.UserID)
+			fmt.Printf("Content of pad %s copied to clipboard:\n", explicitID)
+			fmt.Println("---")
+			fmt.Println(content)
+			fmt.Println("---")
+			fmt.Println("(Note: Actual clipboard integration not implemented in this POC)")
+
+			return nil
 		},
 	}
+
+	return cmd
 }

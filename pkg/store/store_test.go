@@ -1,429 +1,204 @@
 package store
 
 import (
-	"fmt"
-	"reflect"
+	"os"
+	"path/filepath"
 	"testing"
 	"time"
-
-	"github.com/arthur-debert/padz/pkg/testutil"
 )
 
 func TestNewStore(t *testing.T) {
-	tests := []struct {
-		name          string
-		setupFiles    map[string]string
-		expectError   bool
-		expectScratch int
-	}{
-		{
-			name:          "empty store initialization",
-			setupFiles:    nil,
-			expectError:   false,
-			expectScratch: 0,
-		},
-		{
-			name: "load existing metadata",
-			setupFiles: map[string]string{
-				"metadata.json": `[{"id":"test1","project":"testproj","title":"Test Scratch","created_at":"2023-01-01T00:00:00Z"}]`,
-			},
-			expectError:   false,
-			expectScratch: 1,
-		},
-		{
-			name: "invalid json metadata",
-			setupFiles: map[string]string{
-				"metadata.json": `invalid json`,
-			},
-			expectError:   true,
-			expectScratch: 0,
-		},
-	}
+	// Create temp directory
+	tempDir := t.TempDir()
+	storePath := filepath.Join(tempDir, "test-store")
 
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			cfg, cleanup := testutil.SetupTestEnvironment(t)
-			defer cleanup()
-
-			// Setup files in memory filesystem
-			if tt.setupFiles != nil {
-				for filename, content := range tt.setupFiles {
-					path := cfg.FileSystem.Join("/test/data/scratch", filename)
-					err := cfg.FileSystem.WriteFile(path, []byte(content), 0644)
-					if err != nil {
-						t.Fatalf("Failed to write test file: %v", err)
-					}
-				}
-			}
-
-			store, err := NewStoreWithConfig(cfg)
-			if tt.expectError {
-				if err == nil {
-					t.Errorf("expected error but got none")
-				}
-				return
-			}
-			if err != nil {
-				t.Errorf("unexpected error: %v", err)
-				return
-			}
-
-			scratches := store.GetScratches()
-			if len(scratches) != tt.expectScratch {
-				t.Errorf("expected %d scratches, got %d", tt.expectScratch, len(scratches))
-			}
-		})
-	}
-}
-
-func TestStore_GetScratches(t *testing.T) {
-	testScratch := Scratch{
-		ID:        "test123",
-		Project:   "testproject",
-		Title:     "Test Title",
-		CreatedAt: time.Date(2023, 1, 1, 0, 0, 0, 0, time.UTC),
-	}
-
-	store := &Store{
-		scratches: []Scratch{testScratch},
-	}
-
-	scratches := store.GetScratches()
-	if len(scratches) != 1 {
-		t.Errorf("expected 1 scratch, got %d", len(scratches))
-	}
-	if !reflect.DeepEqual(scratches[0], testScratch) {
-		t.Errorf("expected %+v, got %+v", testScratch, scratches[0])
-	}
-}
-
-func TestStore_AddScratch(t *testing.T) {
-	cfg, cleanup := testutil.SetupTestEnvironment(t)
-	defer cleanup()
-
-	store, err := NewStoreWithConfig(cfg)
-	if err != nil {
-		t.Fatalf("failed to create store: %v", err)
-	}
-
-	testScratch := Scratch{
-		ID:        "test123",
-		Project:   "testproject",
-		Title:     "Test Title",
-		CreatedAt: time.Now(),
-	}
-
-	err = store.AddScratch(testScratch)
-	if err != nil {
-		t.Errorf("unexpected error adding scratch: %v", err)
-	}
-
-	scratches := store.GetScratches()
-	if len(scratches) != 1 {
-		t.Errorf("expected 1 scratch, got %d", len(scratches))
-	}
-	if scratches[0].ID != testScratch.ID {
-		t.Errorf("expected ID %s, got %s", testScratch.ID, scratches[0].ID)
-	}
-}
-
-func TestStore_RemoveScratch(t *testing.T) {
-	cfg, cleanup := testutil.SetupTestEnvironment(t)
-	defer cleanup()
-
-	store, err := NewStoreWithConfig(cfg)
-	if err != nil {
-		t.Fatalf("failed to create store: %v", err)
-	}
-
-	tests := []struct {
-		name             string
-		initialScratches []Scratch
-		removeID         string
-		expectedCount    int
-		expectedRemoved  bool
-	}{
-		{
-			name: "remove existing scratch",
-			initialScratches: []Scratch{
-				{ID: "test1", Project: "proj1", Title: "Title 1", CreatedAt: time.Now()},
-				{ID: "test2", Project: "proj2", Title: "Title 2", CreatedAt: time.Now()},
-			},
-			removeID:        "test1",
-			expectedCount:   1,
-			expectedRemoved: true,
-		},
-		{
-			name: "remove non-existent scratch",
-			initialScratches: []Scratch{
-				{ID: "test1", Project: "proj1", Title: "Title 1", CreatedAt: time.Now()},
-			},
-			removeID:        "nonexistent",
-			expectedCount:   1,
-			expectedRemoved: false,
-		},
-		{
-			name:             "remove from empty store",
-			initialScratches: []Scratch{},
-			removeID:         "test1",
-			expectedCount:    0,
-			expectedRemoved:  false,
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			store.scratches = make([]Scratch, len(tt.initialScratches))
-			copy(store.scratches, tt.initialScratches)
-
-			err := store.RemoveScratch(tt.removeID)
-			if err != nil {
-				t.Errorf("unexpected error removing scratch: %v", err)
-			}
-
-			scratches := store.GetScratches()
-			if len(scratches) != tt.expectedCount {
-				t.Errorf("expected %d scratches, got %d", tt.expectedCount, len(scratches))
-			}
-
-			found := false
-			for _, scratch := range scratches {
-				if scratch.ID == tt.removeID {
-					found = true
-					break
-				}
-			}
-			if found && tt.expectedRemoved {
-				t.Errorf("expected scratch %s to be removed but it's still there", tt.removeID)
-			}
-		})
-	}
-}
-
-func TestStore_UpdateScratch(t *testing.T) {
-	cfg, cleanup := testutil.SetupTestEnvironment(t)
-	defer cleanup()
-
-	store, err := NewStoreWithConfig(cfg)
-	if err != nil {
-		t.Fatalf("failed to create store: %v", err)
-	}
-
-	originalScratch := Scratch{
-		ID:        "test1",
-		Project:   "original",
-		Title:     "Original Title",
-		CreatedAt: time.Date(2023, 1, 1, 0, 0, 0, 0, time.UTC),
-	}
-
-	store.scratches = []Scratch{originalScratch}
-
-	updatedScratch := Scratch{
-		ID:        "test1",
-		Project:   "updated",
-		Title:     "Updated Title",
-		CreatedAt: time.Date(2023, 2, 1, 0, 0, 0, 0, time.UTC),
-	}
-
-	err = store.UpdateScratch(updatedScratch)
-	if err != nil {
-		t.Errorf("unexpected error updating scratch: %v", err)
-	}
-
-	scratches := store.GetScratches()
-	if len(scratches) != 1 {
-		t.Errorf("expected 1 scratch, got %d", len(scratches))
-	}
-	if scratches[0].Title != "Updated Title" {
-		t.Errorf("expected title 'Updated Title', got '%s'", scratches[0].Title)
-	}
-	if scratches[0].Project != "updated" {
-		t.Errorf("expected project 'updated', got '%s'", scratches[0].Project)
-	}
-}
-
-func TestStore_SaveScratches(t *testing.T) {
-	cfg, cleanup := testutil.SetupTestEnvironment(t)
-	defer cleanup()
-
-	store, err := NewStoreWithConfig(cfg)
-	if err != nil {
-		t.Fatalf("failed to create store: %v", err)
-	}
-
-	testScratches := []Scratch{
-		{ID: "test1", Project: "proj1", Title: "Title 1", CreatedAt: time.Now()},
-		{ID: "test2", Project: "proj2", Title: "Title 2", CreatedAt: time.Now()},
-	}
-
-	err = store.SaveScratches(testScratches)
-	if err != nil {
-		t.Errorf("unexpected error saving scratches: %v", err)
-	}
-
-	scratches := store.GetScratches()
-	if len(scratches) != 2 {
-		t.Errorf("expected 2 scratches, got %d", len(scratches))
-	}
-}
-
-func TestGetScratchPath(t *testing.T) {
-	cfg, cleanup := testutil.SetupTestEnvironment(t)
-	defer cleanup()
-
-	path, err := GetScratchPathWithConfig(cfg)
-	if err != nil {
-		t.Errorf("unexpected error getting scratch path: %v", err)
-	}
-
-	expectedPath := "/test/data/scratch"
-	if path != expectedPath {
-		t.Errorf("expected path %s, got %s", expectedPath, path)
-	}
-
-	// Verify directory was created in memory filesystem
-	if _, err := cfg.FileSystem.Stat(path); err != nil {
-		t.Errorf("expected directory to be created at %s", path)
-	}
-}
-
-func TestGetScratchFilePath(t *testing.T) {
-	cfg, cleanup := testutil.SetupTestEnvironment(t)
-	defer cleanup()
-
-	tests := []struct {
-		name       string
-		id         string
-		expectPath string
-	}{
-		{
-			name:       "simple id",
-			id:         "test123",
-			expectPath: "/test/data/scratch/test123",
-		},
-		{
-			name:       "hash id",
-			id:         "abc123def456",
-			expectPath: "/test/data/scratch/abc123def456",
-		},
-		{
-			name:       "empty id",
-			id:         "",
-			expectPath: "/test/data/scratch",
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			path, err := GetScratchFilePathWithConfig(tt.id, cfg)
-			if err != nil {
-				t.Errorf("unexpected error getting scratch file path: %v", err)
-			}
-
-			if path != tt.expectPath {
-				t.Errorf("expected path %s, got %s", tt.expectPath, path)
-			}
-		})
-	}
-}
-
-func TestStore_ConcurrentAccess(t *testing.T) {
-	cfg, cleanup := testutil.SetupTestEnvironment(t)
-	defer cleanup()
-
-	store, err := NewStoreWithConfig(cfg)
-	if err != nil {
-		t.Fatalf("failed to create store: %v", err)
-	}
-
-	const numGoroutines = 10
-	const numOperations = 100
-
-	done := make(chan bool, numGoroutines)
-	errors := make(chan error, numGoroutines*numOperations)
-
-	for i := 0; i < numGoroutines; i++ {
-		go func(id int) {
-			for j := 0; j < numOperations; j++ {
-				scratch := Scratch{
-					ID:        fmt.Sprintf("test_%d_%d", id, j),
-					Project:   fmt.Sprintf("proj_%d", id),
-					Title:     fmt.Sprintf("Title %d %d", id, j),
-					CreatedAt: time.Now(),
-				}
-				if err := store.AddScratch(scratch); err != nil {
-					errors <- fmt.Errorf("failed to add scratch: %v", err)
-					return
-				}
-			}
-			done <- true
-		}(i)
-	}
-
-	for i := 0; i < numGoroutines; i++ {
-		<-done
-	}
-	close(errors)
-
-	// Check if any errors occurred
-	for err := range errors {
-		if err != nil {
-			t.Fatal(err)
-		}
-	}
-
-	scratches := store.GetScratches()
-	expected := numGoroutines * numOperations
-	if len(scratches) != expected {
-		t.Errorf("expected %d scratches, got %d", expected, len(scratches))
-	}
-}
-
-func TestMemoryFilesystemIntegration(t *testing.T) {
-	cfg, cleanup := testutil.SetupTestEnvironment(t)
-	defer cleanup()
-
-	// Verify we're using memory filesystem
-	memFS := testutil.GetMemoryFS(cfg)
-	if memFS == nil {
-		t.Fatal("Expected memory filesystem in test configuration")
-	}
-
-	// Create a store and add scratches
-	store, err := NewStoreWithConfig(cfg)
+	// Create new store
+	store, err := NewStore(storePath)
 	if err != nil {
 		t.Fatalf("Failed to create store: %v", err)
 	}
 
-	// Add some scratches
-	for i := 0; i < 3; i++ {
-		scratch := Scratch{
-			ID:        fmt.Sprintf("test%d", i),
-			Project:   "testproject",
-			Title:     fmt.Sprintf("Test %d", i),
-			CreatedAt: time.Now(),
-		}
-		if err := store.AddScratch(scratch); err != nil {
-			t.Fatalf("Failed to add scratch: %v", err)
-		}
+	// Verify directories were created
+	if _, err := os.Stat(storePath); err != nil {
+		t.Errorf("Store directory was not created: %v", err)
 	}
 
-	// Verify files are in memory filesystem only
-	files := memFS.GetAllFiles()
-
-	// Should have metadata file
-	metadataPath := "/test/data/scratch/metadata.json"
-	if _, exists := files[metadataPath]; !exists {
-		t.Error("Expected metadata file in memory filesystem")
+	dataDir := filepath.Join(storePath, "data")
+	if _, err := os.Stat(dataDir); err != nil {
+		t.Errorf("Data directory was not created: %v", err)
 	}
 
-	// Verify content
-	data, err := cfg.FileSystem.ReadFile(metadataPath)
+	// Verify metadata was initialized
+	if store.metadata == nil {
+		t.Error("Metadata was not initialized")
+	}
+	if store.metadata.Version != "2.0" {
+		t.Errorf("Expected version 2.0, got %s", store.metadata.Version)
+	}
+	if store.metadata.NextID != 1 {
+		t.Errorf("Expected NextID 1, got %d", store.metadata.NextID)
+	}
+}
+
+func TestCreateAndGet(t *testing.T) {
+	// Setup
+	tempDir := t.TempDir()
+	store, err := NewStore(tempDir)
 	if err != nil {
-		t.Fatalf("Failed to read metadata: %v", err)
+		t.Fatalf("Failed to create store: %v", err)
 	}
 
-	if len(data) == 0 {
-		t.Error("Metadata file is empty")
+	// Test Create
+	content := "This is test content\nWith multiple lines"
+	title := "Test Title"
+
+	pad, err := store.Create(content, title)
+	if err != nil {
+		t.Fatalf("Failed to create pad: %v", err)
+	}
+
+	// Verify pad properties
+	if pad.UserID != 1 {
+		t.Errorf("Expected UserID 1, got %d", pad.UserID)
+	}
+	if pad.Title != title {
+		t.Errorf("Expected title %q, got %q", title, pad.Title)
+	}
+	if pad.Size != int64(len(content)) {
+		t.Errorf("Expected size %d, got %d", len(content), pad.Size)
+	}
+
+	// Test Get by user ID
+	retrievedPad, retrievedContent, err := store.Get(1)
+	if err != nil {
+		t.Fatalf("Failed to get pad: %v", err)
+	}
+
+	if retrievedPad.ID != pad.ID {
+		t.Errorf("Retrieved pad ID mismatch")
+	}
+	if retrievedContent != content {
+		t.Errorf("Content mismatch:\nExpected: %q\nGot: %q", content, retrievedContent)
+	}
+
+	// Test GetByID
+	retrievedPad2, retrievedContent2, err := store.GetByID(pad.ID)
+	if err != nil {
+		t.Fatalf("Failed to get pad by ID: %v", err)
+	}
+	if retrievedPad2.ID != pad.ID {
+		t.Errorf("Retrieved pad ID mismatch")
+	}
+	if retrievedContent2 != content {
+		t.Errorf("Content mismatch")
+	}
+}
+
+func TestList(t *testing.T) {
+	// Setup
+	tempDir := t.TempDir()
+	store, err := NewStore(tempDir)
+	if err != nil {
+		t.Fatalf("Failed to create store: %v", err)
+	}
+
+	// Create multiple pads
+	contents := []string{
+		"First pad content",
+		"Second pad content",
+		"Third pad content",
+	}
+
+	for i, content := range contents {
+		_, err := store.Create(content, "")
+		if err != nil {
+			t.Fatalf("Failed to create pad %d: %v", i+1, err)
+		}
+		// Small delay to ensure different timestamps
+		time.Sleep(10 * time.Millisecond)
+	}
+
+	// List pads
+	pads, err := store.List()
+	if err != nil {
+		t.Fatalf("Failed to list pads: %v", err)
+	}
+
+	// Verify count
+	if len(pads) != 3 {
+		t.Fatalf("Expected 3 pads, got %d", len(pads))
+	}
+
+	// Verify ordering (newest first by UserID - higher UserID = newer)
+	if pads[0].UserID != 3 {
+		t.Errorf("Expected newest pad to have UserID 3, got %d", pads[0].UserID)
+	}
+
+	// Verify descending UserID order (newest to oldest)
+	expectedUserIDs := []int{3, 2, 1}
+	for i, pad := range pads {
+		if pad.UserID != expectedUserIDs[i] {
+			t.Errorf("Pad %d: expected UserID %d, got %d", i, expectedUserIDs[i], pad.UserID)
+		}
+	}
+}
+
+func TestDeduplication(t *testing.T) {
+	// Setup
+	tempDir := t.TempDir()
+	store, err := NewStore(tempDir)
+	if err != nil {
+		t.Fatalf("Failed to create store: %v", err)
+	}
+
+	// Create first pad
+	content := "Duplicate content"
+	_, err = store.Create(content, "First")
+	if err != nil {
+		t.Fatalf("Failed to create first pad: %v", err)
+	}
+
+	// Try to create duplicate
+	_, err = store.Create(content, "Second")
+	if err == nil {
+		t.Error("Expected error for duplicate content, got nil")
+	}
+}
+
+func TestPersistence(t *testing.T) {
+	// Setup
+	tempDir := t.TempDir()
+	storePath := filepath.Join(tempDir, "persist-store")
+
+	// Create store and add content
+	store1, err := NewStore(storePath)
+	if err != nil {
+		t.Fatalf("Failed to create store: %v", err)
+	}
+
+	content := "Persistent content"
+	pad, err := store1.Create(content, "Persistent")
+	if err != nil {
+		t.Fatalf("Failed to create pad: %v", err)
+	}
+	originalID := pad.ID
+
+	// Create new store instance (simulating restart)
+	storeB, err := NewStore(storePath)
+	if err != nil {
+		t.Fatalf("Failed to recreate store: %v", err)
+	}
+
+	// Verify content persisted
+	retrievedPad, retrievedContent, err := storeB.Get(1)
+	if err != nil {
+		t.Fatalf("Failed to get pad from new store: %v", err)
+	}
+
+	if retrievedPad.ID != originalID {
+		t.Errorf("Pad ID changed after reload")
+	}
+	if retrievedContent != content {
+		t.Errorf("Content not persisted correctly")
 	}
 }

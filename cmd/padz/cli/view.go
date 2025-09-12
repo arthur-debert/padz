@@ -1,113 +1,70 @@
-/*
-Copyright © 2025 YOUR NAME HERE <EMAIL ADDRESS>
-*/
 package cli
 
 import (
 	"fmt"
 	"os"
-	"os/exec"
-	"strings"
 
-	"github.com/arthur-debert/padz/cmd/padz/formatter"
-	"github.com/arthur-debert/padz/pkg/commands"
-	"github.com/arthur-debert/padz/pkg/output"
-	"github.com/charmbracelet/x/term"
-	"github.com/rs/zerolog/log"
+	"github.com/arthur-debert/padz/pkg/store"
 	"github.com/spf13/cobra"
 )
 
-// newViewCmd creates and returns a new view command
-func newViewCmd() *cobra.Command {
-	return &cobra.Command{
-		Use:     ViewUse,
-		Aliases: []string{"v"},
-		Short:   ViewShort,
-		Long:    ViewLong,
-		Args:    cobra.MinimumNArgs(1),
-		Run: func(cmd *cobra.Command, args []string) {
-			//all, _ := cmd.Flags().GetBool("all") // TODO: Implement --all flag with StoreManager
-			global, _ := cmd.Flags().GetBool("global")
+func newViewCommand() *cobra.Command {
+	var global bool
+	var all bool
 
+	cmd := &cobra.Command{
+		Use:   "view [id]",
+		Short: "View a pad",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			idStr := args[0]
+
+			// Handle flags - global flag overrides ID resolution
+			if global {
+				// Force explicit global ID format
+				idStr = "global-" + idStr
+			}
+
+			// Detect current scope for implicit ID resolution
 			dir, err := os.Getwd()
 			if err != nil {
-				log.Fatal().Err(err).Msg("Operation failed")
+				return fmt.Errorf("failed to get current directory: %w", err)
 			}
 
-			// Always use StoreManager approach for consistency
-			content, err := commands.ViewMultipleWithStoreManager(dir, global, args)
+			currentScope, err := store.DetectScope(dir)
 			if err != nil {
-				log.Fatal().Err(err).Msg("Operation failed")
+				return fmt.Errorf("failed to detect scope: %w", err)
 			}
 
-			// Format output
-			format, err := output.GetFormat(outputFormat)
+			// Create dispatcher and get pad with ID resolution
+			dispatcher := store.NewDispatcher()
+			pad, content, resolvedScope, err := dispatcher.GetPad(idStr, currentScope)
 			if err != nil {
-				log.Fatal().Err(err).Msg("Operation failed")
+				return fmt.Errorf("failed to get pad: %w", err)
 			}
 
-			switch format {
-			case output.JSONFormat:
-				// JSON output goes directly to stdout
-				outputFormatter := output.NewFormatter(format, nil)
-				if err := outputFormatter.FormatString(content); err != nil {
-					log.Fatal().Err(err).Msg("Operation failed")
-				}
-			case output.PlainFormat, output.TermFormat:
-				// Use terminal formatter for both plain and term formats
-				// Terminal detection will automatically strip formatting when piped
-				info, _ := os.Stdout.Stat()
-				if (info.Mode() & os.ModeCharDevice) == 0 {
-					// Piped - use terminal formatter without pager
-					termFormatter, err := formatter.NewTerminalFormatter(nil)
-					if err != nil {
-						log.Fatal().Err(err).Msg("Operation failed")
-					}
-					if err := termFormatter.FormatContentView(content); err != nil {
-						log.Fatal().Err(err).Msg("Operation failed")
-					}
-				} else {
-					// Not piped - use terminal formatter with conditional pager
-					var styledContent strings.Builder
-					termFormatter, err := formatter.NewTerminalFormatter(&styledContent)
-					if err != nil {
-						log.Fatal().Err(err).Msg("Operation failed")
-					}
-
-					// Render styled content
-					if err := termFormatter.FormatContentView(content); err != nil {
-						log.Fatal().Err(err).Msg("Operation failed")
-					}
-
-					// Count lines in rendered content
-					lines := strings.Count(styledContent.String(), "\n") + 1
-
-					// Get terminal height
-					_, termHeight, err := term.GetSize(0)
-					if err != nil {
-						termHeight = 24 // Default terminal height
-					}
-
-					// If content fits in terminal (with some buffer), print directly; otherwise use pager
-					if lines < termHeight-1 {
-						fmt.Print(styledContent.String())
-					} else {
-						// Use pager with styled content
-						pager := os.Getenv("PAGER")
-						if pager == "" {
-							pager = "less -R" // -R flag to handle ANSI colors
-						}
-						c := exec.Command("sh", "-c", pager)
-						c.Stdin = strings.NewReader(styledContent.String())
-						c.Stdout = os.Stdout
-						if err := c.Run(); err != nil {
-							log.Fatal().Err(err).Msg("Operation failed")
-						}
-					}
-				}
-			default:
-				log.Fatal().Str("format", string(format)).Msg("Unsupported format")
+			// Display with explicit ID format
+			explicitID := store.FormatExplicitID(resolvedScope, pad.UserID)
+			fmt.Printf("=== Pad %s ===\n", explicitID)
+			if pad.Title != "" {
+				fmt.Printf("Title: %s\n", pad.Title)
 			}
+			fmt.Printf("Created: %s\n", pad.CreatedAt.Format("2006-01-02 15:04:05"))
+			fmt.Printf("Size: %d bytes\n", pad.Size)
+			if resolvedScope != currentScope {
+				fmt.Printf("Scope: %s (resolved from current: %s)\n", resolvedScope, currentScope)
+			} else {
+				fmt.Printf("Scope: %s\n", resolvedScope)
+			}
+			fmt.Println("\n--- Content ---")
+			fmt.Println(content)
+
+			return nil
 		},
 	}
+
+	cmd.Flags().BoolVarP(&global, "global", "g", false, "View pad from global scope")
+	cmd.Flags().BoolVarP(&all, "all", "a", false, "View pad from any scope (default behavior)")
+
+	return cmd
 }
