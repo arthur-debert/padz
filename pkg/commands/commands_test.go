@@ -507,7 +507,6 @@ func TestSearch(t *testing.T) {
 
 	tests := []struct {
 		name          string
-		all           bool
 		global        bool
 		project       string
 		term          string
@@ -516,10 +515,9 @@ func TestSearch(t *testing.T) {
 		expectError   bool
 	}{
 		{
-			name:          "search all for 'test'",
-			all:           true,
+			name:          "search project1 for 'test'",
 			global:        false,
-			project:       "",
+			project:       "project1",
 			term:          "test",
 			expectedCount: 1,
 			expectedIDs:   []string{"1"},
@@ -527,7 +525,6 @@ func TestSearch(t *testing.T) {
 		},
 		{
 			name:          "search project1 for 'content'",
-			all:           false,
 			global:        false,
 			project:       "project1",
 			term:          "content",
@@ -536,10 +533,18 @@ func TestSearch(t *testing.T) {
 			expectError:   false,
 		},
 		{
-			name:          "search for non-existent term",
-			all:           true,
+			name:          "search project2 for 'Different'",
 			global:        false,
-			project:       "",
+			project:       "project2",
+			term:          "Different",
+			expectedCount: 1,
+			expectedIDs:   []string{"2"},
+			expectError:   false,
+		},
+		{
+			name:          "search for non-existent term in project1",
+			global:        false,
+			project:       "project1",
 			term:          "nonexistent",
 			expectedCount: 0,
 			expectedIDs:   []string{},
@@ -547,32 +552,29 @@ func TestSearch(t *testing.T) {
 		},
 		{
 			name:          "invalid regex",
-			all:           true,
 			global:        false,
-			project:       "",
+			project:       "project1",
 			term:          "[invalid",
 			expectedCount: 0,
 			expectedIDs:   []string{},
 			expectError:   true,
 		},
 		{
-			name:          "case sensitive search",
-			all:           true,
+			name:          "case sensitive search in project1",
 			global:        false,
-			project:       "",
+			project:       "project1",
 			term:          "Test",
 			expectedCount: 0,
 			expectedIDs:   []string{},
 			expectError:   false,
 		},
 		{
-			name:          "regex pattern search - reverse chronological order",
-			all:           true,
-			global:        false,
+			name:          "search global for 'global'",
+			global:        true,
 			project:       "",
-			term:          "scratch [0-9]",
-			expectedCount: 2,
-			expectedIDs:   []string{"2", "1"}, // newest first (2 is newer than 1)
+			term:          "global",
+			expectedCount: 1,
+			expectedIDs:   []string{"3"},
 			expectError:   false,
 		},
 	}
@@ -636,7 +638,6 @@ func TestSearchWithIndices(t *testing.T) {
 
 	tests := []struct {
 		name             string
-		all              bool
 		global           bool
 		project          string
 		term             string
@@ -646,15 +647,7 @@ func TestSearchWithIndices(t *testing.T) {
 		expectError      bool
 	}{
 		{
-			name:             "search all, find two, check indices",
-			all:              true,
-			term:             "Content for t",
-			expectedCount:    2,
-			expectedIndices:  []int{2, 3},
-			expectedOrderIDs: []string{"3", "2"},
-		},
-		{
-			name:             "search p1, find one, check index",
+			name:             "search p1, find one with 'three'",
 			project:          "p1",
 			term:             "three",
 			expectedCount:    1,
@@ -662,8 +655,16 @@ func TestSearchWithIndices(t *testing.T) {
 			expectedOrderIDs: []string{"3"},
 		},
 		{
-			name:             "search all, no results",
-			all:              true,
+			name:             "search p2, find one with 'two'",
+			project:          "p2",
+			term:             "two",
+			expectedCount:    1,
+			expectedIndices:  []int{2},
+			expectedOrderIDs: []string{"2"},
+		},
+		{
+			name:             "search p1, no results",
+			project:          "p1",
 			term:             "nonexistent",
 			expectedCount:    0,
 			expectedIndices:  []int{},
@@ -671,7 +672,7 @@ func TestSearchWithIndices(t *testing.T) {
 		},
 		{
 			name:          "invalid regex",
-			all:           true,
+			project:       "p1",
 			term:          "[invalid",
 			expectError:   true,
 			expectedCount: 0,
@@ -846,7 +847,6 @@ func TestPeek(t *testing.T) {
 		project         string
 		index           string
 		lines           int
-		all             bool
 		global          bool
 		expectedContent string
 		expectError     bool
@@ -887,11 +887,10 @@ func TestPeek(t *testing.T) {
 			expectError: true,
 		},
 		{
-			name:            "peek with all flag",
-			project:         "",
-			index:           "2",
+			name:            "peek second scratch in otherproject",
+			project:         "otherproject",
+			index:           "1",
 			lines:           2,
-			all:             true,
 			expectedContent: "Other Line 1\nOther Line 2\n...\nOther Line 4\nOther Line 5\n",
 		},
 		{
@@ -1304,7 +1303,6 @@ func TestGetScratchByIndex(t *testing.T) {
 
 	tests := []struct {
 		name        string
-		all         bool
 		global      bool
 		project     string
 		indexStr    string
@@ -1313,7 +1311,6 @@ func TestGetScratchByIndex(t *testing.T) {
 	}{
 		{
 			name:        "get first scratch in project1 (newest)",
-			all:         false,
 			global:      false,
 			project:     "project1",
 			indexStr:    "1",
@@ -1322,7 +1319,6 @@ func TestGetScratchByIndex(t *testing.T) {
 		},
 		{
 			name:        "get second scratch in project1 (oldest)",
-			all:         false,
 			global:      false,
 			project:     "project1",
 			indexStr:    "2",
@@ -1330,17 +1326,15 @@ func TestGetScratchByIndex(t *testing.T) {
 			expectError: false,
 		},
 		{
-			name:        "get first scratch globally (newest overall)",
-			all:         true,
+			name:        "get first scratch in project2",
 			global:      false,
-			project:     "",
+			project:     "project2",
 			indexStr:    "1",
-			expectedID:  "4", // newest overall
+			expectedID:  "2", // project2 scratch
 			expectError: false,
 		},
 		{
 			name:        "get global scratch",
-			all:         false,
 			global:      true,
 			project:     "",
 			indexStr:    "1",
@@ -1349,7 +1343,6 @@ func TestGetScratchByIndex(t *testing.T) {
 		},
 		{
 			name:        "invalid index string",
-			all:         false,
 			global:      false,
 			project:     "project1",
 			indexStr:    "invalid",
@@ -1358,7 +1351,6 @@ func TestGetScratchByIndex(t *testing.T) {
 		},
 		{
 			name:        "index out of range - too high",
-			all:         false,
 			global:      false,
 			project:     "project1",
 			indexStr:    "99",
@@ -1367,7 +1359,6 @@ func TestGetScratchByIndex(t *testing.T) {
 		},
 		{
 			name:        "index out of range - zero",
-			all:         false,
 			global:      false,
 			project:     "project1",
 			indexStr:    "0",
@@ -1376,7 +1367,6 @@ func TestGetScratchByIndex(t *testing.T) {
 		},
 		{
 			name:        "index out of range - negative",
-			all:         false,
 			global:      false,
 			project:     "project1",
 			indexStr:    "-1",
@@ -1385,7 +1375,6 @@ func TestGetScratchByIndex(t *testing.T) {
 		},
 		{
 			name:        "no scratches in non-existent project",
-			all:         false,
 			global:      false,
 			project:     "nonexistent",
 			indexStr:    "1",

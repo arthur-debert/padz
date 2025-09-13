@@ -422,10 +422,11 @@ func TestProjectFiltering(t *testing.T) {
 	assert.Len(t, results, 1)
 	assert.Equal(t, "global1", results[0].ID)
 
-	// Test global flag for all projects (using empty project string)
-	results, err = ResolveMultipleIDs(s, false, "", []string{"1", "2", "3"})
+	// Test project2 filtering
+	results, err = ResolveMultipleIDs(s, false, "project2", []string{"1"})
 	require.NoError(t, err)
-	assert.Len(t, results, 3)
+	assert.Len(t, results, 1)
+	assert.Equal(t, "proj2", results[0].ID)
 }
 
 func TestParseIndex(t *testing.T) {

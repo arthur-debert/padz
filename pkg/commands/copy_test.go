@@ -93,7 +93,6 @@ func TestCopy(t *testing.T) {
 
 	tests := []struct {
 		name            string
-		all             bool
 		project         string
 		indexStr        string
 		expectedContent []byte
@@ -101,30 +100,26 @@ func TestCopy(t *testing.T) {
 	}{
 		{
 			name:            "copy scratch by index in project",
-			all:             false,
 			project:         "project1",
 			indexStr:        "1",
 			expectedContent: content1,
 			expectError:     false,
 		},
 		{
-			name:            "copy scratch by index across all projects",
-			all:             true,
-			project:         "",
-			indexStr:        "3",
-			expectedContent: content3,
+			name:            "copy second scratch in project",
+			project:         "project1",
+			indexStr:        "2",
+			expectedContent: content2,
 			expectError:     false,
 		},
 		{
 			name:        "copy with invalid index",
-			all:         false,
 			project:     "project1",
 			indexStr:    "99",
 			expectError: true,
 		},
 		{
 			name:        "copy with non-numeric index",
-			all:         false,
 			project:     "project1",
 			indexStr:    "abc",
 			expectError: true,

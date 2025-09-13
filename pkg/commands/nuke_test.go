@@ -121,7 +121,7 @@ func TestNuke(t *testing.T) {
 		}
 	})
 
-	// Test 3: Nuke all
+	// Test 3: Nuke global again with new scratches
 	t.Run("NukeGlobalAgain", func(t *testing.T) {
 		// Re-add some scratches
 		if err := setup.Store.AddScratch(store.Scratch{ID: generateTestID("new", 0), Project: "new-project", Title: "New"}); err != nil {
@@ -148,15 +148,15 @@ func TestNuke(t *testing.T) {
 			t.Errorf("Expected 11 total scratches, got %d", len(remaining))
 		}
 
-		// Count active scratches (should be 1 - the new project scratch)
+		// Count active scratches (should be 3: 1 new-project + 2 remaining project2 scratches)
 		activeCount := 0
 		for _, s := range remaining {
 			if !s.IsDeleted {
 				activeCount++
 			}
 		}
-		if activeCount != 1 {
-			t.Errorf("Expected 1 active scratch (new project), got %d", activeCount)
+		if activeCount != 3 {
+			t.Errorf("Expected 3 active scratches (1 new-project + 2 project2), got %d", activeCount)
 		}
 	})
 
