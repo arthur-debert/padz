@@ -125,57 +125,48 @@ func NewRootCmd() *cobra.Command {
 
 	viewCmd := newViewCmd()
 	viewCmd.GroupID = "single"
-	viewCmd.Flags().BoolP("all", "a", false, FlagAllDesc)
 	viewCmd.Flags().BoolP("global", "g", false, FlagGlobalDesc)
 	rootCmd.AddCommand(viewCmd)
 
 	openCmd := newOpenCmd()
 	openCmd.GroupID = "single"
-	openCmd.Flags().BoolP("all", "a", false, FlagAllDesc)
 	openCmd.Flags().BoolP("global", "g", false, FlagGlobalDesc)
 	rootCmd.AddCommand(openCmd)
 
 	peekCmd := newPeekCmd()
 	peekCmd.GroupID = "single"
 	peekCmd.Flags().IntP("lines", "n", 3, FlagLinesDesc)
-	peekCmd.Flags().BoolP("all", "a", false, FlagAllDesc)
 	peekCmd.Flags().BoolP("global", "g", false, FlagGlobalDesc)
 	rootCmd.AddCommand(peekCmd)
 
 	deleteCmd := newDeleteCmd()
 	deleteCmd.GroupID = "single"
-	deleteCmd.Flags().BoolP("all", "a", false, FlagAllDesc)
 	deleteCmd.Flags().BoolP("global", "g", false, FlagGlobalDesc)
 	rootCmd.AddCommand(deleteCmd)
 
 	pathCmd := newPathCmd()
 	pathCmd.GroupID = "single"
-	pathCmd.Flags().BoolP("all", "a", false, FlagAllDesc)
 	pathCmd.Flags().BoolP("global", "g", false, FlagGlobalDesc)
 	rootCmd.AddCommand(pathCmd)
 
 	copyCmd := newCopyCmd()
 	copyCmd.GroupID = "single"
-	copyCmd.Flags().BoolP("all", "a", false, FlagAllDesc)
 	copyCmd.Flags().BoolP("global", "g", false, FlagGlobalDesc)
 	rootCmd.AddCommand(copyCmd)
 
 	pinCmd := newPinCmd()
 	pinCmd.GroupID = "single"
-	pinCmd.Flags().BoolP("all", "a", false, FlagAllDesc)
 	pinCmd.Flags().BoolP("global", "g", false, FlagGlobalDesc)
 	rootCmd.AddCommand(pinCmd)
 
 	unpinCmd := newUnpinCmd()
 	unpinCmd.GroupID = "single"
-	unpinCmd.Flags().BoolP("all", "a", false, FlagAllDesc)
 	unpinCmd.Flags().BoolP("global", "g", false, FlagGlobalDesc)
 	rootCmd.AddCommand(unpinCmd)
 
 	// Multiple scratches commands
 	lsCmd := newLsCmd()
 	lsCmd.GroupID = "multiple"
-	lsCmd.Flags().BoolP("all", "a", false, FlagAllDesc)
 	lsCmd.Flags().BoolP("global", "g", false, FlagGlobalDesc)
 	lsCmd.Flags().StringP("search", "s", "", "Search for scratches containing the given term")
 	lsCmd.Flags().Bool("deleted", false, "Show only soft-deleted scratches")
@@ -184,7 +175,6 @@ func NewRootCmd() *cobra.Command {
 
 	searchCmd := newSearchCmd()
 	searchCmd.GroupID = "multiple"
-	searchCmd.Flags().BoolP("all", "a", false, FlagAllDesc)
 	searchCmd.Flags().BoolP("global", "g", false, FlagGlobalDesc)
 	searchCmd.Flags().StringP("project", "p", "", "Limit search to specific project")
 	rootCmd.AddCommand(searchCmd)
@@ -196,7 +186,6 @@ func NewRootCmd() *cobra.Command {
 
 	nukeCmd := newNukeCmd()
 	nukeCmd.GroupID = "multiple"
-	nukeCmd.Flags().BoolP("all", "a", false, FlagAllDesc)
 	rootCmd.AddCommand(nukeCmd)
 
 	recoverCmd := newRecoverCmd()
@@ -213,7 +202,6 @@ func NewRootCmd() *cobra.Command {
 
 	exportCmd := newExportCmd()
 	exportCmd.GroupID = "multiple"
-	exportCmd.Flags().BoolP("all", "a", false, FlagAllDesc)
 	exportCmd.Flags().BoolP("global", "g", false, FlagGlobalDesc)
 	rootCmd.AddCommand(exportCmd)
 

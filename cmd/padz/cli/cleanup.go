@@ -21,9 +21,10 @@ func newCleanupCmd() *cobra.Command {
 		Short:   CleanupShort,
 		Long:    CleanupLong,
 		Run: func(cmd *cobra.Command, args []string) {
+			global, _ := cmd.Flags().GetBool("global")
 			days, _ := cmd.Flags().GetInt("days")
 
-			s, err := store.NewStore()
+			s, err := store.NewStoreWithScope(global)
 			if err != nil {
 				log.Fatal().Err(err).Msg("Failed to initialize store")
 			}
@@ -42,8 +43,8 @@ func newCleanupCmd() *cobra.Command {
 			}
 
 			// Show remaining list in verbose mode
-			// For cleanup, we show all scratches since it affects all projects
-			ShowListAfterCommand(s, true, false, "")
+			// For cleanup, we show global scratches since cleanup affects all projects
+			ShowListAfterCommand(s, false, "")
 
 			message := fmt.Sprintf(CleanupSuccessFormat, days)
 			handleTerminalSuccess(message, format)

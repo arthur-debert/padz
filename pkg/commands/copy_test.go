@@ -133,7 +133,7 @@ func TestCopy(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			err := Copy(s, tt.all, false, tt.project, tt.indexStr)
+			err := Copy(s, false, tt.project, tt.indexStr)
 			if tt.expectError {
 				if err == nil {
 					t.Errorf("Expected error but got none")
@@ -182,7 +182,7 @@ func TestCopyNonExistentScratch(t *testing.T) {
 	s := setup.Store
 
 	// Try to copy a scratch that doesn't exist
-	err := Copy(s, false, false, "project1", "1")
+	err := Copy(s, false, "project1", "1")
 	if err == nil {
 		t.Errorf("Expected error when copying non-existent scratch, but got none")
 	}

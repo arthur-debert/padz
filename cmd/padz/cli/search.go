@@ -47,7 +47,7 @@ You can also use regular expressions:
 				Str("project", projectFlag).
 				Msg("Searching scratches")
 
-			s, err := store.NewStore()
+			s, err := store.NewStoreWithScope(global)
 			if err != nil {
 				log.Fatal().Err(err).Msg("Failed to initialize store")
 			}
@@ -72,7 +72,7 @@ You can also use regular expressions:
 				log.Warn().Err(err).Msg("Failed to run discovery")
 			}
 
-			results, err := commands.SearchWithIndices(s, all, global, proj, searchTerm)
+			results, err := commands.SearchWithIndices(s, global, proj, searchTerm)
 			if err != nil {
 				log.Error().Err(err).Msg("Failed to search scratches")
 				return err

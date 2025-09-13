@@ -23,13 +23,13 @@ type searchResult struct {
 	originalPos int
 }
 
-func Search(s *store.Store, all, global bool, project, term string) ([]store.Scratch, error) {
-	return SearchWithMode(s, all, global, project, term, ListModeActive)
+func Search(s *store.Store, global bool, project, term string) ([]store.Scratch, error) {
+	return SearchWithMode(s, global, project, term, ListModeActive)
 }
 
 // SearchWithMode performs a search with delete filtering options
-func SearchWithMode(s *store.Store, all, global bool, project, term string, mode ListMode) ([]store.Scratch, error) {
-	scratches := LsWithMode(s, all, global, project, mode)
+func SearchWithMode(s *store.Store, global bool, project, term string, mode ListMode) ([]store.Scratch, error) {
+	scratches := LsWithMode(s, global, project, mode)
 
 	re, err := regexp.Compile(term)
 	if err != nil {
@@ -51,14 +51,14 @@ func SearchWithMode(s *store.Store, all, global bool, project, term string, mode
 }
 
 // SearchWithIndices performs a search and returns results with their correct positional indices
-func SearchWithIndices(s *store.Store, all, global bool, project, term string) ([]ScratchWithIndex, error) {
-	return SearchWithIndicesMode(s, all, global, project, term, ListModeActive)
+func SearchWithIndices(s *store.Store, global bool, project, term string) ([]ScratchWithIndex, error) {
+	return SearchWithIndicesMode(s, global, project, term, ListModeActive)
 }
 
 // SearchWithIndicesMode performs a search with mode and returns results with their correct positional indices
-func SearchWithIndicesMode(s *store.Store, all, global bool, project, term string, mode ListMode) ([]ScratchWithIndex, error) {
+func SearchWithIndicesMode(s *store.Store, global bool, project, term string, mode ListMode) ([]ScratchWithIndex, error) {
 	// Get all scratches in the correct order
-	allScratches := LsWithMode(s, all, global, project, mode)
+	allScratches := LsWithMode(s, global, project, mode)
 
 	// Create a map of ID to index for quick lookup
 	idToIndex := make(map[string]int)

@@ -21,13 +21,13 @@ func IsSilentMode() bool {
 }
 
 // ShowListAfterCommand displays the list of scratches after a command if verbose mode is enabled
-func ShowListAfterCommand(s *store.Store, all, global bool, project string) {
+func ShowListAfterCommand(s *store.Store, global bool, project string) {
 	if !IsVerboseMode() {
 		return
 	}
 
 	// Get the list of scratches
-	scratches := commands.Ls(s, all, global, project)
+	scratches := commands.Ls(s, global, project)
 
 	// Format and display based on output format
 	format, err := output.GetFormat(outputFormat)
@@ -54,7 +54,7 @@ func ShowListAfterCommand(s *store.Store, all, global bool, project string) {
 			fmt.Println()
 		}
 
-		if err := termFormatter.FormatList(scratches, all || global); err != nil {
+		if err := termFormatter.FormatList(scratches, global); err != nil {
 			log.Debug().Err(err).Msg("Failed to format list")
 			return
 		}

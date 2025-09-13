@@ -7,8 +7,8 @@ import (
 	"github.com/arthur-debert/padz/pkg/store"
 )
 
-func Open(s *store.Store, all bool, global bool, project string, indexStr string) error {
-	scratchToOpen, err := GetScratchByIndex(s, all, global, project, indexStr)
+func Open(s *store.Store, global bool, project string, indexStr string) error {
+	scratchToOpen, err := GetScratchByIndex(s, global, project, indexStr)
 	if err != nil {
 		return err
 	}
@@ -33,7 +33,7 @@ func Open(s *store.Store, all bool, global bool, project string, indexStr string
 	trimmedContent := trim(newContent)
 	if len(trimmedContent) == 0 {
 		// If the file is empty, soft delete the scratch
-		return Delete(s, all, global, project, indexStr)
+		return Delete(s, global, project, indexStr)
 	}
 
 	if err := saveScratchFile(scratchToOpen.ID, trimmedContent); err != nil {
@@ -45,8 +45,8 @@ func Open(s *store.Store, all bool, global bool, project string, indexStr string
 }
 
 // OpenLazy opens a scratch in the editor and exits immediately (non-blocking)
-func OpenLazy(s *store.Store, all bool, global bool, project string, indexStr string) error {
-	scratchToOpen, err := GetScratchByIndex(s, all, global, project, indexStr)
+func OpenLazy(s *store.Store, global bool, project string, indexStr string) error {
+	scratchToOpen, err := GetScratchByIndex(s, global, project, indexStr)
 	if err != nil {
 		return err
 	}

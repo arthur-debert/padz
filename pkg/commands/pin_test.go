@@ -31,7 +31,7 @@ func TestPin(t *testing.T) {
 		require.NoError(t, err)
 
 		// Pin it
-		err = Pin(st, false, false, project, "1")
+		err = Pin(st, false, project, "1")
 		assert.NoError(t, err)
 
 		// Verify it's pinned
@@ -61,7 +61,7 @@ func TestPin(t *testing.T) {
 		require.NoError(t, err)
 
 		// Try to pin it again
-		err = Pin(st, false, false, project, "1")
+		err = Pin(st, false, project, "1")
 		assert.Error(t, err)
 		assert.Contains(t, err.Error(), "already pinned")
 	})
@@ -99,7 +99,7 @@ func TestPin(t *testing.T) {
 		require.NoError(t, err)
 
 		// Try to pin it
-		err = Pin(st, false, false, project, fmt.Sprintf("%d", store.MaxPinnedScratches+1))
+		err = Pin(st, false, project, fmt.Sprintf("%d", store.MaxPinnedScratches+1))
 		assert.Error(t, err)
 		assert.Contains(t, err.Error(), "maximum number of pinned scratches")
 	})
@@ -123,7 +123,7 @@ func TestPin(t *testing.T) {
 		require.NoError(t, err)
 
 		// Pin by partial hash
-		err = Pin(st, false, false, project, "abc123")
+		err = Pin(st, false, project, "abc123")
 		assert.NoError(t, err)
 
 		// Verify it's pinned
@@ -154,7 +154,7 @@ func TestUnpin(t *testing.T) {
 		require.NoError(t, err)
 
 		// Unpin it
-		err = Unpin(st, false, false, project, "1")
+		err = Unpin(st, false, project, "1")
 		assert.NoError(t, err)
 
 		// Verify it's unpinned
@@ -182,7 +182,7 @@ func TestUnpin(t *testing.T) {
 		require.NoError(t, err)
 
 		// Try to unpin it
-		err = Unpin(st, false, false, project, "1")
+		err = Unpin(st, false, project, "1")
 		assert.Error(t, err)
 		assert.Contains(t, err.Error(), "not pinned")
 	})
@@ -227,7 +227,7 @@ func TestUnpin(t *testing.T) {
 		}
 
 		// Unpin using p1 (should be pinned1 as it appears first in chronological order)
-		err = Unpin(st, false, false, project, "p1")
+		err = Unpin(st, false, project, "p1")
 		assert.NoError(t, err)
 
 		// Verify correct scratch was unpinned
@@ -290,31 +290,31 @@ func TestGetScratchByIndex_PinnedIndices(t *testing.T) {
 
 	// Test pinned indices (in chronological order by CreatedAt)
 	t.Run("p1 returns first pinned", func(t *testing.T) {
-		scratch, err := GetScratchByIndex(st, false, false, project, "p1")
+		scratch, err := GetScratchByIndex(st, false, project, "p1")
 		assert.NoError(t, err)
 		assert.Equal(t, "pinned-newer", scratch.ID) // First pinned in chronological order
 	})
 
 	t.Run("p2 returns second pinned", func(t *testing.T) {
-		scratch, err := GetScratchByIndex(st, false, false, project, "p2")
+		scratch, err := GetScratchByIndex(st, false, project, "p2")
 		assert.NoError(t, err)
 		assert.Equal(t, "pinned-old", scratch.ID) // Second pinned in chronological order
 	})
 
 	t.Run("regular index 1 returns first in chronological order", func(t *testing.T) {
-		scratch, err := GetScratchByIndex(st, false, false, project, "1")
+		scratch, err := GetScratchByIndex(st, false, project, "1")
 		assert.NoError(t, err)
 		assert.Equal(t, "newest", scratch.ID) // First by creation time (newest)
 	})
 
 	t.Run("regular index 4 returns oldest", func(t *testing.T) {
-		scratch, err := GetScratchByIndex(st, false, false, project, "4")
+		scratch, err := GetScratchByIndex(st, false, project, "4")
 		assert.NoError(t, err)
 		assert.Equal(t, "pinned-old", scratch.ID) // Last by creation time (oldest)
 	})
 
 	t.Run("invalid pinned index", func(t *testing.T) {
-		_, err := GetScratchByIndex(st, false, false, project, "p3")
+		_, err := GetScratchByIndex(st, false, project, "p3")
 		assert.Error(t, err)
 		assert.Contains(t, err.Error(), "pinned index out of range")
 	})
@@ -367,7 +367,7 @@ func TestLs_WithPinned(t *testing.T) {
 	}
 
 	// Get sorted list
-	result := Ls(st, false, false, project)
+	result := Ls(st, false, project)
 
 	// Verify order: chronological (by CreatedAt), pinned status doesn't affect order
 	assert.Equal(t, 4, len(result))
@@ -414,7 +414,7 @@ func TestPinMultiple(t *testing.T) {
 		}
 
 		// Pin multiple by index
-		pinnedTitles, err := PinMultiple(st, false, false, project, []string{"1", "3"})
+		pinnedTitles, err := PinMultiple(st, false, project, []string{"1", "3"})
 		assert.NoError(t, err)
 		assert.Equal(t, 2, len(pinnedTitles))
 		assert.Contains(t, pinnedTitles, "Test 1")
@@ -464,7 +464,7 @@ func TestPinMultiple(t *testing.T) {
 		}
 
 		// Try to pin both
-		pinnedTitles, err := PinMultiple(st, false, false, project, []string{"1", "2"})
+		pinnedTitles, err := PinMultiple(st, false, project, []string{"1", "2"})
 		assert.NoError(t, err)
 		assert.Equal(t, 1, len(pinnedTitles)) // Only one newly pinned
 		assert.Contains(t, pinnedTitles, "Test 2")
@@ -500,7 +500,7 @@ func TestPinMultiple(t *testing.T) {
 			fmt.Sprintf("%d", store.MaxPinnedScratches),
 			fmt.Sprintf("%d", store.MaxPinnedScratches+1),
 		}
-		_, err = PinMultiple(st, false, false, project, ids)
+		_, err = PinMultiple(st, false, project, ids)
 		assert.Error(t, err)
 		assert.Contains(t, err.Error(), "only 1 slots available")
 	})
@@ -524,7 +524,7 @@ func TestPinMultiple(t *testing.T) {
 		require.NoError(t, err)
 
 		// Pin with duplicate IDs
-		pinnedTitles, err := PinMultiple(st, false, false, project, []string{"1", "1", "1"})
+		pinnedTitles, err := PinMultiple(st, false, project, []string{"1", "1", "1"})
 		assert.NoError(t, err)
 		assert.Equal(t, 1, len(pinnedTitles)) // Only one unique scratch pinned
 		assert.Contains(t, pinnedTitles, "Test 1")
@@ -574,7 +574,7 @@ func TestUnpinMultiple(t *testing.T) {
 		}
 
 		// Unpin multiple
-		unpinnedTitles, err := UnpinMultiple(st, false, false, project, []string{"p1", "p3"})
+		unpinnedTitles, err := UnpinMultiple(st, false, project, []string{"p1", "p3"})
 		assert.NoError(t, err)
 		assert.Equal(t, 2, len(unpinnedTitles))
 		assert.Contains(t, unpinnedTitles, "Test 1")
@@ -625,7 +625,7 @@ func TestUnpinMultiple(t *testing.T) {
 		}
 
 		// Try to unpin both
-		unpinnedTitles, err := UnpinMultiple(st, false, false, project, []string{"1", "2"})
+		unpinnedTitles, err := UnpinMultiple(st, false, project, []string{"1", "2"})
 		assert.NoError(t, err)
 		assert.Equal(t, 1, len(unpinnedTitles)) // Only one was actually pinned
 		assert.Contains(t, unpinnedTitles, "Test 1")
@@ -671,7 +671,7 @@ func TestUnpinMultiple(t *testing.T) {
 		}
 
 		// Unpin using mixed indices (regular and pinned)
-		unpinnedTitles, err := UnpinMultiple(st, false, false, project, []string{"test1", "p2"})
+		unpinnedTitles, err := UnpinMultiple(st, false, project, []string{"test1", "p2"})
 		assert.NoError(t, err)
 		assert.Equal(t, 2, len(unpinnedTitles))
 		assert.Contains(t, unpinnedTitles, "Test 1")

@@ -24,7 +24,7 @@ func TestSoftDelete(t *testing.T) {
 	setup.WriteScratchFile(t, testScratch.ID, []byte("test content"))
 
 	// Soft delete the scratch
-	err := Delete(setup.Store, false, false, "testproject", "1")
+	err := Delete(setup.Store, false, "testproject", "1")
 	require.NoError(t, err)
 
 	// Verify the scratch is marked as deleted
@@ -63,21 +63,21 @@ func TestGetScratchByIndex_WithDeleted(t *testing.T) {
 	}
 
 	// Test regular index resolution (should exclude deleted)
-	scratch, err := GetScratchByIndex(setup.Store, false, false, "test", "1")
+	scratch, err := GetScratchByIndex(setup.Store, false, "test", "1")
 	require.NoError(t, err)
 	assert.Equal(t, "active1", scratch.ID)
 
-	scratch, err = GetScratchByIndex(setup.Store, false, false, "test", "2")
+	scratch, err = GetScratchByIndex(setup.Store, false, "test", "2")
 	require.NoError(t, err)
 	assert.Equal(t, "active2", scratch.ID)
 
 	// Test deleted index resolution
 	// Note: deleted items are sorted by DeletedAt descending (newest first)
-	scratch, err = GetScratchByIndex(setup.Store, false, false, "test", "d1")
+	scratch, err = GetScratchByIndex(setup.Store, false, "test", "d1")
 	require.NoError(t, err)
 	assert.Equal(t, "deleted1", scratch.ID) // deleted1 has more recent DeletedAt
 
-	scratch, err = GetScratchByIndex(setup.Store, false, false, "test", "d2")
+	scratch, err = GetScratchByIndex(setup.Store, false, "test", "d2")
 	require.NoError(t, err)
 	assert.Equal(t, "deleted2", scratch.ID) // deleted2 has older DeletedAt
 }
@@ -99,7 +99,7 @@ func TestFlush(t *testing.T) {
 	setup.WriteScratchFile(t, testScratch.ID, []byte("test content"))
 
 	// Flush the deleted scratch
-	err := Flush(setup.Store, false, false, "testproject", "d1", 0)
+	err := Flush(setup.Store, false, "testproject", "d1", 0)
 	require.NoError(t, err)
 
 	// Verify the scratch is completely gone
@@ -130,7 +130,7 @@ func TestRestore(t *testing.T) {
 	setup.WriteScratchFile(t, testScratch.ID, []byte("test content"))
 
 	// Restore the scratch
-	err := Restore(setup.Store, false, false, "testproject", "d1", 0)
+	err := Restore(setup.Store, false, "testproject", "d1", 0)
 	require.NoError(t, err)
 
 	// Verify the scratch is restored
@@ -161,17 +161,17 @@ func TestLsWithMode(t *testing.T) {
 	}
 
 	// Test ListModeActive (default)
-	activeScratches := LsWithMode(setup.Store, false, false, "test", ListModeActive)
+	activeScratches := LsWithMode(setup.Store, false, "test", ListModeActive)
 	assert.Len(t, activeScratches, 2)
 	assert.Equal(t, "active1", activeScratches[0].ID)
 	assert.Equal(t, "active2", activeScratches[1].ID)
 
 	// Test ListModeDeleted
-	deletedScratches := LsWithMode(setup.Store, false, false, "test", ListModeDeleted)
+	deletedScratches := LsWithMode(setup.Store, false, "test", ListModeDeleted)
 	assert.Len(t, deletedScratches, 1)
 	assert.Equal(t, "deleted1", deletedScratches[0].ID)
 
 	// Test ListModeAll
-	allScratches := LsWithMode(setup.Store, false, false, "test", ListModeAll)
+	allScratches := LsWithMode(setup.Store, false, "test", ListModeAll)
 	assert.Len(t, allScratches, 3)
 }

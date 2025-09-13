@@ -33,7 +33,6 @@ Examples:
 func runPin(cmd *cobra.Command, args []string) {
 	log.Debug().Msg("Starting pin command")
 
-	all, _ := cmd.Flags().GetBool("all")
 	global, _ := cmd.Flags().GetBool("global")
 
 	dir, err := os.Getwd()
@@ -50,7 +49,7 @@ func runPin(cmd *cobra.Command, args []string) {
 		proj = "global"
 	}
 
-	st, err := store.NewStore()
+	st, err := store.NewStoreWithScope(global)
 	if err != nil {
 		log.Error().Err(err).Msg("Failed to create store")
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
@@ -58,7 +57,7 @@ func runPin(cmd *cobra.Command, args []string) {
 	}
 
 	// Pin multiple scratches
-	pinnedTitles, err := commands.PinMultiple(st, all, global, proj, args)
+	pinnedTitles, err := commands.PinMultiple(st, global, proj, args)
 	if err != nil {
 		log.Error().Err(err).Msg("Failed to pin scratches")
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
@@ -66,7 +65,7 @@ func runPin(cmd *cobra.Command, args []string) {
 	}
 
 	// Show list in verbose mode
-	ShowListAfterCommand(st, all, global, proj)
+	ShowListAfterCommand(st, global, proj)
 
 	// Show success message if not silent
 	if !IsSilentMode() {
@@ -102,7 +101,6 @@ Examples:
 func runUnpin(cmd *cobra.Command, args []string) {
 	log.Debug().Msg("Starting unpin command")
 
-	all, _ := cmd.Flags().GetBool("all")
 	global, _ := cmd.Flags().GetBool("global")
 
 	dir, err := os.Getwd()
@@ -119,7 +117,7 @@ func runUnpin(cmd *cobra.Command, args []string) {
 		proj = "global"
 	}
 
-	st, err := store.NewStore()
+	st, err := store.NewStoreWithScope(global)
 	if err != nil {
 		log.Error().Err(err).Msg("Failed to create store")
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
@@ -127,7 +125,7 @@ func runUnpin(cmd *cobra.Command, args []string) {
 	}
 
 	// Unpin multiple scratches
-	unpinnedTitles, err := commands.UnpinMultiple(st, all, global, proj, args)
+	unpinnedTitles, err := commands.UnpinMultiple(st, global, proj, args)
 	if err != nil {
 		log.Error().Err(err).Msg("Failed to unpin scratches")
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
@@ -135,7 +133,7 @@ func runUnpin(cmd *cobra.Command, args []string) {
 	}
 
 	// Show list in verbose mode
-	ShowListAfterCommand(st, all, global, proj)
+	ShowListAfterCommand(st, global, proj)
 
 	// Show success message if not silent
 	if !IsSilentMode() {

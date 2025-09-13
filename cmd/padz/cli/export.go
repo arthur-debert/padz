@@ -30,10 +30,9 @@ Examples:
   padz export 1 2 3             # Export specific scratches
   padz export p1 p2             # Export pinned scratches`,
 		Run: func(cmd *cobra.Command, args []string) {
-			all, _ := cmd.Flags().GetBool("all")
 			global, _ := cmd.Flags().GetBool("global")
 
-			s, err := store.NewStore()
+			s, err := store.NewStoreWithScope(global)
 			if err != nil {
 				log.Fatal().Err(err).Msg("Failed to initialize store")
 			}
@@ -54,7 +53,7 @@ Examples:
 			}
 
 			// Export scratches
-			if err := commands.Export(s, all, global, proj, args, format); err != nil {
+			if err := commands.Export(s, global, proj, args, format); err != nil {
 				log.Fatal().Err(err).Msg("Failed to export scratches")
 			}
 		},

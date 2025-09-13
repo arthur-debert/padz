@@ -427,23 +427,13 @@ func TestLs(t *testing.T) {
 
 	tests := []struct {
 		name          string
-		all           bool
 		global        bool
 		project       string
 		expectedCount int
 		expectedIDs   []string
 	}{
 		{
-			name:          "list all scratches - reverse chronological order",
-			all:           true,
-			global:        false,
-			project:       "",
-			expectedCount: 4,
-			expectedIDs:   []string{"4", "3", "2", "1"}, // newest first
-		},
-		{
 			name:          "list project1 scratches - reverse chronological order",
-			all:           false,
 			global:        false,
 			project:       "project1",
 			expectedCount: 2,
@@ -451,7 +441,6 @@ func TestLs(t *testing.T) {
 		},
 		{
 			name:          "list project2 scratches",
-			all:           false,
 			global:        false,
 			project:       "project2",
 			expectedCount: 1,
@@ -459,7 +448,6 @@ func TestLs(t *testing.T) {
 		},
 		{
 			name:          "list global scratches",
-			all:           false,
 			global:        true,
 			project:       "",
 			expectedCount: 1,
@@ -467,7 +455,6 @@ func TestLs(t *testing.T) {
 		},
 		{
 			name:          "list non-existent project",
-			all:           false,
 			global:        false,
 			project:       "nonexistent",
 			expectedCount: 0,
@@ -477,7 +464,7 @@ func TestLs(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			result := Ls(setup.Store, tt.all, tt.global, tt.project)
+			result := Ls(setup.Store, tt.global, tt.project)
 			if len(result) != tt.expectedCount {
 				t.Errorf("expected %d scratches, got %d", tt.expectedCount, len(result))
 			}
@@ -592,7 +579,7 @@ func TestSearch(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			result, err := Search(setup.Store, tt.all, tt.global, tt.project, tt.term)
+			result, err := Search(setup.Store, tt.global, tt.project, tt.term)
 
 			if tt.expectError {
 				if err == nil {
@@ -693,7 +680,7 @@ func TestSearchWithIndices(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			results, err := SearchWithIndices(setup.Store, tt.all, tt.global, tt.project, tt.term)
+			results, err := SearchWithIndices(setup.Store, tt.global, tt.project, tt.term)
 
 			if tt.expectError {
 				if err == nil {
@@ -803,7 +790,7 @@ func TestView(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			result, err := View(setup.Store, tt.all, tt.global, tt.project, tt.indexStr)
+			result, err := View(setup.Store, tt.global, tt.project, tt.indexStr)
 
 			if tt.expectError {
 				if err == nil {
@@ -919,7 +906,7 @@ func TestPeek(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			result, err := Peek(setup.Store, tt.all, tt.global, tt.project, tt.index, tt.lines)
+			result, err := Peek(setup.Store, tt.global, tt.project, tt.index, tt.lines)
 			if tt.expectError {
 				if err == nil {
 					t.Errorf("expected error but got none")
@@ -980,7 +967,7 @@ func TestDelete(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			initialCount := len(setup.Store.GetScratches())
 
-			err := Delete(setup.Store, false, false, tt.project, tt.indexStr)
+			err := Delete(setup.Store, false, tt.project, tt.indexStr)
 
 			if tt.expectError {
 				if err == nil {
@@ -1143,7 +1130,7 @@ func TestOpen(t *testing.T) {
 	}
 
 	// Test opening and editing the scratch
-	err = Open(setup.Store, false, false, "testproject", "1")
+	err = Open(setup.Store, false, "testproject", "1")
 	if err != nil {
 		t.Errorf("unexpected error opening scratch: %v", err)
 	}
@@ -1201,7 +1188,7 @@ func TestOpen_DeletesEmptyScratch(t *testing.T) {
 	}
 
 	// Open and edit (delete all content)
-	err = Open(setup.Store, false, false, "testproject", "1")
+	err = Open(setup.Store, false, "testproject", "1")
 	if err != nil {
 		t.Errorf("unexpected error opening scratch: %v", err)
 	}
@@ -1409,7 +1396,7 @@ func TestGetScratchByIndex(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			result, err := GetScratchByIndex(setup.Store, tt.all, tt.global, tt.project, tt.indexStr)
+			result, err := GetScratchByIndex(setup.Store, tt.global, tt.project, tt.indexStr)
 
 			if tt.expectError {
 				if err == nil {

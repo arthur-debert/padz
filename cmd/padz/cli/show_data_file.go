@@ -20,10 +20,11 @@ func newShowDataFileCmd() *cobra.Command {
 		Long:  ShowDataFileLong,
 		Args:  cobra.NoArgs,
 		Run: func(cmd *cobra.Command, args []string) {
+			global, _ := cmd.Flags().GetBool("global")
 			// Note: the global flag doesn't affect the data file location
 			// All scratches are stored in the same place
 
-			s, err := store.NewStore()
+			s, err := store.NewStoreWithScope(global)
 			if err != nil {
 				log.Fatal().Err(err).Msg("Failed to initialize store")
 			}

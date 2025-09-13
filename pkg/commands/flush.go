@@ -8,9 +8,9 @@ import (
 )
 
 // FlushMultiple performs hard deletion of specific soft-deleted scratches by their IDs
-func FlushMultiple(s *store.Store, all bool, global bool, project string, ids []string) (int, error) {
+func FlushMultiple(s *store.Store, global bool, project string, ids []string) (int, error) {
 	// Resolve all IDs first
-	scratches, err := ResolveMultipleIDs(s, all, global, project, ids)
+	scratches, err := ResolveMultipleIDs(s, global, project, ids)
 	if err != nil {
 		return 0, err
 	}
@@ -56,10 +56,10 @@ func FlushMultiple(s *store.Store, all bool, global bool, project string, ids []
 }
 
 // Flush performs hard deletion of soft-deleted scratches
-func Flush(s *store.Store, all bool, global bool, project string, indexStr string, olderThan time.Duration) error {
+func Flush(s *store.Store, global bool, project string, indexStr string, olderThan time.Duration) error {
 	// If a specific index is provided, flush that single scratch using FlushMultiple
 	if indexStr != "" {
-		_, err := FlushMultiple(s, all, global, project, []string{indexStr})
+		_, err := FlushMultiple(s, global, project, []string{indexStr})
 		return err
 	}
 
@@ -73,14 +73,12 @@ func Flush(s *store.Store, all bool, global bool, project string, indexStr strin
 			continue
 		}
 
-		// Filter by project/global if not all
-		if !all {
-			if global && scratch.Project != "global" {
-				continue
-			}
-			if !global && scratch.Project != project {
-				continue
-			}
+		// Filter by project/global
+		if global && scratch.Project != "global" {
+			continue
+		}
+		if !global && scratch.Project != project {
+			continue
 		}
 
 		// Check if old enough to flush (if olderThan is specified)
@@ -117,5 +115,5 @@ func Flush(s *store.Store, all bool, global bool, project string, indexStr strin
 
 // FlushAll flushes all soft-deleted scratches
 func FlushAll(s *store.Store) error {
-	return Flush(s, true, false, "", "", 0)
+	return Flush(s, false, "", "", 0)
 }

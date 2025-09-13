@@ -17,13 +17,13 @@ const (
 	ListModeAll     ListMode = "all"     // Both deleted and non-deleted items
 )
 
-func Ls(s *store.Store, all, global bool, project string) []store.Scratch {
+func Ls(s *store.Store, global bool, project string) []store.Scratch {
 	// Default behavior - exclude deleted items
-	return LsWithMode(s, all, global, project, ListModeActive)
+	return LsWithMode(s, global, project, ListModeActive)
 }
 
 // LsWithMode lists scratches with delete filtering options
-func LsWithMode(s *store.Store, all, global bool, project string, mode ListMode) []store.Scratch {
+func LsWithMode(s *store.Store, global bool, project string, mode ListMode) []store.Scratch {
 	scratches := s.GetScratches()
 
 	var filtered []store.Scratch
@@ -43,9 +43,7 @@ func LsWithMode(s *store.Store, all, global bool, project string, mode ListMode)
 		}
 
 		// Filter by project/global
-		if all {
-			filtered = append(filtered, scratch)
-		} else if global && scratch.Project == "global" {
+		if global && scratch.Project == "global" {
 			filtered = append(filtered, scratch)
 		} else if !global && scratch.Project == project {
 			filtered = append(filtered, scratch)
@@ -91,13 +89,13 @@ func sortByMostRecentActivity(scratches []store.Scratch) []store.Scratch {
 	return sorted
 }
 
-func GetScratchByIndex(s *store.Store, all, global bool, project string, indexStr string) (*store.Scratch, error) {
+func GetScratchByIndex(s *store.Store, global bool, project string, indexStr string) (*store.Scratch, error) {
 	// When looking for deleted items (d1, d2, etc), we need to get all items including deleted
 	var scratches []store.Scratch
 	if len(indexStr) > 1 && indexStr[0] == 'd' {
-		scratches = LsWithMode(s, all, global, project, ListModeAll)
+		scratches = LsWithMode(s, global, project, ListModeAll)
 	} else {
-		scratches = Ls(s, all, global, project)
+		scratches = Ls(s, global, project)
 	}
 
 	// Check if it's a deleted index (d1, d2, etc)
@@ -173,9 +171,9 @@ func GetScratchByIndex(s *store.Store, all, global bool, project string, indexSt
 }
 
 // ResolveScratchID resolves various ID formats (index, pinned index, deleted index, hash) to a scratch
-func ResolveScratchID(s *store.Store, all, global bool, project string, id string) (*store.Scratch, error) {
+func ResolveScratchID(s *store.Store, global bool, project string, id string) (*store.Scratch, error) {
 	// Try as index (including pinned index and deleted index)
-	scratch, err := GetScratchByIndex(s, all, global, project, id)
+	scratch, err := GetScratchByIndex(s, global, project, id)
 	if err == nil {
 		return scratch, nil
 	}

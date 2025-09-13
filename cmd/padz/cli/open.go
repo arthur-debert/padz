@@ -23,11 +23,10 @@ func newOpenCmd() *cobra.Command {
 		Long:    OpenLong,
 		Args:    cobra.ExactArgs(1),
 		Run: func(cmd *cobra.Command, args []string) {
-			all, _ := cmd.Flags().GetBool("all")
 			global, _ := cmd.Flags().GetBool("global")
 			lazy, _ := cmd.Flags().GetBool("lazy")
 
-			s, err := store.NewStore()
+			s, err := store.NewStoreWithScope(global)
 			if err != nil {
 				log.Fatal().Err(err).Msg("Operation failed")
 			}
@@ -48,9 +47,9 @@ func newOpenCmd() *cobra.Command {
 			}
 
 			if lazy {
-				err = commands.OpenLazy(s, all, global, proj, args[0])
+				err = commands.OpenLazy(s, global, proj, args[0])
 			} else {
-				err = commands.Open(s, all, global, proj, args[0])
+				err = commands.Open(s, global, proj, args[0])
 			}
 
 			// Format output

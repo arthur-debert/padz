@@ -36,13 +36,12 @@ Search results are ranked by:
   4. Match length
   5. Original order`,
 		Run: func(cmd *cobra.Command, args []string) {
-			all, _ := cmd.Flags().GetBool("all")
 			global, _ := cmd.Flags().GetBool("global")
 			searchTerm, _ := cmd.Flags().GetString("search")
 			showDeleted, _ := cmd.Flags().GetBool("deleted")
 			includeDeleted, _ := cmd.Flags().GetBool("include-deleted")
 
-			s, err := store.NewStore()
+			s, err := store.NewStoreWithScope(global)
 			if err != nil {
 				log.Fatal().Err(err).Msg("Failed to initialize store")
 			}
@@ -66,8 +65,7 @@ Search results are ranked by:
 			var mode commands.ListMode
 			if showDeleted {
 				mode = commands.ListModeDeleted
-			} else if includeDeleted || all {
-				// --all flag also shows deleted items intermingled with active ones
+			} else if includeDeleted {
 				mode = commands.ListModeAll
 			} else {
 				mode = commands.ListModeActive
@@ -75,7 +73,7 @@ Search results are ranked by:
 
 			// If search term provided, use search functionality
 			if searchTerm != "" {
-				searchResults, err := commands.SearchWithIndicesMode(s, all, global, proj, searchTerm, mode)
+				searchResults, err := commands.SearchWithIndicesMode(s, global, proj, searchTerm, mode)
 				if err != nil {
 					log.Fatal().Err(err).Msg("Failed to search")
 				}
@@ -97,13 +95,13 @@ Search results are ranked by:
 					if err != nil {
 						log.Fatal().Err(err).Msg("Failed to create terminal formatter")
 					}
-					if err := termFormatter.FormatSearchResults(searchResults, all); err != nil {
+					if err := termFormatter.FormatSearchResults(searchResults, false); err != nil {
 						log.Fatal().Err(err).Msg("Failed to format search results")
 					}
 				} else {
 					// JSON format should output the ScratchWithIndex objects
 					outputFormatter := output.NewFormatter(format, nil)
-					if err := outputFormatter.FormatSearchResults(searchResults, all); err != nil {
+					if err := outputFormatter.FormatSearchResults(searchResults, false); err != nil {
 						log.Fatal().Err(err).Msg("Failed to format search results")
 					}
 				}
@@ -111,7 +109,7 @@ Search results are ranked by:
 			}
 
 			// Normal listing without search
-			scratches := commands.LsWithMode(s, all, global, proj, mode)
+			scratches := commands.LsWithMode(s, global, proj, mode)
 
 			// Format output
 			format, err := output.GetFormat(outputFormat)
@@ -133,13 +131,13 @@ Search results are ranked by:
 				if err != nil {
 					log.Fatal().Err(err).Msg("Failed to create terminal formatter")
 				}
-				if err := termFormatter.FormatList(scratches, all); err != nil {
+				if err := termFormatter.FormatList(scratches, false); err != nil {
 					log.Fatal().Err(err).Msg("Failed to format list")
 				}
 			} else {
 				// JSON format uses the standard formatter
 				formatter := output.NewFormatter(format, nil)
-				if err := formatter.FormatList(scratches, all); err != nil {
+				if err := formatter.FormatList(scratches, false); err != nil {
 					log.Fatal().Err(err).Msg("Failed to format list")
 				}
 			}

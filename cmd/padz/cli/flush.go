@@ -44,7 +44,7 @@ Examples:
 				}
 			}
 
-			s, err := store.NewStore()
+			s, err := store.NewStoreWithScope(global)
 			if err != nil {
 				log.Fatal().Err(err).Msg("Failed to initialize store")
 			}
@@ -69,7 +69,7 @@ Examples:
 
 			// If specific IDs are provided, flush those
 			if len(args) > 0 {
-				flushedCount, err := commands.FlushMultiple(s, all, global, proj, args)
+				flushedCount, err := commands.FlushMultiple(s, global, proj, args)
 
 				// Format output
 				format, formatErr := output.GetFormat(outputFormat)
@@ -96,7 +96,7 @@ Examples:
 				return
 			} else {
 				// Otherwise flush based on criteria
-				err = commands.Flush(s, all, global, proj, "", olderThan)
+				err = commands.Flush(s, global, proj, "", olderThan)
 			}
 
 			// Format output

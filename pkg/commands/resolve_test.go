@@ -173,7 +173,7 @@ func TestResolveMultipleIDs(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			results, err := ResolveMultipleIDs(s, false, false, "test", tt.ids)
+			results, err := ResolveMultipleIDs(s, false, "test", tt.ids)
 
 			if tt.expectError {
 				assert.Error(t, err)
@@ -257,7 +257,7 @@ func TestResolveMultipleIDsWithErrors(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			results := ResolveMultipleIDsWithErrors(s, false, false, "test", tt.ids)
+			results := ResolveMultipleIDsWithErrors(s, false, "test", tt.ids)
 			assert.Len(t, results, tt.expectResults)
 
 			if tt.checkResults != nil {
@@ -365,7 +365,7 @@ func TestOrderPreservation(t *testing.T) {
 
 	// Test that order is preserved exactly as specified
 	ids := []string{"3", "1", "p2", "2", "d1"}
-	results, err := ResolveMultipleIDs(s, false, false, "test", ids)
+	results, err := ResolveMultipleIDs(s, false, "test", ids)
 
 	require.NoError(t, err)
 	require.Len(t, results, 5)
@@ -411,19 +411,19 @@ func TestProjectFiltering(t *testing.T) {
 	require.NoError(t, s.AddScratch(scratchGlobal))
 
 	// Test project filtering
-	results, err := ResolveMultipleIDs(s, false, false, "project1", []string{"1"})
+	results, err := ResolveMultipleIDs(s, false, "project1", []string{"1"})
 	require.NoError(t, err)
 	assert.Len(t, results, 1)
 	assert.Equal(t, "proj1", results[0].ID)
 
 	// Test global filtering
-	results, err = ResolveMultipleIDs(s, false, true, "", []string{"1"})
+	results, err = ResolveMultipleIDs(s, true, "", []string{"1"})
 	require.NoError(t, err)
 	assert.Len(t, results, 1)
 	assert.Equal(t, "global1", results[0].ID)
 
-	// Test all flag
-	results, err = ResolveMultipleIDs(s, true, false, "", []string{"1", "2", "3"})
+	// Test global flag for all projects (using empty project string)
+	results, err = ResolveMultipleIDs(s, false, "", []string{"1", "2", "3"})
 	require.NoError(t, err)
 	assert.Len(t, results, 3)
 }
@@ -518,7 +518,7 @@ func BenchmarkResolveMultipleIDs(b *testing.B) {
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		_, _ = ResolveMultipleIDs(s, false, false, "test", ids)
+		_, _ = ResolveMultipleIDs(s, false, "test", ids)
 	}
 }
 
@@ -534,7 +534,7 @@ func TestResolveMultipleIDsConcurrent(t *testing.T) {
 	for i := 0; i < 10; i++ {
 		go func(n int) {
 			ids := []string{fmt.Sprintf("%d", n%5+1), "p1", "d1"}
-			_, err := ResolveMultipleIDs(s, false, false, "test", ids)
+			_, err := ResolveMultipleIDs(s, false, "test", ids)
 			if err != nil && !strings.Contains(err.Error(), "out of range") {
 				errors <- err
 			}

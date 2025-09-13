@@ -35,8 +35,6 @@ const (
 	FlagVersionDesc = "Print version information"
 
 	// Common flags used across commands
-	FlagAllDesc          = "Show scratches from all projects"
-	FlagAllDescSearch    = "Search in all projects"
 	FlagGlobalDesc       = "Show only global scratches"
 	FlagGlobalDescSearch = "Search in global scratches only"
 )

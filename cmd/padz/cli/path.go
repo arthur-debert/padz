@@ -22,10 +22,9 @@ func newPathCmd() *cobra.Command {
 		Long:  `Get the full path to a scratch file identified by its index.`,
 		Args:  cobra.ExactArgs(1),
 		Run: func(cmd *cobra.Command, args []string) {
-			all, _ := cmd.Flags().GetBool("all")
 			global, _ := cmd.Flags().GetBool("global")
 
-			s, err := store.NewStore()
+			s, err := store.NewStoreWithScope(global)
 			if err != nil {
 				log.Fatal().Err(err).Msg("Operation failed")
 			}
@@ -40,7 +39,7 @@ func newPathCmd() *cobra.Command {
 				log.Fatal().Err(err).Msg("Operation failed")
 			}
 
-			result, err := commands.Path(s, all, global, proj, args[0])
+			result, err := commands.Path(s, global, proj, args[0])
 
 			// Format output
 			format, formatErr := output.GetFormat(outputFormat)

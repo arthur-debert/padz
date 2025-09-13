@@ -9,9 +9,9 @@ import (
 )
 
 // DeleteMultiple soft deletes multiple scratches by their IDs
-func DeleteMultiple(s *store.Store, all bool, global bool, project string, ids []string) ([]string, error) {
+func DeleteMultiple(s *store.Store, global bool, project string, ids []string) ([]string, error) {
 	// Resolve all IDs first
-	scratches, err := ResolveMultipleIDs(s, all, global, project, ids)
+	scratches, err := ResolveMultipleIDs(s, global, project, ids)
 	if err != nil {
 		return nil, err
 	}
@@ -58,8 +58,8 @@ func DeleteMultiple(s *store.Store, all bool, global bool, project string, ids [
 }
 
 // Delete soft deletes a single scratch (wrapper for backward compatibility)
-func Delete(s *store.Store, all bool, global bool, project string, indexStr string) error {
-	titles, err := DeleteMultiple(s, all, global, project, []string{indexStr})
+func Delete(s *store.Store, global bool, project string, indexStr string) error {
+	titles, err := DeleteMultiple(s, global, project, []string{indexStr})
 	if err != nil {
 		return err
 	}

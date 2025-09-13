@@ -8,9 +8,9 @@ import (
 )
 
 // PinMultiple pins multiple scratches by their IDs
-func PinMultiple(s *store.Store, all, global bool, project string, ids []string) ([]string, error) {
+func PinMultiple(s *store.Store, global bool, project string, ids []string) ([]string, error) {
 	// Resolve all IDs first
-	scratches, err := ResolveMultipleIDs(s, all, global, project, ids)
+	scratches, err := ResolveMultipleIDs(s, global, project, ids)
 	if err != nil {
 		return nil, err
 	}
@@ -79,9 +79,9 @@ func PinMultiple(s *store.Store, all, global bool, project string, ids []string)
 }
 
 // UnpinMultiple unpins multiple scratches by their IDs
-func UnpinMultiple(s *store.Store, all, global bool, project string, ids []string) ([]string, error) {
+func UnpinMultiple(s *store.Store, global bool, project string, ids []string) ([]string, error) {
 	// Resolve all IDs first
-	scratches, err := ResolveMultipleIDs(s, all, global, project, ids)
+	scratches, err := ResolveMultipleIDs(s, global, project, ids)
 	if err != nil {
 		return nil, err
 	}
@@ -127,8 +127,8 @@ func UnpinMultiple(s *store.Store, all, global bool, project string, ids []strin
 }
 
 // Pin marks a scratch as pinned (wrapper for backward compatibility)
-func Pin(s *store.Store, all, global bool, project string, id string) error {
-	titles, err := PinMultiple(s, all, global, project, []string{id})
+func Pin(s *store.Store, global bool, project string, id string) error {
+	titles, err := PinMultiple(s, global, project, []string{id})
 	if err != nil {
 		return err
 	}
@@ -139,8 +139,8 @@ func Pin(s *store.Store, all, global bool, project string, id string) error {
 }
 
 // Unpin removes the pinned status from a scratch (wrapper for backward compatibility)
-func Unpin(s *store.Store, all, global bool, project string, id string) error {
-	titles, err := UnpinMultiple(s, all, global, project, []string{id})
+func Unpin(s *store.Store, global bool, project string, id string) error {
+	titles, err := UnpinMultiple(s, global, project, []string{id})
 	if err != nil {
 		return err
 	}
