@@ -10,8 +10,9 @@ const NakedIntCommand = "view"
 
 // Config holds the application configuration
 type Config struct {
-	FileSystem filesystem.FileSystem
-	DataPath   string // Base path for data storage
+	FileSystem    filesystem.FileSystem
+	DataPath      string // Base path for data storage
+	IsGlobalScope bool   // Whether to use global scope (XDG) vs project-local (.padz)
 }
 
 // DefaultConfig returns the default configuration for production use

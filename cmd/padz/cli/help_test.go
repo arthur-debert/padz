@@ -66,7 +66,6 @@ func TestHelpCommand(t *testing.T) {
 			args: []string{"help", "list"},
 			shouldContain: []string{
 				"Flags:",
-				"--all",
 				"--global",
 				"--search",
 			},

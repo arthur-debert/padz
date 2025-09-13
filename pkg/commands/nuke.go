@@ -13,7 +13,7 @@ type NukeResult struct {
 }
 
 // Nuke soft-deletes all scratches in the specified scope
-func Nuke(s *store.Store, all bool, project string) (*NukeResult, error) {
+func Nuke(s *store.Store, project string) (*NukeResult, error) {
 	var scratchesToSoftDelete []store.Scratch
 	result := &NukeResult{}
 	now := time.Now()
@@ -26,10 +26,7 @@ func Nuke(s *store.Store, all bool, project string) (*NukeResult, error) {
 			continue // Skip already deleted items
 		}
 
-		if all {
-			// Soft delete all non-deleted scratches across all scopes
-			scratchesToSoftDelete = append(scratchesToSoftDelete, scratch)
-		} else if project == "" && scratch.Project == "global" {
+		if project == "" && scratch.Project == "global" {
 			// Soft delete only global scratches
 			scratchesToSoftDelete = append(scratchesToSoftDelete, scratch)
 		} else if project != "" && scratch.Project == project {
@@ -39,9 +36,7 @@ func Nuke(s *store.Store, all bool, project string) (*NukeResult, error) {
 	}
 
 	// Set the scope and count
-	if all {
-		result.Scope = "all"
-	} else if project == "" {
+	if project == "" {
 		result.Scope = "global"
 	} else {
 		result.Scope = "project"

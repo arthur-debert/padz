@@ -7,8 +7,8 @@ import (
 	"strings"
 )
 
-func Peek(s *store.Store, all, global bool, project string, indexStr string, lines int) (string, error) {
-	content, err := View(s, all, global, project, indexStr)
+func Peek(s *store.Store, global bool, project string, indexStr string, lines int) (string, error) {
+	content, err := View(s, global, project, indexStr)
 	if err != nil {
 		return "", err
 	}

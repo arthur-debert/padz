@@ -7,9 +7,9 @@ import (
 )
 
 // RestoreMultiple restores multiple soft-deleted scratches by their IDs
-func RestoreMultiple(s *store.Store, all bool, global bool, project string, ids []string) ([]string, error) {
+func RestoreMultiple(s *store.Store, global bool, project string, ids []string) ([]string, error) {
 	// Resolve all IDs first
-	scratches, err := ResolveMultipleIDs(s, all, global, project, ids)
+	scratches, err := ResolveMultipleIDs(s, global, project, ids)
 	if err != nil {
 		return nil, err
 	}
@@ -55,10 +55,10 @@ func RestoreMultiple(s *store.Store, all bool, global bool, project string, ids 
 }
 
 // Restore restores soft-deleted scratches
-func Restore(s *store.Store, all bool, global bool, project string, indexStr string, newerThan time.Duration) error {
+func Restore(s *store.Store, global bool, project string, indexStr string, newerThan time.Duration) error {
 	// If a specific index is provided, restore that single scratch using RestoreMultiple
 	if indexStr != "" {
-		_, err := RestoreMultiple(s, all, global, project, []string{indexStr})
+		_, err := RestoreMultiple(s, global, project, []string{indexStr})
 		return err
 	}
 
@@ -72,14 +72,12 @@ func Restore(s *store.Store, all bool, global bool, project string, indexStr str
 			continue
 		}
 
-		// Filter by project/global if not all
-		if !all {
-			if global && scratch.Project != "global" {
-				continue
-			}
-			if !global && scratch.Project != project {
-				continue
-			}
+		// Filter by project/global
+		if global && scratch.Project != "global" {
+			continue
+		}
+		if !global && scratch.Project != project {
+			continue
 		}
 
 		// Check if new enough to restore (if newerThan is specified)
@@ -114,5 +112,5 @@ func Restore(s *store.Store, all bool, global bool, project string, indexStr str
 
 // RestoreAll restores all soft-deleted scratches
 func RestoreAll(s *store.Store) error {
-	return Restore(s, true, false, "", "", 0)
+	return Restore(s, false, "", "", 0)
 }

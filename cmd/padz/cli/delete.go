@@ -24,10 +24,9 @@ func newDeleteCmd() *cobra.Command {
 		Long:    DeleteLong,
 		Args:    cobra.MinimumNArgs(1),
 		Run: func(cmd *cobra.Command, args []string) {
-			all, _ := cmd.Flags().GetBool("all")
 			global, _ := cmd.Flags().GetBool("global")
 
-			s, err := store.NewStore()
+			s, err := store.NewStoreWithScope(global)
 			if err != nil {
 				log.Fatal().Err(err).Msg("Failed to initialize store")
 			}
@@ -48,7 +47,7 @@ func newDeleteCmd() *cobra.Command {
 			}
 
 			// Delete multiple scratches
-			deletedTitles, err := commands.DeleteMultiple(s, all, global, proj, args)
+			deletedTitles, err := commands.DeleteMultiple(s, global, proj, args)
 
 			// Format output
 			format, formatErr := output.GetFormat(outputFormat)
@@ -62,7 +61,7 @@ func newDeleteCmd() *cobra.Command {
 			}
 
 			// Show list in verbose mode (before success message)
-			ShowListAfterCommand(s, all, global, proj)
+			ShowListAfterCommand(s, global, proj)
 
 			// Show success message with scratch titles
 			var successMsg string

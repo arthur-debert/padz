@@ -28,10 +28,9 @@ func newViewCmd() *cobra.Command {
 		Long:    ViewLong,
 		Args:    cobra.MinimumNArgs(1),
 		Run: func(cmd *cobra.Command, args []string) {
-			all, _ := cmd.Flags().GetBool("all")
 			global, _ := cmd.Flags().GetBool("global")
 
-			s, err := store.NewStore()
+			s, err := store.NewStoreWithScope(global)
 			if err != nil {
 				log.Fatal().Err(err).Msg("Operation failed")
 			}
@@ -51,7 +50,7 @@ func newViewCmd() *cobra.Command {
 				log.Warn().Err(err).Msg("Failed to run discovery")
 			}
 
-			content, err := commands.ViewMultiple(s, all, global, proj, args)
+			content, err := commands.ViewMultiple(s, global, proj, args)
 			if err != nil {
 				log.Fatal().Err(err).Msg("Operation failed")
 			}

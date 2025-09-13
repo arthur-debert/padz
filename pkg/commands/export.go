@@ -12,15 +12,15 @@ import (
 )
 
 // Export exports scratches to files in the specified format
-func Export(s *store.Store, all, global bool, project string, ids []string, format string) error {
+func Export(s *store.Store, global bool, project string, ids []string, format string) error {
 	var scratches []store.Scratch
 
 	if len(ids) == 0 {
 		// Export all scratches
-		scratches = Ls(s, all, global, project)
+		scratches = Ls(s, global, project)
 	} else {
 		// Export specific scratches using centralized resolution
-		resolvedScratches, err := ResolveMultipleIDs(s, all, global, project, ids)
+		resolvedScratches, err := ResolveMultipleIDs(s, global, project, ids)
 		if err != nil {
 			return err
 		}

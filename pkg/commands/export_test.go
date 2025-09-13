@@ -50,7 +50,7 @@ func TestExport(t *testing.T) {
 		require.NoError(t, err)
 
 		// Export all
-		err = Export(st, false, false, project, nil, "txt")
+		err = Export(st, false, project, nil, "txt")
 		assert.NoError(t, err)
 
 		// Check export directory exists
@@ -112,7 +112,7 @@ func TestExport(t *testing.T) {
 		require.NoError(t, err)
 
 		// Export specific ones
-		err = Export(st, false, false, project, []string{"1", "3", "5"}, "txt")
+		err = Export(st, false, project, []string{"1", "3", "5"}, "txt")
 		assert.NoError(t, err)
 
 		// Check exported files
@@ -154,7 +154,7 @@ func TestExport(t *testing.T) {
 		require.NoError(t, err)
 
 		// Export as markdown
-		err = Export(st, false, false, project, nil, "markdown")
+		err = Export(st, false, project, nil, "markdown")
 		assert.NoError(t, err)
 
 		// Check file extension
@@ -183,7 +183,7 @@ func TestExport(t *testing.T) {
 		}
 
 		// Pin the second one
-		err = Pin(st, false, false, project, "2")
+		err = Pin(st, false, project, "2")
 		require.NoError(t, err)
 
 		// Change to temp directory
@@ -199,7 +199,7 @@ func TestExport(t *testing.T) {
 		require.NoError(t, err)
 
 		// Export using pinned index
-		err = Export(st, false, false, project, []string{"p1"}, "txt")
+		err = Export(st, false, project, []string{"p1"}, "txt")
 		assert.NoError(t, err)
 
 		// Check exported file
@@ -221,7 +221,7 @@ func TestExport(t *testing.T) {
 		project := "test-project"
 
 		// Try to export non-existent scratch
-		err = Export(st, false, false, project, []string{"999"}, "txt")
+		err = Export(st, false, project, []string{"999"}, "txt")
 		assert.Error(t, err)
 		assert.Contains(t, err.Error(), "scratch not found: 999")
 	})
@@ -235,7 +235,7 @@ func TestExport(t *testing.T) {
 		project := "test-project"
 
 		// Try to export from empty store
-		err = Export(st, false, false, project, nil, "txt")
+		err = Export(st, false, project, nil, "txt")
 		assert.Error(t, err)
 		assert.Contains(t, err.Error(), "no scratches to export")
 	})
@@ -280,7 +280,7 @@ func TestExport(t *testing.T) {
 				require.NoError(t, err)
 
 				// Export the scratch
-				err = Export(st, false, false, project, nil, "txt")
+				err = Export(st, false, project, nil, "txt")
 				assert.NoError(t, err)
 
 				// Check filename

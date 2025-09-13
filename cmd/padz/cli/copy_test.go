@@ -68,11 +68,11 @@ func TestCopyCommand(t *testing.T) {
 	}
 
 	// Test flags
-	allFlag := copyCmd.Flag("all")
-	if allFlag == nil {
-		t.Error("Expected 'all' flag to be defined")
-	} else if allFlag.Shorthand != "a" {
-		t.Errorf("Expected 'all' flag shorthand to be 'a', got %q", allFlag.Shorthand)
+	globalFlag := copyCmd.Flag("global")
+	if globalFlag == nil {
+		t.Error("Expected 'global' flag to be defined")
+	} else if globalFlag.Shorthand != "g" {
+		t.Errorf("Expected 'global' flag shorthand to be 'g', got %q", globalFlag.Shorthand)
 	}
 }
 

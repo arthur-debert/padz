@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"path/filepath"
 	"strings"
 	"sync"
 	"time"
@@ -13,6 +14,7 @@ import (
 	"github.com/arthur-debert/padz/pkg/filelock"
 	"github.com/arthur-debert/padz/pkg/filesystem"
 	"github.com/arthur-debert/padz/pkg/logging"
+	"github.com/arthur-debert/padz/pkg/project"
 )
 
 const (
@@ -34,6 +36,15 @@ func NewStore() (*Store, error) {
 	logger := logging.GetLogger("store")
 	logger.Info().Msg("Initializing new store")
 	return NewStoreWithConfig(config.GetConfig())
+}
+
+// NewStoreWithScope creates a new store with the specified scope
+func NewStoreWithScope(isGlobal bool) (*Store, error) {
+	logger := logging.GetLogger("store")
+	logger.Info().Bool("is_global", isGlobal).Msg("Initializing store with scope")
+	cfg := config.GetConfig()
+	cfg.IsGlobalScope = isGlobal
+	return NewStoreWithConfig(cfg)
 }
 
 func NewStoreWithConfig(cfg *config.Config) (*Store, error) {
@@ -469,14 +480,41 @@ func GetScratchPathWithConfig(cfg *config.Config) (string, error) {
 		// Use configured path for testing
 		path = cfg.FileSystem.Join(cfg.DataPath, dataDirName)
 		logger.Debug().Str("path", path).Msg("Using configured data path")
-	} else {
-		// Use XDG for production
+	} else if cfg.IsGlobalScope {
+		// Use XDG for global scope
 		path, err = xdg.DataFile(dataDirName)
 		if err != nil {
 			logger.Error().Err(err).Msg("Failed to get XDG data file path")
 			return "", err
 		}
-		logger.Debug().Str("path", path).Msg("Using XDG data path")
+		logger.Debug().Str("path", path).Msg("Using XDG data path for global scope")
+	} else {
+		// Use local .padz directory for project scope
+		currentDir, err := os.Getwd()
+		if err != nil {
+			logger.Error().Err(err).Msg("Failed to get current working directory")
+			return "", err
+		}
+
+		projectRoot, err := project.GetProjectRoot(currentDir)
+		if err != nil {
+			logger.Error().Err(err).Msg("Failed to get project root")
+			return "", err
+		}
+
+		if projectRoot == "" {
+			// Not in a project, fall back to XDG
+			path, err = xdg.DataFile(dataDirName)
+			if err != nil {
+				logger.Error().Err(err).Msg("Failed to get XDG data file path")
+				return "", err
+			}
+			logger.Debug().Str("path", path).Msg("Not in project, using XDG data path")
+		} else {
+			// In a project, use .padz directory
+			path = filepath.Join(projectRoot, ".padz")
+			logger.Debug().Str("path", path).Str("project_root", projectRoot).Msg("Using local .padz directory")
+		}
 	}
 
 	logger.Debug().Str("path", path).Msg("Creating scratch directory if needed")

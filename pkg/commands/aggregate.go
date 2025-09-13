@@ -168,9 +168,9 @@ func AggregateScratchContents(scratches []*store.Scratch, options AggregateOptio
 }
 
 // AggregateScratchContentsByIDs resolves IDs and aggregates their content
-func AggregateScratchContentsByIDs(s *store.Store, all, global bool, project string, ids []string, options AggregateOptions) (*AggregatedContent, error) {
+func AggregateScratchContentsByIDs(s *store.Store, global bool, project string, ids []string, options AggregateOptions) (*AggregatedContent, error) {
 	// Resolve all IDs to scratches
-	scratches, err := ResolveMultipleIDs(s, all, global, project, ids)
+	scratches, err := ResolveMultipleIDs(s, global, project, ids)
 	if err != nil {
 		return nil, err
 	}

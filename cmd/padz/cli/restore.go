@@ -49,7 +49,7 @@ Examples:
 				}
 			}
 
-			s, err := store.NewStore()
+			s, err := store.NewStoreWithScope(global)
 			if err != nil {
 				log.Fatal().Err(err).Msg("Failed to initialize store")
 			}
@@ -74,14 +74,14 @@ Examples:
 
 			// If specific IDs are provided, restore those
 			if len(args) > 0 {
-				restoredTitles, err := commands.RestoreMultiple(s, all, global, proj, args)
+				restoredTitles, err := commands.RestoreMultiple(s, global, proj, args)
 				if err != nil {
 					handleTerminalError(err, format)
 					return
 				}
 
 				// Show list after restore in verbose mode
-				ShowListAfterCommand(s, all, global, proj)
+				ShowListAfterCommand(s, global, proj)
 
 				// Success message
 				var message string
@@ -96,7 +96,7 @@ Examples:
 				return
 			} else {
 				// Otherwise restore based on criteria
-				err = commands.Restore(s, all, global, proj, "", newerThan)
+				err = commands.Restore(s, global, proj, "", newerThan)
 			}
 
 			if err != nil {
@@ -105,7 +105,7 @@ Examples:
 			}
 
 			// Show list after restore in verbose mode
-			ShowListAfterCommand(s, all, global, proj)
+			ShowListAfterCommand(s, global, proj)
 
 			// Success message
 			var message string

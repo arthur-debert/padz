@@ -19,10 +19,9 @@ func newCopyCmd() *cobra.Command {
 		Long:    CopyLong,
 		Args:    cobra.MinimumNArgs(1),
 		Run: func(cmd *cobra.Command, args []string) {
-			allFlag, _ := cmd.Flags().GetBool("all")
 			global, _ := cmd.Flags().GetBool("global")
 
-			s, err := store.NewStore()
+			s, err := store.NewStoreWithScope(global)
 			if err != nil {
 				log.Fatal().Err(err).Msg(ErrFailedToInitStore)
 			}
@@ -37,7 +36,7 @@ func newCopyCmd() *cobra.Command {
 				log.Fatal().Err(err).Msg(ErrFailedToGetProject)
 			}
 
-			count, err := commands.CopyMultiple(s, allFlag, global, proj, args)
+			count, err := commands.CopyMultiple(s, global, proj, args)
 			if err != nil {
 				log.Fatal().Err(err).Msg(ErrFailedToCopyScratch)
 			}

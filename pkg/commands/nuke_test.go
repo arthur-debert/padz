@@ -58,7 +58,7 @@ func TestNuke(t *testing.T) {
 
 	// Test 1: Nuke specific project
 	t.Run("NukeProject", func(t *testing.T) {
-		result, err := Nuke(setup.Store, false, project1)
+		result, err := Nuke(setup.Store, project1)
 		if err != nil {
 			t.Fatalf("Failed to nuke project: %v", err)
 		}
@@ -92,7 +92,7 @@ func TestNuke(t *testing.T) {
 
 	// Test 2: Nuke global
 	t.Run("NukeGlobal", func(t *testing.T) {
-		result, err := Nuke(setup.Store, false, "")
+		result, err := Nuke(setup.Store, "")
 		if err != nil {
 			t.Fatalf("Failed to nuke global: %v", err)
 		}
@@ -121,8 +121,8 @@ func TestNuke(t *testing.T) {
 		}
 	})
 
-	// Test 3: Nuke all
-	t.Run("NukeAll", func(t *testing.T) {
+	// Test 3: Nuke global again with new scratches
+	t.Run("NukeGlobalAgain", func(t *testing.T) {
 		// Re-add some scratches
 		if err := setup.Store.AddScratch(store.Scratch{ID: generateTestID("new", 0), Project: "new-project", Title: "New"}); err != nil {
 			t.Fatalf("failed to add scratch: %v", err)
@@ -131,38 +131,38 @@ func TestNuke(t *testing.T) {
 			t.Fatalf("failed to add scratch: %v", err)
 		}
 
-		result, err := Nuke(setup.Store, true, "")
+		result, err := Nuke(setup.Store, "")
 		if err != nil {
-			t.Fatalf("Failed to nuke all: %v", err)
+			t.Fatalf("Failed to nuke global: %v", err)
 		}
-		if result.DeletedCount != 4 { // 2 from project2 + 2 new (not already deleted)
-			t.Errorf("Expected 4 deleted, got %d", result.DeletedCount)
+		if result.DeletedCount != 1 { // Only the new global scratch (not already deleted)
+			t.Errorf("Expected 1 deleted, got %d", result.DeletedCount)
 		}
-		if result.Scope != "all" {
-			t.Errorf("Expected scope 'all', got %s", result.Scope)
+		if result.Scope != "global" {
+			t.Errorf("Expected scope 'global', got %s", result.Scope)
 		}
 
-		// Verify all scratches were soft-deleted
+		// Verify scratches state after global nuke
 		remaining := setup.Store.GetScratches()
-		if len(remaining) != 11 { // all still exist but all are soft-deleted
+		if len(remaining) != 11 { // all still exist
 			t.Errorf("Expected 11 total scratches, got %d", len(remaining))
 		}
 
-		// Count active scratches (should be 0)
+		// Count active scratches (should be 3: 1 new-project + 2 remaining project2 scratches)
 		activeCount := 0
 		for _, s := range remaining {
 			if !s.IsDeleted {
 				activeCount++
 			}
 		}
-		if activeCount != 0 {
-			t.Errorf("Expected 0 active scratches, got %d", activeCount)
+		if activeCount != 3 {
+			t.Errorf("Expected 3 active scratches (1 new-project + 2 project2), got %d", activeCount)
 		}
 	})
 
 	// Test 4: Nuke empty project
 	t.Run("NukeEmptyProject", func(t *testing.T) {
-		result, err := Nuke(setup.Store, false, "non-existent-project")
+		result, err := Nuke(setup.Store, "non-existent-project")
 		if err != nil {
 			t.Fatalf("Failed to nuke empty project: %v", err)
 		}

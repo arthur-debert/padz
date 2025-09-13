@@ -17,7 +17,7 @@ type ResolveResult struct {
 // ResolveMultipleIDs resolves multiple ID strings to scratches
 // Returns a slice of scratches in the same order as the input IDs
 // Returns an error if ANY ID is invalid (all or nothing validation)
-func ResolveMultipleIDs(s *store.Store, all, global bool, project string, ids []string) ([]*store.Scratch, error) {
+func ResolveMultipleIDs(s *store.Store, global bool, project string, ids []string) ([]*store.Scratch, error) {
 	if len(ids) == 0 {
 		return []*store.Scratch{}, nil
 	}
@@ -42,7 +42,7 @@ func ResolveMultipleIDs(s *store.Store, all, global bool, project string, ids []
 	errors := make([]string, 0)
 
 	for _, id := range uniqueIDs {
-		scratch, err := ResolveScratchID(s, all, global, project, id)
+		scratch, err := ResolveScratchID(s, global, project, id)
 		if err != nil {
 			errors = append(errors, fmt.Sprintf("%s: %v", id, err))
 			continue
@@ -61,7 +61,7 @@ func ResolveMultipleIDs(s *store.Store, all, global bool, project string, ids []
 // ResolveMultipleIDsWithErrors resolves multiple ID strings to scratches
 // Returns individual results with errors for each ID
 // This allows partial success handling if needed
-func ResolveMultipleIDsWithErrors(s *store.Store, all, global bool, project string, ids []string) []ResolveResult {
+func ResolveMultipleIDsWithErrors(s *store.Store, global bool, project string, ids []string) []ResolveResult {
 	results := make([]ResolveResult, 0, len(ids))
 	seen := make(map[string]bool)
 
@@ -87,7 +87,7 @@ func ResolveMultipleIDsWithErrors(s *store.Store, all, global bool, project stri
 		}
 
 		seen[id] = true
-		scratch, err := ResolveScratchID(s, all, global, project, id)
+		scratch, err := ResolveScratchID(s, global, project, id)
 		results = append(results, ResolveResult{
 			ID:      id,
 			Scratch: scratch,

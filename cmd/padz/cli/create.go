@@ -32,7 +32,7 @@ Examples:
 			globalFlag, _ := cmd.Flags().GetBool("global")
 			titleFlag, _ := cmd.Flags().GetString("title")
 
-			s, err := store.NewStore()
+			s, err := store.NewStoreWithScope(globalFlag)
 			if err != nil {
 				log.Fatal().Err(err).Msg(ErrFailedToInitStore)
 			}
@@ -83,7 +83,7 @@ Examples:
 			}
 
 			// Show list in verbose mode
-			ShowListAfterCommand(s, false, globalFlag, proj)
+			ShowListAfterCommand(s, globalFlag, proj)
 
 			// Show success message if not silent
 			if !IsSilentMode() {

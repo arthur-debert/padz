@@ -27,9 +27,9 @@ func newNukeCmd() *cobra.Command {
 		Short: NukeShort,
 		Long:  NukeLong,
 		Run: func(cmd *cobra.Command, args []string) {
-			all, _ := cmd.Flags().GetBool("all")
+			global, _ := cmd.Flags().GetBool("global")
 
-			s, err := store.NewStore()
+			s, err := store.NewStoreWithScope(global)
 			if err != nil {
 				log.Fatal().Err(err).Msg("Operation failed")
 			}
@@ -66,9 +66,7 @@ func newNukeCmd() *cobra.Command {
 			var confirmMsg string
 
 			// Count the pads that would be deleted
-			if all {
-				count = len(s.GetScratches())
-			} else if proj == "" {
+			if proj == "" {
 				// Count global pads
 				for _, scratch := range s.GetScratches() {
 					if scratch.Project == "global" {
@@ -91,9 +89,7 @@ func newNukeCmd() *cobra.Command {
 			}
 
 			// Prepare confirmation message based on scope
-			if all {
-				confirmMsg = fmt.Sprintf(NukeConfirmAll, count)
-			} else if proj == "" {
+			if proj == "" {
 				confirmMsg = fmt.Sprintf(NukeConfirmGlobal, count)
 			} else {
 				// For project scope, extract just the project name from the path
@@ -126,19 +122,17 @@ func newNukeCmd() *cobra.Command {
 				}
 
 				// Actually perform the nuke operation
-				result, err := commands.Nuke(s, all, proj)
+				result, err := commands.Nuke(s, proj)
 				if err != nil {
 					handleTerminalError(err, format)
 				}
 
 				// Show remaining list in verbose mode
-				ShowListAfterCommand(s, all, false, proj)
+				ShowListAfterCommand(s, false, proj)
 
 				// Use the actual deleted count from the result
 				var successMsg string
-				if all {
-					successMsg = fmt.Sprintf(NukeSuccessAll, result.DeletedCount)
-				} else if result.Scope == "global" {
+				if result.Scope == "global" {
 					successMsg = fmt.Sprintf(NukeSuccessGlobal, result.DeletedCount)
 				} else {
 					projectName := filepath.Base(result.ProjectName)

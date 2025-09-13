@@ -28,13 +28,14 @@ With appropriate flags, it can:
 - Remove metadata entries for missing files
 - Run in dry-run mode to preview changes`,
 		Run: func(cmd *cobra.Command, args []string) {
+			global, _ := cmd.Flags().GetBool("global")
 			dryRun, _ := cmd.Flags().GetBool("dry-run")
 			recoverOrphans, _ := cmd.Flags().GetBool("recover-orphans")
 			cleanMissing, _ := cmd.Flags().GetBool("clean-missing")
 			defaultProject, _ := cmd.Flags().GetString("project")
 
 			// Initialize store
-			s, err := store.NewStore()
+			s, err := store.NewStoreWithScope(global)
 			if err != nil {
 				log.Fatal().Err(err).Msg("Failed to initialize store")
 			}
