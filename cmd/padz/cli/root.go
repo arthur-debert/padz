@@ -126,6 +126,7 @@ func NewRootCmd() *cobra.Command {
 	viewCmd := newViewCmd()
 	viewCmd.GroupID = "single"
 	viewCmd.Flags().BoolP("global", "g", false, FlagGlobalDesc)
+	viewCmd.Flags().Bool("pager", false, "Use system pager for output")
 	rootCmd.AddCommand(viewCmd)
 
 	openCmd := newOpenCmd()
