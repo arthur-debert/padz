@@ -6,6 +6,7 @@ package cli
 import (
 	"fmt"
 	"github.com/arthur-debert/padz/cmd/padz/formatter"
+	"github.com/arthur-debert/padz/pkg/clipboard"
 	"github.com/arthur-debert/padz/pkg/commands"
 	"github.com/arthur-debert/padz/pkg/output"
 	"github.com/arthur-debert/padz/pkg/project"
@@ -53,6 +54,11 @@ func newViewCmd() *cobra.Command {
 			content, err := commands.ViewMultiple(s, global, proj, args)
 			if err != nil {
 				log.Fatal().Err(err).Msg("Operation failed")
+			}
+
+			// Copy content to clipboard
+			if err := clipboard.Copy([]byte(content)); err != nil {
+				log.Warn().Err(err).Msg("Failed to copy content to clipboard")
 			}
 
 			// Format output

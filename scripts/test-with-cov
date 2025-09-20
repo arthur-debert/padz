@@ -15,21 +15,45 @@ TEST_DIRS="./..."
 
 while [[ $# -gt 0 ]]; do
     case $1 in
-        --full)
-            FULL_REPORT=true
-            shift
-            ;;
-        pkg|cmd)
-            TEST_DIRS="./$1/..."
-            shift
-            ;;
-        *)
-            echo "Usage: $0 [--full] [pkg|cmd]"
-            echo "  --full: Show detailed function-level coverage"
-            echo "  pkg: Test only pkg directory"
-            echo "  cmd: Test only cmd directory"
-            exit 1
-            ;;
+    --full)
+        FULL_REPORT=true
+        shift
+        ;;
+    pkg | cmd)
+        # Legacy shortcuts for pkg and cmd directories
+        TEST_DIRS="./$1/..."
+        shift
+        ;;
+    --help | -h)
+        echo "Usage: $0 [--full] [package_path]"
+        echo "  --full: Show detailed function-level coverage"
+        echo "  package_path: Path to test (e.g., pkg/too/, pkg/too/editor, cmd/)"
+        echo "  Legacy shortcuts: 'pkg' (same as pkg/...) or 'cmd' (same as cmd/...)"
+        echo "  Default: ./... (all packages)"
+        exit 0
+        ;;
+    -*)
+        echo "Unknown flag: $1"
+        echo "Usage: $0 [--full] [package_path]"
+        echo "Use --help for more information"
+        exit 1
+        ;;
+    *)
+        # Arbitrary package path
+        # Normalize the path - add ./ prefix if not already present
+        if [[ "$1" == ./* ]]; then
+            TEST_DIRS="$1"
+        else
+            TEST_DIRS="./$1"
+        fi
+        
+        # Add /... suffix if not already present and not ending with specific file
+        if [[ "$TEST_DIRS" != *"..." && "$TEST_DIRS" != *".go" ]]; then
+            # Remove trailing slash if present, then add /...
+            TEST_DIRS="${TEST_DIRS%/}/..."
+        fi
+        shift
+        ;;
     esac
 done
 
@@ -42,8 +66,15 @@ echo
 
 # Run tests with coverage, excluding docs directory and with timeout
 # Filter out the docs directory from test packages
-TEST_PACKAGES=$(go list $TEST_DIRS | grep -v /docs/)
-go test -timeout 30s -coverprofile="$TEMP_DIR/coverage.out" -covermode=atomic $TEST_PACKAGES
+LIST_CMD="go list"
+TEST_CMD="go test"
+if [ -f "vendor/modules.txt" ]; then
+    LIST_CMD="$LIST_CMD -mod=vendor"
+    TEST_CMD="$TEST_CMD -mod=vendor"
+fi
+
+TEST_PACKAGES=$($LIST_CMD $TEST_DIRS | grep -v /docs/)
+$TEST_CMD -timeout 30s -coverprofile="$TEMP_DIR/coverage.out" -covermode=atomic $TEST_PACKAGES
 
 if [ $? -ne 0 ]; then
     echo -e "${RED}❌ Tests failed${NC}"
@@ -61,50 +92,50 @@ if [ "$FULL_REPORT" = true ]; then
 else
     echo -e "${BLUE}Coverage Summary:${NC}"
     echo
-    
+
     # Parse coverage data and display with colors
     go tool cover -func="$TEMP_DIR/coverage.out" | grep -E "^[^[:space:]]" | while IFS=$'\t' read -r file _ coverage; do
         # Skip the total line for now
         if [[ "$file" == "total:" ]]; then
             continue
         fi
-        
+
         # Extract percentage value
         percent=$(echo "$coverage" | grep -o '[0-9.]*' | head -1)
-        
+
         # Determine color based on coverage
-        if (( $(echo "$percent >= 80" | bc -l) )); then
+        if (($(echo "$percent >= 80" | bc -l))); then
             color=$GREEN
             emoji="🟢"
-        elif (( $(echo "$percent >= 50" | bc -l) )); then
+        elif (($(echo "$percent >= 50" | bc -l))); then
             color=$YELLOW
             emoji="🟡"
         else
             color=$RED
             emoji="🔴"
         fi
-        
+
         # Format and print
         printf "${emoji} ${color}%-50s %6s%%${NC}\n" "$file" "$percent"
     done | sort -k3 -nr
-    
+
     echo
-    
+
     # Get and display total coverage
     total=$(go tool cover -func="$TEMP_DIR/coverage.out" | grep "total:" | awk '{print $3}')
     percent=$(echo "$total" | grep -o '[0-9.]*')
-    
-    if (( $(echo "$percent >= 80" | bc -l) )); then
+
+    if (($(echo "$percent >= 80" | bc -l))); then
         color=$GREEN
         emoji="🟢"
-    elif (( $(echo "$percent >= 50" | bc -l) )); then
+    elif (($(echo "$percent >= 50" | bc -l))); then
         color=$YELLOW
         emoji="🟡"
     else
         color=$RED
         emoji="🔴"
     fi
-    
+
     echo -e "${BOLD}Total Coverage: ${emoji} ${color}${total}${NC}"
     echo
     echo -e "${BLUE}Coverage Guidelines:${NC}"
@@ -118,3 +149,4 @@ echo
 echo -e "${BLUE}Generating HTML coverage report...${NC}"
 go tool cover -html="$TEMP_DIR/coverage.out" -o coverage.html
 echo -e "${GREEN}✅ HTML report saved to coverage.html${NC}"
+
