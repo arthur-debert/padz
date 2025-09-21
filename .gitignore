@@ -58,3 +58,4 @@ dist/
 # Go mod cache
 /go/pkg/mod/
 coverage.html
+.padz 

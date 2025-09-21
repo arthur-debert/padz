@@ -3,8 +3,10 @@ package commands
 import (
 	"strings"
 
+	"github.com/arthur-debert/padz/pkg/clipboard"
 	"github.com/arthur-debert/padz/pkg/editor"
 	"github.com/arthur-debert/padz/pkg/store"
+	"github.com/rs/zerolog/log"
 )
 
 func Open(s *store.Store, global bool, project string, indexStr string) error {
@@ -38,6 +40,11 @@ func Open(s *store.Store, global bool, project string, indexStr string) error {
 
 	if err := saveScratchFile(scratchToOpen.ID, trimmedContent); err != nil {
 		return err
+	}
+
+	// Copy content to clipboard
+	if err := clipboard.Copy(trimmedContent); err != nil {
+		log.Warn().Err(err).Msg("Failed to copy content to clipboard")
 	}
 
 	scratchToOpen.Title = getTitle(trimmedContent)

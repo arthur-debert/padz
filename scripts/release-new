@@ -3,6 +3,13 @@ set -euo pipefail
 
 # Release automation script with interactive version bumping
 # This script helps create new version tags by bumping major, minor, or patch versions
+# Once the tag is creted, the github worfflow release.yml will run the
+# goreleaser tool . We will l use the build artifact to :
+# - Create a github release including:
+#   - Uploading the release binaries for various platforms
+#   - The .deb package for Debian/Ubuntu
+#
+# - Update the Homebrew formula in repo homrebrew-tools/
 
 # Colors for output
 RED='\033[0;31m'
@@ -16,26 +23,31 @@ NC='\033[0m' # No Color
 BUMP_TYPE=""
 SKIP_CONFIRMATION=false
 DRY_RUN=false
+TAG_ANNOTATION=""
+USE_ANNOTATION=false
 
 # Function to display usage
 usage() {
-    echo "Usage: $0 [--major|--minor|--patch] [--yes] [--dry-run]"
+    echo "Usage: $0 [--major|--minor|--patch] [-a [message]] [--yes] [--dry-run]"
     echo ""
     echo "Options:"
-    echo "  --major    Bump major version (X.y.z -> X+1.0.0)"
-    echo "  --minor    Bump minor version (x.Y.z -> x.Y+1.0)"
-    echo "  --patch    Bump patch version (x.y.Z -> x.y.Z+1)"
-    echo "  --yes      Skip confirmation prompts"
-    echo "  --dry-run  Show what would be done without actually doing it"
-    echo "  --help     Show this help message"
+    echo "  --major         Bump major version (X.y.z -> X+1.0.0)"
+    echo "  --minor         Bump minor version (x.Y.z -> x.Y+1.0)"
+    echo "  --patch         Bump patch version (x.y.Z -> x.y.Z+1)"
+    echo "  -a [message]    Add annotation to tag (opens editor if no message provided)"
+    echo "  --yes           Skip confirmation prompts"
+    echo "  --dry-run       Show what would be done without actually doing it"
+    echo "  --help          Show this help message"
     echo ""
     echo "If no bump type is specified, you will be prompted to choose."
     echo ""
     echo "Examples:"
-    echo "  $0                    # Interactive mode"
-    echo "  $0 --patch            # Bump patch version"
-    echo "  $0 --minor --yes      # Bump minor version without confirmation"
-    echo "  $0 --major --dry-run  # Preview major version bump"
+    echo "  $0                         # Interactive mode"
+    echo "  $0 --patch                 # Bump patch version"
+    echo "  $0 --minor --yes           # Bump minor version without confirmation"
+    echo "  $0 --major --dry-run       # Preview major version bump"
+    echo "  $0 --patch -a              # Bump patch with annotation (opens editor)"
+    echo "  $0 --patch -a \"Fix bugs\"   # Bump patch with specific annotation"
 }
 
 # Function to get the latest version tag
@@ -113,9 +125,18 @@ prompt_for_bump_type() {
         echo >&2 # Add newline after input
 
         case $choice in
-        1 | p | P) echo "patch"; break ;;
-        2 | n | N) echo "minor"; break ;;
-        3 | m | M) echo "major"; break ;;
+        1 | p | P)
+            echo "patch"
+            break
+            ;;
+        2 | n | N)
+            echo "minor"
+            break
+            ;;
+        3 | m | M)
+            echo "major"
+            break
+            ;;
         *)
             echo -e "${YELLOW}Invalid choice. Please enter 1, 2, or 3${NC}" >&2
             ;;
@@ -171,11 +192,26 @@ bump_and_push() {
     echo -e "  • Trigger GitHub Actions release workflow"
     echo
 
+    # Prepare tag command based on annotation settings
+    local tag_cmd="git tag -a $new_version"
+    if [ "$USE_ANNOTATION" = true ]; then
+        if [ -n "$TAG_ANNOTATION" ]; then
+            # Annotation provided via command line
+            tag_cmd="$tag_cmd -m \"$TAG_ANNOTATION\""
+        else
+            # Will open editor for annotation
+            tag_cmd="$tag_cmd"
+        fi
+    else
+        # Default message if no annotation requested
+        tag_cmd="$tag_cmd -m \"Release $new_version\""
+    fi
+
     if [ "$DRY_RUN" = true ]; then
         echo -e "${YELLOW}🔍 DRY RUN - No changes will be made${NC}"
         echo
         echo -e "Would execute:"
-        echo -e "  ${BLUE}git tag -a $new_version -m \"Release $new_version\"${NC}"
+        echo -e "  ${BLUE}$tag_cmd${NC}"
         echo -e "  ${BLUE}git push origin $new_version${NC}"
         echo
         echo -e "${GREEN}✅ Dry run completed${NC}"
@@ -187,7 +223,18 @@ bump_and_push() {
 
     # Create the tag
     echo -e "${BLUE}🏷️  Creating tag $new_version...${NC}"
-    git tag -a "$new_version" -m "Release $new_version"
+    if [ "$USE_ANNOTATION" = true ]; then
+        if [ -n "$TAG_ANNOTATION" ]; then
+            # Use provided annotation
+            git tag -a "$new_version" -m "$TAG_ANNOTATION"
+        else
+            # Open editor for annotation
+            git tag -a "$new_version"
+        fi
+    else
+        # Use default message
+        git tag -a "$new_version" -m "Release $new_version"
+    fi
     echo -e "${GREEN}✅ Git tag created${NC}"
 
     # Push the tag
@@ -234,6 +281,15 @@ while [[ $# -gt 0 ]]; do
         BUMP_TYPE="patch"
         shift
         ;;
+    -a)
+        USE_ANNOTATION=true
+        shift
+        # Check if next argument exists and is not a flag
+        if [[ $# -gt 0 && ! "$1" =~ ^- ]]; then
+            TAG_ANNOTATION="$1"
+            shift
+        fi
+        ;;
     --yes | -y)
         SKIP_CONFIRMATION=true
         shift
@@ -256,7 +312,7 @@ while [[ $# -gt 0 ]]; do
 done
 
 # Show header
-echo -e "${BLUE}${BOLD}🚀 my-cli Release Tool${NC}"
+echo -e "${BLUE}${BOLD}🚀 too Release Tool${NC}"
 echo
 
 # Pre-flight checks
@@ -312,3 +368,4 @@ new_version=$(get_new_version "$latest_version")
 
 # Create and push the tag
 bump_and_push "$new_version"
+

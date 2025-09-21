@@ -15,9 +15,19 @@ func PinMultiple(s *store.Store, global bool, project string, ids []string) ([]s
 		return nil, err
 	}
 
-	// Get current pinned count
+	// Get current pinned count for the target scope
 	currentPinned := s.GetPinnedScratches()
-	currentPinnedCount := len(currentPinned)
+	var scopedPinned []store.Scratch
+	for _, scratch := range currentPinned {
+		// For global scope, only count global scratches
+		// For project scope, only count scratches from that project
+		if global && scratch.Project == "global" {
+			scopedPinned = append(scopedPinned, scratch)
+		} else if !global && scratch.Project == project {
+			scopedPinned = append(scopedPinned, scratch)
+		}
+	}
+	currentPinnedCount := len(scopedPinned)
 
 	// Count how many new pins we're trying to add
 	newPinsNeeded := 0
