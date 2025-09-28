@@ -2,8 +2,6 @@ package v2
 
 import (
 	"fmt"
-	"os"
-	"path/filepath"
 	"testing"
 	"time"
 
@@ -30,7 +28,7 @@ func setupNanoTestStore(t *testing.T) (*NanoStore, string) {
 }
 
 func TestNanoStoreBasicOperations(t *testing.T) {
-	store, tmpDir := setupNanoTestStore(t)
+	store, _ := setupNanoTestStore(t)
 	defer func() {
 		if err := store.Close(); err != nil {
 			t.Errorf("Failed to close store: %v", err)
@@ -56,8 +54,7 @@ func TestNanoStoreBasicOperations(t *testing.T) {
 		scratches := store.GetScratches()
 		assert.Len(t, scratches, 1)
 		assert.Equal(t, "Test Scratch", scratches[0].Title)
-		// TODO: Project needs to be stored as data, not dimension
-		// assert.Equal(t, "test-project", scratches[0].Project)
+		assert.Equal(t, "test-project", scratches[0].Project)
 		assert.Equal(t, "1", scratches[0].ID) // Should get SimpleID
 		// UUID is not exposed in Scratch struct
 	})
@@ -124,6 +121,7 @@ func TestNanoStoreBasicOperations(t *testing.T) {
 		scratch := Scratch{
 			Title:     "Unique Search Term",
 			Project:   "test-project",
+			Content:   "This is the content of the unique scratch",
 			CreatedAt: time.Now(),
 			UpdatedAt: time.Now(),
 		}
@@ -142,6 +140,33 @@ func TestNanoStoreBasicOperations(t *testing.T) {
 			}
 		}
 		assert.True(t, found, "Should find scratch with search term")
+	})
+	
+	t.Run("ContentStorage", func(t *testing.T) {
+		// Add a scratch with content
+		scratch := Scratch{
+			Title:     "Scratch with Content",
+			Project:   "test-project",
+			Content:   "This is a multiline content\nwith some text\nand more lines",
+			CreatedAt: time.Now(),
+			UpdatedAt: time.Now(),
+		}
+		err := store.AddScratch(scratch)
+		require.NoError(t, err)
+		
+		// Retrieve and verify content
+		scratches := store.GetScratches()
+		var found *Scratch
+		for _, s := range scratches {
+			if s.Title == "Scratch with Content" {
+				found = &s
+				break
+			}
+		}
+		
+		require.NotNil(t, found, "Should find the scratch")
+		assert.Equal(t, "This is a multiline content\nwith some text\nand more lines", found.Content)
+		assert.Equal(t, "test-project", found.Project)
 	})
 }
 

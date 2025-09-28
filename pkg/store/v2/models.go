@@ -81,6 +81,7 @@ type Scratch struct {
 	ID        string     `json:"id"`
 	Project   string     `json:"project"`
 	Title     string     `json:"title"`
+	Content   string     `json:"-"` // Not stored in JSON metadata, but in nanostore Body field
 	CreatedAt time.Time  `json:"created_at"`
 	UpdatedAt time.Time  `json:"updated_at,omitempty"`
 	Size      int64      `json:"size,omitempty"`

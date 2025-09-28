@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"time"
 
 	"github.com/arthur-debert/nanostore/nanostore"
 	"github.com/arthur-debert/padz/pkg/config"
@@ -163,15 +164,28 @@ func (s *NanoStore) AddScratch(scratch Scratch) error {
 	logger := logging.GetLogger("store.v2")
 	logger.Info().Str("title", scratch.Title).Msg("Adding scratch")
 
-	// Prepare dimensions
+	// Prepare dimensions and data
 	dimensions := map[string]interface{}{
 		"activity": "active",
 		"pinned":   "no",
-		// Project is stored as data, not a dimension
 	}
 
 	if scratch.IsPinned {
 		dimensions["pinned"] = "yes"
+	}
+
+	// Add project and metadata as data (prefixed with _data.)
+	if scratch.Project != "" {
+		dimensions["_data.project"] = scratch.Project
+	}
+	if scratch.Size > 0 {
+		dimensions["_data.size"] = scratch.Size
+	}
+	if scratch.Checksum != "" {
+		dimensions["_data.checksum"] = scratch.Checksum
+	}
+	if !scratch.PinnedAt.IsZero() {
+		dimensions["_data.pinned_at"] = scratch.PinnedAt
 	}
 
 	// Create the document in nanostore
@@ -180,11 +194,17 @@ func (s *NanoStore) AddScratch(scratch Scratch) error {
 		return fmt.Errorf("failed to create scratch: %w", err)
 	}
 
-	// Note: Content would be saved to file system separately
-	// This would require adding Content field to Scratch struct or handling separately
+	// If there's content, update the document with the body
+	if scratch.Content != "" {
+		updates := nanostore.UpdateRequest{
+			Body: &scratch.Content,
+		}
+		if err := s.store.Update(uuid, updates); err != nil {
+			logger.Error().Err(err).Msg("Failed to add content to scratch")
+			// Don't fail the whole operation, but log the error
+		}
+	}
 
-	// Note: Additional metadata like size, checksum, pinned_at would need to be stored
-	// in dimension values or external storage as nanostore doesn't support arbitrary data fields
 
 	logger.Info().Str("uuid", uuid).Str("title", scratch.Title).Msg("Scratch added successfully")
 	return nil
@@ -196,9 +216,11 @@ func (s *NanoStore) RemoveScratch(id string) error {
 	logger.Info().Str("id", id).Msg("Removing scratch")
 
 	// Soft delete by updating activity dimension
+	now := time.Now()
 	updates := nanostore.UpdateRequest{
 		Dimensions: map[string]interface{}{
 			"activity": "deleted",
+			"_data.deleted_at": now,
 		},
 	}
 
@@ -222,6 +244,11 @@ func (s *NanoStore) UpdateScratch(scratch Scratch) error {
 			// Don't include project - it's not a dimension
 		},
 	}
+	
+	// Update body if content is provided
+	if scratch.Content != "" {
+		updates.Body = &scratch.Content
+	}
 
 	// Update dimensions
 	if scratch.IsPinned {
@@ -236,12 +263,27 @@ func (s *NanoStore) UpdateScratch(scratch Scratch) error {
 		updates.Dimensions["activity"] = "active"
 	}
 
+	// Update data fields
+	if scratch.Project != "" {
+		updates.Dimensions["_data.project"] = scratch.Project
+	}
+	if scratch.Size > 0 {
+		updates.Dimensions["_data.size"] = scratch.Size
+	}
+	if scratch.Checksum != "" {
+		updates.Dimensions["_data.checksum"] = scratch.Checksum
+	}
+	if !scratch.PinnedAt.IsZero() {
+		updates.Dimensions["_data.pinned_at"] = scratch.PinnedAt
+	}
+	if scratch.IsDeleted && scratch.DeletedAt != nil {
+		updates.Dimensions["_data.deleted_at"] = *scratch.DeletedAt
+	}
+
 	if err := s.store.Update(scratch.ID, updates); err != nil {
 		return fmt.Errorf("failed to update scratch: %w", err)
 	}
 
-	// Note: Content would be updated in file system separately
-	// This would require adding Content field to Scratch struct or handling separately
 
 	logger.Info().Str("id", scratch.ID).Msg("Scratch updated successfully")
 	return nil
@@ -312,16 +354,33 @@ func (s *NanoStore) Search(query string) []Scratch {
 func (s *NanoStore) documentToScratch(doc nanostore.Document) Scratch {
 	scratch := Scratch{
 		ID:        doc.SimpleID,
-		Project:   "", // TODO: Store project as data in nanostore
 		Title:     doc.Title,
+		Content:   doc.Body, // Content is stored in nanostore's Body field
 		CreatedAt: doc.CreatedAt,
 		UpdatedAt: doc.UpdatedAt,
 		IsPinned:  s.getDocumentDimension(doc, "pinned") == "yes",
 		IsDeleted: s.getDocumentDimension(doc, "activity") == "deleted",
 	}
 
-	// Note: Additional metadata would need to be stored separately
-	// as nanostore doesn't support arbitrary data fields
+	// Extract data fields from dimensions (prefixed with _data.)
+	if project, ok := doc.Dimensions["_data.project"].(string); ok {
+		scratch.Project = project
+	}
+	if size, ok := doc.Dimensions["_data.size"].(float64); ok {
+		scratch.Size = int64(size)
+	}
+	if checksum, ok := doc.Dimensions["_data.checksum"].(string); ok {
+		scratch.Checksum = checksum
+	}
+	if pinnedAt, ok := doc.Dimensions["_data.pinned_at"].(time.Time); ok {
+		scratch.PinnedAt = pinnedAt
+	}
+	// Handle deleted_at
+	if scratch.IsDeleted {
+		if deletedAt, ok := doc.Dimensions["_data.deleted_at"].(time.Time); ok {
+			scratch.DeletedAt = &deletedAt
+		}
+	}
 
 	return scratch
 }
