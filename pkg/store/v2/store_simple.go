@@ -10,8 +10,6 @@ import (
 	"github.com/arthur-debert/nanostore/nanostore/api"
 )
 
-const storeFileName = "padz-scratches.json"
-
 // SimpleStore is a minimal nanostore implementation for testing
 type SimpleStore struct {
 	store     *api.TypedStore[PadzScratch]
@@ -32,7 +30,7 @@ func NewSimpleStore(basePath string) (*SimpleStore, error) {
 		return nil, fmt.Errorf("failed to create files directory: %w", err)
 	}
 
-	storePath := filepath.Join(basePath, storeFileName)
+	storePath := filepath.Join(basePath, "padz-scratches.json")
 
 	// Initialize nanostore
 	typedStore, err := api.NewFromType[PadzScratch](storePath)
