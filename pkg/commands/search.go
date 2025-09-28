@@ -38,11 +38,8 @@ func SearchWithMode(s *store.Store, global bool, project, term string, mode List
 
 	var filtered []store.Scratch
 	for _, scratch := range scratches {
-		content, err := readScratchFile(scratch.ID)
-		if err != nil {
-			return nil, err
-		}
-		if re.Match(content) {
+		// Content is now stored directly in the scratch
+		if re.MatchString(scratch.Content) {
 			filtered = append(filtered, scratch)
 		}
 	}
@@ -82,12 +79,8 @@ func SearchWithIndicesMode(s *store.Store, global bool, project, term string, mo
 	var searchResults []searchResult
 
 	for i, scratch := range allScratches {
-		content, err := readScratchFile(scratch.ID)
-		if err != nil {
-			return nil, err
-		}
-
-		contentStr := string(content)
+		// Content is now stored directly in the scratch
+		contentStr := scratch.Content
 		titleLower := strings.ToLower(scratch.Title)
 		termLower := strings.ToLower(term)
 

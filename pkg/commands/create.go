@@ -52,18 +52,16 @@ func CreateWithTitle(s *store.Store, project string, content []byte, providedTit
 		title = getTitle(trimmedContent)
 	}
 
-	id := fmt.Sprintf("%x", sha1.Sum(trimmedContent))
-
 	scratch := store.Scratch{
-		ID:        id,
 		Project:   project,
 		Title:     title,
+		Content:   string(trimmedContent), // Store content directly in the scratch
 		CreatedAt: time.Now(),
 	}
 
-	if err := saveScratchFile(id, trimmedContent); err != nil {
-		return err
-	}
+	// Calculate size and checksum for metadata
+	scratch.Size = int64(len(trimmedContent))
+	scratch.Checksum = fmt.Sprintf("%x", sha1.Sum(trimmedContent))
 
 	if err := s.AddScratchAtomic(scratch); err != nil {
 		return err
@@ -116,18 +114,16 @@ func CreateWithTitleAndContent(s *store.Store, project string, title string, ini
 		finalTitle = getTitle(trimmedContent)
 	}
 
-	id := fmt.Sprintf("%x", sha1.Sum(trimmedContent))
-
 	scratch := store.Scratch{
-		ID:        id,
 		Project:   project,
 		Title:     finalTitle,
+		Content:   string(trimmedContent), // Store content directly in the scratch
 		CreatedAt: time.Now(),
 	}
 
-	if err := saveScratchFile(id, trimmedContent); err != nil {
-		return err
-	}
+	// Calculate size and checksum for metadata
+	scratch.Size = int64(len(trimmedContent))
+	scratch.Checksum = fmt.Sprintf("%x", sha1.Sum(trimmedContent))
 
 	if err := s.AddScratchAtomic(scratch); err != nil {
 		return err
