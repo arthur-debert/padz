@@ -35,7 +35,18 @@ type Store struct {
 func NewStore() (*Store, error) {
 	logger := logging.GetLogger("store")
 	logger.Info().Msg("Initializing new store")
-	return NewStoreWithConfig(config.GetConfig())
+
+	store, err := NewStoreWithConfig(config.GetConfig())
+	if err != nil {
+		return nil, err
+	}
+
+	// Run migration to ensure project names are relative
+	if err := store.migrateProjectPaths(); err != nil {
+		logger.Warn().Err(err).Msg("Failed to migrate project paths, continuing anyway")
+	}
+
+	return store, nil
 }
 
 // NewStoreWithScope creates a new store with the specified scope
@@ -44,7 +55,18 @@ func NewStoreWithScope(isGlobal bool) (*Store, error) {
 	logger.Info().Bool("is_global", isGlobal).Msg("Initializing store with scope")
 	cfg := config.GetConfig()
 	cfg.IsGlobalScope = isGlobal
-	return NewStoreWithConfig(cfg)
+
+	store, err := NewStoreWithConfig(cfg)
+	if err != nil {
+		return nil, err
+	}
+
+	// Run migration to ensure project names are relative
+	if err := store.migrateProjectPaths(); err != nil {
+		logger.Warn().Err(err).Msg("Failed to migrate project paths, continuing anyway")
+	}
+
+	return store, nil
 }
 
 func NewStoreWithConfig(cfg *config.Config) (*Store, error) {
@@ -796,4 +818,68 @@ func (s *Store) SaveScratchesAtomic(scratches []Scratch) error {
 		s.scratches = scratches
 		return nil
 	})
+}
+
+// migrateProjectPaths ensures project paths are stored as relative names, not absolute paths
+func (s *Store) migrateProjectPaths() error {
+	logger := logging.GetLogger("store")
+
+	// Only run migration if we're in a local project context
+	if s.cfg.IsGlobalScope {
+		return nil
+	}
+
+	// Get current project name
+	currentDir, err := os.Getwd()
+	if err != nil {
+		return err
+	}
+
+	projectRoot, err := project.GetProjectRoot(currentDir)
+	if err != nil || projectRoot == "" {
+		// Not in a project, nothing to migrate
+		return nil
+	}
+
+	currentProjectName := filepath.Base(projectRoot)
+	modified := false
+
+	// Check each scratch for absolute paths in the project field
+	for i, scratch := range s.scratches {
+		// If project field contains a path separator, it might be an absolute path
+		if strings.Contains(scratch.Project, string(filepath.Separator)) {
+			// Extract just the base name
+			newProjectName := filepath.Base(scratch.Project)
+
+			// Only update if it matches our current project
+			if newProjectName == currentProjectName || scratch.Project == projectRoot {
+				logger.Info().
+					Str("scratch_id", scratch.ID).
+					Str("old_project", scratch.Project).
+					Str("new_project", currentProjectName).
+					Msg("Migrating absolute project path to relative")
+
+				s.scratches[i].Project = currentProjectName
+				modified = true
+
+				// Update metadata if using new system
+				if s.useNewMetadata {
+					s.scratches[i].UpdatedAt = time.Now()
+					if err := s.metadataManager.SaveScratchMetadata(&s.scratches[i]); err != nil {
+						logger.Error().Err(err).Str("scratch_id", scratch.ID).Msg("Failed to update scratch metadata during migration")
+					}
+				}
+			}
+		}
+	}
+
+	// Save changes if any modifications were made
+	if modified {
+		logger.Info().Msg("Project path migration completed, saving changes")
+		if !s.useNewMetadata {
+			return s.save()
+		}
+	}
+
+	return nil
 }

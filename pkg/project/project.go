@@ -6,17 +6,14 @@ import (
 )
 
 func GetCurrentProject(dir string) (string, error) {
-	for {
-		if _, err := os.Stat(filepath.Join(dir, ".git")); err == nil {
-			return filepath.Base(dir), nil
-		}
-
-		parent := filepath.Dir(dir)
-		if parent == dir {
-			return "global", nil
-		}
-		dir = parent
+	projectRoot, err := GetProjectRoot(dir)
+	if err != nil {
+		return "", err
 	}
+	if projectRoot == "" {
+		return "global", nil
+	}
+	return filepath.Base(projectRoot), nil
 }
 
 // GetProjectRoot returns the root directory path of the current project, or empty string if not in a project
