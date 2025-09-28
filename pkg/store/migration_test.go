@@ -26,7 +26,9 @@ func TestMigrateProjectPaths(t *testing.T) {
 		oldWd, _ := os.Getwd()
 		err = os.Chdir(projectDir)
 		require.NoError(t, err)
-		defer os.Chdir(oldWd)
+		defer func() {
+			_ = os.Chdir(oldWd)
+		}()
 
 		// Create store with test data containing absolute paths
 		fs := filesystem.NewMemoryFileSystem()

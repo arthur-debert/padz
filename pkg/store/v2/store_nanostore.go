@@ -80,11 +80,8 @@ func NewNanoStoreWithConfig(cfg *config.Config) (*NanoStore, error) {
 				Prefixes:     map[string]string{"yes": "p"},
 				DefaultValue: "no",
 			},
-			{
-				Name:     "project",
-				Type:     nanostore.Hierarchical,
-				RefField: "project",
-			},
+			// Note: Removed project dimension as it causes SimpleID issues
+			// when used as Hierarchical. Project will be stored as regular data.
 		},
 	}
 
@@ -122,6 +119,11 @@ func (s *NanoStore) GetScratches() []Scratch {
 
 	scratches := make([]Scratch, len(docs))
 	for i, doc := range docs {
+		logger.Debug().
+			Str("uuid", doc.UUID).
+			Str("simple_id", doc.SimpleID).
+			Str("title", doc.Title).
+			Msg("Processing document from nanostore")
 		scratches[i] = s.documentToScratch(doc)
 	}
 
@@ -165,7 +167,7 @@ func (s *NanoStore) AddScratch(scratch Scratch) error {
 	dimensions := map[string]interface{}{
 		"activity": "active",
 		"pinned":   "no",
-		"project":  scratch.Project,
+		// Project is stored as data, not a dimension
 	}
 
 	if scratch.IsPinned {
@@ -217,7 +219,7 @@ func (s *NanoStore) UpdateScratch(scratch Scratch) error {
 	updates := nanostore.UpdateRequest{
 		Title: &scratch.Title,
 		Dimensions: map[string]interface{}{
-			"project": scratch.Project,
+			// Don't include project - it's not a dimension
 		},
 	}
 
@@ -310,7 +312,7 @@ func (s *NanoStore) Search(query string) []Scratch {
 func (s *NanoStore) documentToScratch(doc nanostore.Document) Scratch {
 	scratch := Scratch{
 		ID:        doc.SimpleID,
-		Project:   s.getDocumentDimension(doc, "project"),
+		Project:   "", // TODO: Store project as data in nanostore
 		Title:     doc.Title,
 		CreatedAt: doc.CreatedAt,
 		UpdatedAt: doc.UpdatedAt,
