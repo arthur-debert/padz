@@ -1,0 +1,570 @@
+#!/usr/bin/env python3
+import argparse
+import collections
+import json
+import os
+import shutil
+import subprocess
+import sys
+from pathlib import Path
+
+# --- Configuration ---
+WIDTH = 80
+HEADER = ("Package", "Code")
+LANG_ALIASES = {
+    "py": "Python",
+    "go": "Go",
+    "rs": "Rust",
+    "ts": "TypeScript",
+    "tsx": "TSX",
+    "js": "JavaScript",
+    "jsx": "JSX",
+    "java": "Java",
+    "kt": "Kotlin",
+    "c": "C",
+    "h": "C Header",
+    "cpp": "C++",
+    "hpp": "C++ Header",
+    "cs": "C#",
+    "rb": "Ruby",
+    "php": "PHP",
+    "swift": "Swift",
+    "scala": "Scala",
+    "pl": "Perl",
+}
+TEST_DIR_NAMES = {"test", "tests"}
+TEST_FILE_PATTERNS = {"test_", "_test"}
+
+# --- Core Logic ---
+
+def die(message):
+    """Prints an error message to stderr and exits."""
+    print(f"Error: {message}", file=sys.stderr)
+    sys.exit(1)
+
+def run_tokei(path):
+    """Runs tokei on the given path and returns the parsed JSON output."""
+    if not shutil.which("tokei"):
+        die("`tokei` command not found. Please install it first.")
+
+    command = ["tokei", "--output", "json", str(path)]
+    try:
+        result = subprocess.run(
+            command, capture_output=True, text=True, check=True
+        )
+        return json.loads(result.stdout)
+    except FileNotFoundError:
+        die("`tokei` command not found, though it seemed to exist.")
+    except subprocess.CalledProcessError as e:
+        die(f"`tokei` failed with exit code {e.returncode}:\n{e.stderr}")
+    except json.JSONDecodeError:
+        die("Failed to parse JSON output from `tokei`.")
+
+def is_test_file(path):
+    """Determines if a file is a test file based on heuristics."""
+    path_lower = str(path).lower()
+    
+    # Check parent directories for 'test' or 'tests'
+    for part in path.parts:
+        if part.lower() in TEST_DIR_NAMES:
+            return True
+            
+    # Check file name for test patterns
+    name_lower = path.name.lower()
+    for pattern in TEST_FILE_PATTERNS:
+        if pattern in name_lower:
+            return True
+            
+    return False
+
+def parse_and_filter_tokei(json_data, root_path, with_tests):
+    """
+    Parses tokei JSON, categorizes code/tests, and returns stats.
+    - dir_stats: {dir_path: {language: {'code': loc, 'test': loc}}}
+    - file_stats: {dir_path: {language: {file_name: {'code': loc, 'test': loc}}}}
+    """
+    dir_stats = collections.defaultdict(lambda: collections.defaultdict(lambda: collections.defaultdict(int)))
+    file_stats = collections.defaultdict(lambda: collections.defaultdict(lambda: collections.defaultdict(lambda: collections.defaultdict(int))))
+
+    for language, reports in json_data.items():
+        if language == "Total":
+            continue
+        for report in reports["reports"]:
+            file_path = root_path / Path(report["name"])
+            code_lines = report["stats"]["code"]
+            if code_lines == 0:
+                continue
+
+            is_test = is_test_file(file_path)
+            
+            if not with_tests and is_test:
+                continue
+
+            code_type = "test" if is_test else "code"
+            parent_dir = file_path.parent
+            
+            dir_stats[parent_dir][language][code_type] += code_lines
+            file_stats[parent_dir][language][file_path.name][code_type] = code_lines
+
+    return dir_stats, file_stats
+
+def determine_language(stats, user_lang):
+    """
+    Determines the language to display, either from user input or by
+    finding the most common one.
+    """
+    if user_lang:
+        user_lang_lower = user_lang.lower()
+        # Return the proper case if it's a direct match, e.g., user enters "python"
+        for key, val in LANG_ALIASES.items():
+            if user_lang_lower == val.lower():
+                return val
+        return LANG_ALIASES.get(user_lang_lower, user_lang.capitalize())
+
+    # Find the top language by total lines of code
+    language_totals = collections.Counter()
+    for dir_langs in stats.values():
+        for lang, code_types in dir_langs.items():
+            if code_types['code'] > 0:
+                language_totals[lang] += code_types['code']
+    
+    if not language_totals:
+        return "N/A"
+        
+    return language_totals.most_common(1)[0][0]
+
+def format_output_multi_root(dir_stats, file_stats, language, root_paths, tree_view, with_files, with_tests, output_mode):
+    """Formats and prints the report for multiple root paths in a single table."""
+    separator = "─" * WIDTH
+
+    # --- Column Widths ---
+    code_width = 12
+    test_width = 12 if with_tests else 0
+
+    def format_val(value):
+        """Formats a number, returning '-' if the value is 0."""
+        return f"{value:,}" if value > 0 else "-"
+
+    # --- Data Aggregation ---
+    # Calculate totals for all paths and their subdirectories
+    dir_totals = collections.defaultdict(lambda: collections.defaultdict(int))
+    files_only = collections.defaultdict(lambda: collections.defaultdict(int))
+
+    for path, lang_stats in dir_stats.items():
+        stats = lang_stats.get(language, {})
+        files_only[path]['code'] = stats.get('code', 0)
+        if with_tests:
+            files_only[path]['test'] = stats.get('test', 0)
+
+    # Calculate hierarchical totals
+    all_paths = sorted(files_only.keys(), key=lambda p: len(p.parts), reverse=True)
+    for path in all_paths:
+        dir_totals[path]['code'] += files_only[path]['code']
+        if with_tests:
+            dir_totals[path]['test'] += files_only[path]['test']
+        
+        parent = path.parent
+        if parent != path and parent in files_only:
+             dir_totals[parent]['code'] += dir_totals[path]['code']
+             if with_tests:
+                dir_totals[parent]['test'] += dir_totals[path]['test']
+
+    # --- Printing ---
+    print(separator)
+    # Header
+    if with_tests:
+        header_label = "Package"
+        header_test = "Tests"
+        header_code = "Code"
+        padding = ' ' * (WIDTH - len(header_label) - test_width - code_width)
+        print(f"{header_label}{padding}{header_test:>{test_width}}{header_code:>{code_width}}")
+    else:
+        header_label = "Package"
+        header_code = "Code"
+        padding = ' ' * (WIDTH - len(header_label) - code_width)
+        print(f"{header_label}{padding}{header_code:>{code_width}}")
+    print(separator)
+
+    # Show each root path and its contents
+    for root_path in sorted(root_paths):
+        # Display root path
+        display_name = root_path.name + "/"
+        totals = dir_totals.get(root_path, {'code': 0, 'test': 0})
+        
+        # Check if root has visible subdirectories in this view
+        if tree_view:
+            visible_paths = [p for p in dir_totals.keys() if p.is_relative_to(root_path)]
+        else:
+            visible_paths = [p for p in dir_totals.keys() if p.parent == root_path or p == root_path]
+        has_visible_subdirs = any(p.parent == root_path for p in visible_paths if p != root_path)
+        
+        # Check if showing files for root
+        shows_files = with_files and root_path in file_stats and language in file_stats[root_path] and file_stats[root_path][language]
+        should_dim = has_visible_subdirs or shows_files
+        
+        if with_tests:
+            test_str = format_val(totals.get('test', 0))
+            code_str = format_val(totals.get('code', 0))
+            padding = ' ' * max(1, WIDTH - len(display_name) - test_width - code_width)
+            
+            if output_mode == 'rich' and should_dim:
+                print(f"{display_name}{padding}\033[90m{test_str:>{test_width}}{code_str:>{code_width}}\033[0m")
+            else:
+                print(f"{display_name}{padding}{test_str:>{test_width}}{code_str:>{code_width}}")
+        else:
+            code_str = format_val(totals.get('code', 0))
+            padding = ' ' * max(1, WIDTH - len(display_name) - code_width)
+            
+            if output_mode == 'rich' and should_dim:
+                print(f"{display_name}{padding}\033[90m{code_str:>{code_width}}\033[0m")
+            else:
+                print(f"{display_name}{padding}{code_str:>{code_width}}")
+        
+        # Display subdirectories for this root
+        if tree_view:
+            sub_paths = [p for p in dir_totals.keys() if p.is_relative_to(root_path) and p != root_path]
+        else:
+            sub_paths = [p for p in dir_totals.keys() if p.parent == root_path]
+        
+        # Sort by path depth then name to ensure proper hierarchy
+        sub_paths.sort(key=lambda p: (len(p.relative_to(root_path).parts), str(p)))
+        
+        for path in sub_paths:
+            totals = dir_totals[path]
+            indent_level = len(path.relative_to(root_path).parts)
+            display_name = path.name + "/"
+            indent = "    " * indent_level
+            line_label = f"{indent}{display_name}"
+            
+            # Check if this directory has visible subdirectories
+            has_visible_subdirs = any(p.parent == path for p in sub_paths if p != path)
+            
+            # Check if showing files for this directory
+            shows_files = with_files and path in file_stats and language in file_stats[path] and file_stats[path][language]
+            should_dim = has_visible_subdirs or shows_files
+
+            if with_tests:
+                test_str = format_val(totals.get('test', 0))
+                code_str = format_val(totals.get('code', 0))
+                padding = ' ' * max(1, WIDTH - len(line_label) - test_width - code_width)
+                
+                if output_mode == 'rich' and should_dim:
+                    print(f"{line_label}{padding}\033[90m{test_str:>{test_width}}{code_str:>{code_width}}\033[0m")
+                else:
+                    print(f"{line_label}{padding}{test_str:>{test_width}}{code_str:>{code_width}}")
+            else:
+                code_str = format_val(totals.get('code', 0))
+                padding = ' ' * max(1, WIDTH - len(line_label) - code_width)
+                
+                if output_mode == 'rich' and should_dim:
+                    print(f"{line_label}{padding}\033[90m{code_str:>{code_width}}\033[0m")
+                else:
+                    print(f"{line_label}{padding}{code_str:>{code_width}}")
+
+            if with_files:
+                files = file_stats.get(path, {}).get(language, {})
+                for file_name, stats in sorted(files.items()):
+                    file_label = f"{indent}    {file_name}"
+                    if with_tests:
+                        test_str = format_val(stats.get('test', 0))
+                        code_str = format_val(stats.get('code', 0))
+                        padding = ' ' * max(1, WIDTH - len(file_label) - test_width - code_width)
+                        print(f"{file_label}{padding}{test_str:>{test_width}}{code_str:>{code_width}}")
+                    else:
+                        code_str = format_val(stats.get('code', 0))
+                        padding = ' ' * max(1, WIDTH - len(file_label) - code_width)
+                        print(f"{file_label}{padding}{code_str:>{code_width}}")
+            elif not tree_view and files_only[path]['code'] > 0:
+                # Show aggregated files line when not in tree view
+                file_line_label = f"{indent}    *.*"
+                if with_tests:
+                    test_str = format_val(files_only[path].get('test', 0))
+                    code_str = format_val(files_only[path].get('code', 0))
+                    padding = ' ' * max(1, WIDTH - len(file_line_label) - test_width - code_width)
+                    print(f"{file_line_label}{padding}{test_str:>{test_width}}{code_str:>{code_width}}")
+                else:
+                    code_str = format_val(files_only[path].get('code', 0))
+                    padding = ' ' * max(1, WIDTH - len(file_line_label) - code_width)
+                    print(f"{file_line_label}{padding}{code_str:>{code_width}}")
+
+    print(separator)
+    
+    # Total line
+    total_label = "TOTAL"
+    total_code = sum(lang_stats[language]['code'] for lang_stats in dir_stats.values() if language in lang_stats)
+    
+    if with_tests:
+        total_tests = sum(lang_stats[language]['test'] for lang_stats in dir_stats.values() if language in lang_stats)
+        test_str = format_val(total_tests)
+        code_str = format_val(total_code)
+        padding = ' ' * max(1, WIDTH - len(total_label) - test_width - code_width)
+        line = f"{total_label}{padding}{test_str:>{test_width}}{code_str:>{code_width}}"
+    else:
+        code_str = format_val(total_code)
+        padding = ' ' * max(1, WIDTH - len(total_label) - code_width)
+        line = f"{total_label}{padding}{code_str:>{code_width}}"
+
+    if output_mode == 'rich':
+        print(f"\033[1m{line}\033[0m")
+    else:
+        print(line)
+        
+    print(separator)
+
+
+def format_output(dir_stats, file_stats, language, root_path, tree_view, with_files, with_tests, output_mode):
+    """Formats and prints the final report."""
+    separator = "─" * WIDTH
+
+    # --- Column Widths ---
+    code_width = 12
+    test_width = 12 if with_tests else 0
+
+    def format_val(value):
+        """Formats a number, returning '-' if the value is 0."""
+        return f"{value:,}" if value > 0 else "-"
+
+    # --- Data Aggregation ---
+    dir_totals = collections.defaultdict(lambda: collections.defaultdict(int))
+    files_only = collections.defaultdict(lambda: collections.defaultdict(int))
+
+    for path, lang_stats in dir_stats.items():
+        stats = lang_stats.get(language, {})
+        files_only[path]['code'] = stats.get('code', 0)
+        if with_tests:
+            files_only[path]['test'] = stats.get('test', 0)
+
+    all_paths = sorted(files_only.keys(), key=lambda p: len(p.parts), reverse=True)
+    for path in all_paths:
+        dir_totals[path]['code'] += files_only[path]['code']
+        if with_tests:
+            dir_totals[path]['test'] += files_only[path]['test']
+        
+        parent = path.parent
+        if parent != path:
+             dir_totals[parent]['code'] += dir_totals[path]['code']
+             if with_tests:
+                dir_totals[parent]['test'] += dir_totals[path]['test']
+
+    # --- Determine which directories to display ---
+    all_display_paths = sorted([
+        p for p in dir_totals 
+        if p.is_relative_to(root_path) and (dir_totals[p]['code'] > 0 or dir_totals[p].get('test', 0) > 0)
+    ])
+
+    if tree_view:
+        display_paths = all_display_paths
+    else:
+        display_paths = [p for p in all_display_paths if p == root_path or p.parent == root_path]
+
+    # --- Printing ---
+    print(separator)
+    # Header
+    if with_tests:
+        header_label = "Package"
+        header_test = "Tests"
+        header_code = "Code"
+        padding = ' ' * (WIDTH - len(header_label) - test_width - code_width)
+        print(f"{header_label}{padding}{header_test:>{test_width}}{header_code:>{code_width}}")
+    else:
+        header_label = "Package"
+        header_code = "Code"
+        padding = ' ' * (WIDTH - len(header_label) - code_width)
+        print(f"{header_label}{padding}{header_code:>{code_width}}")
+    print(separator)
+
+    for path in display_paths:
+        totals = dir_totals[path]
+        
+        if path == root_path:
+            indent_level = 0
+            display_name = os.path.basename(os.path.normpath(root_path))
+            if any(p.parent == root_path for p in display_paths):
+                 display_name += "/"
+        else:
+            indent_level = len(path.relative_to(root_path).parts)
+            display_name = path.name + "/"
+        indent = "    " * indent_level
+        line_label = f"{indent}{display_name}"
+
+        # Check if this directory has visible subdirectories in the current display
+        has_visible_subdirs = any(p.parent == path for p in display_paths if p != path)
+        
+        # Also check if we're showing files for this directory
+        shows_files = with_files and path in file_stats and language in file_stats[path] and file_stats[path][language]
+        
+        # Directory should be dimmed if it has subdirs OR if it's showing its files
+        should_dim = has_visible_subdirs or shows_files
+        
+        if with_tests:
+            test_str = format_val(totals.get('test', 0))
+            code_str = format_val(totals.get('code', 0))
+            padding = ' ' * max(1, WIDTH - len(line_label) - test_width - code_width)
+            
+            if output_mode == 'rich' and should_dim:
+                # Gray color for directories with subdirs or files shown
+                print(f"{line_label}{padding}\033[90m{test_str:>{test_width}}{code_str:>{code_width}}\033[0m")
+            else:
+                print(f"{line_label}{padding}{test_str:>{test_width}}{code_str:>{code_width}}")
+        else:
+            code_str = format_val(totals.get('code', 0))
+            padding = ' ' * max(1, WIDTH - len(line_label) - code_width)
+            
+            if output_mode == 'rich' and should_dim:
+                # Gray color for directories with subdirs or files shown
+                print(f"{line_label}{padding}\033[90m{code_str:>{code_width}}\033[0m")
+            else:
+                print(f"{line_label}{padding}{code_str:>{code_width}}")
+
+        if with_files:
+            files = file_stats.get(path, {}).get(language, {})
+            for file_name, stats in sorted(files.items()):
+                file_label = f"{indent}    {file_name}"
+                if with_tests:
+                    test_str = format_val(stats.get('test', 0))
+                    code_str = format_val(stats.get('code', 0))
+                    padding = ' ' * max(1, WIDTH - len(file_label) - test_width - code_width)
+                    print(f"{file_label}{padding}{test_str:>{test_width}}{code_str:>{code_width}}")
+                else:
+                    code_str = format_val(stats.get('code', 0))
+                    padding = ' ' * max(1, WIDTH - len(file_label) - code_width)
+                    print(f"{file_label}{padding}{code_str:>{code_width}}")
+        
+        elif (files_only[path]['code'] > 0 or files_only[path].get('test',0) > 0) and any(p.parent == path for p in display_paths):
+            file_line_label = f"{indent}    *.*"
+            if with_tests:
+                test_str = format_val(files_only[path].get('test', 0))
+                code_str = format_val(files_only[path].get('code', 0))
+                padding = ' ' * max(1, WIDTH - len(file_line_label) - test_width - code_width)
+                print(f"{file_line_label}{padding}{test_str:>{test_width}}{code_str:>{code_width}}")
+            else:
+                code_str = format_val(files_only[path].get('code', 0))
+                padding = ' ' * max(1, WIDTH - len(file_line_label) - code_width)
+                print(f"{file_line_label}{padding}{code_str:>{code_width}}")
+
+    print(separator)
+    total_label = "TOTAL"
+    total_code = sum(lang_stats[language]['code'] for lang_stats in dir_stats.values() if language in lang_stats)
+    
+    if with_tests:
+        total_tests = sum(lang_stats[language]['test'] for lang_stats in dir_stats.values() if language in lang_stats)
+        test_str = format_val(total_tests)
+        code_str = format_val(total_code)
+        padding = ' ' * max(1, WIDTH - len(total_label) - test_width - code_width)
+        line = f"{total_label}{padding}{test_str:>{test_width}}{code_str:>{code_width}}"
+    else:
+        code_str = format_val(total_code)
+        padding = ' ' * max(1, WIDTH - len(total_label) - code_width)
+        line = f"{total_label}{padding}{code_str:>{code_width}}"
+
+    if output_mode == 'rich':
+        print(f"\033[1m{line}\033[0m")
+    else:
+        print(line)
+        
+    print(separator)
+
+
+def main():
+    """Main entry point."""
+    parser = argparse.ArgumentParser(
+        description="A friendly wrapper for `tokei` to summarize lines of code.\n\n"
+                    "Examples:\n"
+                    "  loc-tree                    # Analyze current directory\n"
+                    "  loc-tree pkg/               # Analyze single path\n"
+                    "  loc-tree pkg/ cmd/ internal/ # Analyze multiple paths\n"
+                    "  loc-tree pkg/* --lang go    # Analyze all subdirs in pkg/",
+        formatter_class=argparse.RawTextHelpFormatter
+    )
+    parser.add_argument(
+        "paths",
+        nargs="*",
+        default=["."],
+        help="The directories or files to analyze. Defaults to the current directory.",
+    )
+    parser.add_argument(
+        "--tree",
+        action="store_true",
+        help="Display the full recursive directory tree.",
+    )
+    parser.add_argument(
+        "--with-files",
+        action="store_true",
+        help="Show individual file counts within each package.",
+    )
+    parser.add_argument(
+        "--with-tests",
+        action="store_true",
+        help="Include test files in the output, shown in a separate column.",
+    )
+    parser.add_argument(
+        "-l", "--lang", "--language",
+        dest="language",
+        help="Specify the language to count (e.g., Python, py, Go, rs).",
+    )
+    parser.add_argument(
+        "--output",
+        choices=["plain", "rich", "auto"],
+        default="auto",
+        help="Set output mode: 'rich' for color, 'plain' for no color, 'auto' to detect.",
+    )
+    args = parser.parse_args()
+
+    output_mode = args.output
+    if output_mode == "auto":
+        output_mode = "rich" if sys.stdout.isatty() else "plain"
+
+    # Process all paths and collect stats
+    all_dir_stats = collections.defaultdict(lambda: collections.defaultdict(lambda: collections.defaultdict(int)))
+    all_file_stats = collections.defaultdict(lambda: collections.defaultdict(lambda: collections.defaultdict(lambda: collections.defaultdict(int))))
+    target_paths = []
+    
+    for path_str in args.paths:
+        target_path = Path(path_str).expanduser().resolve()
+        if not target_path.exists():
+            die(f"Path does not exist: {target_path}")
+        target_paths.append(target_path)
+        
+        json_data = run_tokei(target_path)
+        dir_stats, file_stats = parse_and_filter_tokei(json_data, target_path, args.with_tests)
+        
+        # Merge stats from this path into the aggregate
+        for path, lang_stats in dir_stats.items():
+            for language, code_types in lang_stats.items():
+                for code_type, count in code_types.items():
+                    all_dir_stats[path][language][code_type] += count
+                    
+        for path, lang_stats in file_stats.items():
+            for language, file_info in lang_stats.items():
+                for file_name, code_types in file_info.items():
+                    for code_type, count in code_types.items():
+                        all_file_stats[path][language][file_name][code_type] = count
+    
+    if not all_dir_stats:
+        print("No code found matching the criteria.")
+        return
+
+    language = determine_language(all_dir_stats, args.language)
+    if language == "N/A":
+        print("No code found for the specified language or in general.")
+        return
+
+    # Display aggregated results
+    print(f"\nShowing results for: {language}")
+    if len(target_paths) > 1:
+        path_names = [p.name for p in target_paths]
+        print(f"Analyzing {len(target_paths)} paths: {', '.join(path_names)}\n")
+    else:
+        print()
+    
+    # For multiple paths, we need to show them all in one table
+    # Create a virtual root that contains all target paths
+    if len(target_paths) == 1:
+        format_output(all_dir_stats, all_file_stats, language, target_paths[0], args.tree, args.with_files, args.with_tests, output_mode)
+    else:
+        # Show aggregated output with all paths at the top level
+        format_output_multi_root(all_dir_stats, all_file_stats, language, target_paths, args.tree, args.with_files, args.with_tests, output_mode)
+
+
+if __name__ == "__main__":
+    main()
