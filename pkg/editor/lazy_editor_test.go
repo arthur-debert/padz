@@ -6,7 +6,6 @@ import (
 	"testing"
 
 	"github.com/arthur-debert/padz/pkg/config"
-	"github.com/arthur-debert/padz/pkg/filesystem"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -31,8 +30,7 @@ func TestLaunchAndExit(t *testing.T) {
 
 	// Create test config
 	cfg := &config.Config{
-		FileSystem: &filesystem.OSFileSystem{},
-		DataPath:   tmpDir,
+		DataPath: tmpDir,
 	}
 
 	// Test with new file structure
@@ -75,8 +73,7 @@ func TestLaunchAndExit_LegacyStructure(t *testing.T) {
 
 	// Create test config
 	cfg := &config.Config{
-		FileSystem: &filesystem.OSFileSystem{},
-		DataPath:   tmpDir,
+		DataPath: tmpDir,
 	}
 
 	// Create legacy structure (no files subdirectory)
@@ -119,8 +116,7 @@ func TestLaunchAndExit_NoEditor(t *testing.T) {
 
 	// Create test config
 	cfg := &config.Config{
-		FileSystem: &filesystem.OSFileSystem{},
-		DataPath:   tmpDir,
+		DataPath: tmpDir,
 	}
 
 	// Create file structure

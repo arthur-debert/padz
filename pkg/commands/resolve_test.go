@@ -7,7 +7,6 @@ import (
 	"time"
 
 	"github.com/arthur-debert/padz/pkg/config"
-	"github.com/arthur-debert/padz/pkg/filesystem"
 	"github.com/arthur-debert/padz/pkg/store"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -548,10 +547,8 @@ func TestIsHexChar(t *testing.T) {
 
 func BenchmarkResolveMultipleIDs(b *testing.B) {
 	// Create test store manually for benchmark
-	fs := filesystem.NewMemoryFileSystem()
 	cfg := &config.Config{
-		FileSystem: fs,
-		DataPath:   "/test",
+		DataPath: b.TempDir(),
 	}
 
 	s, err := store.NewStoreWithConfig(cfg)

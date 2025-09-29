@@ -8,7 +8,6 @@ import (
 
 	"github.com/arthur-debert/nanostore/nanostore"
 	"github.com/arthur-debert/padz/pkg/config"
-	"github.com/arthur-debert/padz/pkg/filesystem"
 	"github.com/arthur-debert/padz/pkg/logging"
 	"github.com/arthur-debert/padz/pkg/project"
 )
@@ -21,11 +20,9 @@ const (
 
 // Store implements the padz store interface using nanostore
 type Store struct {
-	store     nanostore.Store
-	fs        filesystem.FileSystem
-	cfg       *config.Config
-	basePath  string
-	filesPath string
+	store    nanostore.Store
+	cfg      *config.Config
+	basePath string
 }
 
 func NewStore() (*Store, error) {
@@ -50,14 +47,8 @@ func NewStoreWithConfig(cfg *config.Config) (*Store, error) {
 	}
 
 	// Ensure base directory exists
-	if err := cfg.FileSystem.MkdirAll(basePath, 0755); err != nil {
+	if err := os.MkdirAll(basePath, 0755); err != nil {
 		return nil, fmt.Errorf("failed to create base directory: %w", err)
-	}
-
-	// Create files subdirectory
-	filesPath := filepath.Join(basePath, "files")
-	if err := cfg.FileSystem.MkdirAll(filesPath, 0755); err != nil {
-		return nil, fmt.Errorf("failed to create files directory: %w", err)
 	}
 
 	storePath := filepath.Join(basePath, storeFileName)
@@ -91,11 +82,9 @@ func NewStoreWithConfig(cfg *config.Config) (*Store, error) {
 	}
 
 	return &Store{
-		store:     store,
-		fs:        cfg.FileSystem,
-		cfg:       cfg,
-		basePath:  basePath,
-		filesPath: filesPath,
+		store:    store,
+		cfg:      cfg,
+		basePath: basePath,
 	}, nil
 }
 
@@ -541,16 +530,6 @@ func (s *Store) SaveScratchesAtomic(scratches []Scratch) error {
 	return s.SaveScratches(scratches)
 }
 
-// GetScratchPath returns the file path for a scratch's content
-func (s *Store) GetScratchPath(id string) (string, error) {
-	// Resolve to UUID
-	uuid, err := s.store.ResolveUUID(id)
-	if err != nil {
-		return "", err
-	}
-	return filepath.Join(s.filesPath, uuid), nil
-}
-
 // RebuildIndex rebuilds the master index (no-op for nanostore)
 func (s *Store) RebuildIndex() error {
 	// nanostore handles indexing automatically
@@ -610,31 +589,6 @@ func getBasePath(cfg *config.Config) (string, error) {
 	}
 
 	return filepath.Join(projectRoot, ".padz"), nil
-}
-
-// Legacy compatibility functions
-func GetScratchPath() (string, error) {
-	cfg := config.GetConfig()
-	return getBasePath(cfg)
-}
-
-func GetScratchPathWithConfig(cfg *config.Config) (string, error) {
-	return getBasePath(cfg)
-}
-
-func GetScratchFilePath(id string) (string, error) {
-	cfg := config.GetConfig()
-	return GetScratchFilePathWithConfig(id, cfg)
-}
-
-func GetScratchFilePathWithConfig(id string, cfg *config.Config) (string, error) {
-	store, err := NewStoreWithConfig(cfg)
-	if err != nil {
-		return "", err
-	}
-	defer func() { _ = store.Close() }()
-
-	return store.GetScratchPath(id)
 }
 
 // GetTestStore returns the underlying nanostore as TestStore for testing purposes

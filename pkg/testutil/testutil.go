@@ -2,7 +2,6 @@ package testutil
 
 import (
 	"github.com/arthur-debert/padz/pkg/config"
-	"github.com/arthur-debert/padz/pkg/filesystem"
 	"testing"
 )
 
@@ -12,13 +11,9 @@ func SetupTestEnvironment(t *testing.T) (*config.Config, func()) {
 	// Create a temporary directory for testing
 	tempDir := t.TempDir()
 
-	// Use OS filesystem since nanostore needs real file access
-	osFS := filesystem.NewOSFileSystem()
-
 	// Create test configuration
 	testConfig := &config.Config{
-		FileSystem: osFS,
-		DataPath:   tempDir,
+		DataPath: tempDir,
 	}
 
 	// Save current config
@@ -35,12 +30,4 @@ func SetupTestEnvironment(t *testing.T) (*config.Config, func()) {
 	}
 
 	return testConfig, cleanup
-}
-
-// GetMemoryFS extracts the memory filesystem from a config
-func GetMemoryFS(cfg *config.Config) *filesystem.MemoryFileSystem {
-	if memFS, ok := cfg.FileSystem.(*filesystem.MemoryFileSystem); ok {
-		return memFS
-	}
-	return nil
 }

@@ -203,9 +203,6 @@ func NewRootCmd() *cobra.Command {
 	rootCmd.AddCommand(exportCmd)
 
 	// Utility commands (not grouped)
-	showDataFileCmd := newShowDataFileCmd()
-	showDataFileCmd.Flags().BoolP("global", "g", false, FlagGlobalDesc)
-	rootCmd.AddCommand(showDataFileCmd)
 
 	return rootCmd
 }
