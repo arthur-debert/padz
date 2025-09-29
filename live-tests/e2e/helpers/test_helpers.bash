@@ -15,8 +15,9 @@ setup_test() {
     
     mkdir -p "${TEST_HOME}" "${TEST_XDG_DATA_HOME}" "${TEST_PROJECT_DIR}"
     
-    # Change to project directory
+    # Change to project directory and initialize as git repo for project scope
     cd "${TEST_PROJECT_DIR}"
+    git init --quiet
     
     # Build fresh padz binary if needed
     if [[ ! -f "${PADZ_BIN}" ]]; then
@@ -36,8 +37,7 @@ teardown_test() {
 run_padz() {
     HOME="${TEST_HOME}" \
     XDG_DATA_HOME="${TEST_XDG_DATA_HOME}" \
-    PADZ_FORMAT=json \
-    run "${PADZ_BIN}" "$@"
+    run "${PADZ_BIN}" "$@" --format json
 }
 
 # Run padz command with specific format
@@ -46,8 +46,7 @@ run_padz_format() {
     shift
     HOME="${TEST_HOME}" \
     XDG_DATA_HOME="${TEST_XDG_DATA_HOME}" \
-    PADZ_FORMAT="${format}" \
-    run "${PADZ_BIN}" "$@"
+    run "${PADZ_BIN}" "$@" --format "${format}"
 }
 
 # Run padz command expecting success
@@ -96,4 +95,16 @@ scratch_has_property() {
     local actual_value
     actual_value=$(echo "${scratch_json}" | jq -r ".${property}")
     [[ "${actual_value}" == "${expected_value}" ]]
+}
+
+# Get scratch title
+get_scratch_title() {
+    local scratch_json="$1"
+    echo "${scratch_json}" | jq -r '.title'
+}
+
+# Get scratch content
+get_scratch_content() {
+    local scratch_json="$1"
+    echo "${scratch_json}" | jq -r '.content // empty'
 }

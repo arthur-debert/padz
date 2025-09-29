@@ -132,7 +132,7 @@ assert_scratch_title() {
     scratch_json=$(get_scratch_by_index "${scratch_id}")
     
     local actual_title
-    actual_title=$(echo "${scratch_json}" | jq -r '.Title')
+    actual_title=$(echo "${scratch_json}" | jq -r '.title')
     
     if [[ "${actual_title}" != "${expected_title}" ]]; then
         echo "Expected scratch ${scratch_id} title to be '${expected_title}', but got '${actual_title}'" >&2
@@ -150,7 +150,7 @@ assert_scratch_content() {
     scratch_json=$(get_scratch_by_index "${scratch_id}")
     
     local actual_content
-    actual_content=$(echo "${scratch_json}" | jq -r '.Content')
+    actual_content=$(echo "${scratch_json}" | jq -r '.content')
     
     if [[ "${actual_content}" != "${expected_content}" ]]; then
         echo "Expected scratch ${scratch_id} content to be '${expected_content}', but got '${actual_content}'" >&2

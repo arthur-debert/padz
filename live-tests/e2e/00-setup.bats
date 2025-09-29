@@ -25,13 +25,13 @@ teardown() {
 }
 
 @test "padz version command works" {
-    run_padz --version
+    run "${PADZ_BIN}" --version
     assert_success
     [[ "${output}" =~ "padz version" ]]
 }
 
 @test "padz help command works" {
-    run_padz --help
+    run "${PADZ_BIN}" --help
     assert_success
     [[ "${output}" =~ "padz" ]]
 }
@@ -39,16 +39,18 @@ teardown() {
 @test "padz list works with empty store" {
     run_padz list
     assert_success
-    # Empty store may return either JSON array [] or a message
-    # Let's just verify the command succeeds for now
-    [[ -n "${output}" ]]
+    # Empty store should return JSON array []
+    assert_valid_json
+    local count
+    count=$(echo "${output}" | jq 'length')
+    [[ "${count}" -eq 0 ]]
 }
 
 @test "environment variables are set correctly" {
-    [[ "${PADZ_FORMAT}" == "json" ]]
     [[ -n "${TEST_HOME}" ]]
     [[ -n "${TEST_XDG_DATA_HOME}" ]]
     [[ -n "${TEST_PROJECT_DIR}" ]]
+    [[ -n "${PADZ_BIN}" ]]
 }
 
 @test "isolated environment is working" {
