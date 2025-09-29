@@ -32,8 +32,8 @@ func RestoreMultiple(s *store.Store, global bool, project string, ids []string) 
 
 	// Update all scratches atomically
 	if len(scratchesToRestore) > 0 {
-		// Get all current scratches
-		allScratches := s.GetScratches()
+		// Get all current scratches including deleted ones
+		allScratches := s.GetAllScratches()
 
 		// Update the scratches that need to be restored
 		for i := range allScratches {
@@ -63,7 +63,7 @@ func Restore(s *store.Store, global bool, project string, indexStr string, newer
 	}
 
 	// Otherwise, restore multiple scratches based on criteria
-	scratches := s.GetScratches()
+	scratches := s.GetAllScratches()
 	var toRestore []store.Scratch
 	cutoffTime := time.Now().Add(-newerThan)
 

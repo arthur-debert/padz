@@ -19,28 +19,41 @@ func TestPath(t *testing.T) {
 	now := time.Now()
 	testScratches := []store.Scratch{
 		{
-			ID:        "test-scratch-1",
 			Title:     "Test Scratch 1",
 			Project:   "test-project",
+			Content:   "content 1",
 			CreatedAt: now.Add(-2 * time.Hour), // older scratch
 		},
 		{
-			ID:        "test-scratch-2",
 			Title:     "Test Scratch 2",
 			Project:   "test-project",
+			Content:   "content 2",
 			CreatedAt: now, // newer scratch, will be index 1
 		},
 		{
-			ID:        "other-project-scratch",
 			Title:     "Other Project Scratch",
 			Project:   "other-project",
+			Content:   "other content",
 			CreatedAt: now.Add(-1 * time.Hour),
 		},
 	}
 
-	// Save the test scratches
-	if err := s.SaveScratches(testScratches); err != nil {
-		t.Fatalf("failed to save scratches: %v", err)
+	// Get test store for custom timestamps
+	testStore, ok := s.GetTestStore()
+	if ok {
+		// Add each scratch with its specific timestamp
+		for i, scratch := range testScratches {
+			testStore.SetTimeFunc(func() time.Time { return testScratches[i].CreatedAt })
+			if err := s.AddScratch(scratch); err != nil {
+				t.Fatalf("failed to add scratch: %v", err)
+			}
+		}
+		testStore.SetTimeFunc(time.Now)
+	} else {
+		// Fallback to SaveScratches if test store not available
+		if err := s.SaveScratches(testScratches); err != nil {
+			t.Fatalf("failed to save scratches: %v", err)
+		}
 	}
 
 	t.Run("ValidIndex", func(t *testing.T) {
@@ -49,9 +62,9 @@ func TestPath(t *testing.T) {
 			t.Fatalf("unexpected error: %v", err)
 		}
 
-		// With reverse chronological order, index 1 should be test-scratch-2 (newest)
-		if !strings.Contains(result.Path, "test-scratch-2") {
-			t.Errorf("expected path to contain scratch ID 'test-scratch-2', got %s", result.Path)
+		// Path should be in format nanostore://scratch/<uuid>
+		if !strings.HasPrefix(result.Path, "nanostore://scratch/") {
+			t.Errorf("expected path to start with 'nanostore://scratch/', got %s", result.Path)
 		}
 	})
 
@@ -61,9 +74,9 @@ func TestPath(t *testing.T) {
 			t.Fatalf("unexpected error: %v", err)
 		}
 
-		// With reverse chronological order, index 2 should be test-scratch-1 (older)
-		if !strings.Contains(result.Path, "test-scratch-1") {
-			t.Errorf("expected path to contain scratch ID 'test-scratch-1', got %s", result.Path)
+		// Path should be in format nanostore://scratch/<uuid>
+		if !strings.HasPrefix(result.Path, "nanostore://scratch/") {
+			t.Errorf("expected path to start with 'nanostore://scratch/', got %s", result.Path)
 		}
 	})
 

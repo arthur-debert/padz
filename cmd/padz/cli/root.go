@@ -189,10 +189,6 @@ func NewRootCmd() *cobra.Command {
 	nukeCmd.GroupID = "multiple"
 	rootCmd.AddCommand(nukeCmd)
 
-	recoverCmd := newRecoverCmd()
-	recoverCmd.GroupID = "multiple"
-	rootCmd.AddCommand(recoverCmd)
-
 	flushCmd := newFlushCmd()
 	flushCmd.GroupID = "multiple"
 	rootCmd.AddCommand(flushCmd)

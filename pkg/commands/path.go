@@ -11,17 +11,16 @@ type PathResult struct {
 	Path string `json:"path"`
 }
 
-// Path returns the full path to a scratch file
+// Path returns the identifier path for a scratch (now stored in nanostore)
 func Path(s *store.Store, global bool, project string, indexStr string) (*PathResult, error) {
 	scratch, err := GetScratchByIndex(s, global, project, indexStr)
 	if err != nil {
 		return nil, err
 	}
 
-	path, err := store.GetScratchFilePath(scratch.ID)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get scratch file path: %w", err)
-	}
+	// Since scratches are now stored in nanostore, return a virtual path
+	// that includes the UUID for identification
+	path := fmt.Sprintf("nanostore://scratch/%s", scratch.ID)
 
 	return &PathResult{Path: path}, nil
 }

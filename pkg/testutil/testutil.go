@@ -9,13 +9,16 @@ import (
 // SetupTestEnvironment sets up an isolated test environment
 // Returns a cleanup function that should be called with defer
 func SetupTestEnvironment(t *testing.T) (*config.Config, func()) {
-	// Create a memory filesystem for testing
-	memFS := filesystem.NewMemoryFileSystem()
+	// Create a temporary directory for testing
+	tempDir := t.TempDir()
+
+	// Use OS filesystem since nanostore needs real file access
+	osFS := filesystem.NewOSFileSystem()
 
 	// Create test configuration
 	testConfig := &config.Config{
-		FileSystem: memFS,
-		DataPath:   "/test/data",
+		FileSystem: osFS,
+		DataPath:   tempDir,
 	}
 
 	// Save current config
@@ -24,20 +27,11 @@ func SetupTestEnvironment(t *testing.T) (*config.Config, func()) {
 	// Set test config
 	config.SetConfig(testConfig)
 
-	// Create the data directories
-	if err := memFS.MkdirAll("/test/data", 0755); err != nil {
-		t.Fatalf("Failed to create test data directory: %v", err)
-	}
-	if err := memFS.MkdirAll("/test/data/scratch", 0755); err != nil {
-		t.Fatalf("Failed to create test scratch directory: %v", err)
-	}
-
 	// Return cleanup function
 	cleanup := func() {
 		// Restore original config
 		config.SetConfig(oldConfig)
-		// Reset the memory filesystem
-		memFS.Reset()
+		// t.TempDir() automatically cleans up
 	}
 
 	return testConfig, cleanup

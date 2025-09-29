@@ -6,7 +6,6 @@ import (
 	"crypto/sha1"
 	"fmt"
 	"github.com/arthur-debert/padz/pkg/clipboard"
-	"github.com/arthur-debert/padz/pkg/config"
 	"github.com/arthur-debert/padz/pkg/editor"
 	"github.com/arthur-debert/padz/pkg/store"
 	"io"
@@ -146,15 +145,6 @@ func getTitle(content []byte) string {
 
 func trim(content []byte) []byte {
 	return []byte(strings.Trim(string(content), "\n\t "))
-}
-
-func saveScratchFile(id string, content []byte) error {
-	fs := config.GetConfig().FileSystem
-	path, err := store.GetScratchFilePath(id)
-	if err != nil {
-		return err
-	}
-	return fs.WriteFile(path, content, 0644)
 }
 
 // ReadContentFromPipe checks if stdin is a pipe and reads its content

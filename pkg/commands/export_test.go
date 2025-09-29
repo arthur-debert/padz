@@ -99,6 +99,17 @@ func TestExport(t *testing.T) {
 			require.NoError(t, err)
 		}
 
+		// Get the list of scratches to find their actual IDs
+		scratches := Ls(st, false, project)
+		require.Equal(t, 5, len(scratches))
+
+		// The scratches are in reverse chronological order (newest first)
+		// So scratch 5 is at index 0, scratch 4 at index 1, etc.
+		// We want to export scratches 1, 3, and 5
+		id1 := scratches[4].ID // scratch 1 (oldest)
+		id3 := scratches[2].ID // scratch 3
+		id5 := scratches[0].ID // scratch 5 (newest)
+
 		// Change to temp directory
 		tmpDir := t.TempDir()
 		oldDir, err := os.Getwd()
@@ -112,7 +123,7 @@ func TestExport(t *testing.T) {
 		require.NoError(t, err)
 
 		// Export specific ones
-		err = Export(st, false, project, []string{"1", "3", "5"}, "txt")
+		err = Export(st, false, project, []string{id1, id3, id5}, "txt")
 		assert.NoError(t, err)
 
 		// Check exported files
@@ -124,9 +135,10 @@ func TestExport(t *testing.T) {
 		assert.Equal(t, 3, len(files))
 
 		// Files should be numbered 1, 2, 3 based on export order
-		assert.Equal(t, "1-content-for-scratch-5.txt", files[0].Name())
+		// We exported in order: id1, id3, id5
+		assert.Equal(t, "1-content-for-scratch-1.txt", files[0].Name())
 		assert.Equal(t, "2-content-for-scratch-3.txt", files[1].Name())
-		assert.Equal(t, "3-content-for-scratch-1.txt", files[2].Name())
+		assert.Equal(t, "3-content-for-scratch-5.txt", files[2].Name())
 	})
 
 	t.Run("export as markdown", func(t *testing.T) {
@@ -182,8 +194,17 @@ func TestExport(t *testing.T) {
 			require.NoError(t, err)
 		}
 
+		// Get the list of scratches to find their actual IDs
+		scratches := Ls(st, false, project)
+		require.Equal(t, 3, len(scratches))
+
+		// The scratches are in reverse chronological order (newest first)
+		// So scratch 3 is at index 0, scratch 2 at index 1, scratch 1 at index 2
+		// We want to pin scratch 2 (middle one)
+		id2 := scratches[1].ID
+
 		// Pin the second one
-		err = Pin(st, false, project, "2")
+		err = Pin(st, false, project, id2)
 		require.NoError(t, err)
 
 		// Change to temp directory

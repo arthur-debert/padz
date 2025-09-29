@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/arthur-debert/padz/pkg/config"
 	"github.com/arthur-debert/padz/pkg/store"
 )
 
@@ -35,8 +34,8 @@ func DeleteMultiple(s *store.Store, global bool, project string, ids []string) (
 
 	// Update all scratches atomically
 	if len(scratchesToUpdate) > 0 {
-		// Get all current scratches
-		allScratches := s.GetScratches()
+		// Get all current scratches including deleted ones
+		allScratches := s.GetAllScratches()
 
 		// Update the scratches that need to be deleted
 		for i := range allScratches {
@@ -69,13 +68,9 @@ func Delete(s *store.Store, global bool, project string, indexStr string) error 
 	return nil
 }
 
-// PermanentlyDeleteScratchFile removes the physical file from disk
+// PermanentlyDeleteScratchFile is a no-op since content is now stored in the scratch itself
 // This is used by the flush command for hard deletion
 func PermanentlyDeleteScratchFile(id string) error {
-	fs := config.GetConfig().FileSystem
-	path, err := store.GetScratchFilePath(id)
-	if err != nil {
-		return err
-	}
-	return fs.Remove(path)
+	// Content is stored in the scratch itself, no files to delete
+	return nil
 }

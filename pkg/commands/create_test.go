@@ -232,9 +232,8 @@ func TestCreateWithTitleAndContent(t *testing.T) {
 					}
 
 					// Verify the saved content matches what the editor returned
-					savedContent := setup.ReadScratchFile(t, lastScratch.ID)
-					if string(savedContent) != tt.finalEditorContent {
-						t.Errorf("expected saved content %q, got %q", tt.finalEditorContent, string(savedContent))
+					if lastScratch.Content != tt.finalEditorContent {
+						t.Errorf("expected saved content %q, got %q", tt.finalEditorContent, lastScratch.Content)
 					}
 				}
 			} else {
@@ -272,9 +271,8 @@ func TestCreateWithPipedContentAndTitle(t *testing.T) {
 		t.Errorf("expected title %q, got %q", providedTitle, scratch.Title)
 	}
 
-	savedContent := setup.ReadScratchFile(t, scratch.ID)
-	if string(savedContent) != pipedContent {
-		t.Errorf("expected saved content %q, got %q", pipedContent, string(savedContent))
+	if scratch.Content != pipedContent {
+		t.Errorf("expected saved content %q, got %q", pipedContent, scratch.Content)
 	}
 }
 

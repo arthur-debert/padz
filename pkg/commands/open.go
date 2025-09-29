@@ -15,10 +15,7 @@ func Open(s *store.Store, global bool, project string, indexStr string) error {
 		return err
 	}
 
-	content, err := readScratchFile(scratchToOpen.ID)
-	if err != nil {
-		return err
-	}
+	content := []byte(scratchToOpen.Content)
 
 	// Determine extension based on content
 	extension := ".txt"
@@ -38,9 +35,7 @@ func Open(s *store.Store, global bool, project string, indexStr string) error {
 		return Delete(s, global, project, indexStr)
 	}
 
-	if err := saveScratchFile(scratchToOpen.ID, trimmedContent); err != nil {
-		return err
-	}
+	scratchToOpen.Content = string(trimmedContent)
 
 	// Copy content to clipboard
 	if err := clipboard.Copy(trimmedContent); err != nil {
@@ -58,10 +53,7 @@ func OpenLazy(s *store.Store, global bool, project string, indexStr string) erro
 		return err
 	}
 
-	content, err := readScratchFile(scratchToOpen.ID)
-	if err != nil {
-		return err
-	}
+	content := []byte(scratchToOpen.Content)
 
 	// Launch editor and exit immediately
 	return editor.LaunchAndExit(scratchToOpen.ID, content)

@@ -100,13 +100,28 @@ func NewStoreWithConfig(cfg *config.Config) (*Store, error) {
 }
 
 func (s *Store) GetScratches() []Scratch {
+	return s.GetScratchesWithFilter("", false)
+}
+
+// GetScratchesWithFilter returns active scratches filtered by project
+func (s *Store) GetScratchesWithFilter(project string, global bool) []Scratch {
 	logger := logging.GetLogger("store")
 
-	// List only active scratches
+	// List only active scratches, ordered by creation date descending
 	opts := nanostore.ListOptions{
 		Filters: map[string]interface{}{
 			"activity": "active",
 		},
+		OrderBy: []nanostore.OrderClause{
+			{Column: "created_at", Descending: true},
+		},
+	}
+
+	// Add project filtering at the nanostore level
+	if global {
+		opts.Filters["_data.project"] = "global"
+	} else if project != "" {
+		opts.Filters["_data.project"] = project
 	}
 
 	docs, err := s.store.List(opts)
@@ -125,11 +140,16 @@ func (s *Store) GetScratches() []Scratch {
 		scratches[i] = s.documentToScratch(doc)
 	}
 
-	logger.Debug().Int("count", len(scratches)).Msg("Retrieved scratches")
+	logger.Debug().Int("count", len(scratches)).Str("project", project).Bool("global", global).Msg("Retrieved filtered scratches")
 	return scratches
 }
 
 func (s *Store) GetPinnedScratches() []Scratch {
+	return s.GetPinnedScratchesWithFilter("", false)
+}
+
+// GetPinnedScratchesWithFilter returns pinned scratches filtered by project
+func (s *Store) GetPinnedScratchesWithFilter(project string, global bool) []Scratch {
 	logger := logging.GetLogger("store")
 
 	opts := nanostore.ListOptions{
@@ -137,6 +157,16 @@ func (s *Store) GetPinnedScratches() []Scratch {
 			"activity": "active",
 			"pinned":   "yes",
 		},
+		OrderBy: []nanostore.OrderClause{
+			{Column: "created_at", Descending: true},
+		},
+	}
+
+	// Add project filtering at the nanostore level
+	if global {
+		opts.Filters["_data.project"] = "global"
+	} else if project != "" {
+		opts.Filters["_data.project"] = project
 	}
 
 	docs, err := s.store.List(opts)
@@ -151,7 +181,89 @@ func (s *Store) GetPinnedScratches() []Scratch {
 		scratches[i] = s.documentToScratch(doc)
 	}
 
-	logger.Debug().Int("count", len(scratches)).Msg("Retrieved pinned scratches")
+	logger.Debug().Int("count", len(scratches)).Str("project", project).Bool("global", global).Msg("Retrieved pinned scratches")
+	return scratches
+}
+
+// GetAllScratches returns all scratches (active and deleted)
+func (s *Store) GetAllScratches() []Scratch {
+	return s.GetAllScratchesWithFilter("", false)
+}
+
+// GetAllScratchesWithFilter returns all scratches (active and deleted) filtered by project
+func (s *Store) GetAllScratchesWithFilter(project string, global bool) []Scratch {
+	logger := logging.GetLogger("store")
+
+	// List all scratches (no activity filter), ordered by creation date descending
+	// Note: We can't order by "most recent activity" in SQL since that would require
+	// a CASE statement (created_at for active, deleted_at for deleted)
+	opts := nanostore.ListOptions{
+		Filters: map[string]interface{}{},
+		OrderBy: []nanostore.OrderClause{
+			{Column: "created_at", Descending: true},
+		},
+	}
+
+	// Add project filtering at the nanostore level
+	if global {
+		opts.Filters["_data.project"] = "global"
+	} else if project != "" {
+		opts.Filters["_data.project"] = project
+	}
+
+	docs, err := s.store.List(opts)
+	if err != nil {
+		logger.Error().Err(err).Msg("Failed to query all scratches")
+		return []Scratch{}
+	}
+
+	scratches := make([]Scratch, len(docs))
+	for i, doc := range docs {
+		scratches[i] = s.documentToScratch(doc)
+	}
+
+	logger.Debug().Int("count", len(scratches)).Str("project", project).Bool("global", global).Msg("Retrieved all scratches")
+	return scratches
+}
+
+// GetDeletedScratches returns only deleted scratches
+func (s *Store) GetDeletedScratches() []Scratch {
+	return s.GetDeletedScratchesWithFilter("", false)
+}
+
+// GetDeletedScratchesWithFilter returns only deleted scratches filtered by project
+func (s *Store) GetDeletedScratchesWithFilter(project string, global bool) []Scratch {
+	logger := logging.GetLogger("store")
+
+	// List only deleted scratches, ordered by deletion date descending (most recently deleted first)
+	opts := nanostore.ListOptions{
+		Filters: map[string]interface{}{
+			"activity": "deleted",
+		},
+		OrderBy: []nanostore.OrderClause{
+			{Column: "_data.deleted_at", Descending: true},
+		},
+	}
+
+	// Add project filtering at the nanostore level
+	if global {
+		opts.Filters["_data.project"] = "global"
+	} else if project != "" {
+		opts.Filters["_data.project"] = project
+	}
+
+	docs, err := s.store.List(opts)
+	if err != nil {
+		logger.Error().Err(err).Msg("Failed to query deleted scratches")
+		return []Scratch{}
+	}
+
+	scratches := make([]Scratch, len(docs))
+	for i, doc := range docs {
+		scratches[i] = s.documentToScratch(doc)
+	}
+
+	logger.Debug().Int("count", len(scratches)).Str("project", project).Bool("global", global).Msg("Retrieved deleted scratches")
 	return scratches
 }
 
@@ -197,6 +309,11 @@ func (s *Store) AddScratch(scratch Scratch) error {
 		"pinned":   "no",
 	}
 
+	// Handle deleted state
+	if scratch.IsDeleted {
+		dimensions["activity"] = "deleted"
+	}
+
 	if scratch.IsPinned {
 		dimensions["pinned"] = "yes"
 	}
@@ -213,6 +330,9 @@ func (s *Store) AddScratch(scratch Scratch) error {
 	}
 	if !scratch.PinnedAt.IsZero() {
 		dimensions["_data.pinned_at"] = scratch.PinnedAt
+	}
+	if scratch.IsDeleted && scratch.DeletedAt != nil {
+		dimensions["_data.deleted_at"] = *scratch.DeletedAt
 	}
 
 	// Create the document in nanostore
@@ -241,28 +361,31 @@ func (s *Store) RemoveScratch(id string) error {
 	logger := logging.GetLogger("store")
 	logger.Info().Str("id", id).Msg("Removing scratch")
 
-	// Find the scratch with this SimpleID by listing all and matching
-	uuid, err := s.resolveSimpleIDToUUID(id)
-	if err != nil {
-		return fmt.Errorf("failed to resolve ID %s: %w", id, err)
-	}
+	// Get all current scratches (including deleted ones to find the target)
+	allScratches := s.GetAllScratches()
 
-	// Soft delete by updating activity dimension
+	// Find and update the target scratch
+	found := false
 	now := time.Now()
-	updates := nanostore.UpdateRequest{
-		Dimensions: map[string]interface{}{
-			"activity":         "deleted",
-			"_data.deleted_at": now,
-		},
+	for i := range allScratches {
+		if allScratches[i].ID == id {
+			allScratches[i].IsDeleted = true
+			allScratches[i].DeletedAt = &now
+			found = true
+			break
+		}
 	}
 
-	logger.Info().Str("uuid", uuid).Interface("updates", updates).Msg("About to update scratch")
+	if !found {
+		return fmt.Errorf("scratch not found: %s", id)
+	}
 
-	if err := s.store.Update(uuid, updates); err != nil {
+	// Save all scratches back (this will trigger the nanostore update)
+	if err := s.SaveScratchesAtomic(allScratches); err != nil {
 		return fmt.Errorf("failed to remove scratch: %w", err)
 	}
 
-	logger.Info().Str("id", id).Str("uuid", uuid).Msg("Scratch removed successfully")
+	logger.Info().Str("id", id).Msg("Scratch removed successfully")
 	return nil
 }
 
@@ -512,4 +635,36 @@ func GetScratchFilePathWithConfig(id string, cfg *config.Config) (string, error)
 	defer func() { _ = store.Close() }()
 
 	return store.GetScratchPath(id)
+}
+
+// GetTestStore returns the underlying nanostore as TestStore for testing purposes
+func (s *Store) GetTestStore() (nanostore.TestStore, bool) {
+	if testStore, ok := s.store.(nanostore.TestStore); ok {
+		return testStore, true
+	}
+	return nil, false
+}
+
+// ResolveIDToUUID resolves any ID (SimpleID or UUID) to a full UUID
+func (s *Store) ResolveIDToUUID(id string) (string, error) {
+	return s.store.ResolveUUID(id)
+}
+
+// GetScratchByUUID retrieves a scratch by its UUID
+func (s *Store) GetScratchByUUID(uuid string) (*Scratch, error) {
+	// List all documents to find the one with this UUID
+	allOpts := nanostore.ListOptions{}
+	docs, err := s.store.List(allOpts)
+	if err != nil {
+		return nil, fmt.Errorf("failed to list documents: %w", err)
+	}
+
+	for _, doc := range docs {
+		if doc.UUID == uuid {
+			scratch := s.documentToScratch(doc)
+			return &scratch, nil
+		}
+	}
+
+	return nil, fmt.Errorf("scratch not found: %s", uuid)
 }
