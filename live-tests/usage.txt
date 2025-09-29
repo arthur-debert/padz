@@ -1,0 +1,33 @@
+Usage: $(basename "$0") [OPTIONS] [SCRIPT_FILE]
+
+Create an isolated testing environment for padz commands with a temporary data store.
+
+Arguments:
+  SCRIPT_FILE   Optional shell script to execute in the test environment.
+                If not provided, starts an interactive shell session.
+
+Options:
+  -i, --interactive     Stay in interactive shell after running script
+  -h, --help            Show this help message and exit
+
+Description:
+  This script creates a temporary directory with isolated HOME and XDG directories for
+  testing padz commands. It sets up separate home, data, and project directories to
+  ensure complete isolation from the user's actual padz data. If a script is provided,
+  it executes the script in the test environment and exits (unless --interactive is used).
+  Otherwise, it drops you into a new shell session where you can run padz commands
+  without affecting your real padz data. The temporary environment is automatically
+  cleaned up when you exit.
+
+  The following isolation is provided:
+  - HOME is set to a temporary home directory
+  - XDG_DATA_HOME is set to a temporary data directory
+  - Working directory is set to a temporary project directory
+  - The padz binary is built fresh from source and added to PATH
+
+  Note: There is an export_history function that outputs the session history sans line numbers, useful if you want to capture the commands you ran in the session for later use in a script.
+
+Examples:
+  live-tests/run                              # Start with empty padz data in interactive mode
+  live-tests/run live-tests/example.sh        # Execute a test script in the environment
+  live-tests/run --interactive live-tests/example.sh  # Execute script then stay in interactive mode
