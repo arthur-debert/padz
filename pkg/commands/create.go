@@ -6,7 +6,6 @@ import (
 	"crypto/sha1"
 	"fmt"
 	"github.com/arthur-debert/padz/pkg/clipboard"
-	"github.com/arthur-debert/padz/pkg/config"
 	"github.com/arthur-debert/padz/pkg/editor"
 	"github.com/arthur-debert/padz/pkg/store"
 	"io"
@@ -52,18 +51,16 @@ func CreateWithTitle(s *store.Store, project string, content []byte, providedTit
 		title = getTitle(trimmedContent)
 	}
 
-	id := fmt.Sprintf("%x", sha1.Sum(trimmedContent))
-
 	scratch := store.Scratch{
-		ID:        id,
 		Project:   project,
 		Title:     title,
+		Content:   string(trimmedContent), // Store content directly in the scratch
 		CreatedAt: time.Now(),
 	}
 
-	if err := saveScratchFile(id, trimmedContent); err != nil {
-		return err
-	}
+	// Calculate size and checksum for metadata
+	scratch.Size = int64(len(trimmedContent))
+	scratch.Checksum = fmt.Sprintf("%x", sha1.Sum(trimmedContent))
 
 	if err := s.AddScratchAtomic(scratch); err != nil {
 		return err
@@ -116,18 +113,16 @@ func CreateWithTitleAndContent(s *store.Store, project string, title string, ini
 		finalTitle = getTitle(trimmedContent)
 	}
 
-	id := fmt.Sprintf("%x", sha1.Sum(trimmedContent))
-
 	scratch := store.Scratch{
-		ID:        id,
 		Project:   project,
 		Title:     finalTitle,
+		Content:   string(trimmedContent), // Store content directly in the scratch
 		CreatedAt: time.Now(),
 	}
 
-	if err := saveScratchFile(id, trimmedContent); err != nil {
-		return err
-	}
+	// Calculate size and checksum for metadata
+	scratch.Size = int64(len(trimmedContent))
+	scratch.Checksum = fmt.Sprintf("%x", sha1.Sum(trimmedContent))
 
 	if err := s.AddScratchAtomic(scratch); err != nil {
 		return err
@@ -150,15 +145,6 @@ func getTitle(content []byte) string {
 
 func trim(content []byte) []byte {
 	return []byte(strings.Trim(string(content), "\n\t "))
-}
-
-func saveScratchFile(id string, content []byte) error {
-	fs := config.GetConfig().FileSystem
-	path, err := store.GetScratchFilePath(id)
-	if err != nil {
-		return err
-	}
-	return fs.WriteFile(path, content, 0644)
 }
 
 // ReadContentFromPipe checks if stdin is a pipe and reads its content

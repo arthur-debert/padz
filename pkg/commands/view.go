@@ -1,7 +1,6 @@
 package commands
 
 import (
-	"github.com/arthur-debert/padz/pkg/config"
 	"github.com/arthur-debert/padz/pkg/store"
 )
 
@@ -29,13 +28,4 @@ func ViewMultiple(s *store.Store, global bool, project string, ids []string) (st
 // View views a single scratch (wrapper for backward compatibility)
 func View(s *store.Store, global bool, project string, indexStr string) (string, error) {
 	return ViewMultiple(s, global, project, []string{indexStr})
-}
-
-func readScratchFile(id string) ([]byte, error) {
-	fs := config.GetConfig().FileSystem
-	path, err := store.GetScratchFilePath(id)
-	if err != nil {
-		return nil, err
-	}
-	return fs.ReadFile(path)
 }

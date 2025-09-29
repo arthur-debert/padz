@@ -47,10 +47,7 @@ func Export(s *store.Store, global bool, project string, ids []string, format st
 		filename := generateFilename(index, scratch.Title, format)
 		filepath := filepath.Join(dirName, filename)
 
-		content, err := readScratchFile(scratch.ID)
-		if err != nil {
-			return fmt.Errorf("failed to read scratch content: %w", err)
-		}
+		content := []byte(scratch.Content)
 
 		if err := os.WriteFile(filepath, content, 0644); err != nil {
 			return fmt.Errorf("failed to write file %s: %w", filename, err)

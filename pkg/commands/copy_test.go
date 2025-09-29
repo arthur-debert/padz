@@ -45,23 +45,26 @@ func TestCopy(t *testing.T) {
 
 	s := setup.Store
 
-	// Create test scratches
+	// Create test scratches with content
 	scratch1 := store.Scratch{
 		ID:        "test1",
 		Project:   "project1",
 		Title:     "First scratch",
+		Content:   "Content of first scratch",
 		CreatedAt: time.Now(),
 	}
 	scratch2 := store.Scratch{
 		ID:        "test2",
 		Project:   "project1",
 		Title:     "Second scratch",
+		Content:   "Content of second scratch",
 		CreatedAt: time.Now().Add(-1 * time.Hour),
 	}
 	scratch3 := store.Scratch{
 		ID:        "test3",
 		Project:   "project2",
 		Title:     "Third scratch",
+		Content:   "Content of third scratch",
 		CreatedAt: time.Now().Add(-2 * time.Hour),
 	}
 
@@ -76,21 +79,6 @@ func TestCopy(t *testing.T) {
 		t.Fatalf("Failed to add scratch3: %v", err)
 	}
 
-	// Save content for each scratch
-	content1 := []byte("Content of first scratch")
-	content2 := []byte("Content of second scratch")
-	content3 := []byte("Content of third scratch")
-
-	if err := saveScratchFile(scratch1.ID, content1); err != nil {
-		t.Fatalf("Failed to save content1: %v", err)
-	}
-	if err := saveScratchFile(scratch2.ID, content2); err != nil {
-		t.Fatalf("Failed to save content2: %v", err)
-	}
-	if err := saveScratchFile(scratch3.ID, content3); err != nil {
-		t.Fatalf("Failed to save content3: %v", err)
-	}
-
 	tests := []struct {
 		name            string
 		project         string
@@ -102,14 +90,14 @@ func TestCopy(t *testing.T) {
 			name:            "copy scratch by index in project",
 			project:         "project1",
 			indexStr:        "1",
-			expectedContent: content1,
+			expectedContent: []byte("Content of first scratch"),
 			expectError:     false,
 		},
 		{
 			name:            "copy second scratch in project",
 			project:         "project1",
 			indexStr:        "2",
-			expectedContent: content2,
+			expectedContent: []byte("Content of second scratch"),
 			expectError:     false,
 		},
 		{

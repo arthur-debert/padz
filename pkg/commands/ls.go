@@ -24,47 +24,28 @@ func Ls(s *store.Store, global bool, project string) []store.Scratch {
 
 // LsWithMode lists scratches with delete filtering options
 func LsWithMode(s *store.Store, global bool, project string, mode ListMode) []store.Scratch {
-	scratches := s.GetScratches()
+	var scratches []store.Scratch
 
-	var filtered []store.Scratch
-	for _, scratch := range scratches {
-		// Filter by deletion status based on mode
-		switch mode {
-		case ListModeActive:
-			if scratch.IsDeleted {
-				continue
-			}
-		case ListModeDeleted:
-			if !scratch.IsDeleted {
-				continue
-			}
-		case ListModeAll:
-			// Include everything
-		}
-
-		// Filter by project/global
-		if global && scratch.Project == "global" {
-			filtered = append(filtered, scratch)
-		} else if !global && scratch.Project == project {
-			filtered = append(filtered, scratch)
-		}
+	switch mode {
+	case ListModeActive:
+		// Use store-level filtering for active items
+		scratches = s.GetScratchesWithFilter(project, global)
+	case ListModeDeleted:
+		// Use store-level filtering for deleted items
+		scratches = s.GetDeletedScratchesWithFilter(project, global)
+	case ListModeAll:
+		// Use store-level filtering for all items
+		scratches = s.GetAllScratchesWithFilter(project, global)
 	}
 
-	// For ListModeAll, sort by most recent activity to intermingle active and deleted items
+	// For ListModeAll, we need special sorting by most recent activity
+	// (nanostore can't do this in SQL since it requires CASE statement)
 	if mode == ListModeAll {
-		return sortByMostRecentActivity(filtered)
+		return sortByMostRecentActivity(scratches)
 	}
 
-	return sortByCreatedAtDesc(filtered)
-}
-
-func sortByCreatedAtDesc(scratches []store.Scratch) []store.Scratch {
-	sorted := make([]store.Scratch, len(scratches))
-	copy(sorted, scratches)
-	sort.Slice(sorted, func(i, j int) bool {
-		return sorted[i].CreatedAt.After(sorted[j].CreatedAt)
-	})
-	return sorted
+	// For other modes, nanostore already handles sorting via OrderBy
+	return scratches
 }
 
 // sortByMostRecentActivity sorts scratches by their most recent activity
@@ -90,14 +71,6 @@ func sortByMostRecentActivity(scratches []store.Scratch) []store.Scratch {
 }
 
 func GetScratchByIndex(s *store.Store, global bool, project string, indexStr string) (*store.Scratch, error) {
-	// When looking for deleted items (d1, d2, etc), we need to get all items including deleted
-	var scratches []store.Scratch
-	if len(indexStr) > 1 && indexStr[0] == 'd' {
-		scratches = LsWithMode(s, global, project, ListModeAll)
-	} else {
-		scratches = Ls(s, global, project)
-	}
-
 	// Check if it's a deleted index (d1, d2, etc)
 	if len(indexStr) > 1 && indexStr[0] == 'd' {
 		deletedIndexStr := indexStr[1:]
@@ -106,21 +79,8 @@ func GetScratchByIndex(s *store.Store, global bool, project string, indexStr str
 			return nil, fmt.Errorf("invalid deleted index: %s", indexStr)
 		}
 
-		// Get deleted items sorted by deletion time (newest first)
-		var deletedScratches []store.Scratch
-		for _, scratch := range scratches {
-			if scratch.IsDeleted {
-				deletedScratches = append(deletedScratches, scratch)
-			}
-		}
-
-		// Sort by DeletedAt descending (newest first)
-		sort.Slice(deletedScratches, func(i, j int) bool {
-			if deletedScratches[i].DeletedAt == nil || deletedScratches[j].DeletedAt == nil {
-				return false
-			}
-			return deletedScratches[i].DeletedAt.After(*deletedScratches[j].DeletedAt)
-		})
+		// Get deleted items already sorted by deletion time (newest first) by nanostore
+		deletedScratches := s.GetDeletedScratchesWithFilter(project, global)
 
 		if deletedIndex < 1 || deletedIndex > len(deletedScratches) {
 			return nil, fmt.Errorf("deleted index out of range: %s", indexStr)
@@ -128,6 +88,9 @@ func GetScratchByIndex(s *store.Store, global bool, project string, indexStr str
 
 		return &deletedScratches[deletedIndex-1], nil
 	}
+
+	// Get active scratches for other cases
+	scratches := Ls(s, global, project)
 
 	// Check if it's a pinned index (p1, p2, etc)
 	if len(indexStr) > 1 && indexStr[0] == 'p' {
@@ -172,19 +135,39 @@ func GetScratchByIndex(s *store.Store, global bool, project string, indexStr str
 
 // ResolveScratchID resolves various ID formats (index, pinned index, deleted index, hash) to a scratch
 func ResolveScratchID(s *store.Store, global bool, project string, id string) (*store.Scratch, error) {
-	// Try as index (including pinned index and deleted index)
-	scratch, err := GetScratchByIndex(s, global, project, id)
-	if err == nil {
-		return scratch, nil
+	// Check if it's a deleted index (d1, d2, etc) - padz convention, not nanostore
+	if len(id) > 1 && id[0] == 'd' {
+		return GetScratchByIndex(s, global, project, id)
 	}
 
-	// Try as hash ID
-	scratches := s.GetScratches()
-	for i := range scratches {
-		if strings.HasPrefix(scratches[i].ID, id) {
-			return &scratches[i], nil
+	// Try to resolve the ID using nanostore's ResolveUUID
+	// This handles SimpleIDs (1, 2, p1, etc.) and full UUIDs
+	uuid, err := s.ResolveIDToUUID(id)
+	if err != nil {
+		// If it can't be resolved, it might be a partial UUID prefix
+		// Try to find a scratch with matching UUID prefix
+		scratches := s.GetAllScratchesWithFilter(project, global)
+		for i := range scratches {
+			if strings.HasPrefix(scratches[i].ID, id) {
+				return &scratches[i], nil
+			}
 		}
+		return nil, fmt.Errorf("scratch not found: %s", id)
 	}
 
-	return nil, fmt.Errorf("scratch not found: %s", id)
+	// Get the scratch by its UUID
+	scratch, err := s.GetScratchByUUID(uuid)
+	if err != nil {
+		return nil, err
+	}
+
+	// Verify it belongs to the correct project/scope
+	if global && scratch.Project != "global" {
+		return nil, fmt.Errorf("scratch not found in global scope: %s", id)
+	}
+	if !global && project != "" && scratch.Project != project {
+		return nil, fmt.Errorf("scratch not found in project %s: %s", project, id)
+	}
+
+	return scratch, nil
 }

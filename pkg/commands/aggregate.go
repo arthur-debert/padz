@@ -153,11 +153,8 @@ func AggregateScratchContents(scratches []*store.Scratch, options AggregateOptio
 	contents := make([]string, len(scratches))
 
 	for i, scratch := range scratches {
-		content, err := readScratchFile(scratch.ID)
-		if err != nil {
-			return nil, fmt.Errorf("failed to read scratch %s: %w", scratch.ID[:8], err)
-		}
-		contents[i] = string(content)
+		// Content is now stored directly in the scratch
+		contents[i] = scratch.Content
 	}
 
 	return &AggregatedContent{

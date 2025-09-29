@@ -189,10 +189,6 @@ func NewRootCmd() *cobra.Command {
 	nukeCmd.GroupID = "multiple"
 	rootCmd.AddCommand(nukeCmd)
 
-	recoverCmd := newRecoverCmd()
-	recoverCmd.GroupID = "multiple"
-	rootCmd.AddCommand(recoverCmd)
-
 	flushCmd := newFlushCmd()
 	flushCmd.GroupID = "multiple"
 	rootCmd.AddCommand(flushCmd)
@@ -207,9 +203,6 @@ func NewRootCmd() *cobra.Command {
 	rootCmd.AddCommand(exportCmd)
 
 	// Utility commands (not grouped)
-	showDataFileCmd := newShowDataFileCmd()
-	showDataFileCmd.Flags().BoolP("global", "g", false, FlagGlobalDesc)
-	rootCmd.AddCommand(showDataFileCmd)
 
 	return rootCmd
 }

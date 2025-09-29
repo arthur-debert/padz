@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"sort"
 	"testing"
 	"time"
 
@@ -187,10 +188,8 @@ func TestReadContentFromPipeIntegration(t *testing.T) {
 	}
 
 	// Verify content was saved correctly
-	savedContent := setup.ReadScratchFile(t, scratches[0].ID)
-
-	if string(savedContent) != testContent {
-		t.Errorf("expected saved content %q, got %q", testContent, string(savedContent))
+	if scratches[0].Content != testContent {
+		t.Errorf("expected saved content %q, got %q", testContent, scratches[0].Content)
 	}
 }
 
@@ -499,10 +498,10 @@ func TestSearch(t *testing.T) {
 	}
 
 	for _, scratch := range testScratches {
+		scratch.Content = testContents[scratch.ID]
 		if err := setup.Store.AddScratch(scratch); err != nil {
 			t.Fatalf("failed to add scratch: %v", err)
 		}
-		setup.WriteScratchFile(t, scratch.ID, []byte(testContents[scratch.ID]))
 	}
 
 	tests := []struct {
@@ -630,10 +629,10 @@ func TestSearchWithIndices(t *testing.T) {
 	}
 
 	for _, scratch := range testScratches {
+		scratch.Content = testContents[scratch.ID]
 		if err := setup.Store.AddScratch(scratch); err != nil {
 			t.Fatalf("failed to add scratch: %v", err)
 		}
-		setup.WriteScratchFile(t, scratch.ID, []byte(testContents[scratch.ID]))
 	}
 
 	tests := []struct {
@@ -723,15 +722,17 @@ func TestView(t *testing.T) {
 	setup := SetupCommandTest(t)
 	defer setup.Cleanup()
 
+	testContent := "Line 1\nLine 2\nLine 3"
 	testScratch := store.Scratch{
-		ID: "test1", Project: "testproject", Title: "Test Title", CreatedAt: time.Now(),
+		ID:        "test1",
+		Project:   "testproject",
+		Title:     "Test Title",
+		Content:   testContent,
+		CreatedAt: time.Now(),
 	}
 	if err := setup.Store.AddScratch(testScratch); err != nil {
 		t.Fatalf("failed to add test scratch: %v", err)
 	}
-
-	testContent := "Line 1\nLine 2\nLine 3"
-	setup.WriteScratchFile(t, testScratch.ID, []byte(testContent))
 
 	tests := []struct {
 		name            string
@@ -836,10 +837,10 @@ func TestPeek(t *testing.T) {
 	}
 
 	for _, ts := range testScratches {
+		ts.scratch.Content = ts.content
 		if err := setup.Store.AddScratch(ts.scratch); err != nil {
 			t.Fatalf("failed to add test scratch: %v", err)
 		}
-		setup.WriteScratchFile(t, ts.scratch.ID, []byte(ts.content))
 	}
 
 	tests := []struct {
@@ -854,7 +855,7 @@ func TestPeek(t *testing.T) {
 		{
 			name:            "short content - return all",
 			project:         "global",
-			index:           "1",
+			index:           "3", // Third scratch added has SimpleID=3
 			lines:           3,
 			expectedContent: "Global Line 1\nGlobal Line 2\nGlobal Line 3",
 		},
@@ -875,7 +876,7 @@ func TestPeek(t *testing.T) {
 		{
 			name:            "exactly 2*lines content",
 			project:         "otherproject",
-			index:           "1",
+			index:           "2", // Second scratch added has SimpleID=2
 			lines:           2,
 			expectedContent: "Other Line 1\nOther Line 2\n...\nOther Line 4\nOther Line 5\n",
 		},
@@ -889,14 +890,14 @@ func TestPeek(t *testing.T) {
 		{
 			name:            "peek second scratch in otherproject",
 			project:         "otherproject",
-			index:           "1",
+			index:           "2", // Second scratch added has SimpleID=2
 			lines:           2,
 			expectedContent: "Other Line 1\nOther Line 2\n...\nOther Line 4\nOther Line 5\n",
 		},
 		{
 			name:            "peek with global flag",
 			project:         "",
-			index:           "1",
+			index:           "3", // Third scratch added has SimpleID=3
 			lines:           2,
 			global:          true,
 			expectedContent: "Global Line 1\nGlobal Line 2\nGlobal Line 3",
@@ -929,12 +930,15 @@ func TestDelete(t *testing.T) {
 	defer setup.Cleanup()
 
 	testScratch := store.Scratch{
-		ID: "test1", Project: "testproject", Title: "Test Title", CreatedAt: time.Now(),
+		ID:        "test1",
+		Project:   "testproject",
+		Title:     "Test Title",
+		Content:   "test content",
+		CreatedAt: time.Now(),
 	}
 	if err := setup.Store.AddScratch(testScratch); err != nil {
 		t.Fatalf("failed to add test scratch: %v", err)
 	}
-	setup.WriteScratchFile(t, testScratch.ID, []byte("test content"))
 
 	tests := []struct {
 		name        string
@@ -979,22 +983,16 @@ func TestDelete(t *testing.T) {
 				return
 			}
 
-			// With soft delete, count should remain the same
-			if len(setup.Store.GetScratches()) != initialCount {
-				t.Errorf("expected scratch count to remain the same with soft delete")
+			// With soft delete, active count should decrease
+			if len(setup.Store.GetScratches()) != initialCount-1 {
+				t.Errorf("expected scratch count to decrease by 1 with soft delete")
 			}
 
-			// Verify file still exists (soft delete)
-			path, _ := store.GetScratchFilePathWithConfig(testScratch.ID, setup.Config)
-			if _, err := setup.Config.FileSystem.Stat(path); err != nil {
-				t.Errorf("expected scratch file to still exist after soft delete")
-			}
-
-			// Verify scratch is marked as deleted
-			scratches := setup.Store.GetScratches()
+			// Verify scratch is marked as deleted in all scratches
+			allScratches := setup.Store.GetAllScratches()
 			found := false
-			for _, s := range scratches {
-				if s.ID == testScratch.ID {
+			for _, s := range allScratches {
+				if s.Title == testScratch.Title {
 					found = true
 					if !s.IsDeleted {
 						t.Errorf("expected scratch to be marked as deleted")
@@ -1016,75 +1014,107 @@ func TestCleanup(t *testing.T) {
 	setup := SetupCommandTest(t)
 	defer setup.Cleanup()
 
-	now := time.Now()
-	testScratches := []store.Scratch{
-		{ID: "old1", Project: "test", Title: "Old 1", CreatedAt: now.AddDate(0, 0, -10)},
-		{ID: "old2", Project: "test", Title: "Old 2", CreatedAt: now.AddDate(0, 0, -8)},
-		{ID: "new1", Project: "test", Title: "New 1", CreatedAt: now.AddDate(0, 0, -5)},
-		{ID: "new2", Project: "test", Title: "New 2", CreatedAt: now.Add(-12 * time.Hour)}, // Less than 1 day
+	// Get test store for setting custom timestamps
+	testStore, ok := setup.Store.GetTestStore()
+	if !ok {
+		t.Skip("Test store not available")
 	}
 
-	for _, scratch := range testScratches {
-		if err := setup.Store.AddScratch(scratch); err != nil {
+	now := time.Now()
+	testScratches := []struct {
+		scratch   store.Scratch
+		createdAt time.Time
+	}{
+		{store.Scratch{ID: "old1", Project: "test", Title: "Old 1", Content: "content"}, now.AddDate(0, 0, -10)},
+		{store.Scratch{ID: "old2", Project: "test", Title: "Old 2", Content: "content"}, now.AddDate(0, 0, -8)},
+		{store.Scratch{ID: "new1", Project: "test", Title: "New 1", Content: "content"}, now.AddDate(0, 0, -5)},
+		{store.Scratch{ID: "new2", Project: "test", Title: "New 2", Content: "content"}, now.Add(-12 * time.Hour)}, // Less than 1 day
+	}
+
+	// Add each scratch with its specific timestamp
+	for _, ts := range testScratches {
+		// Set the time function to return the specific timestamp
+		testStore.SetTimeFunc(func() time.Time { return ts.createdAt })
+
+		if err := setup.Store.AddScratch(ts.scratch); err != nil {
 			t.Fatalf("failed to add scratch: %v", err)
 		}
-		setup.WriteScratchFile(t, scratch.ID, []byte("content"))
 	}
 
+	// Reset time function to normal
+	testStore.SetTimeFunc(time.Now)
+
 	tests := []struct {
-		name                 string
-		days                 int
-		expectedRemaining    int
-		expectedRemainingIDs []string
+		name                    string
+		days                    int
+		expectedRemaining       int
+		expectedRemainingTitles []string
 	}{
 		{
-			name:                 "cleanup 7 days",
-			days:                 7,
-			expectedRemaining:    2,
-			expectedRemainingIDs: []string{"new1", "new2"},
+			name:                    "cleanup 7 days",
+			days:                    7,
+			expectedRemaining:       2,
+			expectedRemainingTitles: []string{"New 1", "New 2"},
 		},
 		{
-			name:                 "cleanup 1 day",
-			days:                 1,
-			expectedRemaining:    1,
-			expectedRemainingIDs: []string{"new2"},
+			name:                    "cleanup 1 day",
+			days:                    1,
+			expectedRemaining:       1,
+			expectedRemainingTitles: []string{"New 2"},
 		},
 		{
-			name:                 "cleanup 20 days",
-			days:                 20,
-			expectedRemaining:    4,
-			expectedRemainingIDs: []string{"old1", "old2", "new1", "new2"},
+			name:                    "cleanup 20 days",
+			days:                    20,
+			expectedRemaining:       4,
+			expectedRemainingTitles: []string{"Old 1", "Old 2", "New 1", "New 2"},
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			// Reset store for each test
-			if err := setup.Store.SaveScratches(testScratches); err != nil {
-				t.Fatalf("failed to save scratches: %v", err)
-			}
-			for _, scratch := range testScratches {
-				setup.WriteScratchFile(t, scratch.ID, []byte("content"))
+			// Create a new test environment for each subtest
+			subSetup := SetupCommandTest(t)
+			defer subSetup.Cleanup()
+
+			// Get test store for setting custom timestamps
+			subTestStore, ok := subSetup.Store.GetTestStore()
+			if !ok {
+				t.Skip("Test store not available")
 			}
 
-			err := Cleanup(setup.Store, tt.days)
+			// Add each scratch with its specific timestamp
+			for _, ts := range testScratches {
+				// Set the time function to return the specific timestamp
+				subTestStore.SetTimeFunc(func() time.Time { return ts.createdAt })
+
+				if err := subSetup.Store.AddScratch(ts.scratch); err != nil {
+					t.Fatalf("failed to add scratch: %v", err)
+				}
+			}
+
+			// Reset time function to normal
+			subTestStore.SetTimeFunc(time.Now)
+
+			err := Cleanup(subSetup.Store, tt.days)
 			if err != nil {
 				t.Errorf("unexpected error: %v", err)
 				return
 			}
 
-			remaining := setup.Store.GetScratches()
+			remaining := subSetup.Store.GetScratches()
 			if len(remaining) != tt.expectedRemaining {
 				t.Errorf("expected %d remaining scratches, got %d", tt.expectedRemaining, len(remaining))
 			}
 
-			remainingIDs := make([]string, len(remaining))
+			remainingTitles := make([]string, len(remaining))
 			for i, scratch := range remaining {
-				remainingIDs[i] = scratch.ID
+				remainingTitles[i] = scratch.Title
 			}
+			sort.Strings(remainingTitles)
+			sort.Strings(tt.expectedRemainingTitles)
 
-			if !equalStringSlices(remainingIDs, tt.expectedRemainingIDs) {
-				t.Errorf("expected remaining IDs %v, got %v", tt.expectedRemainingIDs, remainingIDs)
+			if !equalStringSlices(remainingTitles, tt.expectedRemainingTitles) {
+				t.Errorf("expected remaining titles %v, got %v", tt.expectedRemainingTitles, remainingTitles)
 			}
 		})
 	}
@@ -1140,11 +1170,9 @@ func TestOpen(t *testing.T) {
 		t.Fatalf("expected 1 scratch, got %d", len(scratches))
 	}
 
-	content := setup.ReadScratchFile(t, scratches[0].ID)
-
 	expectedContent := "Original content\nLine 2\nLine 3\nNew line added by ed"
-	if string(content) != expectedContent {
-		t.Errorf("content mismatch:\nexpected: %q\ngot: %q", expectedContent, string(content))
+	if scratches[0].Content != expectedContent {
+		t.Errorf("content mismatch:\nexpected: %q\ngot: %q", expectedContent, scratches[0].Content)
 	}
 
 	// Test that title is updated
@@ -1193,13 +1221,20 @@ func TestOpen_DeletesEmptyScratch(t *testing.T) {
 	}
 
 	// Verify the scratch was soft-deleted
-	scratches := setup.Store.GetScratches()
-	if len(scratches) != 1 {
-		t.Errorf("expected 1 scratch (soft-deleted), but found %d scratches", len(scratches))
+	activeScratches := setup.Store.GetScratches()
+	if len(activeScratches) != 0 {
+		t.Errorf("expected 0 active scratches (should be soft-deleted), but found %d", len(activeScratches))
 		return
 	}
 
-	scratch := scratches[0]
+	// Check deleted scratches
+	deletedScratches := setup.Store.GetDeletedScratches()
+	if len(deletedScratches) != 1 {
+		t.Errorf("expected 1 deleted scratch, but found %d", len(deletedScratches))
+		return
+	}
+
+	scratch := deletedScratches[0]
 	if !scratch.IsDeleted {
 		t.Errorf("expected scratch to be marked as deleted")
 	}
@@ -1256,32 +1291,8 @@ FILE="$1"
 	return tmpFile.Name()
 }
 
-func TestSortByCreatedAtDesc(t *testing.T) {
-	now := time.Now()
-	testScratches := []store.Scratch{
-		{ID: "oldest", Project: "test", Title: "Oldest", CreatedAt: now.Add(-3 * time.Hour)},
-		{ID: "newest", Project: "test", Title: "Newest", CreatedAt: now},
-		{ID: "middle", Project: "test", Title: "Middle", CreatedAt: now.Add(-1 * time.Hour)},
-		{ID: "old", Project: "test", Title: "Old", CreatedAt: now.Add(-2 * time.Hour)},
-	}
-
-	sorted := sortByCreatedAtDesc(testScratches)
-
-	expected := []string{"newest", "middle", "old", "oldest"}
-	actual := make([]string, len(sorted))
-	for i, scratch := range sorted {
-		actual[i] = scratch.ID
-	}
-
-	if !equalStringSlices(actual, expected) {
-		t.Errorf("expected order %v, got %v", expected, actual)
-	}
-
-	// Test that original slice is not modified
-	if testScratches[0].ID != "oldest" {
-		t.Errorf("original slice was modified")
-	}
-}
+// TestSortByCreatedAtDesc has been removed since nanostore now handles sorting
+// at the database level using OrderBy in ListOptions
 
 func TestGetScratchByIndex(t *testing.T) {
 	setup := SetupCommandTest(t)

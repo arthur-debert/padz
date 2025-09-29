@@ -22,12 +22,11 @@ func TestNuke(t *testing.T) {
 			ID:      generateTestID("proj1", i),
 			Project: project1,
 			Title:   "Project 1 scratch",
+			Content: "content",
 		}
 		if err := setup.Store.AddScratch(scratch); err != nil {
 			t.Fatalf("Failed to add scratch: %v", err)
 		}
-		// Create the file
-		setup.WriteScratchFile(t, scratch.ID, []byte("content"))
 	}
 
 	// Add scratches to project2
@@ -36,11 +35,11 @@ func TestNuke(t *testing.T) {
 			ID:      generateTestID("proj2", i),
 			Project: project2,
 			Title:   "Project 2 scratch",
+			Content: "content",
 		}
 		if err := setup.Store.AddScratch(scratch); err != nil {
 			t.Fatalf("Failed to add scratch: %v", err)
 		}
-		setup.WriteScratchFile(t, scratch.ID, []byte("content"))
 	}
 
 	// Add global scratches
@@ -49,11 +48,11 @@ func TestNuke(t *testing.T) {
 			ID:      generateTestID("global", i),
 			Project: globalProject,
 			Title:   "Global scratch",
+			Content: "content",
 		}
 		if err := setup.Store.AddScratch(scratch); err != nil {
 			t.Fatalf("Failed to add scratch: %v", err)
 		}
-		setup.WriteScratchFile(t, scratch.ID, []byte("content"))
 	}
 
 	// Test 1: Nuke specific project
@@ -73,14 +72,15 @@ func TestNuke(t *testing.T) {
 		}
 
 		// Verify project1 scratches were soft-deleted
-		remaining := setup.Store.GetScratches()
-		if len(remaining) != 9 { // all still exist but 3 are soft-deleted
-			t.Errorf("Expected 9 total scratches, got %d", len(remaining))
+		allScratches := setup.Store.GetAllScratches()
+		activeScratches := setup.Store.GetScratches()
+		if len(activeScratches) != 6 { // 2 from project2 + 4 global
+			t.Errorf("Expected 6 active scratches, got %d", len(activeScratches))
 		}
 
 		// Count soft-deleted scratches
 		deletedCount := 0
-		for _, s := range remaining {
+		for _, s := range allScratches {
 			if s.Project == project1 && s.IsDeleted {
 				deletedCount++
 			}
@@ -104,30 +104,31 @@ func TestNuke(t *testing.T) {
 		}
 
 		// Verify global scratches were soft-deleted
-		remaining := setup.Store.GetScratches()
-		if len(remaining) != 9 { // all still exist but 4 more are soft-deleted
-			t.Errorf("Expected 9 total scratches, got %d", len(remaining))
-		}
-
-		// Count soft-deleted global scratches
-		deletedCount := 0
-		for _, s := range remaining {
-			if s.Project == globalProject && s.IsDeleted {
-				deletedCount++
+		deletedScratches := setup.Store.GetDeletedScratches()
+		globalDeletedCount := 0
+		for _, s := range deletedScratches {
+			if s.Project == globalProject {
+				globalDeletedCount++
 			}
 		}
-		if deletedCount != 4 {
-			t.Errorf("Expected 4 soft-deleted global scratches, got %d", deletedCount)
+		if globalDeletedCount != 4 {
+			t.Errorf("Expected 4 soft-deleted global scratches, got %d", globalDeletedCount)
+		}
+
+		// Verify only project2 scratches remain active
+		activeScratches := setup.Store.GetScratches()
+		if len(activeScratches) != 2 { // only 2 from project2
+			t.Errorf("Expected 2 active scratches, got %d", len(activeScratches))
 		}
 	})
 
 	// Test 3: Nuke global again with new scratches
 	t.Run("NukeGlobalAgain", func(t *testing.T) {
 		// Re-add some scratches
-		if err := setup.Store.AddScratch(store.Scratch{ID: generateTestID("new", 0), Project: "new-project", Title: "New"}); err != nil {
+		if err := setup.Store.AddScratch(store.Scratch{ID: generateTestID("new", 0), Project: "new-project", Title: "New", Content: "new content"}); err != nil {
 			t.Fatalf("failed to add scratch: %v", err)
 		}
-		if err := setup.Store.AddScratch(store.Scratch{ID: generateTestID("new", 1), Project: globalProject, Title: "New global"}); err != nil {
+		if err := setup.Store.AddScratch(store.Scratch{ID: generateTestID("new", 1), Project: globalProject, Title: "New global", Content: "new global content"}); err != nil {
 			t.Fatalf("failed to add scratch: %v", err)
 		}
 
@@ -143,20 +144,18 @@ func TestNuke(t *testing.T) {
 		}
 
 		// Verify scratches state after global nuke
-		remaining := setup.Store.GetScratches()
-		if len(remaining) != 11 { // all still exist
-			t.Errorf("Expected 11 total scratches, got %d", len(remaining))
+		activeScratches := setup.Store.GetScratches()
+		if len(activeScratches) != 3 { // 1 new-project + 2 project2
+			t.Errorf("Expected 3 active scratches, got %d", len(activeScratches))
 		}
 
-		// Count active scratches (should be 3: 1 new-project + 2 remaining project2 scratches)
-		activeCount := 0
-		for _, s := range remaining {
-			if !s.IsDeleted {
-				activeCount++
-			}
+		// Verify we have the right active scratches
+		projectCount := make(map[string]int)
+		for _, s := range activeScratches {
+			projectCount[s.Project]++
 		}
-		if activeCount != 3 {
-			t.Errorf("Expected 3 active scratches (1 new-project + 2 project2), got %d", activeCount)
+		if projectCount["new-project"] != 1 || projectCount[project2] != 2 {
+			t.Errorf("Expected 1 new-project and 2 project2 scratches, got %v", projectCount)
 		}
 	})
 

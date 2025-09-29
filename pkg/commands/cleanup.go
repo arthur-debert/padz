@@ -22,7 +22,7 @@ func Cleanup(s *store.Store, days int) error {
 
 // CleanupWithOptions performs cleanup with configurable options
 func CleanupWithOptions(s *store.Store, opts CleanupOptions) error {
-	scratches := s.GetScratches()
+	scratches := s.GetAllScratches()
 	activeCutoff := time.Now().AddDate(0, 0, -opts.DaysForActive)
 	deletedCutoff := time.Now().AddDate(0, 0, -opts.DaysForDeleted)
 
