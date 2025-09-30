@@ -68,8 +68,16 @@ func TestPath(t *testing.T) {
 		}
 	})
 
-	t.Run("SecondIndex", func(t *testing.T) {
-		result, err := Path(s, false, "test-project", "2")
+	t.Run("SecondScratch", func(t *testing.T) {
+		// Get the actual SimpleIDs assigned to test-project scratches
+		scratches := s.GetScratchesWithFilter("test-project", false)
+		if len(scratches) < 2 {
+			t.Fatalf("expected at least 2 scratches in test-project, got %d", len(scratches))
+		}
+
+		// Use the actual SimpleID of the second scratch in test-project
+		secondSimpleID := scratches[1].ID
+		result, err := Path(s, false, "test-project", secondSimpleID)
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
@@ -80,13 +88,13 @@ func TestPath(t *testing.T) {
 		}
 	})
 
-	t.Run("IndexOutOfRange", func(t *testing.T) {
-		_, err := Path(s, false, "test-project", "3")
+	t.Run("NonExistentSimpleID", func(t *testing.T) {
+		_, err := Path(s, false, "test-project", "999")
 		if err == nil {
-			t.Error("expected error for out of range index")
+			t.Error("expected error for non-existent SimpleID")
 		}
-		if !strings.Contains(err.Error(), "out of range") {
-			t.Errorf("expected 'out of range' error, got: %v", err)
+		if !strings.Contains(err.Error(), "scratch not found") {
+			t.Errorf("expected 'scratch not found' error, got: %v", err)
 		}
 	})
 
@@ -95,8 +103,8 @@ func TestPath(t *testing.T) {
 		if err == nil {
 			t.Error("expected error for invalid index")
 		}
-		if !strings.Contains(err.Error(), "invalid index") {
-			t.Errorf("expected 'invalid index' error, got: %v", err)
+		if !strings.Contains(err.Error(), "scratch not found") {
+			t.Errorf("expected 'scratch not found' error, got: %v", err)
 		}
 	})
 
@@ -117,9 +125,9 @@ func TestPath(t *testing.T) {
 		if err == nil {
 			t.Error("expected error when no scratches found")
 		}
-		// The centralized function returns "index out of range" when there are no scratches
-		if !strings.Contains(err.Error(), "out of range") {
-			t.Errorf("expected 'out of range' error, got: %v", err)
+		// With nanostore, we get "scratch not found" when SimpleID doesn't exist
+		if !strings.Contains(err.Error(), "scratch not found") {
+			t.Errorf("expected 'scratch not found' error, got: %v", err)
 		}
 
 		// Restore scratches for other tests
@@ -133,9 +141,9 @@ func TestPath(t *testing.T) {
 		if err == nil {
 			t.Error("expected error for nonexistent project")
 		}
-		// The centralized function returns "index out of range" when no scratches match the filter
-		if !strings.Contains(err.Error(), "out of range") {
-			t.Errorf("expected 'out of range' error, got: %v", err)
+		// With nanostore, SimpleID "1" exists but belongs to a different project
+		if !strings.Contains(err.Error(), "scratch not found in project scope") {
+			t.Errorf("expected 'scratch not found in project scope' error, got: %v", err)
 		}
 	})
 }

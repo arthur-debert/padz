@@ -93,11 +93,11 @@ func (f *Formatter) FormatSearchResults(results []commands.ScratchWithIndex, sho
 				if result.Project != "global" && result.Project != "" {
 					projectName = filepath.Base(result.Project)
 				}
-				if _, err := fmt.Fprintf(f.writer, "%d. %s %s %s\n", result.Index, projectName, humanize.Time(result.CreatedAt), result.Title); err != nil {
+				if _, err := fmt.Fprintf(f.writer, "%s. %s %s %s\n", result.Index, projectName, humanize.Time(result.CreatedAt), result.Title); err != nil {
 					return err
 				}
 			} else {
-				if _, err := fmt.Fprintf(f.writer, "%d. %s %s\n", result.Index, humanize.Time(result.CreatedAt), result.Title); err != nil {
+				if _, err := fmt.Fprintf(f.writer, "%s. %s %s\n", result.Index, humanize.Time(result.CreatedAt), result.Title); err != nil {
 					return err
 				}
 			}

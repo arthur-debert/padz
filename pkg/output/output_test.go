@@ -224,7 +224,7 @@ func TestFormatSearchResults(t *testing.T) {
 				Title:   "Result 1",
 				Project: "proj1",
 			},
-			Index: 5,
+			Index: "5", // SimpleID as string
 		},
 		{
 			Scratch: store.Scratch{
@@ -232,7 +232,7 @@ func TestFormatSearchResults(t *testing.T) {
 				Title:   "Result 2",
 				Project: "proj2",
 			},
-			Index: 10,
+			Index: "10", // SimpleID as string
 		},
 	}
 
@@ -252,8 +252,8 @@ func TestFormatSearchResults(t *testing.T) {
 		if len(out) != 2 {
 			t.Fatalf("expected 2 results, got %d", len(out))
 		}
-		if out[0].Index != 5 || out[1].Index != 10 {
-			t.Errorf("expected indices 5 and 10, got %d and %d", out[0].Index, out[1].Index)
+		if out[0].Index != "5" || out[1].Index != "10" {
+			t.Errorf("expected indices 5 and 10, got %s and %s", out[0].Index, out[1].Index)
 		}
 		if out[0].Title != "Result 1" {
 			t.Errorf("expected title 'Result 1', got %s", out[0].Title)

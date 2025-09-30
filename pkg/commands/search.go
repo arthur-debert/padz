@@ -7,16 +7,16 @@ import (
 	"strings"
 )
 
-// ScratchWithIndex wraps a Scratch with its positional index
+// ScratchWithIndex wraps a Scratch with its nanostore SimpleID for display
 type ScratchWithIndex struct {
 	store.Scratch
-	Index int `json:"index"`
+	Index string `json:"index"` // Nanostore SimpleID (e.g., "1", "p1", "d1")
 }
 
 // searchResult is an internal struct to hold search ranking information
 type searchResult struct {
 	scratch     store.Scratch
-	index       int
+	simpleID    string // Nanostore SimpleID
 	titleMatch  bool
 	exactMatch  bool
 	matchLength int
@@ -52,16 +52,10 @@ func SearchWithIndices(s *store.Store, global bool, project, term string) ([]Scr
 	return SearchWithIndicesMode(s, global, project, term, ListModeActive)
 }
 
-// SearchWithIndicesMode performs a search with mode and returns results with their correct positional indices
+// SearchWithIndicesMode performs a search with mode and returns results with their nanostore SimpleIDs
 func SearchWithIndicesMode(s *store.Store, global bool, project, term string, mode ListMode) ([]ScratchWithIndex, error) {
 	// Get all scratches in the correct order
 	allScratches := LsWithMode(s, global, project, mode)
-
-	// Create a map of ID to index for quick lookup
-	idToIndex := make(map[string]int)
-	for i, scratch := range allScratches {
-		idToIndex[scratch.ID] = i + 1 // 1-based indexing
-	}
 
 	// Try to compile as user regex first
 	userRe, userReErr := regexp.Compile(term)
@@ -132,7 +126,7 @@ func SearchWithIndicesMode(s *store.Store, global bool, project, term string, mo
 		if titleMatch || bodyMatch {
 			searchResults = append(searchResults, searchResult{
 				scratch:     scratch,
-				index:       idToIndex[scratch.ID],
+				simpleID:    scratch.ID, // Use the nanostore SimpleID directly
 				titleMatch:  titleMatch,
 				exactMatch:  exactMatch,
 				matchLength: matchLength,
@@ -167,7 +161,7 @@ func SearchWithIndicesMode(s *store.Store, global bool, project, term string, mo
 	for _, sr := range searchResults {
 		results = append(results, ScratchWithIndex{
 			Scratch: sr.scratch,
-			Index:   sr.index,
+			Index:   sr.simpleID, // Use the nanostore SimpleID
 		})
 	}
 

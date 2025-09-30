@@ -641,7 +641,7 @@ func TestSearchWithIndices(t *testing.T) {
 		project          string
 		term             string
 		expectedCount    int
-		expectedIndices  []int
+		expectedIndices  []string // Now using nanostore SimpleIDs as strings
 		expectedOrderIDs []string
 		expectError      bool
 	}{
@@ -650,7 +650,7 @@ func TestSearchWithIndices(t *testing.T) {
 			project:          "p1",
 			term:             "three",
 			expectedCount:    1,
-			expectedIndices:  []int{1},
+			expectedIndices:  []string{"3"}, // Actual nanostore SimpleID
 			expectedOrderIDs: []string{"3"},
 		},
 		{
@@ -658,7 +658,7 @@ func TestSearchWithIndices(t *testing.T) {
 			project:          "p2",
 			term:             "two",
 			expectedCount:    1,
-			expectedIndices:  []int{2},
+			expectedIndices:  []string{"2"}, // Actual nanostore SimpleID
 			expectedOrderIDs: []string{"2"},
 		},
 		{
@@ -666,7 +666,7 @@ func TestSearchWithIndices(t *testing.T) {
 			project:          "p1",
 			term:             "nonexistent",
 			expectedCount:    0,
-			expectedIndices:  []int{},
+			expectedIndices:  []string{},
 			expectedOrderIDs: []string{},
 		},
 		{
@@ -697,15 +697,15 @@ func TestSearchWithIndices(t *testing.T) {
 			}
 
 			if tt.expectedCount > 0 {
-				indices := make([]int, len(results))
+				indices := make([]string, len(results))
 				ids := make([]string, len(results))
 				for i, r := range results {
 					indices[i] = r.Index
 					ids[i] = r.ID
 				}
 
-				// Check indices
-				if !equalIntSlices(indices, tt.expectedIndices) {
+				// Check indices (now nanostore SimpleIDs)
+				if !equalStringSlices(indices, tt.expectedIndices) {
 					t.Errorf("expected indices %v, got %v", tt.expectedIndices, indices)
 				}
 
@@ -1321,35 +1321,35 @@ func TestGetScratchByIndex(t *testing.T) {
 		expectError bool
 	}{
 		{
-			name:        "get first scratch in project1 (newest)",
+			name:        "get scratch with SimpleID 1 in project1",
 			global:      false,
 			project:     "project1",
 			indexStr:    "1",
-			expectedID:  "4", // newest project1 scratch
+			expectedID:  "1", // SimpleID 1 resolves to itself if it exists in scope
 			expectError: false,
 		},
 		{
-			name:        "get second scratch in project1 (oldest)",
+			name:        "get scratch with SimpleID 4 in project1",
 			global:      false,
 			project:     "project1",
-			indexStr:    "2",
-			expectedID:  "1", // oldest project1 scratch
+			indexStr:    "4",
+			expectedID:  "4", // SimpleID 4 resolves to itself if it exists in scope
 			expectError: false,
 		},
 		{
-			name:        "get first scratch in project2",
+			name:        "get scratch with SimpleID 2 in project2",
 			global:      false,
 			project:     "project2",
-			indexStr:    "1",
-			expectedID:  "2", // project2 scratch
+			indexStr:    "2",
+			expectedID:  "2", // SimpleID 2 should exist in project2
 			expectError: false,
 		},
 		{
-			name:        "get global scratch",
+			name:        "get scratch with SimpleID 3 in global scope",
 			global:      true,
 			project:     "",
-			indexStr:    "1",
-			expectedID:  "3", // only global scratch
+			indexStr:    "3",
+			expectedID:  "3", // SimpleID 3 should exist in global scope
 			expectError: false,
 		},
 		{
@@ -1474,18 +1474,6 @@ echo "` + content + `" > "$1"
 }
 
 func equalStringSlices(a, b []string) bool {
-	if len(a) != len(b) {
-		return false
-	}
-	for i, v := range a {
-		if v != b[i] {
-			return false
-		}
-	}
-	return true
-}
-
-func equalIntSlices(a, b []int) bool {
 	if len(a) != len(b) {
 		return false
 	}
