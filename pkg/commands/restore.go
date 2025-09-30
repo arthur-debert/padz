@@ -1,8 +1,10 @@
 package commands
 
 import (
+	"fmt"
 	"time"
 
+	"github.com/arthur-debert/nanostore/nanostore"
 	"github.com/arthur-debert/padz/pkg/store"
 )
 
@@ -30,24 +32,27 @@ func RestoreMultiple(s *store.Store, global bool, project string, ids []string) 
 		restoredTitles = append(restoredTitles, scratch.Title)
 	}
 
-	// Update all scratches atomically
+	// Restore scratches using atomic bulk operation
 	if len(scratchesToRestore) > 0 {
-		// Get all current scratches including deleted ones
-		allScratches := s.GetAllScratches()
-
-		// Update the scratches that need to be restored
-		for i := range allScratches {
-			for _, toRestore := range scratchesToRestore {
-				if allScratches[i].ID == toRestore.ID {
-					allScratches[i] = toRestore
-					break
-				}
+		uuids := make([]string, 0, len(scratchesToRestore))
+		for _, scratch := range scratchesToRestore {
+			uuid, err := s.ResolveIDToUUID(scratch.ID)
+			if err != nil {
+				return nil, fmt.Errorf("failed to resolve UUID for %s: %w", scratch.ID, err)
 			}
+			uuids = append(uuids, uuid)
 		}
 
-		// Save atomically
-		if err := s.SaveScratchesAtomic(allScratches); err != nil {
-			return nil, err
+		updates := nanostore.UpdateRequest{
+			Dimensions: map[string]interface{}{
+				"activity":         "active",
+				"_data.deleted_at": nil, // Clear deletion timestamp
+			},
+		}
+
+		_, err := s.UpdateByUUIDs(uuids, updates)
+		if err != nil {
+			return nil, fmt.Errorf("failed to restore scratches: %w", err)
 		}
 	}
 
@@ -63,51 +68,50 @@ func Restore(s *store.Store, global bool, project string, indexStr string, newer
 	}
 
 	// Otherwise, restore multiple scratches based on criteria
-	scratches := s.GetAllScratches()
+	// Get deleted scratches that match criteria
+	var deletedScratches []store.Scratch
+	if global {
+		deletedScratches = s.GetDeletedScratchesWithFilter("", true)
+	} else {
+		deletedScratches = s.GetDeletedScratchesWithFilter(project, false)
+	}
+
 	var toRestore []store.Scratch
 	cutoffTime := time.Now().Add(-newerThan)
 
-	for i, scratch := range scratches {
-		if !scratch.IsDeleted {
-			continue
-		}
-
-		// Filter by project/global
-		if global && scratch.Project != "global" {
-			continue
-		}
-		if !global && scratch.Project != project {
-			continue
-		}
-
+	for _, scratch := range deletedScratches {
 		// Check if new enough to restore (if newerThan is specified)
 		if newerThan > 0 && scratch.DeletedAt != nil && scratch.DeletedAt.Before(cutoffTime) {
 			continue
 		}
-
-		toRestore = append(toRestore, scratches[i])
+		toRestore = append(toRestore, scratch)
 	}
 
-	// Restore scratches
-	for i := range toRestore {
-		toRestore[i].IsDeleted = false
-		toRestore[i].DeletedAt = nil
-	}
-
-	// Update all scratches with restored ones
-	updated := make([]store.Scratch, len(scratches))
-	copy(updated, scratches)
-
-	for _, restored := range toRestore {
-		for j := range updated {
-			if updated[j].ID == restored.ID {
-				updated[j] = restored
-				break
+	// Restore scratches using atomic bulk operation
+	if len(toRestore) > 0 {
+		uuids := make([]string, 0, len(toRestore))
+		for _, scratch := range toRestore {
+			uuid, err := s.ResolveIDToUUID(scratch.ID)
+			if err != nil {
+				return fmt.Errorf("failed to resolve UUID for %s: %w", scratch.ID, err)
 			}
+			uuids = append(uuids, uuid)
+		}
+
+		updates := nanostore.UpdateRequest{
+			Dimensions: map[string]interface{}{
+				"activity":         "active",
+				"_data.deleted_at": nil, // Clear deletion timestamp
+			},
+		}
+
+		_, err := s.UpdateByUUIDs(uuids, updates)
+		if err != nil {
+			return fmt.Errorf("failed to restore scratches: %w", err)
 		}
 	}
 
-	return s.SaveScratchesAtomic(updated)
+	return nil
 }
 
 // RestoreAll restores all soft-deleted scratches

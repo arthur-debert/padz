@@ -4,21 +4,21 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/arthur-debert/nanostore/nanostore"
 	"github.com/arthur-debert/padz/pkg/store"
 )
 
-// DeleteMultiple soft deletes multiple scratches by their IDs
+// DeleteMultiple soft deletes multiple scratches by their IDs using atomic bulk operations
 func DeleteMultiple(s *store.Store, global bool, project string, ids []string) ([]string, error) {
-	// Resolve all IDs first
+	// Resolve all IDs to UUIDs first to prevent ID instability
 	scratches, err := ResolveMultipleIDs(s, global, project, ids)
 	if err != nil {
 		return nil, err
 	}
 
-	// Collect all scratches to delete with updated deletion info
-	now := time.Now()
-	var deletedTitles []string
-	var scratchesToUpdate []store.Scratch
+	// Extract UUIDs and titles for bulk operation
+	uuids := make([]string, 0, len(scratches))
+	deletedTitles := make([]string, 0, len(scratches))
 
 	for _, scratch := range scratches {
 		// Skip already deleted items
@@ -26,29 +26,28 @@ func DeleteMultiple(s *store.Store, global bool, project string, ids []string) (
 			continue
 		}
 
-		scratch.IsDeleted = true
-		scratch.DeletedAt = &now
-		scratchesToUpdate = append(scratchesToUpdate, *scratch)
+		// Resolve SimpleID to UUID for bulk operation
+		uuid, err := s.ResolveIDToUUID(scratch.ID)
+		if err != nil {
+			return nil, fmt.Errorf("failed to resolve UUID for %s: %w", scratch.ID, err)
+		}
+
+		uuids = append(uuids, uuid)
 		deletedTitles = append(deletedTitles, scratch.Title)
 	}
 
-	// Update all scratches atomically
-	if len(scratchesToUpdate) > 0 {
-		// Get all current scratches including deleted ones
-		allScratches := s.GetAllScratches()
-
-		// Update the scratches that need to be deleted
-		for i := range allScratches {
-			for _, toUpdate := range scratchesToUpdate {
-				if allScratches[i].ID == toUpdate.ID {
-					allScratches[i] = toUpdate
-					break
-				}
-			}
+	// Perform atomic bulk deletion using nanostore's new UpdateByUUIDs
+	if len(uuids) > 0 {
+		now := time.Now()
+		updates := nanostore.UpdateRequest{
+			Dimensions: map[string]interface{}{
+				"activity":         "deleted",
+				"_data.deleted_at": now,
+			},
 		}
 
-		// Save all scratches back
-		if err := s.SaveScratchesAtomic(allScratches); err != nil {
+		_, err := s.UpdateByUUIDs(uuids, updates)
+		if err != nil {
 			return nil, fmt.Errorf("failed to delete scratches: %w", err)
 		}
 	}

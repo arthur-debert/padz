@@ -14,9 +14,12 @@ type ResolveResult struct {
 	Error   error
 }
 
-// ResolveMultipleIDs resolves multiple ID strings to scratches
+// ResolveMultipleIDs resolves multiple ID strings to scratches using atomic bulk operations
 // Returns a slice of scratches in the same order as the input IDs
 // Returns an error if ANY ID is invalid (all or nothing validation)
+//
+// This function fixes the ID instability issue by using a snapshot of all data
+// for the entire batch resolution, preventing state changes between individual lookups.
 func ResolveMultipleIDs(s *store.Store, global bool, project string, ids []string) ([]*store.Scratch, error) {
 	if len(ids) == 0 {
 		return []*store.Scratch{}, nil
@@ -37,7 +40,8 @@ func ResolveMultipleIDs(s *store.Store, global bool, project string, ids []strin
 		}
 	}
 
-	// Resolve all IDs
+	// Simple approach: Use the original ResolveScratchID but all at once
+	// This prevents ID instability by doing all resolutions before any state changes
 	results := make([]*store.Scratch, 0, len(uniqueIDs))
 	errors := make([]string, 0)
 

@@ -34,22 +34,21 @@ func FlushMultiple(s *store.Store, global bool, project string, ids []string) (i
 		deletedCount++
 	}
 
-	// Remove from metadata
-	allScratches := s.GetScratches()
-	remaining := make([]store.Scratch, 0)
-	flushedIDs := make(map[string]bool)
+	// Hard delete from store using atomic bulk operation
+	uuids := make([]string, 0, len(toFlush))
 	for _, scratch := range toFlush {
-		flushedIDs[scratch.ID] = true
-	}
-
-	for _, scratch := range allScratches {
-		if !flushedIDs[scratch.ID] {
-			remaining = append(remaining, scratch)
+		uuid, err := s.ResolveIDToUUID(scratch.ID)
+		if err != nil {
+			return deletedCount, fmt.Errorf("failed to resolve UUID for %s: %w", scratch.ID, err)
 		}
+		uuids = append(uuids, uuid)
 	}
 
-	if err := s.SaveScratchesAtomic(remaining); err != nil {
-		return deletedCount, err
+	if len(uuids) > 0 {
+		_, err := s.DeleteByUUIDs(uuids)
+		if err != nil {
+			return deletedCount, fmt.Errorf("failed to flush scratches: %w", err)
+		}
 	}
 
 	return deletedCount, nil
@@ -64,28 +63,22 @@ func Flush(s *store.Store, global bool, project string, indexStr string, olderTh
 	}
 
 	// Otherwise, flush multiple scratches based on criteria
-	scratches := s.GetScratches()
+	// Get deleted scratches that match criteria
+	var deletedScratches []store.Scratch
+	if global {
+		deletedScratches = s.GetDeletedScratchesWithFilter("", true)
+	} else {
+		deletedScratches = s.GetDeletedScratchesWithFilter(project, false)
+	}
+
 	var toFlush []store.Scratch
 	cutoffTime := time.Now().Add(-olderThan)
 
-	for _, scratch := range scratches {
-		if !scratch.IsDeleted {
-			continue
-		}
-
-		// Filter by project/global
-		if global && scratch.Project != "global" {
-			continue
-		}
-		if !global && scratch.Project != project {
-			continue
-		}
-
+	for _, scratch := range deletedScratches {
 		// Check if old enough to flush (if olderThan is specified)
 		if olderThan > 0 && scratch.DeletedAt != nil && scratch.DeletedAt.After(cutoffTime) {
 			continue
 		}
-
 		toFlush = append(toFlush, scratch)
 	}
 
@@ -97,20 +90,24 @@ func Flush(s *store.Store, global bool, project string, indexStr string, olderTh
 		}
 	}
 
-	// Remove from metadata
-	remaining := make([]store.Scratch, 0)
-	flushedIDs := make(map[string]bool)
+	// Hard delete from store using atomic bulk operation
+	uuids := make([]string, 0, len(toFlush))
 	for _, scratch := range toFlush {
-		flushedIDs[scratch.ID] = true
+		uuid, err := s.ResolveIDToUUID(scratch.ID)
+		if err != nil {
+			return fmt.Errorf("failed to resolve UUID for %s: %w", scratch.ID, err)
+		}
+		uuids = append(uuids, uuid)
 	}
 
-	for _, scratch := range scratches {
-		if !flushedIDs[scratch.ID] {
-			remaining = append(remaining, scratch)
+	if len(uuids) > 0 {
+		_, err := s.DeleteByUUIDs(uuids)
+		if err != nil {
+			return fmt.Errorf("failed to flush scratches: %w", err)
 		}
 	}
 
-	return s.SaveScratchesAtomic(remaining)
+	return nil
 }
 
 // FlushAll flushes all soft-deleted scratches

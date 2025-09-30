@@ -622,3 +622,23 @@ func (s *Store) GetScratchByUUID(uuid string) (*Scratch, error) {
 
 	return nil, fmt.Errorf("scratch not found: %s", uuid)
 }
+
+// UpdateWhere updates documents matching a custom WHERE clause using nanostore bulk operations
+func (s *Store) UpdateWhere(whereClause string, updates nanostore.UpdateRequest, args ...interface{}) (int, error) {
+	return s.store.UpdateWhere(whereClause, updates, args...)
+}
+
+// Update updates a document by UUID using nanostore's native Update method
+func (s *Store) Update(uuid string, updates nanostore.UpdateRequest) error {
+	return s.store.Update(uuid, updates)
+}
+
+// UpdateByUUIDs updates multiple documents by their UUIDs in a single atomic operation
+func (s *Store) UpdateByUUIDs(uuids []string, updates nanostore.UpdateRequest) (int, error) {
+	return s.store.UpdateByUUIDs(uuids, updates)
+}
+
+// DeleteByUUIDs deletes multiple documents by their UUIDs in a single atomic operation
+func (s *Store) DeleteByUUIDs(uuids []string) (int, error) {
+	return s.store.DeleteByUUIDs(uuids)
+}
