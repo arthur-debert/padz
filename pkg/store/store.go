@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/arthur-debert/nanostore/nanostore"
@@ -641,4 +642,139 @@ func (s *Store) UpdateByUUIDs(uuids []string, updates nanostore.UpdateRequest) (
 // DeleteByUUIDs deletes multiple documents by their UUIDs in a single atomic operation
 func (s *Store) DeleteByUUIDs(uuids []string) (int, error) {
 	return s.store.DeleteByUUIDs(uuids)
+}
+
+// ResolveBulkIDs resolves multiple IDs (SimpleIDs, UUIDs, or prefixes) to scratches in a single operation
+// This consolidates all ID resolution logic that was previously spread across commands
+func (s *Store) ResolveBulkIDs(ids []string, project string, global bool) ([]*Scratch, error) {
+	if len(ids) == 0 {
+		return []*Scratch{}, nil
+	}
+
+	// Remove duplicates while preserving order
+	seen := make(map[string]bool)
+	uniqueIDs := make([]string, 0, len(ids))
+	for _, id := range ids {
+		if id != "" && !seen[id] {
+			seen[id] = true
+			uniqueIDs = append(uniqueIDs, id)
+		}
+	}
+
+	results := make([]*Scratch, 0, len(uniqueIDs))
+	errors := make([]string, 0)
+
+	for _, id := range uniqueIDs {
+		scratch, err := s.resolveSingleID(id, project, global)
+		if err != nil {
+			errors = append(errors, fmt.Sprintf("%s: %v", id, err))
+			continue
+		}
+		results = append(results, scratch)
+	}
+
+	if len(errors) > 0 {
+		return nil, fmt.Errorf("failed to resolve IDs: %s", strings.Join(errors, "; "))
+	}
+
+	return results, nil
+}
+
+// resolveSingleID handles all ID resolution patterns consolidated from command layer
+func (s *Store) resolveSingleID(id, project string, global bool) (*Scratch, error) {
+	// Handle deleted index (d1, d2, etc)
+	if len(id) > 1 && id[0] == 'd' {
+		return s.resolveDeletedIndex(id, project, global)
+	}
+
+	// Try nanostore's built-in resolution first (handles SimpleIDs and UUIDs)
+	uuid, err := s.ResolveIDToUUID(id)
+	if err == nil {
+		return s.getScratchByUUIDWithScope(uuid, project, global)
+	}
+
+	// Handle partial UUID prefix matching
+	return s.resolvePrefixMatch(id, project, global)
+}
+
+// resolveDeletedIndex handles deleted indices (d1, d2, etc)
+func (s *Store) resolveDeletedIndex(id, project string, global bool) (*Scratch, error) {
+	indexStr := id[1:] // Remove 'd' prefix
+	deletedIndex, err := s.parsePositiveInt(indexStr)
+	if err != nil {
+		return nil, fmt.Errorf("invalid deleted index: %s", id)
+	}
+
+	var deletedScratches []Scratch
+	if global {
+		deletedScratches = s.GetDeletedScratchesWithFilter("", true)
+	} else {
+		deletedScratches = s.GetDeletedScratchesWithFilter(project, false)
+	}
+
+	if deletedIndex < 1 || deletedIndex > len(deletedScratches) {
+		return nil, fmt.Errorf("deleted index out of range: %s", id)
+	}
+
+	return &deletedScratches[deletedIndex-1], nil
+}
+
+// getScratchByUUIDWithScope gets scratch by UUID and validates scope
+func (s *Store) getScratchByUUIDWithScope(uuid, project string, global bool) (*Scratch, error) {
+	scratch, err := s.GetScratchByUUID(uuid)
+	if err != nil {
+		return nil, err
+	}
+
+	// Verify scope
+	if global && scratch.Project != "global" {
+		return nil, fmt.Errorf("scratch not found in global scope")
+	}
+	if !global && project != "" && scratch.Project != project {
+		return nil, fmt.Errorf("scratch not found in project scope")
+	}
+
+	return scratch, nil
+}
+
+// resolvePrefixMatch handles partial UUID prefix matching
+func (s *Store) resolvePrefixMatch(id, project string, global bool) (*Scratch, error) {
+	var scratches []Scratch
+	if global {
+		scratches = s.GetAllScratchesWithFilter("", true)
+	} else {
+		scratches = s.GetAllScratchesWithFilter(project, false)
+	}
+
+	for i := range scratches {
+		if strings.HasPrefix(scratches[i].ID, id) {
+			return &scratches[i], nil
+		}
+	}
+
+	return nil, fmt.Errorf("scratch not found: %s", id)
+}
+
+// parsePositiveInt parses a string as a positive integer with bounds checking
+func (s *Store) parsePositiveInt(str string) (int, error) {
+	if str == "" {
+		return 0, fmt.Errorf("empty string")
+	}
+
+	result := 0
+	for _, c := range str {
+		if c < '0' || c > '9' {
+			return 0, fmt.Errorf("non-numeric character")
+		}
+		result = result*10 + int(c-'0')
+		if result > 1000000 { // Reasonable upper bound
+			return 0, fmt.Errorf("number too large")
+		}
+	}
+
+	if result < 1 {
+		return 0, fmt.Errorf("must be positive")
+	}
+
+	return result, nil
 }

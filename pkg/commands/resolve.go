@@ -14,52 +14,15 @@ type ResolveResult struct {
 	Error   error
 }
 
-// ResolveMultipleIDs resolves multiple ID strings to scratches using atomic bulk operations
+// ResolveMultipleIDs resolves multiple ID strings to scratches using nanostore's bulk operations
 // Returns a slice of scratches in the same order as the input IDs
 // Returns an error if ANY ID is invalid (all or nothing validation)
 //
-// This function fixes the ID instability issue by using a snapshot of all data
-// for the entire batch resolution, preventing state changes between individual lookups.
+// This function delegates all ID resolution logic to the store layer for better performance
+// and consistency. All resolution patterns (SimpleIDs, UUIDs, prefixes, deleted indices)
+// are handled by nanostore's ResolveBulkIDs method.
 func ResolveMultipleIDs(s *store.Store, global bool, project string, ids []string) ([]*store.Scratch, error) {
-	if len(ids) == 0 {
-		return []*store.Scratch{}, nil
-	}
-
-	// Track unique IDs to handle duplicates
-	seen := make(map[string]bool)
-	uniqueIDs := make([]string, 0, len(ids))
-
-	// Preserve order but skip duplicates
-	for _, id := range ids {
-		if id == "" {
-			continue
-		}
-		if !seen[id] {
-			seen[id] = true
-			uniqueIDs = append(uniqueIDs, id)
-		}
-	}
-
-	// Simple approach: Use the original ResolveScratchID but all at once
-	// This prevents ID instability by doing all resolutions before any state changes
-	results := make([]*store.Scratch, 0, len(uniqueIDs))
-	errors := make([]string, 0)
-
-	for _, id := range uniqueIDs {
-		scratch, err := ResolveScratchID(s, global, project, id)
-		if err != nil {
-			errors = append(errors, fmt.Sprintf("%s: %v", id, err))
-			continue
-		}
-		results = append(results, scratch)
-	}
-
-	// If any errors occurred, return nil with combined error message
-	if len(errors) > 0 {
-		return nil, fmt.Errorf("failed to resolve IDs: %s", strings.Join(errors, "; "))
-	}
-
-	return results, nil
+	return s.ResolveBulkIDs(ids, project, global)
 }
 
 // ResolveMultipleIDsWithErrors resolves multiple ID strings to scratches
@@ -67,7 +30,7 @@ func ResolveMultipleIDs(s *store.Store, global bool, project string, ids []strin
 // This allows partial success handling if needed
 func ResolveMultipleIDsWithErrors(s *store.Store, global bool, project string, ids []string) []ResolveResult {
 	results := make([]ResolveResult, 0, len(ids))
-	seen := make(map[string]bool)
+	seen := make(map[string]*store.Scratch)
 
 	for _, id := range ids {
 		if id == "" {
@@ -75,36 +38,48 @@ func ResolveMultipleIDsWithErrors(s *store.Store, global bool, project string, i
 		}
 
 		// Handle duplicates by referencing the same scratch
-		if seen[id] {
-			// Find the previous result for this ID
-			for _, r := range results {
-				if r.ID == id && r.Error == nil {
-					results = append(results, ResolveResult{
-						ID:      id,
-						Scratch: r.Scratch,
-						Error:   nil,
-					})
-					break
-				}
-			}
+		if scratch, exists := seen[id]; exists {
+			results = append(results, ResolveResult{
+				ID:      id,
+				Scratch: scratch,
+				Error:   nil,
+			})
 			continue
 		}
 
-		seen[id] = true
-		scratch, err := ResolveScratchID(s, global, project, id)
-		results = append(results, ResolveResult{
-			ID:      id,
-			Scratch: scratch,
-			Error:   err,
-		})
+		// Use the store's single ID resolution method
+		scratch, err := s.ResolveBulkIDs([]string{id}, project, global)
+		if err != nil {
+			results = append(results, ResolveResult{
+				ID:      id,
+				Scratch: nil,
+				Error:   err,
+			})
+		} else {
+			seen[id] = scratch[0]
+			results = append(results, ResolveResult{
+				ID:      id,
+				Scratch: scratch[0],
+				Error:   nil,
+			})
+		}
 	}
 
 	return results
 }
 
-// ValidateIDs validates a slice of ID strings without actually resolving them
+// ValidateIDs validates a slice of ID strings by attempting to resolve them
 // Returns nil if all IDs are valid, or an error listing all invalid IDs
-func ValidateIDs(ids []string) error {
+//
+// Note: This now delegates to the store layer which has comprehensive validation
+// for all ID formats (SimpleIDs, UUIDs, prefixes, deleted indices, etc.)
+func ValidateIDs(s *store.Store, global bool, project string, ids []string) error {
+	_, err := s.ResolveBulkIDs(ids, project, global)
+	return err
+}
+
+// ValidateIDsFormat provides format-only validation for testing (legacy function)
+func ValidateIDsFormat(ids []string) error {
 	if len(ids) == 0 {
 		return nil
 	}
@@ -183,6 +158,8 @@ func validateIDFormat(id string) error {
 
 	return nil
 }
+
+// Test helper functions (kept for backward compatibility with existing tests)
 
 // parseIndex attempts to parse a string as a positive integer index
 func parseIndex(s string) (int, error) {
