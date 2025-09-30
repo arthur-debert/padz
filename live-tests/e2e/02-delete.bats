@@ -66,11 +66,59 @@ teardown() {
 }
 
 @test "delete multiple scratches incrementally" {
-    # KNOWN ISSUE: Multiple consecutive deletions in the same test sometimes fail
-    # with "No scratches were deleted (already deleted or not found)" despite
-    # the scratches existing. This may be related to mixed ID formats (numeric vs UUID)
-    # or state management issues in padz. Skipping until investigated further.
-    skip "Consecutive deletions issue - see implementation notes"
+    # Test creating and deleting scratches incrementally to verify
+    # the bulk ID resolution fix prevents ID instability issues
+    
+    # Create first scratch
+    run bash -c 'echo "Content A" | HOME='"${TEST_HOME}"' XDG_DATA_HOME='"${TEST_XDG_DATA_HOME}"' '"${PADZ_BIN}"' create "Scratch A"'
+    assert_success
+    
+    # Delete it
+    run_padz delete 1
+    assert_success
+    
+    # Should be empty
+    run_padz list
+    assert_success
+    local count1
+    count1=$(echo "${output}" | jq 'length')
+    [[ "${count1}" -eq 0 ]]
+    
+    # Create two scratches
+    run bash -c 'echo "Content B" | HOME='"${TEST_HOME}"' XDG_DATA_HOME='"${TEST_XDG_DATA_HOME}"' '"${PADZ_BIN}"' create "Scratch B"'
+    assert_success
+    
+    run bash -c 'echo "Content C" | HOME='"${TEST_HOME}"' XDG_DATA_HOME='"${TEST_XDG_DATA_HOME}"' '"${PADZ_BIN}"' create "Scratch C"'
+    assert_success
+    
+    # Verify both exist
+    run_padz list
+    assert_success
+    local count2
+    count2=$(echo "${output}" | jq 'length')
+    [[ "${count2}" -eq 2 ]]
+    
+    # Delete one
+    run_padz delete 1
+    assert_success
+    
+    # Should have one left
+    run_padz list
+    assert_success
+    local count3
+    count3=$(echo "${output}" | jq 'length')
+    [[ "${count3}" -eq 1 ]]
+    
+    # Delete the last one
+    run_padz delete 1
+    assert_success
+    
+    # Should be empty
+    run_padz list
+    assert_success
+    local final_count
+    final_count=$(echo "${output}" | jq 'length')
+    [[ "${final_count}" -eq 0 ]]
 }
 
 @test "delete global scratch" {
@@ -136,8 +184,8 @@ teardown() {
     count=$(echo "${output}" | jq 'length')
     [[ "${count}" -eq 0 ]]
     
-    # Restore it
-    run_padz restore 1
+    # Restore it using deleted index
+    run_padz restore d1
     assert_success
     
     # Should be back in normal list
