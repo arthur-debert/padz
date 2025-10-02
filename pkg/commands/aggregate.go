@@ -140,20 +140,10 @@ func (ac *AggregatedContent) getCombinedContent(includeHeaders bool) string {
 	return strings.Join(parts, ac.Options.Separator)
 }
 
-// AggregateScratchContents reads and aggregates content from multiple scratches
-func AggregateScratchContents(scratches []*store.Scratch, options AggregateOptions) (*AggregatedContent, error) {
-	if len(scratches) == 0 {
-		return &AggregatedContent{
-			Scratches: scratches,
-			Contents:  []string{},
-			Options:   options,
-		}, nil
-	}
-
+// AggregateScratchContents aggregates content from multiple scratches
+func AggregateScratchContents(scratches []*store.Scratch, options AggregateOptions) *AggregatedContent {
 	contents := make([]string, len(scratches))
-
 	for i, scratch := range scratches {
-		// Content is now stored directly in the scratch
 		contents[i] = scratch.Content
 	}
 
@@ -161,18 +151,18 @@ func AggregateScratchContents(scratches []*store.Scratch, options AggregateOptio
 		Scratches: scratches,
 		Contents:  contents,
 		Options:   options,
-	}, nil
+	}
 }
 
 // AggregateScratchContentsByIDs resolves IDs and aggregates their content
 func AggregateScratchContentsByIDs(s *store.Store, global bool, project string, ids []string, options AggregateOptions) (*AggregatedContent, error) {
-	// Resolve all IDs to scratches
-	scratches, err := ResolveMultipleIDs(s, global, project, ids)
+	// Use store's bulk ID resolution directly
+	scratches, err := s.ResolveBulkIDs(ids, project, global)
 	if err != nil {
 		return nil, err
 	}
 
-	return AggregateScratchContents(scratches, options)
+	return AggregateScratchContents(scratches, options), nil
 }
 
 // FormatScratchSummary creates a summary line for a scratch

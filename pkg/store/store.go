@@ -359,6 +359,11 @@ func (s *Store) Close() error {
 
 // Search searches for scratches matching query
 func (s *Store) Search(query string) []Scratch {
+	return s.SearchWithFilter(query, "", false)
+}
+
+// SearchWithFilter searches for scratches matching query with project and scope filtering
+func (s *Store) SearchWithFilter(query, project string, global bool) []Scratch {
 	logger := logging.GetLogger("store")
 
 	opts := types.ListOptions{
@@ -366,6 +371,13 @@ func (s *Store) Search(query string) []Scratch {
 		Filters: map[string]interface{}{
 			"activity": "active",
 		},
+	}
+
+	// Add project filtering at the nanostore level
+	if global {
+		opts.Filters["_data.Project"] = "global"
+	} else if project != "" {
+		opts.Filters["_data.Project"] = project
 	}
 
 	typedScratches, err := s.store.List(opts)
@@ -379,6 +391,7 @@ func (s *Store) Search(query string) []Scratch {
 		scratches[i] = ts.ToScratch()
 	}
 
+	logger.Debug().Int("count", len(scratches)).Str("query", query).Str("project", project).Bool("global", global).Msg("Search completed")
 	return scratches
 }
 

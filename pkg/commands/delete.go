@@ -10,7 +10,7 @@ import (
 // DeleteMultiple soft deletes multiple scratches by their IDs using atomic bulk operations
 func DeleteMultiple(s *store.Store, global bool, project string, ids []string) ([]string, error) {
 	// Resolve all IDs to UUIDs first to prevent ID instability
-	scratches, err := ResolveMultipleIDs(s, global, project, ids)
+	scratches, err := s.ResolveBulkIDs(ids, project, global)
 	if err != nil {
 		return nil, err
 	}

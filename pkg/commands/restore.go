@@ -10,7 +10,7 @@ import (
 // RestoreMultiple restores multiple soft-deleted scratches by their IDs
 func RestoreMultiple(s *store.Store, global bool, project string, ids []string) ([]string, error) {
 	// Resolve all IDs first
-	scratches, err := ResolveMultipleIDs(s, global, project, ids)
+	scratches, err := s.ResolveBulkIDs(ids, project, global)
 	if err != nil {
 		return nil, err
 	}

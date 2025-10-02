@@ -10,7 +10,7 @@ import (
 // PinMultiple pins multiple scratches by their IDs
 func PinMultiple(s *store.Store, global bool, project string, ids []string) ([]string, error) {
 	// Resolve all IDs first
-	scratches, err := ResolveMultipleIDs(s, global, project, ids)
+	scratches, err := s.ResolveBulkIDs(ids, project, global)
 	if err != nil {
 		return nil, err
 	}
@@ -87,7 +87,7 @@ func PinMultiple(s *store.Store, global bool, project string, ids []string) ([]s
 // UnpinMultiple unpins multiple scratches by their IDs
 func UnpinMultiple(s *store.Store, global bool, project string, ids []string) ([]string, error) {
 	// Resolve all IDs first
-	scratches, err := ResolveMultipleIDs(s, global, project, ids)
+	scratches, err := s.ResolveBulkIDs(ids, project, global)
 	if err != nil {
 		return nil, err
 	}
