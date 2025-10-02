@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/arthur-debert/nanostore/nanostore"
 	"github.com/arthur-debert/padz/pkg/store"
 )
 
@@ -71,11 +70,9 @@ func PinMultiple(s *store.Store, global bool, project string, ids []string) ([]s
 
 	// Perform atomic bulk pinning using nanostore's new UpdateByUUIDs
 	if len(uuidsToUpdate) > 0 {
-		updates := nanostore.UpdateRequest{
-			Dimensions: map[string]interface{}{
-				"pinned":          "yes",
-				"_data.pinned_at": now,
-			},
+		updates := &store.TypedScratch{
+			Pinned:   "yes",
+			PinnedAt: now.Format(time.RFC3339),
 		}
 
 		_, err := s.UpdateByUUIDs(uuidsToUpdate, updates)
@@ -115,18 +112,21 @@ func UnpinMultiple(s *store.Store, global bool, project string, ids []string) ([
 		unpinnedTitles = append(unpinnedTitles, scratch.Title)
 	}
 
-	// Perform atomic bulk unpinning using nanostore's new UpdateByUUIDs
-	if len(uuidsToUpdate) > 0 {
-		updates := nanostore.UpdateRequest{
-			Dimensions: map[string]interface{}{
-				"pinned":          "no",
-				"_data.pinned_at": time.Time{}, // Zero value
-			},
+	// Perform individual updates to ensure PinnedAt is properly cleared
+	for i, uuid := range uuidsToUpdate {
+		// Get the current scratch
+		currentScratch, err := s.GetScratchByUUID(uuid)
+		if err != nil {
+			return nil, fmt.Errorf("failed to get scratch for unpinning: %w", err)
 		}
 
-		_, err := s.UpdateByUUIDs(uuidsToUpdate, updates)
-		if err != nil {
-			return nil, fmt.Errorf("failed to unpin scratches: %w", err)
+		// Modify it to unpin
+		currentScratch.IsPinned = false
+		currentScratch.PinnedAt = time.Time{} // Zero time
+
+		// Update the scratch
+		if err := s.UpdateScratch(*currentScratch); err != nil {
+			return nil, fmt.Errorf("failed to unpin scratch %s: %w", unpinnedTitles[i], err)
 		}
 	}
 

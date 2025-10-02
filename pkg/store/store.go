@@ -8,6 +8,8 @@ import (
 	"time"
 
 	"github.com/arthur-debert/nanostore/nanostore"
+	"github.com/arthur-debert/nanostore/nanostore/api"
+	"github.com/arthur-debert/nanostore/types"
 	"github.com/arthur-debert/padz/pkg/config"
 	"github.com/arthur-debert/padz/pkg/logging"
 	"github.com/arthur-debert/padz/pkg/project"
@@ -19,9 +21,9 @@ const (
 	storeFileName      = "padz-scratches.json"
 )
 
-// Store implements the padz store interface using nanostore
+// Store implements the padz store interface using nanostore TypedAPI
 type Store struct {
-	store    nanostore.Store
+	store    *api.TypedStore[TypedScratch]
 	cfg      *config.Config
 	basePath string
 }
@@ -40,7 +42,7 @@ func NewStoreWithScope(isGlobal bool) (*Store, error) {
 
 func NewStoreWithConfig(cfg *config.Config) (*Store, error) {
 	logger := logging.GetLogger("store")
-	logger.Info().Bool("is_global", cfg.IsGlobalScope).Msg("Initializing nanostore")
+	logger.Info().Bool("is_global", cfg.IsGlobalScope).Msg("Initializing nanostore with TypedAPI")
 
 	basePath, err := getBasePath(cfg)
 	if err != nil {
@@ -54,32 +56,10 @@ func NewStoreWithConfig(cfg *config.Config) (*Store, error) {
 
 	storePath := filepath.Join(basePath, storeFileName)
 
-	// Configure nanostore with padz dimensions
-	config := nanostore.Config{
-		Dimensions: []nanostore.DimensionConfig{
-			{
-				Name:         "activity",
-				Type:         nanostore.Enumerated,
-				Values:       []string{"active", "deleted"},
-				Prefixes:     map[string]string{}, // No prefix for activity
-				DefaultValue: "active",
-			},
-			{
-				Name:         "pinned",
-				Type:         nanostore.Enumerated,
-				Values:       []string{"no", "yes"},
-				Prefixes:     map[string]string{"yes": "p"},
-				DefaultValue: "no",
-			},
-			// Note: Removed project dimension as it causes SimpleID issues
-			// when used as Hierarchical. Project will be stored as regular data.
-		},
-	}
-
-	// Initialize nanostore
-	store, err := nanostore.New(storePath, config)
+	// Initialize TypedStore - configuration is automatically generated from TypedScratch struct tags
+	store, err := api.NewFromType[TypedScratch](storePath)
 	if err != nil {
-		return nil, fmt.Errorf("failed to initialize nanostore: %w", err)
+		return nil, fmt.Errorf("failed to initialize nanostore TypedStore: %w", err)
 	}
 
 	return &Store{
@@ -97,37 +77,38 @@ func (s *Store) GetScratches() []Scratch {
 func (s *Store) GetScratchesWithFilter(project string, global bool) []Scratch {
 	logger := logging.GetLogger("store")
 
-	// List only active scratches, ordered by creation date descending
-	opts := nanostore.ListOptions{
+	// Use TypedAPI List with type-safe filtering
+	opts := types.ListOptions{
 		Filters: map[string]interface{}{
 			"activity": "active",
 		},
-		OrderBy: []nanostore.OrderClause{
+		OrderBy: []types.OrderClause{
 			{Column: "created_at", Descending: true},
 		},
 	}
 
 	// Add project filtering at the nanostore level
 	if global {
-		opts.Filters["_data.project"] = "global"
+		opts.Filters["_data.Project"] = "global"
 	} else if project != "" {
-		opts.Filters["_data.project"] = project
+		opts.Filters["_data.Project"] = project
 	}
 
-	docs, err := s.store.List(opts)
+	typedScratches, err := s.store.List(opts)
 	if err != nil {
 		logger.Error().Err(err).Msg("Failed to query scratches")
 		return []Scratch{}
 	}
 
-	scratches := make([]Scratch, len(docs))
-	for i, doc := range docs {
+	// Convert TypedScratch to legacy Scratch structs
+	scratches := make([]Scratch, len(typedScratches))
+	for i, ts := range typedScratches {
 		logger.Debug().
-			Str("uuid", doc.UUID).
-			Str("simple_id", doc.SimpleID).
-			Str("title", doc.Title).
-			Msg("Processing document from nanostore")
-		scratches[i] = s.documentToScratch(doc)
+			Str("uuid", ts.UUID).
+			Str("simple_id", ts.SimpleID).
+			Str("title", ts.Title).
+			Msg("Processing typed scratch from nanostore")
+		scratches[i] = ts.ToScratch()
 	}
 
 	logger.Debug().Int("count", len(scratches)).Str("project", project).Bool("global", global).Msg("Retrieved filtered scratches")
@@ -142,33 +123,33 @@ func (s *Store) GetPinnedScratches() []Scratch {
 func (s *Store) GetPinnedScratchesWithFilter(project string, global bool) []Scratch {
 	logger := logging.GetLogger("store")
 
-	opts := nanostore.ListOptions{
+	opts := types.ListOptions{
 		Filters: map[string]interface{}{
 			"activity": "active",
 			"pinned":   "yes",
 		},
-		OrderBy: []nanostore.OrderClause{
+		OrderBy: []types.OrderClause{
 			{Column: "created_at", Descending: true},
 		},
 	}
 
 	// Add project filtering at the nanostore level
 	if global {
-		opts.Filters["_data.project"] = "global"
+		opts.Filters["_data.Project"] = "global"
 	} else if project != "" {
-		opts.Filters["_data.project"] = project
+		opts.Filters["_data.Project"] = project
 	}
 
-	docs, err := s.store.List(opts)
+	typedScratches, err := s.store.List(opts)
 	if err != nil {
 		logger.Error().Err(err).Msg("Failed to query pinned scratches")
 		return []Scratch{}
 	}
 
-	// Sort by pinned time (newest first)
-	scratches := make([]Scratch, len(docs))
-	for i, doc := range docs {
-		scratches[i] = s.documentToScratch(doc)
+	// Convert TypedScratch to legacy Scratch structs
+	scratches := make([]Scratch, len(typedScratches))
+	for i, ts := range typedScratches {
+		scratches[i] = ts.ToScratch()
 	}
 
 	logger.Debug().Int("count", len(scratches)).Str("project", project).Bool("global", global).Msg("Retrieved pinned scratches")
@@ -187,29 +168,29 @@ func (s *Store) GetAllScratchesWithFilter(project string, global bool) []Scratch
 	// List all scratches (no activity filter), ordered by creation date descending
 	// Note: We can't order by "most recent activity" in SQL since that would require
 	// a CASE statement (created_at for active, deleted_at for deleted)
-	opts := nanostore.ListOptions{
+	opts := types.ListOptions{
 		Filters: map[string]interface{}{},
-		OrderBy: []nanostore.OrderClause{
+		OrderBy: []types.OrderClause{
 			{Column: "created_at", Descending: true},
 		},
 	}
 
 	// Add project filtering at the nanostore level
 	if global {
-		opts.Filters["_data.project"] = "global"
+		opts.Filters["_data.Project"] = "global"
 	} else if project != "" {
-		opts.Filters["_data.project"] = project
+		opts.Filters["_data.Project"] = project
 	}
 
-	docs, err := s.store.List(opts)
+	typedScratches, err := s.store.List(opts)
 	if err != nil {
 		logger.Error().Err(err).Msg("Failed to query all scratches")
 		return []Scratch{}
 	}
 
-	scratches := make([]Scratch, len(docs))
-	for i, doc := range docs {
-		scratches[i] = s.documentToScratch(doc)
+	scratches := make([]Scratch, len(typedScratches))
+	for i, ts := range typedScratches {
+		scratches[i] = ts.ToScratch()
 	}
 
 	logger.Debug().Int("count", len(scratches)).Str("project", project).Bool("global", global).Msg("Retrieved all scratches")
@@ -226,31 +207,31 @@ func (s *Store) GetDeletedScratchesWithFilter(project string, global bool) []Scr
 	logger := logging.GetLogger("store")
 
 	// List only deleted scratches, ordered by deletion date descending (most recently deleted first)
-	opts := nanostore.ListOptions{
+	opts := types.ListOptions{
 		Filters: map[string]interface{}{
 			"activity": "deleted",
 		},
-		OrderBy: []nanostore.OrderClause{
-			{Column: "_data.deleted_at", Descending: true},
+		OrderBy: []types.OrderClause{
+			{Column: "_data.DeletedAt", Descending: true},
 		},
 	}
 
 	// Add project filtering at the nanostore level
 	if global {
-		opts.Filters["_data.project"] = "global"
+		opts.Filters["_data.Project"] = "global"
 	} else if project != "" {
-		opts.Filters["_data.project"] = project
+		opts.Filters["_data.Project"] = project
 	}
 
-	docs, err := s.store.List(opts)
+	typedScratches, err := s.store.List(opts)
 	if err != nil {
 		logger.Error().Err(err).Msg("Failed to query deleted scratches")
 		return []Scratch{}
 	}
 
-	scratches := make([]Scratch, len(docs))
-	for i, doc := range docs {
-		scratches[i] = s.documentToScratch(doc)
+	scratches := make([]Scratch, len(typedScratches))
+	for i, ts := range typedScratches {
+		scratches[i] = ts.ToScratch()
 	}
 
 	logger.Debug().Int("count", len(scratches)).Str("project", project).Bool("global", global).Msg("Retrieved deleted scratches")
@@ -263,17 +244,17 @@ func (s *Store) SaveScratches(scratches []Scratch) error {
 	logger.Info().Int("count", len(scratches)).Msg("Bulk saving scratches")
 
 	// This is a full replacement operation
-	// First, get all existing scratches
-	allOpts := nanostore.ListOptions{}
-	allDocs, err := s.store.List(allOpts)
+	// First, get all existing scratches using TypedAPI
+	allOpts := types.ListOptions{}
+	allTypedScratches, err := s.store.List(allOpts)
 	if err != nil {
 		return fmt.Errorf("failed to list existing scratches: %w", err)
 	}
 
-	// Delete all existing
-	for _, doc := range allDocs {
-		if err := s.store.Delete(doc.UUID, false); err != nil {
-			logger.Error().Err(err).Str("uuid", doc.UUID).Msg("Failed to delete existing scratch")
+	// Delete all existing using UUIDs
+	for _, ts := range allTypedScratches {
+		if err := s.store.Delete(ts.UUID, false); err != nil {
+			logger.Error().Err(err).Str("uuid", ts.UUID).Msg("Failed to delete existing scratch")
 		}
 	}
 
@@ -293,56 +274,31 @@ func (s *Store) AddScratch(scratch Scratch) error {
 	logger := logging.GetLogger("store")
 	logger.Info().Str("title", scratch.Title).Msg("Adding scratch")
 
-	// Prepare dimensions and data
-	dimensions := map[string]interface{}{
-		"activity": "active",
-		"pinned":   "no",
-	}
+	// Convert legacy Scratch to TypedScratch (excluding Body for now)
+	typedScratch := FromScratch(scratch)
 
-	// Handle deleted state
-	if scratch.IsDeleted {
-		dimensions["activity"] = "deleted"
-	}
-
-	if scratch.IsPinned {
-		dimensions["pinned"] = "yes"
-	}
-
-	// Add project and metadata as data (prefixed with _data.)
-	if scratch.Project != "" {
-		dimensions["_data.project"] = scratch.Project
-	}
-	if scratch.Size > 0 {
-		dimensions["_data.size"] = scratch.Size
-	}
-	if scratch.Checksum != "" {
-		dimensions["_data.checksum"] = scratch.Checksum
-	}
-	if !scratch.PinnedAt.IsZero() {
-		dimensions["_data.pinned_at"] = scratch.PinnedAt
-	}
-	if scratch.IsDeleted && scratch.DeletedAt != nil {
-		dimensions["_data.deleted_at"] = *scratch.DeletedAt
-	}
-
-	// Create the document in nanostore
-	uuid, err := s.store.Add(scratch.Title, dimensions)
+	// Create the document using TypedStore API (without body)
+	simpleID, err := s.store.Create(scratch.Title, typedScratch)
 	if err != nil {
 		return fmt.Errorf("failed to create scratch: %w", err)
 	}
 
-	// If there's content, update the document with the body
+	// If we have content, update the document to include the body
 	if scratch.Content != "" {
-		updates := nanostore.UpdateRequest{
-			Body: &scratch.Content,
+		// Get the created document and update its body
+		createdScratch, err := s.store.Get(simpleID)
+		if err != nil {
+			return fmt.Errorf("failed to get created scratch for body update: %w", err)
 		}
-		if err := s.store.Update(uuid, updates); err != nil {
-			logger.Error().Err(err).Msg("Failed to add content to scratch")
-			// Don't fail the whole operation, but log the error
+		createdScratch.Body = scratch.Content
+
+		// Update with the body
+		if err := s.store.Update(simpleID, createdScratch); err != nil {
+			return fmt.Errorf("failed to update scratch with body: %w", err)
 		}
 	}
 
-	logger.Info().Str("uuid", uuid).Str("title", scratch.Title).Msg("Scratch added successfully")
+	logger.Info().Str("simple_id", simpleID).Str("title", scratch.Title).Msg("Scratch added successfully")
 	return nil
 }
 
@@ -384,60 +340,15 @@ func (s *Store) UpdateScratch(scratch Scratch) error {
 	logger := logging.GetLogger("store")
 	logger.Info().Str("id", scratch.ID).Str("title", scratch.Title).Msg("Updating scratch")
 
-	// Resolve SimpleID to UUID for update
-	uuid, err := s.resolveSimpleIDToUUID(scratch.ID)
-	if err != nil {
-		return fmt.Errorf("failed to resolve ID %s: %w", scratch.ID, err)
-	}
+	// Convert legacy Scratch to TypedScratch
+	typedScratch := FromScratch(scratch)
 
-	// Prepare update request
-	updates := nanostore.UpdateRequest{
-		Title:      &scratch.Title,
-		Dimensions: map[string]interface{}{
-			// Don't include project - it's not a dimension
-		},
-	}
-
-	// Update body if content is provided
-	if scratch.Content != "" {
-		updates.Body = &scratch.Content
-	}
-
-	// Update dimensions
-	if scratch.IsPinned {
-		updates.Dimensions["pinned"] = "yes"
-	} else {
-		updates.Dimensions["pinned"] = "no"
-	}
-
-	if scratch.IsDeleted {
-		updates.Dimensions["activity"] = "deleted"
-	} else {
-		updates.Dimensions["activity"] = "active"
-	}
-
-	// Update data fields
-	if scratch.Project != "" {
-		updates.Dimensions["_data.project"] = scratch.Project
-	}
-	if scratch.Size > 0 {
-		updates.Dimensions["_data.size"] = scratch.Size
-	}
-	if scratch.Checksum != "" {
-		updates.Dimensions["_data.checksum"] = scratch.Checksum
-	}
-	if !scratch.PinnedAt.IsZero() {
-		updates.Dimensions["_data.pinned_at"] = scratch.PinnedAt
-	}
-	if scratch.IsDeleted && scratch.DeletedAt != nil {
-		updates.Dimensions["_data.deleted_at"] = *scratch.DeletedAt
-	}
-
-	if err := s.store.Update(uuid, updates); err != nil {
+	// Update using TypedStore API - uses SimpleID directly
+	if err := s.store.Update(scratch.ID, typedScratch); err != nil {
 		return fmt.Errorf("failed to update scratch: %w", err)
 	}
 
-	logger.Info().Str("id", scratch.ID).Str("uuid", uuid).Msg("Scratch updated successfully")
+	logger.Info().Str("id", scratch.ID).Str("title", scratch.Title).Msg("Scratch updated successfully")
 	return nil
 }
 
@@ -450,68 +361,25 @@ func (s *Store) Close() error {
 func (s *Store) Search(query string) []Scratch {
 	logger := logging.GetLogger("store")
 
-	opts := nanostore.ListOptions{
+	opts := types.ListOptions{
 		FilterBySearch: query,
 		Filters: map[string]interface{}{
 			"activity": "active",
 		},
 	}
 
-	docs, err := s.store.List(opts)
+	typedScratches, err := s.store.List(opts)
 	if err != nil {
 		logger.Error().Err(err).Str("query", query).Msg("Failed to search scratches")
 		return []Scratch{}
 	}
 
-	scratches := make([]Scratch, len(docs))
-	for i, doc := range docs {
-		scratches[i] = s.documentToScratch(doc)
+	scratches := make([]Scratch, len(typedScratches))
+	for i, ts := range typedScratches {
+		scratches[i] = ts.ToScratch()
 	}
 
 	return scratches
-}
-
-// documentToScratch converts a nanostore Document to a Scratch
-func (s *Store) documentToScratch(doc nanostore.Document) Scratch {
-	scratch := Scratch{
-		ID:        doc.SimpleID,
-		Title:     doc.Title,
-		Content:   doc.Body, // Content is stored in nanostore's Body field
-		CreatedAt: doc.CreatedAt,
-		UpdatedAt: doc.UpdatedAt,
-		IsPinned:  s.getDocumentDimension(doc, "pinned") == "yes",
-		IsDeleted: s.getDocumentDimension(doc, "activity") == "deleted",
-	}
-
-	// Extract data fields from dimensions (prefixed with _data.)
-	if project, ok := doc.Dimensions["_data.project"].(string); ok {
-		scratch.Project = project
-	}
-	if size, ok := doc.Dimensions["_data.size"].(float64); ok {
-		scratch.Size = int64(size)
-	}
-	if checksum, ok := doc.Dimensions["_data.checksum"].(string); ok {
-		scratch.Checksum = checksum
-	}
-	if pinnedAt, ok := doc.Dimensions["_data.pinned_at"].(time.Time); ok {
-		scratch.PinnedAt = pinnedAt
-	}
-	// Handle deleted_at
-	if scratch.IsDeleted {
-		if deletedAt, ok := doc.Dimensions["_data.deleted_at"].(time.Time); ok {
-			scratch.DeletedAt = &deletedAt
-		}
-	}
-
-	return scratch
-}
-
-// getDocumentDimension safely extracts a dimension value from document
-func (s *Store) getDocumentDimension(doc nanostore.Document, dimension string) string {
-	if val, ok := doc.Dimensions[dimension].(string); ok {
-		return val
-	}
-	return ""
 }
 
 // Atomic operations (delegate to non-atomic versions as nanostore handles locking)
@@ -542,24 +410,6 @@ func (s *Store) RunDiscoveryBeforeCommand() error {
 	// nanostore stores content in the body field, not as separate files
 	// so there's no need for discovery of orphaned files
 	return nil
-}
-
-// resolveSimpleIDToUUID finds the UUID for a given SimpleID by listing all documents
-func (s *Store) resolveSimpleIDToUUID(simpleID string) (string, error) {
-	// List all documents (including deleted ones) to find the one with this SimpleID
-	allOpts := nanostore.ListOptions{}
-	docs, err := s.store.List(allOpts)
-	if err != nil {
-		return "", fmt.Errorf("failed to list documents: %w", err)
-	}
-
-	for _, doc := range docs {
-		if doc.SimpleID == simpleID {
-			return doc.UUID, nil
-		}
-	}
-
-	return "", fmt.Errorf("scratch not found: %s", simpleID)
 }
 
 // Helper functions
@@ -594,7 +444,7 @@ func getBasePath(cfg *config.Config) (string, error) {
 
 // GetTestStore returns the underlying nanostore as TestStore for testing purposes
 func (s *Store) GetTestStore() (nanostore.TestStore, bool) {
-	if testStore, ok := s.store.(nanostore.TestStore); ok {
+	if testStore, ok := s.store.Store().(nanostore.TestStore); ok {
 		return testStore, true
 	}
 	return nil, false
@@ -607,36 +457,29 @@ func (s *Store) ResolveIDToUUID(id string) (string, error) {
 
 // GetScratchByUUID retrieves a scratch by its UUID
 func (s *Store) GetScratchByUUID(uuid string) (*Scratch, error) {
-	// List all documents to find the one with this UUID
-	allOpts := nanostore.ListOptions{}
-	docs, err := s.store.List(allOpts)
+	// Use TypedStore Get method which accepts both UUIDs and SimpleIDs
+	typedScratch, err := s.store.Get(uuid)
 	if err != nil {
-		return nil, fmt.Errorf("failed to list documents: %w", err)
+		return nil, fmt.Errorf("scratch not found: %s", uuid)
 	}
 
-	for _, doc := range docs {
-		if doc.UUID == uuid {
-			scratch := s.documentToScratch(doc)
-			return &scratch, nil
-		}
-	}
-
-	return nil, fmt.Errorf("scratch not found: %s", uuid)
+	scratch := typedScratch.ToScratch()
+	return &scratch, nil
 }
 
 // UpdateWhere updates documents matching a custom WHERE clause using nanostore bulk operations
-func (s *Store) UpdateWhere(whereClause string, updates nanostore.UpdateRequest, args ...interface{}) (int, error) {
-	return s.store.UpdateWhere(whereClause, updates, args...)
+func (s *Store) UpdateWhere(whereClause string, scratch *TypedScratch, args ...interface{}) (int, error) {
+	return s.store.UpdateWhere(whereClause, scratch, args...)
 }
 
-// Update updates a document by UUID using nanostore's native Update method
-func (s *Store) Update(uuid string, updates nanostore.UpdateRequest) error {
-	return s.store.Update(uuid, updates)
+// Update updates a document by UUID using TypedStore's Update method
+func (s *Store) Update(id string, scratch *TypedScratch) error {
+	return s.store.Update(id, scratch)
 }
 
 // UpdateByUUIDs updates multiple documents by their UUIDs in a single atomic operation
-func (s *Store) UpdateByUUIDs(uuids []string, updates nanostore.UpdateRequest) (int, error) {
-	return s.store.UpdateByUUIDs(uuids, updates)
+func (s *Store) UpdateByUUIDs(uuids []string, scratch *TypedScratch) (int, error) {
+	return s.store.UpdateByUUIDs(uuids, scratch)
 }
 
 // DeleteByUUIDs deletes multiple documents by their UUIDs in a single atomic operation

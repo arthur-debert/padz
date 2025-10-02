@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/arthur-debert/nanostore/nanostore"
 	"github.com/arthur-debert/padz/pkg/store"
 )
 
@@ -43,11 +42,9 @@ func RestoreMultiple(s *store.Store, global bool, project string, ids []string) 
 			uuids = append(uuids, uuid)
 		}
 
-		updates := nanostore.UpdateRequest{
-			Dimensions: map[string]interface{}{
-				"activity":         "active",
-				"_data.deleted_at": nil, // Clear deletion timestamp
-			},
+		updates := &store.TypedScratch{
+			Activity:  "active",
+			DeletedAt: "", // Clear deletion timestamp (empty string)
 		}
 
 		_, err := s.UpdateByUUIDs(uuids, updates)
@@ -98,11 +95,9 @@ func Restore(s *store.Store, global bool, project string, indexStr string, newer
 			uuids = append(uuids, uuid)
 		}
 
-		updates := nanostore.UpdateRequest{
-			Dimensions: map[string]interface{}{
-				"activity":         "active",
-				"_data.deleted_at": nil, // Clear deletion timestamp
-			},
+		updates := &store.TypedScratch{
+			Activity:  "active",
+			DeletedAt: "", // Clear deletion timestamp (empty string)
 		}
 
 		_, err := s.UpdateByUUIDs(uuids, updates)
