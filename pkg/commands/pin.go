@@ -112,21 +112,17 @@ func UnpinMultiple(s *store.Store, global bool, project string, ids []string) ([
 		unpinnedTitles = append(unpinnedTitles, scratch.Title)
 	}
 
-	// Perform individual updates to ensure PinnedAt is properly cleared
-	for i, uuid := range uuidsToUpdate {
-		// Get the current scratch
-		currentScratch, err := s.GetScratchByUUID(uuid)
-		if err != nil {
-			return nil, fmt.Errorf("failed to get scratch for unpinning: %w", err)
+	// Perform atomic bulk unpinning using nanostore's improved UpdateByUUIDs
+	// Clear PinnedAt field by setting to empty string
+	if len(uuidsToUpdate) > 0 {
+		updates := &store.TypedScratch{
+			Pinned:   "no",
+			PinnedAt: "", // Clear the timestamp by setting to empty string
 		}
 
-		// Modify it to unpin
-		currentScratch.IsPinned = false
-		currentScratch.PinnedAt = time.Time{} // Zero time
-
-		// Update the scratch
-		if err := s.UpdateScratch(*currentScratch); err != nil {
-			return nil, fmt.Errorf("failed to unpin scratch %s: %w", unpinnedTitles[i], err)
+		_, err := s.UpdateByUUIDs(uuidsToUpdate, updates)
+		if err != nil {
+			return nil, fmt.Errorf("failed to unpin scratches: %w", err)
 		}
 	}
 

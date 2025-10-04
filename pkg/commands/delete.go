@@ -35,12 +35,12 @@ func DeleteMultiple(s *store.Store, global bool, project string, ids []string) (
 		deletedTitles = append(deletedTitles, scratch.Title)
 	}
 
-	// Perform atomic bulk deletion using nanostore's new UpdateByUUIDs
+	// Perform atomic bulk deletion using nanostore's improved UpdateByUUIDs
 	if len(uuids) > 0 {
 		now := time.Now()
 		updates := &store.TypedScratch{
 			Activity:  "deleted",
-			DeletedAt: now.Format(time.RFC3339),
+			DeletedAt: now.Format(time.RFC3339), // Use RFC3339 string format
 		}
 
 		_, err := s.UpdateByUUIDs(uuids, updates)

@@ -33,23 +33,23 @@ type TypedScratch struct {
 	Project   string // _data.project
 	Size      int64  // _data.size
 	Checksum  string // _data.checksum
-	PinnedAt  string // _data.pinned_at - RFC3339 formatted timestamp, empty for nil
-	DeletedAt string // _data.deleted_at - RFC3339 formatted timestamp, empty for nil
+	PinnedAt  string // _data.pinned_at - RFC3339 string, empty when not pinned
+	DeletedAt string // _data.deleted_at - RFC3339 string, empty when not deleted
 }
 
 // ToScratch converts a TypedScratch to the legacy Scratch struct
 func (ts *TypedScratch) ToScratch() Scratch {
-	var deletedAt *time.Time
-	if ts.Activity == "deleted" && ts.DeletedAt != "" {
-		if t, err := time.Parse(time.RFC3339, ts.DeletedAt); err == nil {
-			deletedAt = &t
+	var pinnedAt time.Time
+	if ts.Pinned == "yes" && ts.PinnedAt != "" {
+		if parsed, err := time.Parse(time.RFC3339, ts.PinnedAt); err == nil {
+			pinnedAt = parsed
 		}
 	}
 
-	var pinnedAt time.Time
-	if ts.Pinned == "yes" && ts.PinnedAt != "" {
-		if t, err := time.Parse(time.RFC3339, ts.PinnedAt); err == nil {
-			pinnedAt = t
+	var deletedAt *time.Time
+	if ts.DeletedAt != "" {
+		if parsed, err := time.Parse(time.RFC3339, ts.DeletedAt); err == nil {
+			deletedAt = &parsed
 		}
 	}
 
@@ -72,12 +72,8 @@ func (ts *TypedScratch) ToScratch() Scratch {
 // FromScratch converts a legacy Scratch to TypedScratch
 func FromScratch(s Scratch) *TypedScratch {
 	activity := "active"
-	var deletedAt string
 	if s.IsDeleted {
 		activity = "deleted"
-		if s.DeletedAt != nil {
-			deletedAt = s.DeletedAt.Format(time.RFC3339)
-		}
 	}
 
 	pinned := "no"
@@ -85,12 +81,15 @@ func FromScratch(s Scratch) *TypedScratch {
 		pinned = "yes"
 	}
 
+	// Convert time fields to RFC3339 strings
 	var pinnedAt string
 	if s.IsPinned && !s.PinnedAt.IsZero() {
 		pinnedAt = s.PinnedAt.Format(time.RFC3339)
-	} else if !s.IsPinned {
-		// When unpinning, explicitly set empty string to clear the field
-		pinnedAt = ""
+	}
+
+	var deletedAt string
+	if s.DeletedAt != nil {
+		deletedAt = s.DeletedAt.Format(time.RFC3339)
 	}
 
 	return &TypedScratch{

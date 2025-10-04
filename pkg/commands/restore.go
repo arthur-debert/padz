@@ -44,7 +44,7 @@ func RestoreMultiple(s *store.Store, global bool, project string, ids []string) 
 
 		updates := &store.TypedScratch{
 			Activity:  "active",
-			DeletedAt: "", // Clear deletion timestamp (empty string)
+			DeletedAt: "", // Clear timestamp by setting to empty string
 		}
 
 		_, err := s.UpdateByUUIDs(uuids, updates)
@@ -97,7 +97,7 @@ func Restore(s *store.Store, global bool, project string, indexStr string, newer
 
 		updates := &store.TypedScratch{
 			Activity:  "active",
-			DeletedAt: "", // Clear deletion timestamp (empty string)
+			DeletedAt: "", // Clear timestamp by setting to empty string
 		}
 
 		_, err := s.UpdateByUUIDs(uuids, updates)

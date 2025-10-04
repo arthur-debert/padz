@@ -89,9 +89,9 @@ func (s *Store) GetScratchesWithFilter(project string, global bool) []Scratch {
 
 	// Add project filtering at the nanostore level
 	if global {
-		opts.Filters["_data.Project"] = "global"
+		opts.Filters["project"] = "global"
 	} else if project != "" {
-		opts.Filters["_data.Project"] = project
+		opts.Filters["project"] = project
 	}
 
 	typedScratches, err := s.store.List(opts)
@@ -135,9 +135,9 @@ func (s *Store) GetPinnedScratchesWithFilter(project string, global bool) []Scra
 
 	// Add project filtering at the nanostore level
 	if global {
-		opts.Filters["_data.Project"] = "global"
+		opts.Filters["project"] = "global"
 	} else if project != "" {
-		opts.Filters["_data.Project"] = project
+		opts.Filters["project"] = project
 	}
 
 	typedScratches, err := s.store.List(opts)
@@ -177,9 +177,9 @@ func (s *Store) GetAllScratchesWithFilter(project string, global bool) []Scratch
 
 	// Add project filtering at the nanostore level
 	if global {
-		opts.Filters["_data.Project"] = "global"
+		opts.Filters["project"] = "global"
 	} else if project != "" {
-		opts.Filters["_data.Project"] = project
+		opts.Filters["project"] = project
 	}
 
 	typedScratches, err := s.store.List(opts)
@@ -212,15 +212,15 @@ func (s *Store) GetDeletedScratchesWithFilter(project string, global bool) []Scr
 			"activity": "deleted",
 		},
 		OrderBy: []types.OrderClause{
-			{Column: "_data.DeletedAt", Descending: true},
+			{Column: "deleted_at", Descending: true}, // v0.13.1 handles field name normalization
 		},
 	}
 
 	// Add project filtering at the nanostore level
 	if global {
-		opts.Filters["_data.Project"] = "global"
+		opts.Filters["project"] = "global"
 	} else if project != "" {
-		opts.Filters["_data.Project"] = project
+		opts.Filters["project"] = project
 	}
 
 	typedScratches, err := s.store.List(opts)
@@ -274,28 +274,13 @@ func (s *Store) AddScratch(scratch Scratch) error {
 	logger := logging.GetLogger("store")
 	logger.Info().Str("title", scratch.Title).Msg("Adding scratch")
 
-	// Convert legacy Scratch to TypedScratch (excluding Body for now)
+	// Convert legacy Scratch to TypedScratch (now including body)
 	typedScratch := FromScratch(scratch)
 
-	// Create the document using TypedStore API (without body)
+	// Create the document using TypedStore API (now supports body in single call)
 	simpleID, err := s.store.Create(scratch.Title, typedScratch)
 	if err != nil {
 		return fmt.Errorf("failed to create scratch: %w", err)
-	}
-
-	// If we have content, update the document to include the body
-	if scratch.Content != "" {
-		// Get the created document and update its body
-		createdScratch, err := s.store.Get(simpleID)
-		if err != nil {
-			return fmt.Errorf("failed to get created scratch for body update: %w", err)
-		}
-		createdScratch.Body = scratch.Content
-
-		// Update with the body
-		if err := s.store.Update(simpleID, createdScratch); err != nil {
-			return fmt.Errorf("failed to update scratch with body: %w", err)
-		}
 	}
 
 	logger.Info().Str("simple_id", simpleID).Str("title", scratch.Title).Msg("Scratch added successfully")
@@ -375,9 +360,9 @@ func (s *Store) SearchWithFilter(query, project string, global bool) []Scratch {
 
 	// Add project filtering at the nanostore level
 	if global {
-		opts.Filters["_data.Project"] = "global"
+		opts.Filters["project"] = "global"
 	} else if project != "" {
-		opts.Filters["_data.Project"] = project
+		opts.Filters["project"] = project
 	}
 
 	typedScratches, err := s.store.List(opts)
