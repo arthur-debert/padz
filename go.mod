@@ -4,7 +4,7 @@ go 1.23
 
 require (
 	github.com/adrg/xdg v0.5.3
-	github.com/arthur-debert/nanostore v0.13.1
+	github.com/arthur-debert/nanostore v0.14.0
 	github.com/arthur-debert/nanostore/types v0.0.0-00010101000000-000000000000
 	github.com/charmbracelet/lipgloss v1.1.0
 	github.com/charmbracelet/x/term v0.2.1

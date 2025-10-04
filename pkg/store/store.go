@@ -277,7 +277,7 @@ func (s *Store) AddScratch(scratch Scratch) error {
 	// Convert legacy Scratch to TypedScratch (now including body)
 	typedScratch := FromScratch(scratch)
 
-	// Create the document using TypedStore API (current API still uses title parameter)
+	// Create the document using TypedStore API (v0.14.0 still uses title parameter)
 	simpleID, err := s.store.Create(scratch.Title, typedScratch)
 	if err != nil {
 		return fmt.Errorf("failed to create scratch: %w", err)
