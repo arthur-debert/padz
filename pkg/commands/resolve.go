@@ -92,7 +92,7 @@ func ValidateIDsFormat(ids []string) error {
 			continue
 		}
 
-		// Validate format
+		// Basic format validation
 		if err := validateIDFormat(id); err != nil {
 			invalidIDs = append(invalidIDs, fmt.Sprintf("%s (%v)", id, err))
 		}
@@ -105,7 +105,7 @@ func ValidateIDsFormat(ids []string) error {
 	return nil
 }
 
-// validateIDFormat checks if an ID has a valid format
+// validateIDFormat checks if an ID has a valid format (simplified version)
 func validateIDFormat(id string) error {
 	if id == "" {
 		return fmt.Errorf("empty ID")
@@ -127,8 +127,7 @@ func validateIDFormat(id string) error {
 		return nil
 	}
 
-	// Check for regular index (1, 2, 3, etc)
-	// First check if it looks like a number
+	// Check for regular index (1, 2, 3, etc) - check if it's all digits first
 	allDigits := true
 	for _, c := range id {
 		if c < '0' || c > '9' {
@@ -138,28 +137,24 @@ func validateIDFormat(id string) error {
 	}
 
 	if allDigits {
+		// It looks like a number, so validate it as an index
 		if _, err := parseIndex(id); err != nil {
-			return fmt.Errorf("invalid index: %v", err)
+			return err // This will catch "0" and return "index must be positive"
 		}
 		return nil
 	}
 
-	// Otherwise, it should be a hash prefix (at least 1 character)
-	if len(id) < 1 {
-		return fmt.Errorf("hash prefix too short")
-	}
-
-	// Hash prefixes should only contain valid hex characters
+	// Otherwise, it should be a hash prefix with hex characters
 	for _, c := range id {
 		if !isHexChar(c) {
-			return fmt.Errorf("invalid hash character: %c", c)
+			return fmt.Errorf("invalid hash character")
 		}
 	}
 
 	return nil
 }
 
-// Test helper functions (kept for backward compatibility with existing tests)
+// Test helper functions for backward compatibility with existing tests
 
 // parseIndex attempts to parse a string as a positive integer index
 func parseIndex(s string) (int, error) {

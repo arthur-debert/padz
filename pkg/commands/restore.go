@@ -4,14 +4,13 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/arthur-debert/nanostore/nanostore"
 	"github.com/arthur-debert/padz/pkg/store"
 )
 
 // RestoreMultiple restores multiple soft-deleted scratches by their IDs
 func RestoreMultiple(s *store.Store, global bool, project string, ids []string) ([]string, error) {
 	// Resolve all IDs first
-	scratches, err := ResolveMultipleIDs(s, global, project, ids)
+	scratches, err := s.ResolveBulkIDs(ids, project, global)
 	if err != nil {
 		return nil, err
 	}
@@ -43,11 +42,9 @@ func RestoreMultiple(s *store.Store, global bool, project string, ids []string) 
 			uuids = append(uuids, uuid)
 		}
 
-		updates := nanostore.UpdateRequest{
-			Dimensions: map[string]interface{}{
-				"activity":         "active",
-				"_data.deleted_at": nil, // Clear deletion timestamp
-			},
+		updates := &store.TypedScratch{
+			Activity:  "active",
+			DeletedAt: "", // Clear timestamp by setting to empty string
 		}
 
 		_, err := s.UpdateByUUIDs(uuids, updates)
@@ -98,11 +95,9 @@ func Restore(s *store.Store, global bool, project string, indexStr string, newer
 			uuids = append(uuids, uuid)
 		}
 
-		updates := nanostore.UpdateRequest{
-			Dimensions: map[string]interface{}{
-				"activity":         "active",
-				"_data.deleted_at": nil, // Clear deletion timestamp
-			},
+		updates := &store.TypedScratch{
+			Activity:  "active",
+			DeletedAt: "", // Clear timestamp by setting to empty string
 		}
 
 		_, err := s.UpdateByUUIDs(uuids, updates)

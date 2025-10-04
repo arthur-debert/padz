@@ -10,7 +10,7 @@ import (
 // FlushMultiple performs hard deletion of specific soft-deleted scratches by their IDs
 func FlushMultiple(s *store.Store, global bool, project string, ids []string) (int, error) {
 	// Resolve all IDs first
-	scratches, err := ResolveMultipleIDs(s, global, project, ids)
+	scratches, err := s.ResolveBulkIDs(ids, project, global)
 	if err != nil {
 		return 0, err
 	}

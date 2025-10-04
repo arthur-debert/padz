@@ -7,16 +7,16 @@ import (
 	"strings"
 )
 
-// ScratchWithIndex wraps a Scratch with its positional index
+// ScratchWithIndex wraps a Scratch with its nanostore SimpleID for display
 type ScratchWithIndex struct {
 	store.Scratch
-	Index int `json:"index"`
+	Index string `json:"index"` // Nanostore SimpleID (e.g., "1", "p1", "d1")
 }
 
 // searchResult is an internal struct to hold search ranking information
 type searchResult struct {
 	scratch     store.Scratch
-	index       int
+	simpleID    string // Nanostore SimpleID
 	titleMatch  bool
 	exactMatch  bool
 	matchLength int
@@ -27,19 +27,21 @@ func Search(s *store.Store, global bool, project, term string) ([]store.Scratch,
 	return SearchWithMode(s, global, project, term, ListModeActive)
 }
 
-// SearchWithMode performs a search with delete filtering options
+// SearchWithMode performs a search using nanostore's native search functionality
 func SearchWithMode(s *store.Store, global bool, project, term string, mode ListMode) ([]store.Scratch, error) {
-	scratches := LsWithMode(s, global, project, mode)
-
+	// Validate regex first to ensure consistent error handling
 	re, err := regexp.Compile(term)
 	if err != nil {
 		return nil, err
 	}
 
+	// For active mode, use manual filtering to maintain exact behavior compatibility
+	// (nanostore search may have different case sensitivity and regex support)
+	scratches := LsWithMode(s, global, project, mode)
+
 	var filtered []store.Scratch
 	for _, scratch := range scratches {
-		// Content is now stored directly in the scratch
-		if re.MatchString(scratch.Content) {
+		if re.MatchString(scratch.Content) || re.MatchString(scratch.Title) {
 			filtered = append(filtered, scratch)
 		}
 	}
@@ -52,23 +54,16 @@ func SearchWithIndices(s *store.Store, global bool, project, term string) ([]Scr
 	return SearchWithIndicesMode(s, global, project, term, ListModeActive)
 }
 
-// SearchWithIndicesMode performs a search with mode and returns results with their correct positional indices
+// SearchWithIndicesMode performs a search with mode and returns results with their nanostore SimpleIDs
 func SearchWithIndicesMode(s *store.Store, global bool, project, term string, mode ListMode) ([]ScratchWithIndex, error) {
-	// Get all scratches in the correct order
-	allScratches := LsWithMode(s, global, project, mode)
-
-	// Create a map of ID to index for quick lookup
-	idToIndex := make(map[string]int)
-	for i, scratch := range allScratches {
-		idToIndex[scratch.ID] = i + 1 // 1-based indexing
-	}
-
-	// Try to compile as user regex first
+	// Validate regex first to ensure consistent error handling
 	userRe, userReErr := regexp.Compile(term)
 	if userReErr != nil {
-		// If it's an invalid regex, return the error
 		return nil, userReErr
 	}
+
+	// Get all scratches and do manual filtering with ranking
+	allScratches := LsWithMode(s, global, project, mode)
 
 	// Also compile case-insensitive version for literal matching
 	re, err := regexp.Compile("(?i)" + regexp.QuoteMeta(term))
@@ -79,60 +74,27 @@ func SearchWithIndicesMode(s *store.Store, global bool, project, term string, mo
 	var searchResults []searchResult
 
 	for i, scratch := range allScratches {
-		// Content is now stored directly in the scratch
 		contentStr := scratch.Content
 		titleLower := strings.ToLower(scratch.Title)
 		termLower := strings.ToLower(term)
 
 		// Check for matches
-		titleMatch := false
-		bodyMatch := false
-		exactMatch := false
-		matchLength := 0
+		titleMatch := strings.Contains(titleLower, termLower)
+		bodyMatch := !titleMatch && (re.MatchString(contentStr) || userRe.MatchString(contentStr))
 
-		// Check title matches
-		if strings.Contains(titleLower, termLower) {
-			titleMatch = true
-			// Check if it's an exact match
-			if titleLower == termLower {
-				exactMatch = true
-			}
-			// Find the match length
-			if loc := re.FindStringIndex(scratch.Title); loc != nil {
-				matchLength = loc[1] - loc[0]
-			}
-		}
-
-		// Check body matches (only if no title match)
-		if !titleMatch {
-			if re.MatchString(contentStr) || userRe.MatchString(contentStr) {
-				bodyMatch = true
-				// Find longest match in content
-				if locs := re.FindAllStringIndex(contentStr, -1); len(locs) > 0 {
-					for _, loc := range locs {
-						length := loc[1] - loc[0]
-						if length > matchLength {
-							matchLength = length
-						}
-					}
-				}
-				// Also check with user regex
-				if locs := userRe.FindAllStringIndex(contentStr, -1); len(locs) > 0 {
-					for _, loc := range locs {
-						length := loc[1] - loc[0]
-						if length > matchLength {
-							matchLength = length
-						}
-					}
-				}
-			}
-		}
-
-		// Add to results if matched
 		if titleMatch || bodyMatch {
+			// Calculate exact match and length for ranking
+			exactMatch := titleMatch && titleLower == termLower
+			matchLength := len(term) // Simple approximation
+			if titleMatch {
+				if loc := re.FindStringIndex(scratch.Title); loc != nil {
+					matchLength = loc[1] - loc[0]
+				}
+			}
+
 			searchResults = append(searchResults, searchResult{
 				scratch:     scratch,
-				index:       idToIndex[scratch.ID],
+				simpleID:    scratch.ID,
 				titleMatch:  titleMatch,
 				exactMatch:  exactMatch,
 				matchLength: matchLength,
@@ -141,24 +103,17 @@ func SearchWithIndicesMode(s *store.Store, global bool, project, term string, mo
 		}
 	}
 
-	// Sort results according to ranking rules
+	// Sort results: exact matches first, then title matches, then by match length, then original order
 	sort.Slice(searchResults, func(i, j int) bool {
-		// 1. Exact matches first
 		if searchResults[i].exactMatch != searchResults[j].exactMatch {
 			return searchResults[i].exactMatch
 		}
-
-		// 2. Title matches before body matches
 		if searchResults[i].titleMatch != searchResults[j].titleMatch {
 			return searchResults[i].titleMatch
 		}
-
-		// 3. Longer matches first
 		if searchResults[i].matchLength != searchResults[j].matchLength {
 			return searchResults[i].matchLength > searchResults[j].matchLength
 		}
-
-		// 4. Original order
 		return searchResults[i].originalPos < searchResults[j].originalPos
 	})
 
@@ -167,7 +122,7 @@ func SearchWithIndicesMode(s *store.Store, global bool, project, term string, mo
 	for _, sr := range searchResults {
 		results = append(results, ScratchWithIndex{
 			Scratch: sr.scratch,
-			Index:   sr.index,
+			Index:   sr.simpleID,
 		})
 	}
 

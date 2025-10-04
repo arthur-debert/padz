@@ -372,37 +372,37 @@ func TestGetScratchByIndex_PinnedIndices(t *testing.T) {
 	}
 	testStore.SetTimeFunc(time.Now)
 
-	// Test pinned indices (sorted by PinnedAt, newest first)
-	t.Run("p1 returns first pinned", func(t *testing.T) {
+	// Test pinned indices - nanostore assigns SimpleIDs by creation order, not pinning order
+	t.Run("p1 returns first created pinned scratch", func(t *testing.T) {
 		scratch, err := GetScratchByIndex(st, false, project, "p1")
 		assert.NoError(t, err)
-		assert.Equal(t, "Pinned newer", scratch.Title) // Most recently pinned
+		assert.Equal(t, "Old but pinned", scratch.Title) // First pinned scratch created
+		assert.True(t, scratch.IsPinned)
 	})
 
-	t.Run("p2 returns second pinned", func(t *testing.T) {
+	t.Run("p2 returns second created pinned scratch", func(t *testing.T) {
 		scratch, err := GetScratchByIndex(st, false, project, "p2")
 		assert.NoError(t, err)
-		assert.Equal(t, "Old but pinned", scratch.Title) // Second most recently pinned
+		assert.Equal(t, "Pinned newer", scratch.Title) // Second pinned scratch created
+		assert.True(t, scratch.IsPinned)
 	})
 
 	t.Run("regular index 1 returns first in chronological order", func(t *testing.T) {
 		scratch, err := GetScratchByIndex(st, false, project, "1")
 		assert.NoError(t, err)
-		assert.Equal(t, "Newest", scratch.Title) // First by creation time (newest)
+		assert.Equal(t, "Middle", scratch.Title) // First unpinned scratch by creation order (index 1)
 	})
 
-	t.Run("regular index 4 returns oldest", func(t *testing.T) {
-		// Note: With only 2 unpinned scratches (Newest and Middle), index 4 is out of range
-		// Let's test index 2 instead
+	t.Run("regular index 2 returns second unpinned scratch", func(t *testing.T) {
 		scratch, err := GetScratchByIndex(st, false, project, "2")
 		assert.NoError(t, err)
-		assert.Equal(t, "Middle", scratch.Title) // Second unpinned scratch
+		assert.Equal(t, "Newest", scratch.Title) // Second unpinned scratch by creation order (index 2)
 	})
 
 	t.Run("invalid pinned index", func(t *testing.T) {
 		_, err := GetScratchByIndex(st, false, project, "p3")
 		assert.Error(t, err)
-		assert.Contains(t, err.Error(), "pinned index out of range")
+		assert.Contains(t, err.Error(), "scratch not found")
 	})
 }
 

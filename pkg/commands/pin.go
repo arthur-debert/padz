@@ -4,14 +4,13 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/arthur-debert/nanostore/nanostore"
 	"github.com/arthur-debert/padz/pkg/store"
 )
 
 // PinMultiple pins multiple scratches by their IDs
 func PinMultiple(s *store.Store, global bool, project string, ids []string) ([]string, error) {
 	// Resolve all IDs first
-	scratches, err := ResolveMultipleIDs(s, global, project, ids)
+	scratches, err := s.ResolveBulkIDs(ids, project, global)
 	if err != nil {
 		return nil, err
 	}
@@ -71,11 +70,9 @@ func PinMultiple(s *store.Store, global bool, project string, ids []string) ([]s
 
 	// Perform atomic bulk pinning using nanostore's new UpdateByUUIDs
 	if len(uuidsToUpdate) > 0 {
-		updates := nanostore.UpdateRequest{
-			Dimensions: map[string]interface{}{
-				"pinned":          "yes",
-				"_data.pinned_at": now,
-			},
+		updates := &store.TypedScratch{
+			Pinned:   "yes",
+			PinnedAt: now.Format(time.RFC3339),
 		}
 
 		_, err := s.UpdateByUUIDs(uuidsToUpdate, updates)
@@ -90,7 +87,7 @@ func PinMultiple(s *store.Store, global bool, project string, ids []string) ([]s
 // UnpinMultiple unpins multiple scratches by their IDs
 func UnpinMultiple(s *store.Store, global bool, project string, ids []string) ([]string, error) {
 	// Resolve all IDs first
-	scratches, err := ResolveMultipleIDs(s, global, project, ids)
+	scratches, err := s.ResolveBulkIDs(ids, project, global)
 	if err != nil {
 		return nil, err
 	}
@@ -115,13 +112,12 @@ func UnpinMultiple(s *store.Store, global bool, project string, ids []string) ([
 		unpinnedTitles = append(unpinnedTitles, scratch.Title)
 	}
 
-	// Perform atomic bulk unpinning using nanostore's new UpdateByUUIDs
+	// Perform atomic bulk unpinning using nanostore's improved UpdateByUUIDs
+	// Clear PinnedAt field by setting to empty string
 	if len(uuidsToUpdate) > 0 {
-		updates := nanostore.UpdateRequest{
-			Dimensions: map[string]interface{}{
-				"pinned":          "no",
-				"_data.pinned_at": time.Time{}, // Zero value
-			},
+		updates := &store.TypedScratch{
+			Pinned:   "no",
+			PinnedAt: "", // Clear the timestamp by setting to empty string
 		}
 
 		_, err := s.UpdateByUUIDs(uuidsToUpdate, updates)

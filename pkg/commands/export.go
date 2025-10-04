@@ -20,7 +20,7 @@ func Export(s *store.Store, global bool, project string, ids []string, format st
 		scratches = Ls(s, global, project)
 	} else {
 		// Export specific scratches using centralized resolution
-		resolvedScratches, err := ResolveMultipleIDs(s, global, project, ids)
+		resolvedScratches, err := s.ResolveBulkIDs(ids, project, global)
 		if err != nil {
 			return err
 		}

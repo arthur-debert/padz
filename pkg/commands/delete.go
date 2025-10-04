@@ -4,14 +4,13 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/arthur-debert/nanostore/nanostore"
 	"github.com/arthur-debert/padz/pkg/store"
 )
 
 // DeleteMultiple soft deletes multiple scratches by their IDs using atomic bulk operations
 func DeleteMultiple(s *store.Store, global bool, project string, ids []string) ([]string, error) {
 	// Resolve all IDs to UUIDs first to prevent ID instability
-	scratches, err := ResolveMultipleIDs(s, global, project, ids)
+	scratches, err := s.ResolveBulkIDs(ids, project, global)
 	if err != nil {
 		return nil, err
 	}
@@ -36,14 +35,12 @@ func DeleteMultiple(s *store.Store, global bool, project string, ids []string) (
 		deletedTitles = append(deletedTitles, scratch.Title)
 	}
 
-	// Perform atomic bulk deletion using nanostore's new UpdateByUUIDs
+	// Perform atomic bulk deletion using nanostore's improved UpdateByUUIDs
 	if len(uuids) > 0 {
 		now := time.Now()
-		updates := nanostore.UpdateRequest{
-			Dimensions: map[string]interface{}{
-				"activity":         "deleted",
-				"_data.deleted_at": now,
-			},
+		updates := &store.TypedScratch{
+			Activity:  "deleted",
+			DeletedAt: now.Format(time.RFC3339), // Use RFC3339 string format
 		}
 
 		_, err := s.UpdateByUUIDs(uuids, updates)

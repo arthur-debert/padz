@@ -44,7 +44,7 @@ type PadListItem struct {
 	ProjectName string
 	ShowProject bool
 	TimeAgo     string
-	Index       int
+	Index       string // Nanostore SimpleID (e.g., "1", "p1", "d1")
 }
 
 type SearchResultItem struct {
@@ -104,7 +104,7 @@ func NewRenderer() (*Renderer, error) {
 	return r, nil
 }
 
-func (r *Renderer) RenderPadListItem(scratch *store.Scratch, showProject bool, index int) (string, error) {
+func (r *Renderer) RenderPadListItem(scratch *store.Scratch, showProject bool, index string) (string, error) {
 	projectName := ""
 	if scratch.Project == "global" {
 		projectName = "global"

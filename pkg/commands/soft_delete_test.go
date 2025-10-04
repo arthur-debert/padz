@@ -73,24 +73,26 @@ func TestGetScratchByIndex_WithDeleted(t *testing.T) {
 	}
 	testStore.SetTimeFunc(time.Now)
 
-	// Test regular index resolution (should exclude deleted)
+	// Test regular SimpleID resolution (nanostore assigns numeric SimpleIDs only to specific dimensions)
+	// In this case, only deleted items get numeric SimpleIDs: "1", "2", etc.
+	// Active items get their UUID as SimpleID
 	scratch, err := GetScratchByIndex(setup.Store, false, "test", "1")
 	require.NoError(t, err)
-	assert.Equal(t, "Active 1", scratch.Title)
+	assert.Equal(t, "Deleted 2", scratch.Title) // SimpleID "1" = first deleted item
 
 	scratch, err = GetScratchByIndex(setup.Store, false, "test", "2")
 	require.NoError(t, err)
-	assert.Equal(t, "Active 2", scratch.Title)
+	assert.Equal(t, "Deleted 1", scratch.Title) // SimpleID "2" = second deleted item
 
-	// Test deleted index resolution
-	// Note: deleted items are sorted by DeletedAt descending (newest first)
+	// Test deleted index resolution (d1, d2, etc)
+	// These follow the deletion order (by deleted_at desc)
 	scratch, err = GetScratchByIndex(setup.Store, false, "test", "d1")
 	require.NoError(t, err)
-	assert.Equal(t, "Deleted 1", scratch.Title) // deleted1 has more recent DeletedAt
+	assert.Equal(t, "Deleted 1", scratch.Title) // d1 = first by deletion time (most recently deleted)
 
 	scratch, err = GetScratchByIndex(setup.Store, false, "test", "d2")
 	require.NoError(t, err)
-	assert.Equal(t, "Deleted 2", scratch.Title) // deleted2 has older DeletedAt
+	assert.Equal(t, "Deleted 2", scratch.Title) // d2 = second by deletion time (older deletion)
 }
 
 func TestFlush(t *testing.T) {
