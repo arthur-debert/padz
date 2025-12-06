@@ -1,0 +1,10 @@
+[package]
+name = "padz_cli"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+clap = { version = "4.5.53", features = ["derive"] }
+colored = "3.0.0"
+directories = "6.0.0"
+padz_lib = { version = "0.1.0", path = "../padz_lib" }

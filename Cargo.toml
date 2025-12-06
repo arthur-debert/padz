@@ -1,0 +1,6 @@
+[workspace]
+members = [
+    "padz_lib",
+    "padz_cli",
+]
+resolver = "2"
