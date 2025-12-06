@@ -95,6 +95,15 @@ pub enum Commands {
         index: String,
     },
 
+    /// Get or set configuration
+    Config {
+        /// Configuration key (e.g., file-ext)
+        key: Option<String>,
+
+        /// Value to set (if omitted, prints current value)
+        value: Option<String>,
+    },
+
     /// Initialize the store (optional utility)
     Init,
 }

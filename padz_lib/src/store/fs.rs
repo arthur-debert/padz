@@ -58,6 +58,7 @@ impl JsonFileSystemStore {
 pub struct FileStore {
     project_root: Option<PathBuf>,
     global_root: PathBuf,
+    file_ext: String,
 }
 
 impl FileStore {
@@ -65,7 +66,44 @@ impl FileStore {
         Self {
             project_root,
             global_root,
+            file_ext: ".txt".to_string(),
         }
+    }
+
+    pub fn with_file_ext(mut self, ext: &str) -> Self {
+        if ext.starts_with('.') {
+            self.file_ext = ext.to_string();
+        } else {
+            self.file_ext = format!(".{}", ext);
+        }
+        self
+    }
+
+    pub fn file_ext(&self) -> &str {
+        &self.file_ext
+    }
+
+    fn pad_filename(&self, id: &Uuid) -> String {
+        format!("pad-{}{}", id, self.file_ext)
+    }
+
+    /// Find the pad file for a given ID, checking both configured extension and .txt fallback
+    fn find_pad_file(&self, root: &Path, id: &Uuid) -> Option<PathBuf> {
+        // First try the configured extension
+        let path = root.join(self.pad_filename(id));
+        if path.exists() {
+            return Some(path);
+        }
+
+        // Fallback to .txt for backwards compatibility
+        if self.file_ext != ".txt" {
+            let txt_path = root.join(format!("pad-{}.txt", id));
+            if txt_path.exists() {
+                return Some(txt_path);
+            }
+        }
+
+        None
     }
 
     fn ensure_dir(&self, path: &Path) -> Result<()> {
@@ -114,10 +152,8 @@ impl DataStore for FileStore {
         meta_map.insert(pad.metadata.id, pad.metadata.clone());
         self.save_metadata(&root, &meta_map)?;
 
-        // 2. Write content file
-        // Format: pad-{UUID}.txt
-        let filename = format!("pad-{}.txt", pad.metadata.id);
-        let path = root.join(filename);
+        // 2. Write content file with configured extension
+        let path = root.join(self.pad_filename(&pad.metadata.id));
         fs::write(path, &pad.content).map_err(PadzError::Io)?;
 
         Ok(())
@@ -130,14 +166,11 @@ impl DataStore for FileStore {
         let meta_map = self.load_metadata(&root)?;
         let metadata = meta_map.get(id).ok_or(PadzError::PadNotFound(*id))?.clone();
 
-        // 2. Read content
-        let filename = format!("pad-{}.txt", id);
-        let path = root.join(filename);
-
-        let content = if path.exists() {
+        // 2. Read content (with fallback for old .txt files)
+        let content = if let Some(path) = self.find_pad_file(&root, id) {
             fs::read_to_string(path).map_err(PadzError::Io)?
         } else {
-            String::new() // Should not happen if data integrity is kept, but maybe file deleted manually
+            String::new()
         };
 
         Ok(Pad { metadata, content })
@@ -153,15 +186,7 @@ impl DataStore for FileStore {
         let mut pads = Vec::new();
 
         for (id, metadata) in meta_map {
-            // Optimization: We could return Metadata only if we had a lighter struct,
-            // but trait asks for Vec<Pad>. So we must read content.
-            // Warning: This could be slow if many files.
-            // PADZ.md limits to ~1000 pads. Reading 1000 small files is usually okay on SSD.
-            // Ideally we'd lazy load content, but `Pad` struct has content.
-
-            let filename = format!("pad-{}.txt", id);
-            let path = root.join(filename);
-            let content = if path.exists() {
+            let content = if let Some(path) = self.find_pad_file(&root, &id) {
                 fs::read_to_string(path).map_err(PadzError::Io)?
             } else {
                 String::new()
@@ -174,7 +199,6 @@ impl DataStore for FileStore {
     }
 
     fn delete_pad(&mut self, id: &Uuid, scope: Scope) -> Result<()> {
-        // Physical deletion (Flush)
         let root = self.get_store_path(scope)?;
 
         // 1. Remove from metadata
@@ -184,10 +208,8 @@ impl DataStore for FileStore {
         }
         self.save_metadata(&root, &meta_map)?;
 
-        // 2. Delete file
-        let filename = format!("pad-{}.txt", id);
-        let path = root.join(filename);
-        if path.exists() {
+        // 2. Delete file (check both extensions)
+        if let Some(path) = self.find_pad_file(&root, id) {
             fs::remove_file(path).map_err(PadzError::Io)?;
         }
 
@@ -196,7 +218,12 @@ impl DataStore for FileStore {
 
     fn get_pad_path(&self, id: &Uuid, scope: Scope) -> Result<PathBuf> {
         let root = self.get_store_path(scope)?;
-        let filename = format!("pad-{}.txt", id);
-        Ok(root.join(filename))
+
+        // Return existing file path if found, otherwise return path with configured extension
+        if let Some(path) = self.find_pad_file(&root, id) {
+            Ok(path)
+        } else {
+            Ok(root.join(self.pad_filename(id)))
+        }
     }
 }

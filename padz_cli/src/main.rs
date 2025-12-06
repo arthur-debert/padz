@@ -3,6 +3,7 @@ use colored::*;
 use directories::ProjectDirs;
 use padz_lib::api::PadzApi;
 use padz_lib::clipboard::{copy_to_clipboard, format_for_clipboard};
+use padz_lib::config::PadzConfig;
 use padz_lib::editor::{EditorContent, edit_content};
 use padz_lib::index::{DisplayIndex, DisplayPad};
 use padz_lib::model::Scope;
@@ -16,29 +17,32 @@ fn main() {
     let cli = Cli::parse();
 
     // Determine Paths
-    // Project root: CWD if it has .git? Or pass it.
-    // For now assuming CWD is project root.
     let cwd = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
+    let project_padz_dir = cwd.join(".padz");
 
     // Global root: Use XDG
     let proj_dirs =
         ProjectDirs::from("com", "padz", "padz").expect("Could not determine config dir");
     let global_data_dir = proj_dirs.data_dir().to_path_buf();
 
-    let store = FileStore::new(Some(cwd.join(".padz")), global_data_dir);
-
-    // Note: Project scope might not exist if not in a git repo.
-    // And `.padz` inside CWD might not be initialized.
-    // The spec says `.padz` directory.
-    // We pass the PATHs to the store. The store creates them if needed on write.
-
-    let mut api = PadzApi::new(store);
-
     let scope = if cli.global {
         Scope::Global
     } else {
         Scope::Project
     };
+
+    // Load config from the appropriate .padz directory
+    let config_dir = match scope {
+        Scope::Project => &project_padz_dir,
+        Scope::Global => &global_data_dir,
+    };
+    let config = PadzConfig::load(config_dir).unwrap_or_default();
+    let file_ext = config.get_file_ext().to_string();
+
+    let store = FileStore::new(Some(project_padz_dir.clone()), global_data_dir.clone())
+        .with_file_ext(&file_ext);
+
+    let mut api = PadzApi::new(store);
 
     // Handle commands
     let result = match cli.command {
@@ -58,7 +62,7 @@ fn main() {
                 let initial_content = content.unwrap_or_default();
                 let initial = EditorContent::new(initial_title, initial_content);
 
-                match edit_content(&initial, ".txt") {
+                match edit_content(&initial, &file_ext) {
                     Ok(edited) => (edited.title, edited.content),
                     Err(e) => {
                         eprintln!("Editor error: {}", e);
@@ -131,7 +135,7 @@ fn main() {
                     let initial =
                         EditorContent::new(dp.pad.metadata.title.clone(), dp.pad.content.clone());
 
-                    match edit_content(&initial, ".txt") {
+                    match edit_content(&initial, &file_ext) {
                         Ok(edited) => {
                             if edited.title.is_empty() {
                                 eprintln!("Error: Title cannot be empty");
@@ -174,7 +178,7 @@ fn main() {
                     let initial =
                         EditorContent::new(dp.pad.metadata.title.clone(), dp.pad.content.clone());
 
-                    match edit_content(&initial, ".txt") {
+                    match edit_content(&initial, &file_ext) {
                         Ok(edited) => {
                             // Copy to clipboard on exit (even if content unchanged)
                             let clipboard_text =
@@ -260,6 +264,39 @@ fn main() {
                     Ok(())
                 }
                 Err(e) => Err(e),
+            }
+        }
+        Some(Commands::Config { key, value }) => {
+            let mut config = PadzConfig::load(config_dir).unwrap_or_default();
+
+            match (key.as_deref(), value) {
+                // No key: show all config
+                (None, _) => {
+                    println!("file-ext = {}", config.get_file_ext());
+                    Ok(())
+                }
+                // Key without value: show that key
+                (Some("file-ext"), None) => {
+                    println!("{}", config.get_file_ext());
+                    Ok(())
+                }
+                // Key with value: set it
+                (Some("file-ext"), Some(v)) => {
+                    config.set_file_ext(&v);
+                    match config.save(config_dir) {
+                        Ok(()) => {
+                            println!("file-ext set to {}", config.get_file_ext());
+                            Ok(())
+                        }
+                        Err(e) => Err(e),
+                    }
+                }
+                // Unknown key
+                (Some(k), _) => {
+                    eprintln!("Unknown config key: {}", k);
+                    eprintln!("Available keys: file-ext");
+                    std::process::exit(1);
+                }
             }
         }
         Some(Commands::Init) => {
