@@ -212,7 +212,8 @@ impl DataStore for FileStore {
                         let uuid_part = stem.strip_prefix("pad-").unwrap_or("");
 
                         if let Ok(id) = Uuid::parse_str(uuid_part) {
-                            if let std::collections::hash_map::Entry::Vacant(e) = meta_map.entry(id) {
+                            if let std::collections::hash_map::Entry::Vacant(e) = meta_map.entry(id)
+                            {
                                 // Orphan found
                                 let content = fs::read_to_string(&path).unwrap_or_default();
                                 let title = content
