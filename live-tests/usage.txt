@@ -1,0 +1,33 @@
+Usage: $(basename "$0") [OPTIONS] [SCRIPT_FILE]
+
+Create an isolated testing environment for too commands with a temporary data store.
+
+Arguments:
+  SCRIPT_FILE   Optional shell script to execute in the test environment.
+                If not provided, starts an interactive shell session.
+
+Options:
+  -f, --format FORMAT   Set output format for too commands (term|json|markdown)
+                        Default: term
+  -i, --interactive     Stay in interactive shell after running script
+  -h, --help            Show this help message and exit
+
+Description:
+  This script creates a temporary directory with an isolated .todos.json file for
+  testing too commands. It always initializes a fresh .todos.json file. If a script
+  is provided, it executes the script in the test environment and exits
+  (unless --interactive is used). Otherwise, it drops you into a new shell
+  session where you can run too commands without affecting your real todo data.
+  The temporary environment is automatically cleaned up when you exit.
+
+  Note: The 'too' command is wrapped to automatically use --data-path and --format
+  based on the environment. Use 'too-raw' if you need to test specific formats
+  or bypass these automatic flags.
+
+  Note 2: There is a export_history functin that outptus the session history sans line numbers, useful if you want to capture the commands you ran in the session for later use in a script.
+
+Examples:
+  live-tests/run.sh # Start with a fresh .todos.json file in interactive mode
+  live-tests/run live-tests/example.sh # Execute a test script in the environment
+  live-tests/run --interactive live-tests/example.sh # Execute a script then stay in interactive mode
+  live-tests/run live-tests/example.sh --format json # Execute a test script in the environment, with json outptu, great for auto parsing

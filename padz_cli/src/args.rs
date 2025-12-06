@@ -45,6 +45,10 @@ pub enum Commands {
         /// Search term
         #[arg(short, long)]
         search: Option<String>,
+        
+        /// Show deleted pads
+        #[arg(long)]
+        deleted: bool,
     },
     
     /// View a pad

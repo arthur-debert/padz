@@ -1,0 +1,56 @@
+#!/usr/bin/env zsh
+
+# Define export_history function that reads captured commands
+function export_history() {
+    if [[ -f "TEMP_DIR_PLACEHOLDER/.command_history" ]]; then
+        grep -v 'export_history' "TEMP_DIR_PLACEHOLDER/.command_history" 2>/dev/null || true
+    else
+        echo "# No history available"
+    fi
+}
+
+# Wrapper function for padz
+function padz() {
+    if [[ -n "${PADZ_BIN_PATH}" ]]; then
+        "${PADZ_BIN_PATH}" "$@"
+    else
+        command padz_cli "$@"
+    fi
+}
+
+# Set up color codes
+GRAY=$'\033[38;5;245m'
+NC=$'\033[0m'
+
+# Read and execute the script line by line
+prev_was_comment=false
+while IFS= read -r line; do
+    # Handle comments - display them in gray
+    if [[ "$line" =~ ^[[:space:]]*# ]]; then
+        # Extract comment text (remove # and leading whitespace)
+        comment_text="$(echo "$line" | sed 's/^[[:space:]]*#[[:space:]]*//')"
+        if [[ -n "$comment_text" ]]; then
+            # Only add newline if previous line wasn't a comment
+            if [[ "$prev_was_comment" == false ]]; then
+                echo
+            fi
+            echo "${GRAY}${comment_text}${NC}"
+        fi
+        prev_was_comment=true
+        continue
+    fi
+
+    # Skip empty lines
+    if [[ -z "$line" ]]; then
+        prev_was_comment=false
+        continue
+    fi
+
+    # Echo the command in gray
+    echo
+    echo "${GRAY}$ ${line}${NC}"
+
+    # Execute the command
+    eval "$line"
+    prev_was_comment=false
+done <"$1"

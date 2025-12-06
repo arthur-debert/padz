@@ -47,17 +47,26 @@ fn main() {
                  Err(e) => Err(e),
             }
         },
-        Some(Commands::List { search }) => {
+        Some(Commands::List { search, deleted }) => {
             // If search arg is present, use search
-            let pads = if let Some(term) = search {
+            let result = if let Some(term) = search {
                 api.search_pads(&term, scope)
             } else {
                 api.list_pads(scope)
             };
             
-            match pads {
+            match result {
                 Ok(pads) => {
-                    print_pads(&pads);
+                    // Filter: if NOT deleted flag, hide DisplayIndex::Deleted
+                    let filtered: Vec<DisplayPad> = pads.into_iter().filter(|p| {
+                         if deleted {
+                             matches!(p.index, DisplayIndex::Deleted(_))
+                         } else {
+                             !matches!(p.index, DisplayIndex::Deleted(_))
+                         }
+                    }).collect();
+                    
+                    print_pads(&filtered);
                     Ok(())
                 }
                 Err(e) => Err(e),
