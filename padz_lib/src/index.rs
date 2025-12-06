@@ -25,62 +25,51 @@ pub struct DisplayPad {
 
 /// Takes a raw list of pads and assigns canonical indexes.
 /// This sort order MUST be stable.
+///
+/// Important: Pinned pads appear in BOTH the pinned list (p1, p2...) AND
+/// the regular list (1, 2...). This ensures canonical indexes are stable
+/// across views - a pad always has the same regular index whether pinned or not.
 pub fn index_pads(mut pads: Vec<Pad>) -> Vec<DisplayPad> {
-    // Sort logic:
-    // We want a stable order to assign indexes.
-    // Usually creation date is the best stable identifier for "index 1, 2, 3".
-    //
-    // Buckets:
-    // 1. Pinned (Sorted by pinned_at desc or asc? Usually manual, but let's say pinned_at for now)
-    // 2. Active (Sorted by created_at)
-    // 3. Deleted (Sorted by deleted_at)
-
-    // First, simplistic sort by created_at to ensure stability within buckets if not otherwise specified.
+    // Sort by created_at for stable ordering
     pads.sort_by(|a, b| a.metadata.created_at.cmp(&b.metadata.created_at));
-
-    let mut pinned = Vec::new();
-    let mut regular = Vec::new();
-    let mut deleted = Vec::new();
-
-    for pad in pads {
-        if pad.metadata.is_deleted {
-            deleted.push(pad);
-        } else if pad.metadata.is_pinned {
-            pinned.push(pad);
-        } else {
-            regular.push(pad);
-        }
-    }
-
-    // Now we have the buckets. Let's assign indexes.
-    // Pinned: p1, p2...
-    // The spec implies p1 is the "most important" or "first" pinned.
-    // Let's assume pinned pads are sorted by pinned_at time (newest pin = p1? or oldest?
-    // PADZ.md doesn't explicitly say, but usually lists are 1..N.
-    // Let's stick to created_at for regular, and maybe pinned_at for pinned?
-    // For now, let's keep the creation order we established above for stability.
 
     let mut results = Vec::new();
 
-    for (i, pad) in pinned.into_iter().enumerate() {
-        results.push(DisplayPad {
-            pad,
-            index: DisplayIndex::Pinned(i + 1),
-        });
+    // First pass: assign pinned indexes (p1, p2, ...)
+    let mut pinned_idx = 1;
+    for pad in &pads {
+        if pad.metadata.is_pinned && !pad.metadata.is_deleted {
+            results.push(DisplayPad {
+                pad: pad.clone(),
+                index: DisplayIndex::Pinned(pinned_idx),
+            });
+            pinned_idx += 1;
+        }
     }
 
-    for (i, pad) in regular.into_iter().enumerate() {
-        results.push(DisplayPad {
-            pad,
-            index: DisplayIndex::Regular(i + 1),
-        });
+    // Second pass: assign regular indexes (1, 2, ...) to ALL non-deleted pads
+    // including pinned ones - this ensures canonical indexes are stable
+    let mut regular_idx = 1;
+    for pad in &pads {
+        if !pad.metadata.is_deleted {
+            results.push(DisplayPad {
+                pad: pad.clone(),
+                index: DisplayIndex::Regular(regular_idx),
+            });
+            regular_idx += 1;
+        }
     }
 
-    for (i, pad) in deleted.into_iter().enumerate() {
-        results.push(DisplayPad {
-            pad,
-            index: DisplayIndex::Deleted(i + 1),
-        });
+    // Third pass: assign deleted indexes (d1, d2, ...)
+    let mut deleted_idx = 1;
+    for pad in &pads {
+        if pad.metadata.is_deleted {
+            results.push(DisplayPad {
+                pad: pad.clone(),
+                index: DisplayIndex::Deleted(deleted_idx),
+            });
+            deleted_idx += 1;
+        }
     }
 
     results
@@ -94,8 +83,6 @@ mod tests {
         let mut p = Pad::new(title.to_string(), "".to_string());
         p.metadata.is_pinned = pinned;
         p.metadata.is_deleted = deleted;
-        // sleep a tiny bit to ensure different timestamps if needed,
-        // but test runs fast. Let's force timestamps if strictly testing order.
         p
     }
 
@@ -109,28 +96,67 @@ mod tests {
         let pads = vec![p1, p2, p3, p4];
         let indexed = index_pads(pads);
 
-        // We expect:
-        // Pinned 1 -> p1
-        // Regular 1 -> 1 (since created first)
-        // Regular 2 -> 2
-        // Deleted 1 -> d1
+        // With the canonical indexing, pinned pads appear in BOTH
+        // the pinned list AND the regular list.
+        // Expected entries:
+        // - p1: Pinned 1 (pinned index)
+        // - 1: Regular 1 (regular index)
+        // - 2: Pinned 1 (regular index - pinned pads also get regular index)
+        // - 3: Regular 2 (regular index)
+        // - d1: Deleted 1 (deleted index)
 
-        let p_idx = indexed
+        // Check pinned index
+        let pinned_entries: Vec<_> = indexed
             .iter()
-            .find(|dp| dp.pad.metadata.title == "Pinned 1")
-            .unwrap();
-        assert_eq!(p_idx.index, DisplayIndex::Pinned(1));
+            .filter(|dp| matches!(dp.index, DisplayIndex::Pinned(_)))
+            .collect();
+        assert_eq!(pinned_entries.len(), 1);
+        assert_eq!(pinned_entries[0].pad.metadata.title, "Pinned 1");
+        assert_eq!(pinned_entries[0].index, DisplayIndex::Pinned(1));
 
-        let r1_idx = indexed
+        // Check regular indexes - should include ALL non-deleted pads
+        let regular_entries: Vec<_> = indexed
             .iter()
-            .find(|dp| dp.pad.metadata.title == "Regular 1")
-            .unwrap();
-        assert_eq!(r1_idx.index, DisplayIndex::Regular(1));
+            .filter(|dp| matches!(dp.index, DisplayIndex::Regular(_)))
+            .collect();
+        assert_eq!(regular_entries.len(), 3); // Regular 1, Pinned 1, Regular 2
 
-        // Note: Regular 2 was created LAST, so it should be #2?
-        // Wait, current impl sorts by created_at.
-        // in `make_pad`, we didn't sleep, so created_at might be identical.
-        // Real usage has diff times.
-        // But the logic holds: Pinned gets P bucket, Regular gets R bucket.
+        // Check deleted index
+        let deleted_entries: Vec<_> = indexed
+            .iter()
+            .filter(|dp| matches!(dp.index, DisplayIndex::Deleted(_)))
+            .collect();
+        assert_eq!(deleted_entries.len(), 1);
+        assert_eq!(deleted_entries[0].pad.metadata.title, "Deleted 1");
+    }
+
+    #[test]
+    fn test_pinned_pad_has_both_indexes() {
+        let p1 = make_pad("Note A", false, false);
+        let p2 = make_pad("Note B", true, false); // pinned
+        let p3 = make_pad("Note C", false, false);
+
+        let pads = vec![p1, p2, p3];
+        let indexed = index_pads(pads);
+
+        // Note B should appear twice: as p1 and as regular index 2
+        let note_b_entries: Vec<_> = indexed
+            .iter()
+            .filter(|dp| dp.pad.metadata.title == "Note B")
+            .collect();
+        assert_eq!(note_b_entries.len(), 2);
+
+        // One should be Pinned(1)
+        assert!(
+            note_b_entries
+                .iter()
+                .any(|dp| dp.index == DisplayIndex::Pinned(1))
+        );
+        // One should be Regular(2) - it's the second pad by creation order
+        assert!(
+            note_b_entries
+                .iter()
+                .any(|dp| dp.index == DisplayIndex::Regular(2))
+        );
     }
 }
