@@ -58,6 +58,7 @@ fn run() -> Result<()> {
         Some(Commands::Init) => handle_init(&ctx),
         Some(Commands::CompletePads { deleted }) => handle_complete_pads(&mut ctx, deleted),
         Some(Commands::Purge { indexes, yes }) => handle_purge(&mut ctx, indexes, yes),
+        Some(Commands::Export { indexes }) => handle_export(&mut ctx, indexes),
         Some(Commands::Completions { .. }) => unreachable!(),
         None => handle_list(&mut ctx, None, false),
     }
@@ -256,6 +257,13 @@ fn handle_purge(ctx: &mut AppContext, indexes: Vec<String>, yes: bool) -> Result
         parse_indexes(&indexes)?
     };
     let result = ctx.api.purge_pads(ctx.scope, &parsed, yes)?;
+    print_messages(&result.messages);
+    Ok(())
+}
+
+fn handle_export(ctx: &mut AppContext, indexes: Vec<String>) -> Result<()> {
+    let parsed = parse_indexes(&indexes)?; // Empty vec remains empty, api handles logic
+    let result = ctx.api.export_pads(ctx.scope, &parsed)?;
     print_messages(&result.messages);
     Ok(())
 }

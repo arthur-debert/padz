@@ -127,6 +127,12 @@ pub enum Commands {
         yes: bool,
     },
     // (Import, Export will go here)
+    /// Export pads to a tar.gz archive
+    Export {
+        /// Indexes of the pads (e.g. 1 2) - if omitted, exports all active pads
+        #[arg(required = false, num_args = 0..)]
+        indexes: Vec<String>,
+    },
 
     // --- Misc ---
     #[command(next_help_heading = "Misc")]

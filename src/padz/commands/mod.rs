@@ -7,6 +7,7 @@ use std::path::PathBuf;
 pub mod config;
 pub mod create;
 pub mod delete;
+pub mod export;
 pub mod helpers;
 pub mod init;
 pub mod list;
