@@ -57,6 +57,7 @@ fn run() -> Result<()> {
         Some(Commands::Config { key, value }) => handle_config(&mut ctx, key, value),
         Some(Commands::Init) => handle_init(&ctx),
         Some(Commands::CompletePads { deleted }) => handle_complete_pads(&mut ctx, deleted),
+        Some(Commands::Purge { indexes, yes }) => handle_purge(&mut ctx, indexes, yes),
         Some(Commands::Completions { .. }) => unreachable!(),
         None => handle_list(&mut ctx, None, false),
     }
@@ -244,6 +245,17 @@ fn handle_paths(ctx: &mut AppContext, indexes: Vec<String>) -> Result<()> {
     for path in &result.pad_paths {
         println!("{}", path.display());
     }
+    print_messages(&result.messages);
+    Ok(())
+}
+
+fn handle_purge(ctx: &mut AppContext, indexes: Vec<String>, yes: bool) -> Result<()> {
+    let parsed = if indexes.is_empty() {
+        Vec::new()
+    } else {
+        parse_indexes(&indexes)?
+    };
+    let result = ctx.api.purge_pads(ctx.scope, &parsed, yes)?;
     print_messages(&result.messages);
     Ok(())
 }

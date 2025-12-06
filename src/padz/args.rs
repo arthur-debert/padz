@@ -7,30 +7,25 @@ pub enum CompletionShell {
 }
 
 #[derive(Parser, Debug)]
-#[command(name = "padz", bin_name = "padz")]
+#[command(name = "padz", bin_name = "padz", version)]
 #[command(about = "Context-aware command-line note-taking tool", long_about = None)]
 pub struct Cli {
     #[command(subcommand)]
     pub command: Option<Commands>,
 
     /// Operate on global pads
-    #[arg(short, long, global = true)]
+    #[arg(short, long, global = true, help_heading = "Options")]
     pub global: bool,
 
     /// Verbose output
-    #[arg(short, long, global = true)]
+    #[arg(short, long, global = true, help_heading = "Options")]
     pub verbose: bool,
-    // Catch-all for "naked" args (e.g. `padz 1` or `padz "note"`)
-    // Clap has `external_subcommand` or just a trailing arg.
-    // PADZ.md says: `padz 1` -> view, `padz "note"` -> create.
-    // Complicated to map directly with simple subcommands.
-    // Strategy: Use a default subcommand or handle parsing manually if Clap fails?
-    // Or use `#[arg(trailing_var_arg = true)]`?
-    // Let's stick to EXPLICIT subcommands first in this iteration.
 }
 
 #[derive(Subcommand, Debug)]
 pub enum Commands {
+    // --- Core Commands ---
+    #[command(next_help_heading = "Core Commands")]
     /// Create a new pad
     #[command(alias = "n")]
     Create {
@@ -59,6 +54,11 @@ pub enum Commands {
         deleted: bool,
     },
 
+    /// Search pads (dedicated command)
+    Search { term: String },
+
+    // --- For Each Pad ---
+    #[command(next_help_heading = "For Each Pad")]
     /// View one or more pads
     #[command(alias = "v")]
     View {
@@ -107,9 +107,6 @@ pub enum Commands {
         indexes: Vec<String>,
     },
 
-    /// Search pads (dedicated command)
-    Search { term: String },
-
     /// Print the file path to one or more pads
     Path {
         /// Indexes of the pads (e.g. 1 p1 d1)
@@ -117,6 +114,22 @@ pub enum Commands {
         indexes: Vec<String>,
     },
 
+    // --- Data ---
+    #[command(next_help_heading = "Data")]
+    /// Permanently delete pads
+    Purge {
+        /// Indexes of the pads (e.g. d1 d2) - if omitted, purges all deleted pads
+        #[arg(required = false, num_args = 0..)]
+        indexes: Vec<String>,
+
+        /// Skip confirmation
+        #[arg(long, short = 'y')]
+        yes: bool,
+    },
+    // (Import, Export will go here)
+
+    // --- Misc ---
+    #[command(next_help_heading = "Misc")]
     /// Get or set configuration
     Config {
         /// Configuration key (e.g., file-ext)
@@ -130,6 +143,7 @@ pub enum Commands {
     Init,
 
     /// Generate shell completions
+    #[command(hide = true)]
     Completions {
         /// Shell to generate completions for
         #[arg(value_enum)]

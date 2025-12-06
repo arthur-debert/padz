@@ -63,6 +63,15 @@ impl<S: DataStore> PadzApi<S> {
         commands::update::run(&mut self.store, scope, updates)
     }
 
+    pub fn purge_pads(
+        &mut self,
+        scope: Scope,
+        indexes: &[DisplayIndex],
+        skip_confirm: bool,
+    ) -> Result<commands::CmdResult> {
+        commands::purge::run(&mut self.store, scope, indexes, skip_confirm)
+    }
+
     pub fn pad_paths(&self, scope: Scope, indexes: &[DisplayIndex]) -> Result<commands::CmdResult> {
         commands::paths::run(&self.store, scope, indexes)
     }

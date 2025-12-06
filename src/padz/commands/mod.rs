@@ -12,6 +12,7 @@ pub mod init;
 pub mod list;
 pub mod paths;
 pub mod pinning;
+pub mod purge;
 pub mod search;
 pub mod update;
 pub mod view;
