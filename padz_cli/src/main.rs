@@ -123,6 +123,37 @@ fn main() {
                 Err(e) => Err(e),
             }
         }
+        Some(Commands::Edit { index }) => {
+            let idx = parse_index(&index);
+            match api.get_pad(&idx, scope) {
+                Ok(dp) => {
+                    let initial =
+                        EditorContent::new(dp.pad.metadata.title.clone(), dp.pad.content.clone());
+
+                    match edit_content(&initial, ".txt") {
+                        Ok(edited) => {
+                            if edited.title.is_empty() {
+                                eprintln!("Error: Title cannot be empty");
+                                std::process::exit(1);
+                            }
+
+                            match api.update_pad(&idx, edited.title, edited.content, scope) {
+                                Ok(pad) => {
+                                    println!("Pad updated: {}", pad.metadata.title.green());
+                                    Ok(())
+                                }
+                                Err(e) => Err(e),
+                            }
+                        }
+                        Err(e) => {
+                            eprintln!("Editor error: {}", e);
+                            std::process::exit(1);
+                        }
+                    }
+                }
+                Err(e) => Err(e),
+            }
+        }
         Some(Commands::Delete { index }) => {
             let idx = parse_index(&index);
             match api.delete_pad(&idx, scope) {
@@ -185,13 +216,15 @@ fn main() {
 fn parse_index(s: &str) -> DisplayIndex {
     // Basic parsing: p1 -> Pinned(1), d1 -> Deleted(1), 1 -> Regular(1)
     if let Some(rest) = s.strip_prefix('p')
-        && let Ok(n) = rest.parse() {
-            return DisplayIndex::Pinned(n);
-        }
+        && let Ok(n) = rest.parse()
+    {
+        return DisplayIndex::Pinned(n);
+    }
     if let Some(rest) = s.strip_prefix('d')
-        && let Ok(n) = rest.parse() {
-            return DisplayIndex::Deleted(n);
-        }
+        && let Ok(n) = rest.parse()
+    {
+        return DisplayIndex::Deleted(n);
+    }
     if let Ok(n) = s.parse() {
         return DisplayIndex::Regular(n);
     }

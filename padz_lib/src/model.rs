@@ -18,7 +18,7 @@ pub struct Metadata {
     pub is_deleted: bool,
     pub deleted_at: Option<DateTime<Utc>>,
     // We store the title in metadata to list without reading content files
-    pub title: String, 
+    pub title: String,
 }
 
 impl Metadata {

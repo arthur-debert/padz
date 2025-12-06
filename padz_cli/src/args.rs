@@ -60,6 +60,13 @@ pub enum Commands {
         index: String,
     },
 
+    /// Edit a pad in the editor
+    #[command(alias = "e")]
+    Edit {
+        /// Index of the pad (e.g. 1, p1, d1)
+        index: String,
+    },
+
     /// Delete a pad
     #[command(alias = "rm")]
     Delete { index: String },

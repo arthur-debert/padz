@@ -2,8 +2,8 @@ use crate::error::Result;
 use crate::model::{Pad, Scope};
 use uuid::Uuid;
 
-pub mod memory;
 pub mod fs;
+pub mod memory;
 // pub mod fs; // Will be added later
 
 /// Abstract interface for Pad storage.

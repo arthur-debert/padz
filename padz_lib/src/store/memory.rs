@@ -27,7 +27,7 @@ impl DataStore for InMemoryStore {
         self.pads
             .get(&(scope, *id))
             .cloned()
-            .ok_or_else(|| PadzError::PadNotFound(*id))
+            .ok_or(PadzError::PadNotFound(*id))
     }
 
     fn list_pads(&self, scope: Scope) -> Result<Vec<Pad>> {
@@ -52,10 +52,15 @@ impl DataStore for InMemoryStore {
 #[cfg(any(test, feature = "test_utils"))]
 pub mod fixtures {
     use super::*;
-    use crate::model::Metadata;
 
     pub struct StoreFixture {
         pub store: InMemoryStore,
+    }
+
+    impl Default for StoreFixture {
+        fn default() -> Self {
+            Self::new()
+        }
     }
 
     impl StoreFixture {
@@ -74,11 +79,11 @@ pub mod fixtures {
             }
             self
         }
-        
+
         pub fn with_active_pad(mut self, title: &str, scope: Scope) -> Self {
-             let pad = Pad::new(title.to_string(), "Some content".to_string());
-             self.store.save_pad(&pad, scope).unwrap();
-             self
+            let pad = Pad::new(title.to_string(), "Some content".to_string());
+            self.store.save_pad(&pad, scope).unwrap();
+            self
         }
 
         pub fn with_pinned_pad(mut self, title: &str, scope: Scope) -> Self {
