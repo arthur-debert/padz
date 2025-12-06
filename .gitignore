@@ -5,4 +5,4 @@ Cargo.lock
 *.swp
 tmp/
 .history/
-.padz
+.padz/
