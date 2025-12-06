@@ -1,7 +1,13 @@
 [package]
 name = "padz"
 version = "0.1.0"
-edition = "2024"
+edition = "2021"
+description = "A fast, project-aware scratch pad for the command line"
+license = "MIT"
+repository = "https://github.com/adebert/padz"
+keywords = ["cli", "notes", "scratchpad", "productivity"]
+categories = ["command-line-utilities"]
+readme = "README.md"
 
 [lib]
 path = "src/padz/lib.rs"

@@ -1,6 +1,6 @@
 use crate::commands::CmdResult;
 use crate::error::Result;
-use crate::index::{DisplayPad, index_pads};
+use crate::index::{index_pads, DisplayPad};
 use crate::model::Scope;
 use crate::store::DataStore;
 

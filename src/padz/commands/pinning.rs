@@ -56,6 +56,7 @@ mod tests {
     use crate::index::DisplayIndex;
     use crate::model::Scope;
     use crate::store::memory::InMemoryStore;
+    use std::slice;
 
     #[test]
     fn pinning_assigns_p_index() {
@@ -64,15 +65,13 @@ mod tests {
         create::run(&mut store, Scope::Project, "B".into(), "".into()).unwrap();
 
         let idx = DisplayIndex::Regular(1);
-        pin(&mut store, Scope::Project, &[idx]).unwrap();
+        pin(&mut store, Scope::Project, slice::from_ref(&idx)).unwrap();
 
         let result = list::run(&store, Scope::Project, false).unwrap();
-        assert!(
-            result
-                .listed_pads
-                .iter()
-                .any(|dp| matches!(dp.index, DisplayIndex::Pinned(1)))
-        );
+        assert!(result
+            .listed_pads
+            .iter()
+            .any(|dp| matches!(dp.index, DisplayIndex::Pinned(1))));
     }
 
     #[test]
@@ -80,15 +79,13 @@ mod tests {
         let mut store = InMemoryStore::new();
         create::run(&mut store, Scope::Project, "A".into(), "".into()).unwrap();
         let idx = DisplayIndex::Regular(1);
-        pin(&mut store, Scope::Project, &[idx.clone()]).unwrap();
-        unpin(&mut store, Scope::Project, &[idx]).unwrap();
+        pin(&mut store, Scope::Project, slice::from_ref(&idx)).unwrap();
+        unpin(&mut store, Scope::Project, slice::from_ref(&idx)).unwrap();
 
         let result = list::run(&store, Scope::Project, false).unwrap();
-        assert!(
-            result
-                .listed_pads
-                .iter()
-                .all(|dp| !matches!(dp.index, DisplayIndex::Pinned(_)))
-        );
+        assert!(result
+            .listed_pads
+            .iter()
+            .all(|dp| !matches!(dp.index, DisplayIndex::Pinned(_))));
     }
 }

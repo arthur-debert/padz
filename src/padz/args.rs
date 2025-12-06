@@ -1,7 +1,13 @@
-use clap::{Parser, Subcommand};
+use clap::{Parser, Subcommand, ValueEnum};
+
+#[derive(Copy, Clone, Debug, ValueEnum)]
+pub enum CompletionShell {
+    Bash,
+    Zsh,
+}
 
 #[derive(Parser, Debug)]
-#[command(name = "pa")]
+#[command(name = "pa", bin_name = "pa")]
 #[command(about = "Context-aware command-line note-taking tool", long_about = None)]
 pub struct Cli {
     #[command(subcommand)]
@@ -122,4 +128,19 @@ pub enum Commands {
 
     /// Initialize the store (optional utility)
     Init,
+
+    /// Generate shell completions
+    Completions {
+        /// Shell to generate completions for
+        #[arg(value_enum)]
+        shell: CompletionShell,
+    },
+
+    /// Output pad indexes for shell completion (hidden)
+    #[command(hide = true, name = "__complete-pads")]
+    CompletePads {
+        /// Include deleted pads
+        #[arg(long)]
+        deleted: bool,
+    },
 }

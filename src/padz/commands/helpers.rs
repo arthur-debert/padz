@@ -1,5 +1,5 @@
 use crate::error::{PadzError, Result};
-use crate::index::{DisplayIndex, DisplayPad, index_pads};
+use crate::index::{index_pads, DisplayIndex, DisplayPad};
 use crate::model::Scope;
 use crate::store::DataStore;
 use uuid::Uuid;

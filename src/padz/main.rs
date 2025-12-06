@@ -5,7 +5,7 @@ use directories::ProjectDirs;
 use padz::api::{CmdMessage, ConfigAction, MessageLevel, PadUpdate, PadzApi, PadzPaths};
 use padz::clipboard::{copy_to_clipboard, format_for_clipboard};
 use padz::config::PadzConfig;
-use padz::editor::{EditorContent, edit_content};
+use padz::editor::{edit_content, EditorContent};
 use padz::error::{PadzError, Result};
 use padz::index::{DisplayIndex, DisplayPad};
 use padz::model::Scope;
@@ -14,7 +14,7 @@ use std::path::PathBuf;
 use unicode_width::UnicodeWidthStr;
 
 mod args;
-use args::{Cli, Commands};
+use args::{Cli, Commands, CompletionShell};
 
 fn main() {
     if let Err(e) = run() {
@@ -31,6 +31,12 @@ struct AppContext {
 
 fn run() -> Result<()> {
     let cli = Cli::parse();
+
+    // Handle completions before context init (they don't need API)
+    if let Some(Commands::Completions { shell }) = &cli.command {
+        return handle_completions(*shell);
+    }
+
     let mut ctx = init_context(&cli)?;
 
     match cli.command {
@@ -50,6 +56,8 @@ fn run() -> Result<()> {
         Some(Commands::Path { indexes }) => handle_paths(&mut ctx, indexes),
         Some(Commands::Config { key, value }) => handle_config(&mut ctx, key, value),
         Some(Commands::Init) => handle_init(&ctx),
+        Some(Commands::CompletePads { deleted }) => handle_complete_pads(&mut ctx, deleted),
+        Some(Commands::Completions { .. }) => unreachable!(),
         None => handle_list(&mut ctx, None, false),
     }
 }
@@ -421,15 +429,15 @@ fn format_time_ago(timestamp: chrono::DateTime<Utc>) -> String {
 }
 
 fn parse_index(s: &str) -> Result<DisplayIndex> {
-    if let Some(rest) = s.strip_prefix('p')
-        && let Ok(n) = rest.parse()
-    {
-        return Ok(DisplayIndex::Pinned(n));
+    if let Some(rest) = s.strip_prefix('p') {
+        if let Ok(n) = rest.parse() {
+            return Ok(DisplayIndex::Pinned(n));
+        }
     }
-    if let Some(rest) = s.strip_prefix('d')
-        && let Ok(n) = rest.parse()
-    {
-        return Ok(DisplayIndex::Deleted(n));
+    if let Some(rest) = s.strip_prefix('d') {
+        if let Ok(n) = rest.parse() {
+            return Ok(DisplayIndex::Deleted(n));
+        }
     }
     if let Ok(n) = s.parse() {
         return Ok(DisplayIndex::Regular(n));
@@ -440,3 +448,223 @@ fn parse_index(s: &str) -> Result<DisplayIndex> {
 fn parse_indexes(strs: &[String]) -> Result<Vec<DisplayIndex>> {
     strs.iter().map(|s| parse_index(s)).collect()
 }
+
+fn handle_completions(shell: CompletionShell) -> Result<()> {
+    match shell {
+        CompletionShell::Bash => print!("{}", BASH_COMPLETION_SCRIPT),
+        CompletionShell::Zsh => print!("{}", ZSH_COMPLETION_SCRIPT),
+    }
+    Ok(())
+}
+
+fn handle_complete_pads(ctx: &mut AppContext, include_deleted: bool) -> Result<()> {
+    let mut entries = Vec::new();
+
+    let non_deleted = ctx.api.list_pads(ctx.scope, false)?;
+    entries.extend(
+        non_deleted
+            .listed_pads
+            .into_iter()
+            .filter(|dp| !matches!(dp.index, DisplayIndex::Deleted(_)))
+            .map(|dp| (dp.index.to_string(), dp.pad.metadata.title)),
+    );
+
+    if include_deleted {
+        let deleted = ctx.api.list_pads(ctx.scope, true)?;
+        entries.extend(
+            deleted
+                .listed_pads
+                .into_iter()
+                .map(|dp| (dp.index.to_string(), dp.pad.metadata.title)),
+        );
+    }
+
+    for (index, title) in entries {
+        println!("{}	{}", index, title);
+    }
+
+    Ok(())
+}
+
+const BASH_COMPLETION_SCRIPT: &str = r#"
+_pa_complete() {
+    local cur prev cmd
+    COMPREPLY=()
+    cur="${COMP_WORDS[COMP_CWORD]}"
+    prev="${COMP_WORDS[COMP_CWORD-1]}"
+
+    local global_opts="--global -g --verbose -v --help -h --version -V"
+    local commands="create list view edit open delete pin unpin search path config init completions"
+    local aliases="n ls v e o rm p u"
+
+    for word in "${COMP_WORDS[@]:1}"; do
+        case "$word" in
+            -g|--global|--verbose|-v|-h|--help|-V|--version) ;;
+            create|list|view|edit|open|delete|pin|unpin|search|path|config|init|completions|n|ls|v|e|o|rm|p|u)
+                cmd="$word"
+                break
+                ;;
+        esac
+    done
+
+    if [[ -z "$cmd" ]]; then
+        COMPREPLY=( $(compgen -W "$global_opts $commands $aliases" -- "$cur") )
+        return 0
+    fi
+
+    if [[ "$cur" == --* ]]; then
+        case "$cmd" in
+            create|n)
+                COMPREPLY=( $(compgen -W "--no-editor" -- "$cur") )
+                return 0
+                ;;
+            list|ls)
+                COMPREPLY=( $(compgen -W "--deleted --search" -- "$cur") )
+                return 0
+                ;;
+        esac
+    fi
+
+    case "$cmd" in
+        completions)
+            COMPREPLY=( $(compgen -W "bash zsh" -- "$cur") )
+            return 0
+            ;;
+        view|v|edit|e|open|o|delete|rm|pin|p|unpin|u|path)
+            if __pa_pad_index_completion "$cmd" "$cur"; then
+                return 0
+            fi
+            ;;
+    esac
+}
+
+__pa_pad_index_completion() {
+    local cmd="$1"
+    local cur="$2"
+    local include_deleted="no"
+    case "$cmd" in
+        view|v|open|o|path)
+            include_deleted="yes"
+            ;;
+    esac
+
+    local -a scope_flags=()
+    for word in "${COMP_WORDS[@]:1}"; do
+        case "$word" in
+            -g|--global)
+                scope_flags+=(--global)
+                ;;
+        esac
+    done
+
+    local cmdline=(pa "${scope_flags[@]}" __complete-pads)
+    if [[ "$include_deleted" == "yes" ]]; then
+        cmdline+=(--deleted)
+    fi
+
+    local pad_output
+    pad_output="$( ${cmdline[@]} 2>/dev/null )" || return 1
+    if [[ -z "$pad_output" ]]; then
+        return 1
+    fi
+
+    local IFS=$'
+'
+    local values=()
+    local shown=()
+    while IFS=$'	' read -r index title; do
+        [[ -z "$index" ]] && continue
+        values+=("$index")
+        shown+=("$index # $title")
+    done <<< "$pad_output"
+
+    COMPREPLY=( $(compgen -W "${values[*]}" -- "$cur") )
+    if [[ ${#COMPREPLY[@]} -gt 1 ]]; then
+        printf '\n'
+        printf '%s\n' "${shown[@]}"
+    fi
+    return 0
+}
+
+complete -F _pa_complete pa
+"#;
+
+const ZSH_COMPLETION_SCRIPT: &str = r#"
+#compdef pa
+
+_pa_complete() {
+    local -a scope_flags
+    local cmd
+
+    for word in ${words[@]:2}; do
+        case $word in
+            -g|--global)
+                scope_flags+=(--global)
+                ;;
+        esac
+    done
+
+    for word in ${words[@]:2}; do
+        case $word in
+            -g|--global|--verbose|-v|-h|--help|-V|--version) ;;
+            create|list|view|edit|open|delete|pin|unpin|search|path|config|init|completions|n|ls|v|e|o|rm|p|u)
+                cmd=$word
+                break
+                ;;
+        esac
+    done
+
+    if [[ -z $cmd ]]; then
+        compadd create list view edit open delete pin unpin search path config init completions n ls v e o rm p u -- --global --verbose --help --version
+        return
+    fi
+
+    case $cmd in
+        create|n)
+            compadd -- --no-editor
+            return
+            ;;
+        list|ls)
+            compadd -- --deleted --search
+            return
+            ;;
+        completions)
+            compadd bash zsh
+            return
+            ;;
+        view|v|edit|e|open|o|delete|rm|pin|p|unpin|u|path)
+            __pa_zsh_pad_indexes "$cmd" scope_flags
+            return
+            ;;
+    esac
+}
+
+__pa_zsh_pad_indexes() {
+    local cmd="$1"
+    local -n scope_flags_ref=$2
+    local include_deleted="no"
+    case $cmd in
+        view|v|open|o|path)
+            include_deleted="yes"
+            ;;
+    esac
+
+    local -a pad_entries
+    local -a cmdline=(pa ${scope_flags_ref[@]} __complete-pads)
+    if [[ $include_deleted == "yes" ]]; then
+        cmdline+=(--deleted)
+    fi
+
+    local index title
+    while IFS=$'	' read -r index title; do
+        [[ -z $index ]] && continue
+        pad_entries+="$index:$index # $title"
+    done < <(${cmdline[@]} 2>/dev/null)
+
+    if (( ${#pad_entries[@]} )); then
+        _describe 'pads' pad_entries
+    fi
+}
+
+compdef _pa_complete pa
+"#;

@@ -155,16 +155,12 @@ mod tests {
         assert_eq!(note_b_entries.len(), 2);
 
         // One should be Pinned(1)
-        assert!(
-            note_b_entries
-                .iter()
-                .any(|dp| dp.index == DisplayIndex::Pinned(1))
-        );
+        assert!(note_b_entries
+            .iter()
+            .any(|dp| dp.index == DisplayIndex::Pinned(1)));
         // One should be Regular(2) - it's the second newest pad
-        assert!(
-            note_b_entries
-                .iter()
-                .any(|dp| dp.index == DisplayIndex::Regular(2))
-        );
+        assert!(note_b_entries
+            .iter()
+            .any(|dp| dp.index == DisplayIndex::Regular(2)));
     }
 }
