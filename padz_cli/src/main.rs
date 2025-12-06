@@ -1,3 +1,4 @@
+use chrono::Utc;
 use clap::Parser;
 use colored::*;
 use directories::ProjectDirs;
@@ -341,25 +342,117 @@ fn parse_index(s: &str) -> DisplayIndex {
     std::process::exit(1);
 }
 
+const LINE_WIDTH: usize = 100;
+const PIN_MARKER: &str = "⚲";
+
+fn format_time_ago(timestamp: chrono::DateTime<Utc>) -> String {
+    let now = Utc::now();
+    let duration = now.signed_duration_since(timestamp);
+
+    let formatter = timeago::Formatter::new();
+    formatter.convert(duration.to_std().unwrap_or_default())
+}
+
 fn print_pads(pads: &[DisplayPad]) {
     if pads.is_empty() {
         println!("No pads found.");
         return;
     }
+
+    // Print blank line before pinned section if there are pinned items
+    let has_pinned = pads
+        .iter()
+        .any(|dp| matches!(dp.index, DisplayIndex::Pinned(_)));
+    if has_pinned {
+        println!();
+    }
+
+    let mut last_was_pinned = false;
     for dp in pads {
-        let idx_str = dp.index.to_string();
+        let is_pinned_entry = matches!(dp.index, DisplayIndex::Pinned(_));
+
+        // Add blank line when transitioning from pinned to regular
+        if last_was_pinned && !is_pinned_entry {
+            println!();
+        }
+        last_was_pinned = is_pinned_entry;
+
+        // Format index: "p1. " or "1. " or "d1. "
+        let idx_str = match &dp.index {
+            DisplayIndex::Pinned(n) => format!("p{}. ", n),
+            DisplayIndex::Regular(n) => format!("{}. ", n),
+            DisplayIndex::Deleted(n) => format!("d{}. ", n),
+        };
+
+        // Left prefix: "  ⚲ " for pinned, "    " for regular
+        let left_prefix = if is_pinned_entry {
+            format!("  {} ", PIN_MARKER)
+        } else {
+            "    ".to_string()
+        };
+
+        // Right suffix: " ⚲ " if pad is pinned (shown in regular list too), "   " otherwise
+        let right_suffix = if dp.pad.metadata.is_pinned && !is_pinned_entry {
+            format!(" {} ", PIN_MARKER)
+        } else {
+            "   ".to_string()
+        };
+
+        // Time ago string
+        let time_ago = format_time_ago(dp.pad.metadata.created_at);
+
+        // Build title + content preview
+        let title = &dp.pad.metadata.title;
+        let content_preview: String = dp
+            .pad
+            .content
+            .chars()
+            .take(50)
+            .map(|c| if c == '\n' { ' ' } else { c })
+            .collect();
+        let title_content = if content_preview.is_empty() {
+            title.clone()
+        } else {
+            format!("{} {}", title, content_preview)
+        };
+
+        // Calculate available space for title_content
+        // Format: "{left_prefix}{idx_str}{title_content}{padding}{right_suffix}{time_ago}"
+        let fixed_width = left_prefix.len() + idx_str.len() + right_suffix.len() + time_ago.len();
+        let available = LINE_WIDTH.saturating_sub(fixed_width);
+
+        // Truncate or pad title_content
+        let title_display: String = if title_content.chars().count() > available {
+            title_content
+                .chars()
+                .take(available.saturating_sub(1))
+                .collect::<String>()
+                + "…"
+        } else {
+            title_content
+        };
+
+        // Build the full line with proper padding
+        let content_len = title_display.chars().count();
+        let padding = available.saturating_sub(content_len);
+
+        // Color the output
         let idx_colored = match dp.index {
             DisplayIndex::Pinned(_) => idx_str.yellow(),
             DisplayIndex::Deleted(_) => idx_str.red(),
-            DisplayIndex::Regular(_) => idx_str.green(),
+            DisplayIndex::Regular(_) => idx_str.normal(),
         };
 
-        let pin_icon = if dp.pad.metadata.is_pinned {
-            "📌 "
-        } else {
-            ""
-        };
+        let time_colored = time_ago.dimmed();
 
-        println!("{:<4} {}{}", idx_colored, pin_icon, dp.pad.metadata.title);
+        println!(
+            "{}{}{}{}{}{}",
+            left_prefix,
+            idx_colored,
+            title_display,
+            " ".repeat(padding),
+            right_suffix,
+            time_colored
+        );
     }
 }
