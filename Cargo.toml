@@ -13,7 +13,7 @@ readme = "README.md"
 path = "src/padz/lib.rs"
 
 [[bin]]
-name = "pa"
+name = "padz"
 path = "src/padz/main.rs"
 
 [dependencies]

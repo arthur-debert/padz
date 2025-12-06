@@ -80,11 +80,11 @@ mkdir -p "${TMP_BASE}"
 TEMP_DIR=$(mktemp -d "${TMP_BASE}/padz-test-XXXXXX")
 
 # Always build a fresh binary to ensure we're testing the latest code
-PADZ_BIN_REL="target/debug/pa"
+PADZ_BIN_REL="target/debug/padz"
 PADZ_BIN="${PROJECT_ROOT}/${PADZ_BIN_REL}"
 
 echo -e "${GRAY}Building fresh padz binary...${NC}"
-if ! (cd "${PROJECT_ROOT}" && cargo build --bin pa >/dev/null 2>&1); then
+if ! (cd "${PROJECT_ROOT}" && cargo build --bin padz >/dev/null 2>&1); then
     echo -e "${RED}Error: Binary build failed${NC}" >&2
     exit 1
 fi

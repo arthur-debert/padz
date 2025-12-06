@@ -7,7 +7,7 @@ pub enum CompletionShell {
 }
 
 #[derive(Parser, Debug)]
-#[command(name = "pa", bin_name = "pa")]
+#[command(name = "padz", bin_name = "padz")]
 #[command(about = "Context-aware command-line note-taking tool", long_about = None)]
 pub struct Cli {
     #[command(subcommand)]
