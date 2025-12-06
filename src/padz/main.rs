@@ -14,7 +14,10 @@ use std::path::PathBuf;
 use unicode_width::UnicodeWidthStr;
 
 mod args;
-use args::{Cli, Commands, CompletionShell, CoreCommands, DataCommands, MiscCommands, PadCommands};
+use args::{
+    print_grouped_help, print_help_for_command, print_subcommand_help, Cli, Commands,
+    CompletionShell, CoreCommands, DataCommands, MiscCommands, PadCommands,
+};
 
 fn main() {
     if let Err(e) = run() {
@@ -32,6 +35,16 @@ struct AppContext {
 
 fn run() -> Result<()> {
     let cli = Cli::parse();
+
+    // Handle help flag - at top level use grouped help, for subcommands use clap's default
+    if cli.help {
+        if cli.command.is_none() {
+            print_grouped_help();
+        } else {
+            print_subcommand_help(&cli.command);
+        }
+        return Ok(());
+    }
 
     // Handle completions before context init (they don't need API)
     if let Some(Commands::Misc(MiscCommands::Completions { shell })) = &cli.command {
@@ -68,6 +81,7 @@ fn run() -> Result<()> {
             MiscCommands::Doctor => handle_doctor(&mut ctx),
             MiscCommands::Config { key, value } => handle_config(&mut ctx, key, value),
             MiscCommands::Init => handle_init(&ctx),
+            MiscCommands::Help { command } => handle_help(command),
             MiscCommands::Completions { shell } => handle_completions(shell),
             MiscCommands::CompletePads { deleted } => handle_complete_pads(&mut ctx, deleted),
         },
@@ -318,6 +332,14 @@ fn handle_config(ctx: &mut AppContext, key: Option<String>, value: Option<String
 fn handle_init(ctx: &AppContext) -> Result<()> {
     let result = ctx.api.init(ctx.scope)?;
     print_messages(&result.messages);
+    Ok(())
+}
+
+fn handle_help(command: Option<String>) -> Result<()> {
+    match command {
+        Some(cmd) => print_help_for_command(&cmd),
+        None => print_grouped_help(),
+    }
     Ok(())
 }
 

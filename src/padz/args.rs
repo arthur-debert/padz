@@ -1,4 +1,4 @@
-use clap::{Parser, Subcommand, ValueEnum};
+use clap::{CommandFactory, Parser, Subcommand, ValueEnum};
 
 #[derive(Copy, Clone, Debug, ValueEnum)]
 pub enum CompletionShell {
@@ -7,7 +7,13 @@ pub enum CompletionShell {
 }
 
 #[derive(Parser, Debug)]
-#[command(name = "padz", bin_name = "padz", version)]
+#[command(
+    name = "padz",
+    bin_name = "padz",
+    version,
+    disable_help_flag = true,
+    disable_help_subcommand = true
+)]
 #[command(about = "Context-aware command-line note-taking tool", long_about = None)]
 pub struct Cli {
     #[command(subcommand)]
@@ -20,6 +26,151 @@ pub struct Cli {
     /// Verbose output
     #[arg(short, long, global = true, help_heading = "Options")]
     pub verbose: bool,
+
+    /// Print help
+    #[arg(short, long, global = true)]
+    pub help: bool,
+}
+
+/// Command group definitions for help output
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CommandGroup {
+    Core,
+    Pad,
+    Data,
+    Misc,
+}
+
+impl CommandGroup {
+    pub fn heading(&self) -> &'static str {
+        match self {
+            CommandGroup::Core => "Core Commands:",
+            CommandGroup::Pad => "Per-Pad Commands:",
+            CommandGroup::Data => "Data Commands:",
+            CommandGroup::Misc => "Miscellaneous:",
+        }
+    }
+
+    /// Returns the group for a given command name
+    pub fn for_command(name: &str) -> Option<Self> {
+        match name {
+            "create" | "list" | "search" => Some(CommandGroup::Core),
+            "view" | "edit" | "open" | "delete" | "pin" | "unpin" | "path" => {
+                Some(CommandGroup::Pad)
+            }
+            "purge" | "export" | "import" => Some(CommandGroup::Data),
+            "doctor" | "config" | "init" | "help" => Some(CommandGroup::Misc),
+            _ => None,
+        }
+    }
+
+    /// Returns all groups in display order
+    pub fn all() -> &'static [CommandGroup] {
+        &[
+            CommandGroup::Core,
+            CommandGroup::Pad,
+            CommandGroup::Data,
+            CommandGroup::Misc,
+        ]
+    }
+}
+
+/// Generates the custom grouped help output
+pub fn print_grouped_help() {
+    let cmd = Cli::command();
+    let version = cmd.get_version().unwrap_or("unknown");
+
+    println!("padz {version}");
+    println!("Context-aware command-line note-taking tool");
+    println!();
+    println!("Usage: padz [OPTIONS] [COMMAND]");
+
+    // Collect subcommands into groups
+    let subcommands: Vec<_> = cmd.get_subcommands().collect();
+
+    for group in CommandGroup::all() {
+        let group_cmds: Vec<_> = subcommands
+            .iter()
+            .filter(|sc| {
+                !sc.is_hide_set() && CommandGroup::for_command(sc.get_name()) == Some(*group)
+            })
+            .collect();
+
+        if !group_cmds.is_empty() {
+            println!();
+            println!("{}", group.heading());
+            for sc in group_cmds {
+                let name = sc.get_name();
+                let about = sc.get_about().map(|s| s.to_string()).unwrap_or_default();
+                println!("  {:<12} {}", name, about);
+            }
+        }
+    }
+
+    println!();
+    println!("Options:");
+    println!("  -g, --global     Operate on global pads");
+    println!("  -v, --verbose    Verbose output");
+    println!("  -h, --help       Print help");
+    println!("  -V, --version    Print version");
+}
+
+/// Prints help for a specific subcommand using clap's built-in rendering
+pub fn print_subcommand_help(command: &Option<Commands>) {
+    let subcommand_name = match command {
+        Some(Commands::Core(c)) => match c {
+            CoreCommands::Create { .. } => "create",
+            CoreCommands::List { .. } => "list",
+            CoreCommands::Search { .. } => "search",
+        },
+        Some(Commands::Pad(c)) => match c {
+            PadCommands::View { .. } => "view",
+            PadCommands::Edit { .. } => "edit",
+            PadCommands::Open { .. } => "open",
+            PadCommands::Delete { .. } => "delete",
+            PadCommands::Pin { .. } => "pin",
+            PadCommands::Unpin { .. } => "unpin",
+            PadCommands::Path { .. } => "path",
+        },
+        Some(Commands::Data(c)) => match c {
+            DataCommands::Purge { .. } => "purge",
+            DataCommands::Export { .. } => "export",
+            DataCommands::Import { .. } => "import",
+        },
+        Some(Commands::Misc(c)) => match c {
+            MiscCommands::Doctor => "doctor",
+            MiscCommands::Config { .. } => "config",
+            MiscCommands::Init => "init",
+            MiscCommands::Help { .. } => "help",
+            MiscCommands::Completions { .. } => "completions",
+            MiscCommands::CompletePads { .. } => "__complete-pads",
+        },
+        None => {
+            print_grouped_help();
+            return;
+        }
+    };
+
+    print_help_for_command(subcommand_name);
+}
+
+/// Prints help for a command by name
+pub fn print_help_for_command(name: &str) {
+    let mut cmd = Cli::command();
+
+    // Find and print help for the subcommand
+    for subcmd in cmd.get_subcommands_mut() {
+        if subcmd.get_name() == name {
+            let help = subcmd.render_help();
+            print!("{}", help);
+            return;
+        }
+    }
+
+    // Fallback to grouped help if subcommand not found
+    eprintln!("Unknown command: {}", name);
+    eprintln!();
+    print_grouped_help();
 }
 
 #[derive(Subcommand, Debug)]
@@ -182,8 +333,15 @@ pub enum MiscCommands {
     #[command(display_order = 32)]
     Init,
 
+    /// Print help for padz or a subcommand
+    #[command(display_order = 33)]
+    Help {
+        /// Subcommand to get help for
+        command: Option<String>,
+    },
+
     /// Generate shell completions
-    #[command(hide = true, display_order = 33)]
+    #[command(hide = true, display_order = 34)]
     Completions {
         /// Shell to generate completions for
         #[arg(value_enum)]
@@ -191,7 +349,7 @@ pub enum MiscCommands {
     },
 
     /// Output pad indexes for shell completion (hidden)
-    #[command(hide = true, name = "__complete-pads", display_order = 34)]
+    #[command(hide = true, name = "__complete-pads", display_order = 35)]
     CompletePads {
         /// Shell to generate completions for
         #[arg(long)]
