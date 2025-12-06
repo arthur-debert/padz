@@ -62,14 +62,16 @@ impl EditorContent {
 /// Checks $EDITOR, then $VISUAL, then falls back to common editors.
 pub fn get_editor() -> Result<String> {
     if let Ok(editor) = env::var("EDITOR")
-        && !editor.is_empty() {
-            return Ok(editor);
-        }
+        && !editor.is_empty()
+    {
+        return Ok(editor);
+    }
 
     if let Ok(editor) = env::var("VISUAL")
-        && !editor.is_empty() {
-            return Ok(editor);
-        }
+        && !editor.is_empty()
+    {
+        return Ok(editor);
+    }
 
     // Try common fallbacks
     for fallback in &["vim", "vi", "nano"] {

@@ -2,6 +2,7 @@ use clap::Parser;
 use colored::*;
 use directories::ProjectDirs;
 use padz_lib::api::PadzApi;
+use padz_lib::clipboard::{copy_to_clipboard, format_for_clipboard};
 use padz_lib::editor::{EditorContent, edit_content};
 use padz_lib::index::{DisplayIndex, DisplayPad};
 use padz_lib::model::Scope;
@@ -137,13 +138,73 @@ fn main() {
                                 std::process::exit(1);
                             }
 
-                            match api.update_pad(&idx, edited.title, edited.content, scope) {
+                            match api.update_pad(
+                                &idx,
+                                edited.title.clone(),
+                                edited.content.clone(),
+                                scope,
+                            ) {
                                 Ok(pad) => {
+                                    // Copy to clipboard on exit
+                                    let clipboard_text =
+                                        format_for_clipboard(&edited.title, &edited.content);
+                                    if let Err(e) = copy_to_clipboard(&clipboard_text) {
+                                        eprintln!("Warning: Failed to copy to clipboard: {}", e);
+                                    }
+
                                     println!("Pad updated: {}", pad.metadata.title.green());
                                     Ok(())
                                 }
                                 Err(e) => Err(e),
                             }
+                        }
+                        Err(e) => {
+                            eprintln!("Editor error: {}", e);
+                            std::process::exit(1);
+                        }
+                    }
+                }
+                Err(e) => Err(e),
+            }
+        }
+        Some(Commands::Open { index }) => {
+            let idx = parse_index(&index);
+            match api.get_pad(&idx, scope) {
+                Ok(dp) => {
+                    let initial =
+                        EditorContent::new(dp.pad.metadata.title.clone(), dp.pad.content.clone());
+
+                    match edit_content(&initial, ".txt") {
+                        Ok(edited) => {
+                            // Copy to clipboard on exit (even if content unchanged)
+                            let clipboard_text =
+                                format_for_clipboard(&edited.title, &edited.content);
+                            if let Err(e) = copy_to_clipboard(&clipboard_text) {
+                                eprintln!("Warning: Failed to copy to clipboard: {}", e);
+                            }
+
+                            // Only save if content changed
+                            if edited.title != dp.pad.metadata.title
+                                || edited.content != dp.pad.content
+                            {
+                                if edited.title.is_empty() {
+                                    eprintln!("Error: Title cannot be empty");
+                                    std::process::exit(1);
+                                }
+
+                                match api.update_pad(&idx, edited.title, edited.content, scope) {
+                                    Ok(pad) => {
+                                        println!("Pad updated: {}", pad.metadata.title.green());
+                                    }
+                                    Err(e) => {
+                                        eprintln!("Error: {}", e);
+                                        std::process::exit(1);
+                                    }
+                                }
+                            } else {
+                                println!("Pad content copied to clipboard.");
+                            }
+                            Ok(())
                         }
                         Err(e) => {
                             eprintln!("Editor error: {}", e);

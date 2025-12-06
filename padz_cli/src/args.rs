@@ -67,6 +67,13 @@ pub enum Commands {
         index: String,
     },
 
+    /// Open a pad in the editor (copies to clipboard on exit)
+    #[command(alias = "o")]
+    Open {
+        /// Index of the pad (e.g. 1, p1, d1)
+        index: String,
+    },
+
     /// Delete a pad
     #[command(alias = "rm")]
     Delete { index: String },
