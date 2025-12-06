@@ -10,6 +10,7 @@ use padz_lib::index::{DisplayIndex, DisplayPad};
 use padz_lib::model::Scope;
 use padz_lib::store::fs::FileStore;
 use std::path::PathBuf;
+use unicode_width::UnicodeWidthStr;
 
 mod args;
 use args::{Cli, Commands};
@@ -343,14 +344,50 @@ fn parse_index(s: &str) -> DisplayIndex {
 }
 
 const LINE_WIDTH: usize = 100;
+const TIME_WIDTH: usize = 14; // "XX minutes ago" or "XX hours  ago"
 const PIN_MARKER: &str = "⚲";
+
+/// Truncate a string to fit within a given display width, adding "…" if truncated.
+fn truncate_to_width(s: &str, max_width: usize) -> String {
+    use unicode_width::UnicodeWidthChar;
+
+    let mut result = String::new();
+    let mut current_width = 0;
+
+    for c in s.chars() {
+        let char_width = c.width().unwrap_or(0);
+        if current_width + char_width > max_width.saturating_sub(1) {
+            // Need room for ellipsis
+            result.push('…');
+            return result;
+        }
+        result.push(c);
+        current_width += char_width;
+    }
+
+    // No truncation needed
+    result
+}
 
 fn format_time_ago(timestamp: chrono::DateTime<Utc>) -> String {
     let now = Utc::now();
     let duration = now.signed_duration_since(timestamp);
 
     let formatter = timeago::Formatter::new();
-    formatter.convert(duration.to_std().unwrap_or_default())
+    let time_str = formatter.convert(duration.to_std().unwrap_or_default());
+
+    // Add extra space for "hour ago" -> "hour  ago" to match "hours ago" length
+    let time_str = time_str
+        .replace("hour ago", "hour  ago")
+        .replace("minute ago", "minute  ago")
+        .replace("second ago", "second  ago")
+        .replace("day ago", "day  ago")
+        .replace("week ago", "week  ago")
+        .replace("month ago", "month  ago")
+        .replace("year ago", "year  ago");
+
+    // Right-align to TIME_WIDTH
+    format!("{:>width$}", time_str, width = TIME_WIDTH)
 }
 
 fn print_pads(pads: &[DisplayPad]) {
@@ -390,15 +427,17 @@ fn print_pads(pads: &[DisplayPad]) {
         } else {
             "    ".to_string()
         };
+        let left_prefix_width = left_prefix.width();
 
-        // Right suffix: " ⚲ " if pad is pinned (shown in regular list too), "   " otherwise
+        // Right suffix: "⚲ " if pad is pinned (shown in regular list too), "  " otherwise
         let right_suffix = if dp.pad.metadata.is_pinned && !is_pinned_entry {
-            format!(" {} ", PIN_MARKER)
+            format!("{} ", PIN_MARKER)
         } else {
-            "   ".to_string()
+            "  ".to_string()
         };
+        let right_suffix_width = right_suffix.width();
 
-        // Time ago string
+        // Time ago string (already right-padded to TIME_WIDTH)
         let time_ago = format_time_ago(dp.pad.metadata.created_at);
 
         // Build title + content preview
@@ -418,23 +457,16 @@ fn print_pads(pads: &[DisplayPad]) {
 
         // Calculate available space for title_content
         // Format: "{left_prefix}{idx_str}{title_content}{padding}{right_suffix}{time_ago}"
-        let fixed_width = left_prefix.len() + idx_str.len() + right_suffix.len() + time_ago.len();
+        let idx_width = idx_str.width();
+        let fixed_width = left_prefix_width + idx_width + right_suffix_width + TIME_WIDTH;
         let available = LINE_WIDTH.saturating_sub(fixed_width);
 
-        // Truncate or pad title_content
-        let title_display: String = if title_content.chars().count() > available {
-            title_content
-                .chars()
-                .take(available.saturating_sub(1))
-                .collect::<String>()
-                + "…"
-        } else {
-            title_content
-        };
+        // Truncate title_content to fit available display width
+        let title_display: String = truncate_to_width(&title_content, available);
 
         // Build the full line with proper padding
-        let content_len = title_display.chars().count();
-        let padding = available.saturating_sub(content_len);
+        let content_width = title_display.width();
+        let padding = available.saturating_sub(content_width);
 
         // Color the output
         let idx_colored = match dp.index {
