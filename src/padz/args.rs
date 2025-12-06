@@ -143,6 +143,9 @@ pub enum Commands {
 
     // --- Misc ---
     #[command(next_help_heading = "Misc")]
+    /// Check and fix data inconsistencies
+    Doctor,
+
     /// Get or set configuration
     Config {
         /// Configuration key (e.g., file-ext)

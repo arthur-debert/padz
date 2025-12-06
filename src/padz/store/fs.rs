@@ -1,9 +1,11 @@
-use super::DataStore;
+use super::{DataStore, DoctorReport};
 use crate::error::{PadzError, Result};
 use crate::model::{Metadata, Pad, Scope};
+use chrono::{DateTime, Utc};
 use std::collections::HashMap;
 use std::fs;
 use std::path::{Path, PathBuf};
+use std::time::SystemTime;
 use uuid::Uuid;
 
 pub struct FileStore {
@@ -176,5 +178,85 @@ impl DataStore for FileStore {
         } else {
             Ok(root.join(self.pad_filename(id)))
         }
+    }
+
+    fn doctor(&mut self, scope: Scope) -> Result<DoctorReport> {
+        let root = self.get_store_path(scope)?;
+        if !root.exists() {
+            return Ok(DoctorReport::default());
+        }
+
+        let mut meta_map = self.load_metadata(&root)?;
+        let mut report = DoctorReport::default();
+        let mut changes = false;
+
+        // 1. Fix missing content files
+        let ids: Vec<Uuid> = meta_map.keys().cloned().collect();
+        for id in ids {
+            if self.find_pad_file(&root, &id).is_none() {
+                meta_map.remove(&id);
+                report.fixed_missing_files += 1;
+                changes = true;
+            }
+        }
+
+        // 2. Recover orphan files
+        let entries = fs::read_dir(&root).map_err(PadzError::Io)?;
+        for entry in entries {
+            let entry = entry.map_err(PadzError::Io)?;
+            let path = entry.path();
+            if path.is_file() {
+                if let Some(file_name) = path.file_name().and_then(|s| s.to_str()) {
+                    if file_name.starts_with("pad-") {
+                        let stem = path.file_stem().and_then(|s| s.to_str()).unwrap_or("");
+                        let uuid_part = stem.strip_prefix("pad-").unwrap_or("");
+
+                        if let Ok(id) = Uuid::parse_str(uuid_part) {
+                            if let std::collections::hash_map::Entry::Vacant(e) = meta_map.entry(id) {
+                                // Orphan found
+                                let content = fs::read_to_string(&path).unwrap_or_default();
+                                let title = content
+                                    .lines()
+                                    .next()
+                                    .unwrap_or("Recovered Pad")
+                                    .trim()
+                                    .to_string();
+
+                                let meta = fs::metadata(&path).map_err(PadzError::Io)?;
+                                let created: DateTime<Utc> =
+                                    meta.created().unwrap_or(SystemTime::now()).into();
+                                let modified: DateTime<Utc> =
+                                    meta.modified().unwrap_or(SystemTime::now()).into();
+
+                                let metadata = Metadata {
+                                    id,
+                                    created_at: created,
+                                    updated_at: modified,
+                                    is_pinned: false,
+                                    pinned_at: None,
+                                    is_deleted: false,
+                                    deleted_at: None,
+                                    title: if title.is_empty() {
+                                        "Recovered Pad".to_string()
+                                    } else {
+                                        title
+                                    },
+                                };
+
+                                e.insert(metadata);
+                                report.recovered_files += 1;
+                                changes = true;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        if changes {
+            self.save_metadata(&root, &meta_map)?;
+        }
+
+        Ok(report)
     }
 }

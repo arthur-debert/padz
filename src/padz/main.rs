@@ -61,6 +61,7 @@ fn run() -> Result<()> {
         Some(Commands::Purge { indexes, yes }) => handle_purge(&mut ctx, indexes, yes),
         Some(Commands::Export { indexes }) => handle_export(&mut ctx, indexes),
         Some(Commands::Import { paths }) => handle_import(&mut ctx, paths),
+        Some(Commands::Doctor) => handle_doctor(&mut ctx),
         Some(Commands::Completions { .. }) => unreachable!(),
         None => handle_list(&mut ctx, None, false),
     }
@@ -277,6 +278,12 @@ fn handle_import(ctx: &mut AppContext, paths: Vec<String>) -> Result<()> {
     let result = ctx
         .api
         .import_pads(ctx.scope, paths, &ctx.import_extensions)?;
+    print_messages(&result.messages);
+    Ok(())
+}
+
+fn handle_doctor(ctx: &mut AppContext) -> Result<()> {
+    let result = ctx.api.doctor(ctx.scope)?;
     print_messages(&result.messages);
     Ok(())
 }

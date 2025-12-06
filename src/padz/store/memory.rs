@@ -1,4 +1,4 @@
-use super::DataStore;
+use super::{DataStore, DoctorReport};
 use crate::error::{PadzError, Result};
 use crate::model::{Pad, Scope};
 use std::collections::HashMap;
@@ -50,6 +50,10 @@ impl DataStore for InMemoryStore {
     fn get_pad_path(&self, id: &Uuid, _scope: Scope) -> Result<PathBuf> {
         // In-memory store has no file path, return a placeholder
         Ok(PathBuf::from(format!("memory://pad-{}", id)))
+    }
+
+    fn doctor(&mut self, _scope: Scope) -> Result<DoctorReport> {
+        Ok(DoctorReport::default())
     }
 }
 

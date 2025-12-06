@@ -89,6 +89,10 @@ impl<S: DataStore> PadzApi<S> {
         commands::import::run(&mut self.store, scope, paths, import_exts)
     }
 
+    pub fn doctor(&mut self, scope: Scope) -> Result<commands::CmdResult> {
+        commands::doctor::run(&mut self.store, scope)
+    }
+
     pub fn pad_paths(&self, scope: Scope, indexes: &[DisplayIndex]) -> Result<commands::CmdResult> {
         commands::paths::run(&self.store, scope, indexes)
     }
