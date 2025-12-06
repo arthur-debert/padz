@@ -14,8 +14,16 @@ use unicode_width::UnicodeWidthStr;
 
 mod args;
 use args::{Cli, Commands};
+use padz_lib::error::Result;
 
 fn main() {
+    if let Err(e) = run() {
+        eprintln!("Error: {}", e);
+        std::process::exit(1);
+    }
+}
+
+fn run() -> Result<()> {
     let cli = Cli::parse();
 
     // Determine Paths
@@ -47,7 +55,7 @@ fn main() {
     let mut api = PadzApi::new(store);
 
     // Handle commands
-    let result = match cli.command {
+    match cli.command {
         Some(Commands::Create {
             title,
             content,
@@ -114,142 +122,134 @@ fn main() {
                 Err(e) => Err(e),
             }
         }
-        Some(Commands::View { index }) => {
-            let idx = parse_index(&index);
-            match api.get_pad(&idx, scope) {
-                Ok(dp) => {
-                    println!(
-                        "{} {}",
-                        dp.index.to_string().yellow(),
-                        dp.pad.metadata.title.bold()
-                    );
-                    println!("--------------------------------");
-                    println!("{}", dp.pad.content);
-                    Ok(())
-                }
-                Err(e) => Err(e),
-            }
-        }
-        Some(Commands::Edit { index }) => {
-            let idx = parse_index(&index);
-            match api.get_pad(&idx, scope) {
-                Ok(dp) => {
-                    let initial =
-                        EditorContent::new(dp.pad.metadata.title.clone(), dp.pad.content.clone());
+        Some(Commands::View { indexes }) => {
+            let idxs = parse_indexes(&indexes);
+            let uuids = api.resolve_indexes(&idxs, scope)?;
+            let pads = api.get_pads_by_uuids(&uuids, &idxs, scope)?;
 
-                    match edit_content(&initial, &file_ext) {
-                        Ok(edited) => {
+            for (i, dp) in pads.iter().enumerate() {
+                if i > 0 {
+                    println!("\n================================\n");
+                }
+                println!(
+                    "{} {}",
+                    dp.index.to_string().yellow(),
+                    dp.pad.metadata.title.bold()
+                );
+                println!("--------------------------------");
+                println!("{}", dp.pad.content);
+            }
+            Ok(())
+        }
+        Some(Commands::Edit { indexes }) => {
+            let idxs = parse_indexes(&indexes);
+            let uuids = api.resolve_indexes(&idxs, scope)?;
+            let pads = api.get_pads_by_uuids(&uuids, &idxs, scope)?;
+
+            for (uuid, dp) in uuids.iter().zip(pads.iter()) {
+                let initial =
+                    EditorContent::new(dp.pad.metadata.title.clone(), dp.pad.content.clone());
+
+                match edit_content(&initial, &file_ext) {
+                    Ok(edited) => {
+                        if edited.title.is_empty() {
+                            eprintln!("Error: Title cannot be empty");
+                            std::process::exit(1);
+                        }
+
+                        // Update using UUID directly
+                        let pad = api.update_pad_by_uuid(
+                            uuid,
+                            edited.title.clone(),
+                            edited.content.clone(),
+                            scope,
+                        )?;
+
+                        // Copy to clipboard on exit
+                        let clipboard_text = format_for_clipboard(&edited.title, &edited.content);
+                        if let Err(e) = copy_to_clipboard(&clipboard_text) {
+                            eprintln!("Warning: Failed to copy to clipboard: {}", e);
+                        }
+
+                        println!("Pad updated: {}", pad.metadata.title.green());
+                    }
+                    Err(e) => {
+                        eprintln!("Editor error: {}", e);
+                        std::process::exit(1);
+                    }
+                }
+            }
+            Ok(())
+        }
+        Some(Commands::Open { indexes }) => {
+            let idxs = parse_indexes(&indexes);
+            let uuids = api.resolve_indexes(&idxs, scope)?;
+            let pads = api.get_pads_by_uuids(&uuids, &idxs, scope)?;
+
+            for (uuid, dp) in uuids.iter().zip(pads.iter()) {
+                let initial =
+                    EditorContent::new(dp.pad.metadata.title.clone(), dp.pad.content.clone());
+
+                match edit_content(&initial, &file_ext) {
+                    Ok(edited) => {
+                        // Copy to clipboard on exit (even if content unchanged)
+                        let clipboard_text = format_for_clipboard(&edited.title, &edited.content);
+                        if let Err(e) = copy_to_clipboard(&clipboard_text) {
+                            eprintln!("Warning: Failed to copy to clipboard: {}", e);
+                        }
+
+                        // Only save if content changed
+                        if edited.title != dp.pad.metadata.title || edited.content != dp.pad.content
+                        {
                             if edited.title.is_empty() {
                                 eprintln!("Error: Title cannot be empty");
                                 std::process::exit(1);
                             }
 
-                            match api.update_pad(
-                                &idx,
-                                edited.title.clone(),
-                                edited.content.clone(),
-                                scope,
-                            ) {
-                                Ok(pad) => {
-                                    // Copy to clipboard on exit
-                                    let clipboard_text =
-                                        format_for_clipboard(&edited.title, &edited.content);
-                                    if let Err(e) = copy_to_clipboard(&clipboard_text) {
-                                        eprintln!("Warning: Failed to copy to clipboard: {}", e);
-                                    }
-
-                                    println!("Pad updated: {}", pad.metadata.title.green());
-                                    Ok(())
-                                }
-                                Err(e) => Err(e),
-                            }
-                        }
-                        Err(e) => {
-                            eprintln!("Editor error: {}", e);
-                            std::process::exit(1);
+                            let pad =
+                                api.update_pad_by_uuid(uuid, edited.title, edited.content, scope)?;
+                            println!("Pad updated: {}", pad.metadata.title.green());
+                        } else {
+                            println!("Pad content copied to clipboard.");
                         }
                     }
-                }
-                Err(e) => Err(e),
-            }
-        }
-        Some(Commands::Open { index }) => {
-            let idx = parse_index(&index);
-            match api.get_pad(&idx, scope) {
-                Ok(dp) => {
-                    let initial =
-                        EditorContent::new(dp.pad.metadata.title.clone(), dp.pad.content.clone());
-
-                    match edit_content(&initial, &file_ext) {
-                        Ok(edited) => {
-                            // Copy to clipboard on exit (even if content unchanged)
-                            let clipboard_text =
-                                format_for_clipboard(&edited.title, &edited.content);
-                            if let Err(e) = copy_to_clipboard(&clipboard_text) {
-                                eprintln!("Warning: Failed to copy to clipboard: {}", e);
-                            }
-
-                            // Only save if content changed
-                            if edited.title != dp.pad.metadata.title
-                                || edited.content != dp.pad.content
-                            {
-                                if edited.title.is_empty() {
-                                    eprintln!("Error: Title cannot be empty");
-                                    std::process::exit(1);
-                                }
-
-                                match api.update_pad(&idx, edited.title, edited.content, scope) {
-                                    Ok(pad) => {
-                                        println!("Pad updated: {}", pad.metadata.title.green());
-                                    }
-                                    Err(e) => {
-                                        eprintln!("Error: {}", e);
-                                        std::process::exit(1);
-                                    }
-                                }
-                            } else {
-                                println!("Pad content copied to clipboard.");
-                            }
-                            Ok(())
-                        }
-                        Err(e) => {
-                            eprintln!("Editor error: {}", e);
-                            std::process::exit(1);
-                        }
+                    Err(e) => {
+                        eprintln!("Editor error: {}", e);
+                        std::process::exit(1);
                     }
                 }
-                Err(e) => Err(e),
             }
+            Ok(())
         }
-        Some(Commands::Delete { index }) => {
-            let idx = parse_index(&index);
-            match api.delete_pad(&idx, scope) {
-                Ok(pad) => {
-                    println!("Pad deleted: {}", pad.metadata.title.red());
-                    Ok(())
-                }
-                Err(e) => Err(e),
+        Some(Commands::Delete { indexes }) => {
+            let idxs = parse_indexes(&indexes);
+            let uuids = api.resolve_indexes(&idxs, scope)?;
+            let deleted = api.delete_pads_by_uuids(&uuids, scope)?;
+
+            for pad in &deleted {
+                println!("Pad deleted: {}", pad.metadata.title.red());
             }
+            Ok(())
         }
-        Some(Commands::Pin { index }) => {
-            let idx = parse_index(&index);
-            match api.pin_pad(&idx, scope) {
-                Ok(pad) => {
-                    println!("Pad pinned: {}", pad.metadata.title.yellow());
-                    Ok(())
-                }
-                Err(e) => Err(e),
+        Some(Commands::Pin { indexes }) => {
+            let idxs = parse_indexes(&indexes);
+            let uuids = api.resolve_indexes(&idxs, scope)?;
+            let pinned = api.pin_pads_by_uuids(&uuids, scope)?;
+
+            for pad in &pinned {
+                println!("Pad pinned: {}", pad.metadata.title.yellow());
             }
+            Ok(())
         }
-        Some(Commands::Unpin { index }) => {
-            let idx = parse_index(&index);
-            match api.unpin_pad(&idx, scope) {
-                Ok(pad) => {
-                    println!("Pad unpinned: {}", pad.metadata.title);
-                    Ok(())
-                }
-                Err(e) => Err(e),
+        Some(Commands::Unpin { indexes }) => {
+            let idxs = parse_indexes(&indexes);
+            let uuids = api.resolve_indexes(&idxs, scope)?;
+            let unpinned = api.unpin_pads_by_uuids(&uuids, scope)?;
+
+            for pad in &unpinned {
+                println!("Pad unpinned: {}", pad.metadata.title);
             }
+            Ok(())
         }
         Some(Commands::Search { term }) => match api.search_pads(&term, scope) {
             Ok(pads) => {
@@ -258,15 +258,15 @@ fn main() {
             }
             Err(e) => Err(e),
         },
-        Some(Commands::Path { index }) => {
-            let idx = parse_index(&index);
-            match api.get_pad_path(&idx, scope) {
-                Ok(path) => {
-                    println!("{}", path.display());
-                    Ok(())
-                }
-                Err(e) => Err(e),
+        Some(Commands::Path { indexes }) => {
+            let idxs = parse_indexes(&indexes);
+            let uuids = api.resolve_indexes(&idxs, scope)?;
+            let paths = api.get_pad_paths_by_uuids(&uuids, scope)?;
+
+            for path in &paths {
+                println!("{}", path.display());
             }
+            Ok(())
         }
         Some(Commands::Config { key, value }) => {
             let mut config = PadzConfig::load(config_dir).unwrap_or_default();
@@ -307,19 +307,10 @@ fn main() {
         }
         None => {
             // Default to List
-            match api.list_pads(scope) {
-                Ok(pads) => {
-                    print_pads(&pads);
-                    Ok(())
-                }
-                Err(e) => Err(e),
-            }
+            let pads = api.list_pads(scope)?;
+            print_pads(&pads);
+            Ok(())
         }
-    };
-
-    if let Err(e) = result {
-        eprintln!("Error: {}", e);
-        std::process::exit(1);
     }
 }
 
@@ -341,6 +332,10 @@ fn parse_index(s: &str) -> DisplayIndex {
     // Fallback or panic? For CLI better to error properly, but for now simple panic or default
     eprintln!("Invalid index format: {}", s);
     std::process::exit(1);
+}
+
+fn parse_indexes(strs: &[String]) -> Vec<DisplayIndex> {
+    strs.iter().map(|s| parse_index(s)).collect()
 }
 
 const LINE_WIDTH: usize = 100;

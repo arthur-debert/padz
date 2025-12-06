@@ -53,46 +53,62 @@ pub enum Commands {
         deleted: bool,
     },
 
-    /// View a pad
+    /// View one or more pads
     #[command(alias = "v")]
     View {
-        /// Index of the pad (e.g. 1, p1, d1)
-        index: String,
+        /// Indexes of the pads (e.g. 1 p1 d1)
+        #[arg(required = true, num_args = 1..)]
+        indexes: Vec<String>,
     },
 
     /// Edit a pad in the editor
     #[command(alias = "e")]
     Edit {
-        /// Index of the pad (e.g. 1, p1, d1)
-        index: String,
+        /// Indexes of the pads (e.g. 1 p1 d1)
+        #[arg(required = true, num_args = 1..)]
+        indexes: Vec<String>,
     },
 
     /// Open a pad in the editor (copies to clipboard on exit)
     #[command(alias = "o")]
     Open {
-        /// Index of the pad (e.g. 1, p1, d1)
-        index: String,
+        /// Indexes of the pads (e.g. 1 p1 d1)
+        #[arg(required = true, num_args = 1..)]
+        indexes: Vec<String>,
     },
 
-    /// Delete a pad
+    /// Delete one or more pads
     #[command(alias = "rm")]
-    Delete { index: String },
+    Delete {
+        /// Indexes of the pads (e.g. 1 3 5)
+        #[arg(required = true, num_args = 1..)]
+        indexes: Vec<String>,
+    },
 
-    /// Pin a pad
+    /// Pin one or more pads
     #[command(alias = "p")]
-    Pin { index: String },
+    Pin {
+        /// Indexes of the pads (e.g. 1 3 5)
+        #[arg(required = true, num_args = 1..)]
+        indexes: Vec<String>,
+    },
 
-    /// Unpin a pad
+    /// Unpin one or more pads
     #[command(alias = "u")]
-    Unpin { index: String },
+    Unpin {
+        /// Indexes of the pads (e.g. p1 p2 p3)
+        #[arg(required = true, num_args = 1..)]
+        indexes: Vec<String>,
+    },
 
     /// Search pads (dedicated command)
     Search { term: String },
 
-    /// Print the file path to a pad
+    /// Print the file path to one or more pads
     Path {
-        /// Index of the pad (e.g. 1, p1, d1)
-        index: String,
+        /// Indexes of the pads (e.g. 1 p1 d1)
+        #[arg(required = true, num_args = 1..)]
+        indexes: Vec<String>,
     },
 
     /// Get or set configuration
