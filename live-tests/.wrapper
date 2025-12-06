@@ -14,7 +14,7 @@ function padz() {
     if [[ -n "${PADZ_BIN_PATH}" ]]; then
         "${PADZ_BIN_PATH}" "$@"
     else
-        command padz_cli "$@"
+        command pa "$@"
     fi
 }
 

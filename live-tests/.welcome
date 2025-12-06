@@ -1,6 +1,6 @@
 Welcome to the PADZ Live Test Shell!
 -------------------------------------
 You are in a temporary directory with a fresh git repo.
-Type 'padz' to use the locally built binary.
+Type 'padz' (or 'pa') to use the locally built binary.
 Data is stored in .padz/ in this directory.
 Exit the shell to clean up.
