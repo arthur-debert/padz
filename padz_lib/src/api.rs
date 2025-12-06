@@ -194,13 +194,14 @@ mod tests {
             .unwrap();
 
         let pads = api.list_pads(Scope::Project).unwrap();
-        // A=1, B=2 (creation order)
+        // Reverse chronological: B=1 (newest), A=2 (oldest)
 
-        let idx_2 = DisplayIndex::Regular(2);
-        api.pin_pad(&idx_2, Scope::Project).unwrap();
+        let idx_1 = DisplayIndex::Regular(1); // B is now index 1
+        api.pin_pad(&idx_1, Scope::Project).unwrap();
 
         let pads_after = api.list_pads(Scope::Project).unwrap();
-        // Now B should be p1 (pinned), A should be 1.
+        // Now B should be p1 (pinned), and also in regular list.
+        // A should remain at index 2.
 
         let p_b = pads_after
             .iter()
@@ -212,7 +213,7 @@ mod tests {
             .iter()
             .find(|p| p.pad.metadata.title == "A")
             .unwrap();
-        assert_eq!(p_a.index, DisplayIndex::Regular(1));
+        assert_eq!(p_a.index, DisplayIndex::Regular(2));
     }
 
     #[test]

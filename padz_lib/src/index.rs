@@ -30,8 +30,8 @@ pub struct DisplayPad {
 /// the regular list (1, 2...). This ensures canonical indexes are stable
 /// across views - a pad always has the same regular index whether pinned or not.
 pub fn index_pads(mut pads: Vec<Pad>) -> Vec<DisplayPad> {
-    // Sort by created_at for stable ordering
-    pads.sort_by(|a, b| a.metadata.created_at.cmp(&b.metadata.created_at));
+    // Sort by created_at descending (newest first) for stable ordering
+    pads.sort_by(|a, b| b.metadata.created_at.cmp(&a.metadata.created_at));
 
     let mut results = Vec::new();
 
@@ -96,14 +96,16 @@ mod tests {
         let pads = vec![p1, p2, p3, p4];
         let indexed = index_pads(pads);
 
-        // With the canonical indexing, pinned pads appear in BOTH
+        // With the canonical indexing (newest first), pinned pads appear in BOTH
         // the pinned list AND the regular list.
+        // Creation order: Regular 1, Pinned 1, Deleted 1, Regular 2
+        // Reverse chronological: Regular 2, Deleted 1, Pinned 1, Regular 1
         // Expected entries:
-        // - p1: Pinned 1 (pinned index)
-        // - 1: Regular 1 (regular index)
-        // - 2: Pinned 1 (regular index - pinned pads also get regular index)
-        // - 3: Regular 2 (regular index)
-        // - d1: Deleted 1 (deleted index)
+        // - p1: Pinned 1 (only pinned non-deleted pad)
+        // - 1: Regular 2 (newest non-deleted)
+        // - 2: Pinned 1 (second newest non-deleted)
+        // - 3: Regular 1 (oldest non-deleted)
+        // - d1: Deleted 1
 
         // Check pinned index
         let pinned_entries: Vec<_> = indexed
@@ -114,12 +116,16 @@ mod tests {
         assert_eq!(pinned_entries[0].pad.metadata.title, "Pinned 1");
         assert_eq!(pinned_entries[0].index, DisplayIndex::Pinned(1));
 
-        // Check regular indexes - should include ALL non-deleted pads
+        // Check regular indexes - should include ALL non-deleted pads (newest first)
         let regular_entries: Vec<_> = indexed
             .iter()
             .filter(|dp| matches!(dp.index, DisplayIndex::Regular(_)))
             .collect();
-        assert_eq!(regular_entries.len(), 3); // Regular 1, Pinned 1, Regular 2
+        assert_eq!(regular_entries.len(), 3);
+        assert_eq!(regular_entries[0].pad.metadata.title, "Regular 2"); // newest = 1
+        assert_eq!(regular_entries[0].index, DisplayIndex::Regular(1));
+        assert_eq!(regular_entries[2].pad.metadata.title, "Regular 1"); // oldest = 3
+        assert_eq!(regular_entries[2].index, DisplayIndex::Regular(3));
 
         // Check deleted index
         let deleted_entries: Vec<_> = indexed
@@ -139,6 +145,8 @@ mod tests {
         let pads = vec![p1, p2, p3];
         let indexed = index_pads(pads);
 
+        // Creation order: Note A, Note B, Note C
+        // Reverse chronological: Note C (1), Note B (2), Note A (3)
         // Note B should appear twice: as p1 and as regular index 2
         let note_b_entries: Vec<_> = indexed
             .iter()
@@ -152,7 +160,7 @@ mod tests {
                 .iter()
                 .any(|dp| dp.index == DisplayIndex::Pinned(1))
         );
-        // One should be Regular(2) - it's the second pad by creation order
+        // One should be Regular(2) - it's the second newest pad
         assert!(
             note_b_entries
                 .iter()
