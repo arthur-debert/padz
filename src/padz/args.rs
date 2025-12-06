@@ -24,10 +24,23 @@ pub struct Cli {
 
 #[derive(Subcommand, Debug)]
 pub enum Commands {
-    // --- Core Commands ---
-    #[command(next_help_heading = "Core Commands")]
+    #[command(flatten)]
+    Core(CoreCommands),
+
+    #[command(flatten)]
+    Pad(PadCommands),
+
+    #[command(flatten)]
+    Data(DataCommands),
+
+    #[command(flatten)]
+    Misc(MiscCommands),
+}
+
+#[derive(Subcommand, Debug)]
+pub enum CoreCommands {
     /// Create a new pad
-    #[command(alias = "n")]
+    #[command(alias = "n", display_order = 1)]
     Create {
         /// Title of the pad (optional, opens editor if not provided)
         #[arg(required = false)]
@@ -43,7 +56,7 @@ pub enum Commands {
     },
 
     /// List pads
-    #[command(alias = "ls")]
+    #[command(alias = "ls", display_order = 2)]
     List {
         /// Search term
         #[arg(short, long)]
@@ -55,12 +68,14 @@ pub enum Commands {
     },
 
     /// Search pads (dedicated command)
+    #[command(display_order = 3)]
     Search { term: String },
+}
 
-    // --- For Each Pad ---
-    #[command(next_help_heading = "For Each Pad")]
+#[derive(Subcommand, Debug)]
+pub enum PadCommands {
     /// View one or more pads
-    #[command(alias = "v")]
+    #[command(alias = "v", display_order = 10)]
     View {
         /// Indexes of the pads (e.g. 1 p1 d1)
         #[arg(required = true, num_args = 1..)]
@@ -68,7 +83,7 @@ pub enum Commands {
     },
 
     /// Edit a pad in the editor
-    #[command(alias = "e")]
+    #[command(alias = "e", display_order = 11)]
     Edit {
         /// Indexes of the pads (e.g. 1 p1 d1)
         #[arg(required = true, num_args = 1..)]
@@ -76,7 +91,7 @@ pub enum Commands {
     },
 
     /// Open a pad in the editor (copies to clipboard on exit)
-    #[command(alias = "o")]
+    #[command(alias = "o", display_order = 12)]
     Open {
         /// Indexes of the pads (e.g. 1 p1 d1)
         #[arg(required = true, num_args = 1..)]
@@ -84,7 +99,7 @@ pub enum Commands {
     },
 
     /// Delete one or more pads
-    #[command(alias = "rm")]
+    #[command(alias = "rm", display_order = 13)]
     Delete {
         /// Indexes of the pads (e.g. 1 3 5)
         #[arg(required = true, num_args = 1..)]
@@ -92,7 +107,7 @@ pub enum Commands {
     },
 
     /// Pin one or more pads
-    #[command(alias = "p")]
+    #[command(alias = "p", display_order = 14)]
     Pin {
         /// Indexes of the pads (e.g. 1 3 5)
         #[arg(required = true, num_args = 1..)]
@@ -100,7 +115,7 @@ pub enum Commands {
     },
 
     /// Unpin one or more pads
-    #[command(alias = "u")]
+    #[command(alias = "u", display_order = 15)]
     Unpin {
         /// Indexes of the pads (e.g. p1 p2 p3)
         #[arg(required = true, num_args = 1..)]
@@ -108,15 +123,18 @@ pub enum Commands {
     },
 
     /// Print the file path to one or more pads
+    #[command(display_order = 16)]
     Path {
         /// Indexes of the pads (e.g. 1 p1 d1)
         #[arg(required = true, num_args = 1..)]
         indexes: Vec<String>,
     },
+}
 
-    // --- Data ---
-    #[command(next_help_heading = "Data")]
+#[derive(Subcommand, Debug)]
+pub enum DataCommands {
     /// Permanently delete pads
+    #[command(display_order = 20)]
     Purge {
         /// Indexes of the pads (e.g. d1 d2) - if omitted, purges all deleted pads
         #[arg(required = false, num_args = 0..)]
@@ -126,8 +144,9 @@ pub enum Commands {
         #[arg(long, short = 'y')]
         yes: bool,
     },
-    // (Import, Export will go here)
+
     /// Export pads to a tar.gz archive
+    #[command(display_order = 21)]
     Export {
         /// Indexes of the pads (e.g. 1 2) - if omitted, exports all active pads
         #[arg(required = false, num_args = 0..)]
@@ -135,18 +154,22 @@ pub enum Commands {
     },
 
     /// Import files as pads
+    #[command(display_order = 22)]
     Import {
         /// Paths to files or directories to import
         #[arg(required = true, num_args = 1..)]
         paths: Vec<String>,
     },
+}
 
-    // --- Misc ---
-    #[command(next_help_heading = "Misc")]
+#[derive(Subcommand, Debug)]
+pub enum MiscCommands {
     /// Check and fix data inconsistencies
+    #[command(display_order = 30)]
     Doctor,
 
     /// Get or set configuration
+    #[command(display_order = 31)]
     Config {
         /// Configuration key (e.g., file-ext)
         key: Option<String>,
@@ -156,10 +179,11 @@ pub enum Commands {
     },
 
     /// Initialize the store (optional utility)
+    #[command(display_order = 32)]
     Init,
 
     /// Generate shell completions
-    #[command(hide = true)]
+    #[command(hide = true, display_order = 33)]
     Completions {
         /// Shell to generate completions for
         #[arg(value_enum)]
@@ -167,9 +191,9 @@ pub enum Commands {
     },
 
     /// Output pad indexes for shell completion (hidden)
-    #[command(hide = true, name = "__complete-pads")]
+    #[command(hide = true, name = "__complete-pads", display_order = 34)]
     CompletePads {
-        /// Include deleted pads
+        /// Shell to generate completions for
         #[arg(long)]
         deleted: bool,
     },

@@ -52,8 +52,13 @@ done
 # Validate script file if provided
 if [[ -n "${SCRIPT_FILE}" ]]; then
     if [[ ! -f "${SCRIPT_FILE}" ]]; then
-        echo -e "${RED}Error: Script file '${SCRIPT_FILE}' does not exist${NC}" >&2
-        exit 1
+        # Check if it exists in the script directory
+        if [[ -f "${LIVE_TESTS_DIR}/${SCRIPT_FILE}" ]]; then
+            SCRIPT_FILE="${LIVE_TESTS_DIR}/${SCRIPT_FILE}"
+        else
+            echo -e "${RED}Error: Script file '${SCRIPT_FILE}' does not exist (checked current dir and ${LIVE_TESTS_DIR})${NC}" >&2
+            exit 1
+        fi
     fi
     # Convert to absolute path
     script_dir="$(dirname "${SCRIPT_FILE}")"

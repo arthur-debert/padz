@@ -14,7 +14,7 @@ use std::path::PathBuf;
 use unicode_width::UnicodeWidthStr;
 
 mod args;
-use args::{Cli, Commands, CompletionShell};
+use args::{Cli, Commands, CompletionShell, CoreCommands, DataCommands, MiscCommands, PadCommands};
 
 fn main() {
     if let Err(e) = run() {
@@ -34,35 +34,43 @@ fn run() -> Result<()> {
     let cli = Cli::parse();
 
     // Handle completions before context init (they don't need API)
-    if let Some(Commands::Completions { shell }) = &cli.command {
+    if let Some(Commands::Misc(MiscCommands::Completions { shell })) = &cli.command {
         return handle_completions(*shell);
     }
 
     let mut ctx = init_context(&cli)?;
 
     match cli.command {
-        Some(Commands::Create {
-            title,
-            content,
-            no_editor,
-        }) => handle_create(&mut ctx, title, content, no_editor),
-        Some(Commands::List { search, deleted }) => handle_list(&mut ctx, search, deleted),
-        Some(Commands::View { indexes }) => handle_view(&mut ctx, indexes),
-        Some(Commands::Edit { indexes }) => handle_edit(&mut ctx, indexes),
-        Some(Commands::Open { indexes }) => handle_open(&mut ctx, indexes),
-        Some(Commands::Delete { indexes }) => handle_delete(&mut ctx, indexes),
-        Some(Commands::Pin { indexes }) => handle_pin(&mut ctx, indexes),
-        Some(Commands::Unpin { indexes }) => handle_unpin(&mut ctx, indexes),
-        Some(Commands::Search { term }) => handle_search(&mut ctx, term),
-        Some(Commands::Path { indexes }) => handle_paths(&mut ctx, indexes),
-        Some(Commands::Config { key, value }) => handle_config(&mut ctx, key, value),
-        Some(Commands::Init) => handle_init(&ctx),
-        Some(Commands::CompletePads { deleted }) => handle_complete_pads(&mut ctx, deleted),
-        Some(Commands::Purge { indexes, yes }) => handle_purge(&mut ctx, indexes, yes),
-        Some(Commands::Export { indexes }) => handle_export(&mut ctx, indexes),
-        Some(Commands::Import { paths }) => handle_import(&mut ctx, paths),
-        Some(Commands::Doctor) => handle_doctor(&mut ctx),
-        Some(Commands::Completions { .. }) => unreachable!(),
+        Some(Commands::Core(cmd)) => match cmd {
+            CoreCommands::Create {
+                title,
+                content,
+                no_editor,
+            } => handle_create(&mut ctx, title, content, no_editor),
+            CoreCommands::List { search, deleted } => handle_list(&mut ctx, search, deleted),
+            CoreCommands::Search { term } => handle_search(&mut ctx, term),
+        },
+        Some(Commands::Pad(cmd)) => match cmd {
+            PadCommands::View { indexes } => handle_view(&mut ctx, indexes),
+            PadCommands::Edit { indexes } => handle_edit(&mut ctx, indexes),
+            PadCommands::Open { indexes } => handle_open(&mut ctx, indexes),
+            PadCommands::Delete { indexes } => handle_delete(&mut ctx, indexes),
+            PadCommands::Pin { indexes } => handle_pin(&mut ctx, indexes),
+            PadCommands::Unpin { indexes } => handle_unpin(&mut ctx, indexes),
+            PadCommands::Path { indexes } => handle_paths(&mut ctx, indexes),
+        },
+        Some(Commands::Data(cmd)) => match cmd {
+            DataCommands::Purge { indexes, yes } => handle_purge(&mut ctx, indexes, yes),
+            DataCommands::Export { indexes } => handle_export(&mut ctx, indexes),
+            DataCommands::Import { paths } => handle_import(&mut ctx, paths),
+        },
+        Some(Commands::Misc(cmd)) => match cmd {
+            MiscCommands::Doctor => handle_doctor(&mut ctx),
+            MiscCommands::Config { key, value } => handle_config(&mut ctx, key, value),
+            MiscCommands::Init => handle_init(&ctx),
+            MiscCommands::Completions { shell } => handle_completions(shell),
+            MiscCommands::CompletePads { deleted } => handle_complete_pads(&mut ctx, deleted),
+        },
         None => handle_list(&mut ctx, None, false),
     }
 }
