@@ -252,6 +252,16 @@ fn main() {
             }
             Err(e) => Err(e),
         },
+        Some(Commands::Path { index }) => {
+            let idx = parse_index(&index);
+            match api.get_pad_path(&idx, scope) {
+                Ok(path) => {
+                    println!("{}", path.display());
+                    Ok(())
+                }
+                Err(e) => Err(e),
+            }
+        }
         Some(Commands::Init) => {
             println!("Initialized padz store");
             Ok(())

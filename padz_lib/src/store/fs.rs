@@ -193,4 +193,10 @@ impl DataStore for FileStore {
 
         Ok(())
     }
+
+    fn get_pad_path(&self, id: &Uuid, scope: Scope) -> Result<PathBuf> {
+        let root = self.get_store_path(scope)?;
+        let filename = format!("pad-{}.txt", id);
+        Ok(root.join(filename))
+    }
 }

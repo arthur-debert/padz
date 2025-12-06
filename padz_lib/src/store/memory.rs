@@ -2,6 +2,7 @@ use super::DataStore;
 use crate::error::{PadzError, Result};
 use crate::model::{Pad, Scope};
 use std::collections::HashMap;
+use std::path::PathBuf;
 use uuid::Uuid;
 
 /// In-memory storage for testing and development.
@@ -44,6 +45,11 @@ impl DataStore for InMemoryStore {
             return Err(PadzError::PadNotFound(*id));
         }
         Ok(())
+    }
+
+    fn get_pad_path(&self, id: &Uuid, _scope: Scope) -> Result<PathBuf> {
+        // In-memory store has no file path, return a placeholder
+        Ok(PathBuf::from(format!("memory://pad-{}", id)))
     }
 }
 

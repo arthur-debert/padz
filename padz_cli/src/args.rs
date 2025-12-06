@@ -89,6 +89,12 @@ pub enum Commands {
     /// Search pads (dedicated command)
     Search { term: String },
 
+    /// Print the file path to a pad
+    Path {
+        /// Index of the pad (e.g. 1, p1, d1)
+        index: String,
+    },
+
     /// Initialize the store (optional utility)
     Init,
 }

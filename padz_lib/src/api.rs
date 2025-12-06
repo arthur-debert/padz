@@ -2,6 +2,7 @@ use crate::error::{PadzError, Result};
 use crate::index::{DisplayIndex, DisplayPad, index_pads};
 use crate::model::{Pad, Scope};
 use crate::store::DataStore;
+use std::path::PathBuf;
 use uuid::Uuid;
 
 pub struct PadzApi<S: DataStore> {
@@ -106,6 +107,11 @@ impl<S: DataStore> PadzApi<S> {
 
         self.store.save_pad(&pad, scope)?;
         Ok(pad)
+    }
+
+    pub fn get_pad_path(&self, index: &DisplayIndex, scope: Scope) -> Result<PathBuf> {
+        let uuid = self.resolve_index(index, scope)?;
+        self.store.get_pad_path(&uuid, scope)
     }
 
     pub fn search_pads(&self, term: &str, scope: Scope) -> Result<Vec<DisplayPad>> {
