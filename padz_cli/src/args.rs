@@ -14,7 +14,6 @@ pub struct Cli {
     /// Verbose output
     #[arg(short, long, global = true)]
     pub verbose: bool,
-    
     // Catch-all for "naked" args (e.g. `padz 1` or `padz "note"`)
     // Clap has `external_subcommand` or just a trailing arg.
     // PADZ.md says: `padz 1` -> view, `padz "note"` -> create.
@@ -29,14 +28,17 @@ pub enum Commands {
     /// Create a new pad
     #[command(alias = "n")]
     Create {
-        /// Title of the pad
-        #[arg(required = true)]
-        title: String,
-        
-        /// Content of the pad (optional, reads from stdin if piped?)
-        /// For now just an arg.
+        /// Title of the pad (optional, opens editor if not provided)
+        #[arg(required = false)]
+        title: Option<String>,
+
+        /// Content of the pad
         #[arg(required = false)]
         content: Option<String>,
+
+        /// Skip opening the editor
+        #[arg(long)]
+        no_editor: bool,
     },
 
     /// List pads
@@ -45,41 +47,33 @@ pub enum Commands {
         /// Search term
         #[arg(short, long)]
         search: Option<String>,
-        
+
         /// Show deleted pads
         #[arg(long)]
         deleted: bool,
     },
-    
+
     /// View a pad
     #[command(alias = "v")]
     View {
         /// Index of the pad (e.g. 1, p1, d1)
         index: String,
     },
-    
+
     /// Delete a pad
     #[command(alias = "rm")]
-    Delete {
-        index: String,
-    },
+    Delete { index: String },
 
     /// Pin a pad
     #[command(alias = "p")]
-    Pin {
-        index: String,
-    },
-    
+    Pin { index: String },
+
     /// Unpin a pad
     #[command(alias = "u")]
-    Unpin {
-        index: String,
-    },
-    
+    Unpin { index: String },
+
     /// Search pads (dedicated command)
-    Search {
-        term: String,
-    },
+    Search { term: String },
 
     /// Initialize the store (optional utility)
     Init,
