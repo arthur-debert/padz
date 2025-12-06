@@ -63,3 +63,79 @@ pub fn run<S: DataStore>(
 
     Ok(result)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::commands::{create, delete, list};
+    use crate::index::DisplayIndex;
+    use crate::model::Scope;
+    use crate::store::memory::InMemoryStore;
+
+    #[test]
+    fn purges_deleted_pads() {
+        let mut store = InMemoryStore::new();
+        create::run(&mut store, Scope::Project, "A".into(), "".into()).unwrap();
+
+        // Delete it
+        delete::run(&mut store, Scope::Project, &[DisplayIndex::Regular(1)]).unwrap();
+
+        // Verify it's deleted
+        let deleted = list::run(&store, Scope::Project, true).unwrap();
+        assert_eq!(deleted.listed_pads.len(), 1);
+
+        // Purge
+        let res = run(
+            &mut store,
+            Scope::Project,
+            &[],
+            true, // skip_confirm
+        )
+        .unwrap();
+
+        assert_eq!(res.messages.len(), 1);
+        assert!(res.messages[0].content.contains("Purged: d1 A"));
+
+        // Verify empty
+        let deleted_after = list::run(&store, Scope::Project, true).unwrap();
+        assert_eq!(deleted_after.listed_pads.len(), 0);
+    }
+
+    #[test]
+    fn purges_specific_pads_even_if_active() {
+        let mut store = InMemoryStore::new();
+        create::run(&mut store, Scope::Project, "A".into(), "".into()).unwrap();
+
+        // Purge active pad 1
+        let res = run(
+            &mut store,
+            Scope::Project,
+            &[DisplayIndex::Regular(1)],
+            true,
+        )
+        .unwrap();
+
+        assert_eq!(res.messages.len(), 1);
+        assert!(res.messages[0].content.contains("Purged: 1 A"));
+
+        // Verify gone
+        let listed = list::run(&store, Scope::Project, false).unwrap();
+        assert_eq!(listed.listed_pads.len(), 0);
+    }
+
+    #[test]
+    fn does_nothing_if_no_deleted_pads() {
+        let mut store = InMemoryStore::new();
+        create::run(&mut store, Scope::Project, "A".into(), "".into()).unwrap();
+
+        // Purge deleted (none)
+        let res = run(&mut store, Scope::Project, &[], true).unwrap();
+
+        assert_eq!(res.messages.len(), 1);
+        assert!(res.messages[0].content.contains("No pads to purge"));
+
+        // A still exists
+        let listed = list::run(&store, Scope::Project, false).unwrap();
+        assert_eq!(listed.listed_pads.len(), 1);
+    }
+}

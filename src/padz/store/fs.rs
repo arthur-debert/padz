@@ -261,3 +261,58 @@ impl DataStore for FileStore {
         Ok(report)
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::model::Pad;
+    use tempfile::tempdir;
+
+    #[test]
+    fn test_doctor_fixes_missing_files() {
+        let dir = tempdir().unwrap();
+        let root = dir.path().to_path_buf();
+        let mut store = FileStore::new(Some(root.clone()), root.clone());
+
+        // create a pad
+        let pad = Pad::new("Lost".to_string(), "Content".to_string());
+        store.save_pad(&pad, Scope::Project).unwrap();
+
+        // Delete the file manually
+        let pad_path = store
+            .get_pad_path(&pad.metadata.id, Scope::Project)
+            .unwrap();
+        fs::remove_file(pad_path).unwrap();
+
+        // Run doctor
+        let report = store.doctor(Scope::Project).unwrap();
+        assert_eq!(report.fixed_missing_files, 1);
+
+        // Check DB
+        let pads = store.list_pads(Scope::Project).unwrap();
+        assert_eq!(pads.len(), 0);
+    }
+
+    #[test]
+    fn test_doctor_recovers_orphan_files() {
+        let dir = tempdir().unwrap();
+        let root = dir.path().to_path_buf();
+        let mut store = FileStore::new(Some(root.clone()), root.clone());
+        store.ensure_dir(&root).unwrap();
+
+        // Create an orphan file manually
+        let id = Uuid::new_v4();
+        let filename = format!("pad-{}.txt", id);
+        fs::write(root.join(filename), "Orphan Title\nOrphan Content").unwrap();
+
+        // Run doctor
+        let report = store.doctor(Scope::Project).unwrap();
+        assert_eq!(report.recovered_files, 1);
+
+        // Check DB
+        let pads = store.list_pads(Scope::Project).unwrap();
+        assert_eq!(pads.len(), 1);
+        assert_eq!(pads[0].metadata.title, "Orphan Title");
+        assert_eq!(pads[0].metadata.id, id);
+    }
+}

@@ -1,36 +1,20 @@
 use crate::commands::{CmdMessage, CmdResult};
 use crate::error::{PadzError, Result};
 use crate::index::DisplayIndex;
+use crate::index::DisplayPad;
 use crate::model::Scope;
 use crate::store::DataStore;
 use chrono::Utc;
 use flate2::write::GzEncoder;
 use flate2::Compression;
 use std::fs::File;
+use std::io::Write;
 
 use super::helpers::{indexed_pads, pads_by_indexes};
 
 pub fn run<S: DataStore>(store: &S, scope: Scope, indexes: &[DisplayIndex]) -> Result<CmdResult> {
     // 1. Resolve pads
-    let pads = if indexes.is_empty() {
-        // All non-deleted pads? Or all? "same as purge, if id(s) are passed, acts on these, else on all"
-        // Purge on all acted on *deleted* pads.
-        // Export on all likely means *active* pads (or all including deleted?).
-        // Usually export implies backup, so maybe all active?
-        // Let's assume ALL pads (active) by default.
-        // Or if I want backup, maybe active + deleted?
-        // "same as purge" refers to argument handling.
-        // If I want to export deleted ones, I probably need to specify them or maybe it exports all?
-        // Let's export *active* pads by default if no args.
-        // If explicit args, can be anything.
-        // Check `list` default. `list` is active only.
-        indexed_pads(store, scope)?
-            .into_iter()
-            .filter(|dp| !matches!(dp.index, DisplayIndex::Deleted(_)))
-            .collect()
-    } else {
-        pads_by_indexes(store, scope, indexes)?
-    };
+    let pads = resolve_pads(store, scope, indexes)?;
 
     if pads.is_empty() {
         let mut res = CmdResult::default();
@@ -42,19 +26,37 @@ pub fn run<S: DataStore>(store: &S, scope: Scope, indexes: &[DisplayIndex]) -> R
     let now = Utc::now();
     let filename = format!("padz-{}.tar.gz", now.format("%Y-%m-%d_%H:%M:%S"));
     let file = File::create(&filename).map_err(PadzError::Io)?;
-    let enc = GzEncoder::new(file, Compression::default());
+
+    // 3. Write archive
+    write_archive(file, &pads)?;
+
+    let mut result = CmdResult::default();
+    result.add_message(CmdMessage::success(format!("Exported to {}", filename)));
+    Ok(result)
+}
+
+fn resolve_pads<S: DataStore>(
+    store: &S,
+    scope: Scope,
+    indexes: &[DisplayIndex],
+) -> Result<Vec<DisplayPad>> {
+    if indexes.is_empty() {
+        Ok(indexed_pads(store, scope)?
+            .into_iter()
+            .filter(|dp| !matches!(dp.index, DisplayIndex::Deleted(_)))
+            .collect())
+    } else {
+        pads_by_indexes(store, scope, indexes)
+    }
+}
+
+fn write_archive<W: Write>(writer: W, pads: &[DisplayPad]) -> Result<()> {
+    let enc = GzEncoder::new(writer, Compression::default());
     let mut tar = tar::Builder::new(enc);
 
-    // 3. Add files
     for dp in pads {
         let title = &dp.pad.metadata.title;
         let safe_title = sanitize_filename(title);
-        // Ensure uniqueness?
-        // Simple strategy: title.txt. If multiple pads have same title, last wins or overwrite?
-        // To avoid collision, let's append ID suffix? or just hope?
-        // "stand alone file" -> title is nice.
-        // But Padz allows duplicate titles.
-        // Let's use `Title (ID-short).txt` to be safe/unique?
         let entry_name = format!(
             "padz/{}-{}.txt",
             safe_title,
@@ -73,10 +75,7 @@ pub fn run<S: DataStore>(store: &S, scope: Scope, indexes: &[DisplayIndex]) -> R
     }
 
     tar.finish().map_err(PadzError::Io)?;
-
-    let mut result = CmdResult::default();
-    result.add_message(CmdMessage::success(format!("Exported to {}", filename)));
-    Ok(result)
+    Ok(())
 }
 
 fn sanitize_filename(name: &str) -> String {
@@ -91,4 +90,49 @@ fn sanitize_filename(name: &str) -> String {
         .collect::<String>()
         .trim()
         .to_string()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::commands::create;
+    use crate::model::Scope;
+    use crate::store::memory::InMemoryStore;
+
+    #[test]
+    fn test_resolve_pads_exports_active_by_default() {
+        let mut store = InMemoryStore::new();
+        create::run(&mut store, Scope::Project, "Active".into(), "".into()).unwrap();
+
+        let mut del_pad = crate::model::Pad::new("Deleted".into(), "".into());
+        del_pad.metadata.is_deleted = true;
+        store.save_pad(&del_pad, Scope::Project).unwrap();
+
+        let pads = resolve_pads(&store, Scope::Project, &[]).unwrap();
+        assert_eq!(pads.len(), 1);
+        assert_eq!(pads[0].pad.metadata.title, "Active");
+    }
+
+    #[test]
+    fn test_write_archive_produces_content() {
+        let mut store = InMemoryStore::new();
+        create::run(&mut store, Scope::Project, "Test".into(), "Content".into()).unwrap();
+        let pads = resolve_pads(&store, Scope::Project, &[]).unwrap();
+
+        let mut buf = Vec::new();
+        write_archive(&mut buf, &pads).unwrap();
+
+        assert!(!buf.is_empty());
+        // Could verify tar content but that requires untarring.
+        // Checking header magic? Gzip header is 1f 8b
+        assert_eq!(buf[0], 0x1f);
+        assert_eq!(buf[1], 0x8b);
+    }
+
+    #[test]
+    fn test_sanitize() {
+        assert_eq!(sanitize_filename("Hello World"), "Hello World");
+        assert_eq!(sanitize_filename("foo/bar"), "foo_bar");
+        assert_eq!(sanitize_filename("baz\\qux"), "baz_qux");
+    }
 }

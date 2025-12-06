@@ -64,20 +64,13 @@ pub fn run<S: DataStore>(
 
 fn import_file<S: DataStore>(store: &mut S, scope: Scope, path: &Path) -> Result<usize> {
     let content_raw = fs::read_to_string(path).map_err(PadzError::Io)?;
-    // "the first line is the title and subsequent ones are the content (if the first line of the content is a blank line(s trim it.))"
+    import_content(store, scope, &content_raw)
+}
 
+fn import_content<S: DataStore>(store: &mut S, scope: Scope, content_raw: &str) -> Result<usize> {
     let mut lines = content_raw.lines();
     let title = lines.next().unwrap_or("Untitled").trim().to_string();
 
-    // Collect remaining lines.
-    // Ensure we handle "first line is title".
-    // "subsequent ones are the content".
-    // "if the first line of the content is a blank line(s trim it.)"
-
-    // We can collect remaining into a String (joined by newline)
-    // Then trim ONLY leading newlines.
-
-    // Or just skip while empty?
     let mut content_lines: Vec<&str> = lines.collect();
 
     // Trim leading blank lines
@@ -87,16 +80,37 @@ fn import_file<S: DataStore>(store: &mut S, scope: Scope, path: &Path) -> Result
 
     let content = content_lines.join("\n");
 
-    // Should we trim end too? Spec says trim first line blank lines.
-
-    // Create pad
-    // We need to use create logic.
-    // Can we call api.create_pad? No we have store here.
-    // Call commands::create::run or just store.save_pad?
-    // commands::create::run properly wraps it and returns result.
-    // But we are batching.
-    // Let's create Pad and save.
-
     crate::commands::create::run(store, scope, title, content)?;
     Ok(1)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::model::Scope;
+    use crate::store::memory::InMemoryStore;
+
+    #[test]
+    fn test_import_content_extracts_title() {
+        let mut store = InMemoryStore::new();
+        let raw = "My Title\nLine 1\nLine 2";
+        import_content(&mut store, Scope::Project, raw).unwrap();
+
+        let pads = store.list_pads(Scope::Project).unwrap();
+        assert_eq!(pads.len(), 1);
+        assert_eq!(pads[0].metadata.title, "My Title");
+        assert_eq!(pads[0].content, "Line 1\nLine 2");
+    }
+
+    #[test]
+    fn test_import_content_trims_leading_blanks() {
+        let mut store = InMemoryStore::new();
+        let raw = "Title\n\n\nReal Content";
+        import_content(&mut store, Scope::Project, raw).unwrap();
+
+        let pads = store.list_pads(Scope::Project).unwrap();
+        assert_eq!(pads.len(), 1);
+        assert_eq!(pads[0].metadata.title, "Title");
+        assert_eq!(pads[0].content, "Real Content");
+    }
 }

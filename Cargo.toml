@@ -30,6 +30,9 @@ timeago = "0.4"
 unicode-width = "0.2.2"
 uuid = { version = "1.19.0", features = ["v4", "serde"] }
 
+[dev-dependencies]
+tempfile = "3.10.1"
+
 [features]
 default = []
 test_utils = []
