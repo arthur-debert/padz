@@ -337,26 +337,18 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "04744f49eae99ab78e0d5c0b603ab218f515ea8cfe5a456d7629ad883a3b6e7d"
 
 [[package]]
-name = "padz_cli"
+name = "padz"
 version = "0.1.0"
 dependencies = [
  "chrono",
  "clap",
  "colored",
  "directories",
- "padz_lib",
- "timeago",
- "unicode-width",
-]
-
-[[package]]
-name = "padz_lib"
-version = "0.1.0"
-dependencies = [
- "chrono",
  "serde",
  "serde_json",
  "thiserror",
+ "timeago",
+ "unicode-width",
  "uuid",
 ]
 

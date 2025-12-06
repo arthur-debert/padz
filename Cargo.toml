@@ -1,6 +1,23 @@
-[workspace]
-members = [
-    "padz_lib",
-    "padz_cli",
-]
-resolver = "2"
+[package]
+name = "padz"
+version = "0.1.0"
+edition = "2024"
+
+[lib]
+path = "src/padz/lib.rs"
+
+[[bin]]
+name = "pa"
+path = "src/padz/main.rs"
+
+[dependencies]
+chrono = { version = "0.4.42", features = ["serde"] }
+clap = { version = "4.5.53", features = ["derive"] }
+colored = "3.0.0"
+directories = "6.0.0"
+serde = { version = "1.0.228", features = ["derive"] }
+serde_json = "1.0.145"
+thiserror = "2.0.17"
+timeago = "0.4"
+unicode-width = "0.2.2"
+uuid = { version = "1.19.0", features = ["v4", "serde"] }

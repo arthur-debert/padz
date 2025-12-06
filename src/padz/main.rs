@@ -2,19 +2,19 @@ use chrono::Utc;
 use clap::Parser;
 use colored::*;
 use directories::ProjectDirs;
-use padz_lib::api::PadzApi;
-use padz_lib::clipboard::{copy_to_clipboard, format_for_clipboard};
-use padz_lib::config::PadzConfig;
-use padz_lib::editor::{EditorContent, edit_content};
-use padz_lib::index::{DisplayIndex, DisplayPad};
-use padz_lib::model::Scope;
-use padz_lib::store::fs::FileStore;
+use padz::api::PadzApi;
+use padz::clipboard::{copy_to_clipboard, format_for_clipboard};
+use padz::config::PadzConfig;
+use padz::editor::{EditorContent, edit_content};
+use padz::index::{DisplayIndex, DisplayPad};
+use padz::model::Scope;
+use padz::store::fs::FileStore;
 use std::path::PathBuf;
 use unicode_width::UnicodeWidthStr;
 
 mod args;
 use args::{Cli, Commands};
-use padz_lib::error::Result;
+use padz::error::Result;
 
 fn main() {
     if let Err(e) = run() {
