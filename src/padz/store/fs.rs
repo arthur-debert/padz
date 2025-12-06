@@ -6,55 +6,6 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use uuid::Uuid;
 
-pub struct JsonFileSystemStore {
-    base_path: PathBuf,
-}
-
-impl JsonFileSystemStore {
-    pub fn new<P: AsRef<Path>>(base_path: P) -> Self {
-        Self {
-            base_path: base_path.as_ref().to_path_buf(),
-        }
-    }
-
-    fn get_scope_dir(&self, scope: Scope) -> PathBuf {
-        // Simple layout:
-        // base_path/project/ (for project scope? Or just base_path if base_path IS the project root?)
-        // The spec says: ".padz directory. It's either in project's directory or uses the xdg data path".
-        // So the `base_path` passed here should be the ROOT of the store (the .padz dir).
-        // If we handle scopes by different Store instances, that's easier.
-        // But the trait has `scope` in every method.
-        // Option A: Store manages both scopes.
-        // Option B: Store manages one directory, and the caller picks the right directory.
-        // The Trait says `save_pad(..., scope)`. This implies the store handles scopes.
-        // But local project scope is usually `./.padz` and global is `~/.local/share/padz`.
-        // These are completely different paths.
-        // A single `JsonFileSystemStore` initialized with ONE path cannot handle both effectively unless configured with both paths.
-        // Let's assume `JsonFileSystemStore` is initialized with a map of Scope -> Path, or just handles one scope and we route in CLI?
-        // CLI usually instantiates one store.
-        // Let's modify `JsonFileSystemStore` to take a `Map<Scope, PathBuf>` or similar.
-        // Or simpler: `JsonFileSystemStore` handles the path logic if we pass the root logic.
-        // But Project path is dynamic.
-        // Simpler approach:
-        // `JsonFileSystemStore` struct holds `project_path: Option<PathBuf>` and `global_path: PathBuf`.
-
-        // Let's stick to what's easiest for now:
-        // The store trait expects usage like `store.list_pads(Scope::Global)`.
-        match scope {
-            Scope::Project => self.base_path.join("project"), // Placeholder if we use single root
-            Scope::Global => self.base_path.join("global"),
-        }
-    }
-}
-
-// Rewind: usage.
-// CLI: `padz list`. Auto-detects project root.
-// If project root found: uses `.padz` in that root.
-// If global flag: uses global XDG path.
-// So we have TWO separate physical locations.
-// A common pattern is `MultiStore` or `RouterStore`.
-// Or `JsonFileSystemStore` simply needs to know both roots.
-
 pub struct FileStore {
     project_root: Option<PathBuf>,
     global_root: PathBuf,

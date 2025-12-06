@@ -311,9 +311,6 @@ mod tests {
         api.create_pad("B".to_string(), "".to_string(), Scope::Project)
             .unwrap();
 
-        let pads = api.list_pads(Scope::Project).unwrap();
-        // Reverse chronological: B=1 (newest), A=2 (oldest)
-
         let idx_1 = DisplayIndex::Regular(1); // B is now index 1
         api.pin_pad(&idx_1, Scope::Project).unwrap();
 

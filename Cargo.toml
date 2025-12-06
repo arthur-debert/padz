@@ -21,3 +21,7 @@ thiserror = "2.0.17"
 timeago = "0.4"
 unicode-width = "0.2.2"
 uuid = { version = "1.19.0", features = ["v4", "serde"] }
+
+[features]
+default = []
+test_utils = []
