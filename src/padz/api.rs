@@ -80,6 +80,15 @@ impl<S: DataStore> PadzApi<S> {
         commands::export::run(&self.store, scope, indexes)
     }
 
+    pub fn import_pads(
+        &mut self,
+        scope: Scope,
+        paths: Vec<std::path::PathBuf>,
+        import_exts: &[String],
+    ) -> Result<commands::CmdResult> {
+        commands::import::run(&mut self.store, scope, paths, import_exts)
+    }
+
     pub fn pad_paths(&self, scope: Scope, indexes: &[DisplayIndex]) -> Result<commands::CmdResult> {
         commands::paths::run(&self.store, scope, indexes)
     }

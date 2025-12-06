@@ -27,6 +27,7 @@ struct AppContext {
     api: PadzApi<FileStore>,
     scope: Scope,
     file_ext: String,
+    import_extensions: Vec<String>,
 }
 
 fn run() -> Result<()> {
@@ -59,6 +60,7 @@ fn run() -> Result<()> {
         Some(Commands::CompletePads { deleted }) => handle_complete_pads(&mut ctx, deleted),
         Some(Commands::Purge { indexes, yes }) => handle_purge(&mut ctx, indexes, yes),
         Some(Commands::Export { indexes }) => handle_export(&mut ctx, indexes),
+        Some(Commands::Import { paths }) => handle_import(&mut ctx, paths),
         Some(Commands::Completions { .. }) => unreachable!(),
         None => handle_list(&mut ctx, None, false),
     }
@@ -84,6 +86,7 @@ fn init_context(cli: &Cli) -> Result<AppContext> {
     };
     let config = PadzConfig::load(config_dir).unwrap_or_default();
     let file_ext = config.get_file_ext().to_string();
+    let import_extensions = config.import_extensions.clone();
 
     let store = FileStore::new(Some(project_padz_dir.clone()), global_data_dir.clone())
         .with_file_ext(&file_ext);
@@ -97,6 +100,7 @@ fn init_context(cli: &Cli) -> Result<AppContext> {
         api,
         scope,
         file_ext,
+        import_extensions,
     })
 }
 
@@ -264,6 +268,15 @@ fn handle_purge(ctx: &mut AppContext, indexes: Vec<String>, yes: bool) -> Result
 fn handle_export(ctx: &mut AppContext, indexes: Vec<String>) -> Result<()> {
     let parsed = parse_indexes(&indexes)?; // Empty vec remains empty, api handles logic
     let result = ctx.api.export_pads(ctx.scope, &parsed)?;
+    print_messages(&result.messages);
+    Ok(())
+}
+
+fn handle_import(ctx: &mut AppContext, paths: Vec<String>) -> Result<()> {
+    let paths: Vec<PathBuf> = paths.iter().map(PathBuf::from).collect();
+    let result = ctx
+        .api
+        .import_pads(ctx.scope, paths, &ctx.import_extensions)?;
     print_messages(&result.messages);
     Ok(())
 }

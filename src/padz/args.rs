@@ -134,6 +134,13 @@ pub enum Commands {
         indexes: Vec<String>,
     },
 
+    /// Import files as pads
+    Import {
+        /// Paths to files or directories to import
+        #[arg(required = true, num_args = 1..)]
+        paths: Vec<String>,
+    },
+
     // --- Misc ---
     #[command(next_help_heading = "Misc")]
     /// Get or set configuration

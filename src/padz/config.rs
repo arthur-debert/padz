@@ -12,16 +12,30 @@ pub struct PadzConfig {
     /// File extension for new pads (e.g., ".txt", ".md", ".rs")
     #[serde(default = "default_file_ext")]
     pub file_ext: String,
+
+    /// Extensions to look for when importing directories (e.g. ".md", ".txt")
+    #[serde(default = "default_import_ext")]
+    pub import_extensions: Vec<String>,
 }
 
 fn default_file_ext() -> String {
     DEFAULT_FILE_EXT.to_string()
 }
 
+fn default_import_ext() -> Vec<String> {
+    vec![
+        ".md".to_string(),
+        ".txt".to_string(),
+        ".text".to_string(),
+        ".lex".to_string(),
+    ]
+}
+
 impl Default for PadzConfig {
     fn default() -> Self {
         Self {
             file_ext: DEFAULT_FILE_EXT.to_string(),
+            import_extensions: default_import_ext(),
         }
     }
 }
@@ -126,6 +140,7 @@ mod tests {
     fn test_serialization_roundtrip() {
         let config = PadzConfig {
             file_ext: ".py".to_string(),
+            import_extensions: vec![".md".to_string()],
         };
 
         let json = serde_json::to_string(&config).unwrap();
