@@ -1,0 +1,4 @@
+{% if empty %}No pads found.
+{% else %}{% if has_pinned %}
+{% endif %}{% for pad in pads %}{{ pad.left_prefix }}{{ pad.index | style(pad.index_style) }}{{ pad.title_content }}{{ pad.padding }}{{ pad.right_suffix }}{{ pad.time_ago | style("time") }}
+{% endfor %}{% endif %}

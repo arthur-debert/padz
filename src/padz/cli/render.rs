@@ -3,6 +3,7 @@
 //! This module provides styled terminal output using the `outstanding` crate.
 //! Templates are defined here and rendered with automatic terminal color detection.
 
+use super::templates::LIST_TEMPLATE;
 use chrono::{DateTime, Utc};
 use console::Style;
 use outstanding::{render_with_color, Styles};
@@ -45,12 +46,6 @@ fn list_styles() -> Styles {
         .add("index_regular", Style::new())
         .add("time", Style::new().dim())
 }
-
-/// Template for rendering the pad list.
-const LIST_TEMPLATE: &str = r#"{% if empty %}No pads found.
-{% else %}{% if has_pinned %}
-{% endif %}{% for pad in pads %}{{ pad.left_prefix }}{{ pad.index | style(pad.index_style) }}{{ pad.title_content }}{{ pad.padding }}{{ pad.right_suffix }}{{ pad.time_ago | style("time") }}
-{% endfor %}{% endif %}"#;
 
 /// Renders a list of pads to a string.
 pub fn render_pad_list(pads: &[DisplayPad], use_color: bool) -> String {
