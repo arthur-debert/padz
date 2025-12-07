@@ -375,11 +375,8 @@ fn handle_config(ctx: &mut AppContext, key: Option<String>, value: Option<String
 
         if key.is_none() {
             // Show all known keys
-            if let Some(val) = config.get("file-ext") {
-                lines.push(format!("file-ext = {}", val));
-            }
-            if let Some(val) = config.get("import-extensions") {
-                lines.push(format!("import-extensions = {}", val));
+            for (k, v) in config.list_all() {
+                lines.push(format!("{} = {}", k, v));
             }
         }
     }

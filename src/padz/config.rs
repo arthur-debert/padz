@@ -99,6 +99,17 @@ impl PadzConfig {
         }
     }
 
+    /// List all configuration keys and their values.
+    pub fn list_all(&self) -> Vec<(String, String)> {
+        vec![
+            ("file-ext".to_string(), self.file_ext.clone()),
+            (
+                "import-extensions".to_string(),
+                self.import_extensions.join(", "),
+            ),
+        ]
+    }
+
     /// Get the file extension (ensures it starts with a dot)
     pub fn get_file_ext(&self) -> &str {
         &self.file_ext
@@ -207,5 +218,13 @@ mod tests {
             config.get("import-extensions"),
             Some(".rs, .toml".to_string())
         );
+    }
+    #[test]
+    fn test_list_all() {
+        let config = PadzConfig::default();
+        let all = config.list_all();
+        assert!(all.len() >= 2);
+        assert!(all.iter().any(|(k, v)| k == "file-ext" && v == ".txt"));
+        assert!(all.iter().any(|(k, _)| k == "import-extensions"));
     }
 }
