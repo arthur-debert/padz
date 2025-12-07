@@ -1,4 +1,6 @@
-{% if empty %}No pads found.
-{% else %}{% if has_pinned %}
-{% endif %}{% for pad in pads %}{{ pad.left_prefix }}{{ pad.index | style(pad.index_style) }}{{ pad.title_content }}{{ pad.padding }}{{ pad.right_suffix }}{{ pad.time_ago | style("time") }}
-{% endfor %}{% endif %}
+{% if empty %}{{ "No pads found." | style("muted") }}
+{% else -%}
+{% for pad in pads -%}
+{{ pad.left_pad }}{% if pad.left_icon %}{{ pad.left_icon | style("pinned") }}{% endif %}{{ pad.left_post }}{{ pad.index | style(pad.index_style) }}{{ pad.title | style(pad.title_style) }}{{ pad.padding }}{% if pad.right_icon %}{{ pad.right_icon | style("pinned") }}{% endif %}{{ pad.right_post }}{{ pad.time_ago | style("time") }}
+{% endfor -%}
+{% endif %}

@@ -3,7 +3,7 @@
 //! This module provides styled terminal output using the `outstanding` crate.
 //! Templates are defined here and rendered with automatic terminal color detection.
 
-use super::styles::PADZ_THEME;
+use super::styles::{names, PADZ_THEME};
 use super::templates::{FULL_PAD_TEMPLATE, LIST_TEMPLATE, TEXT_LIST_TEMPLATE};
 use chrono::{DateTime, Utc};
 use outstanding::{render_with_color, ThemeChoice};
@@ -19,20 +19,23 @@ pub const PIN_MARKER: &str = "⚲";
 /// Data structure for rendering a single pad line.
 #[derive(Serialize)]
 struct PadLineData {
-    left_prefix: String,
+    left_pad: String,
+    left_icon: Option<String>,
+    left_post: String,
     index: String,
-    title_content: String,
+    title: String,
     padding: String,
-    right_suffix: String,
+    right_icon: Option<String>,
+    right_post: String,
     time_ago: String,
     // Style hints
     index_style: String,
+    title_style: String,
 }
 
 /// Data structure for the full list template.
 #[derive(Serialize)]
 struct ListData {
-    has_pinned: bool,
     pads: Vec<PadLineData>,
     empty: bool,
 }
@@ -47,6 +50,9 @@ struct FullPadEntry {
     index: String,
     title: String,
     content: String,
+    index_style: String,
+    title_style: String,
+    content_style: String,
 }
 
 #[derive(Serialize)]
@@ -61,7 +67,6 @@ pub fn render_pad_list(pads: &[DisplayPad], use_color: bool) -> String {
         return render_with_color(
             LIST_TEMPLATE,
             &ListData {
-                has_pinned: false,
                 pads: vec![],
                 empty: true,
             },
@@ -70,10 +75,6 @@ pub fn render_pad_list(pads: &[DisplayPad], use_color: bool) -> String {
         )
         .unwrap_or_else(|_| "No pads found.\n".to_string());
     }
-
-    let has_pinned = pads
-        .iter()
-        .any(|dp| matches!(dp.index, DisplayIndex::Pinned(_)));
 
     let mut pad_lines = Vec::new();
     let mut last_was_pinned = false;
@@ -84,13 +85,17 @@ pub fn render_pad_list(pads: &[DisplayPad], use_color: bool) -> String {
         // Add separator line between pinned and regular sections
         if last_was_pinned && !is_pinned_entry {
             pad_lines.push(PadLineData {
-                left_prefix: String::new(),
+                left_pad: String::new(),
+                left_icon: None,
+                left_post: String::new(),
                 index: String::new(),
-                title_content: String::new(),
+                title: String::new(),
                 padding: String::new(),
-                right_suffix: String::new(),
+                right_icon: None,
+                right_post: String::new(),
                 time_ago: String::new(),
-                index_style: "index_regular".to_string(),
+                index_style: names::REGULAR.to_string(),
+                title_style: names::REGULAR.to_string(),
             });
         }
         last_was_pinned = is_pinned_entry;
@@ -101,63 +106,75 @@ pub fn render_pad_list(pads: &[DisplayPad], use_color: bool) -> String {
             DisplayIndex::Deleted(n) => format!("d{}. ", n),
         };
 
-        let left_prefix = if is_pinned_entry {
-            format!("  {} ", PIN_MARKER)
+        let (left_pad, left_icon, left_post) = if is_pinned_entry {
+            (
+                "  ".to_string(),
+                Some(PIN_MARKER.to_string()),
+                " ".to_string(),
+            )
         } else {
-            "    ".to_string()
+            ("    ".to_string(), None, String::new())
         };
-        let left_prefix_width = left_prefix.width();
 
-        let right_suffix = if dp.pad.metadata.is_pinned && !is_pinned_entry {
-            format!("{} ", PIN_MARKER)
+        let (right_icon, right_post) = if dp.pad.metadata.is_pinned && !is_pinned_entry {
+            (Some(PIN_MARKER.to_string()), " ".to_string())
         } else {
-            "  ".to_string()
+            (None, "  ".to_string())
         };
-        let right_suffix_width = right_suffix.width();
 
-        let time_ago = format_time_ago(dp.pad.metadata.created_at);
+        let left_prefix_width = left_pad.width()
+            + left_icon
+                .as_deref()
+                .map(UnicodeWidthStr::width)
+                .unwrap_or(0)
+            + left_post.width();
 
-        let title = &dp.pad.metadata.title;
-        let content_preview: String = dp
-            .pad
-            .content
-            .chars()
-            .take(50)
-            .map(|c| if c == '\n' { ' ' } else { c })
-            .collect();
-        let title_content = if content_preview.is_empty() {
-            title.clone()
-        } else {
-            format!("{} {}", title, content_preview)
-        };
+        let right_suffix_width = right_icon
+            .as_deref()
+            .map(UnicodeWidthStr::width)
+            .unwrap_or(0)
+            + right_post.width();
 
         let idx_width = idx_str.width();
         let fixed_width = left_prefix_width + idx_width + right_suffix_width + TIME_WIDTH;
         let available = LINE_WIDTH.saturating_sub(fixed_width);
 
-        let title_display = truncate_to_width(&title_content, available);
-        let content_width = title_display.width();
-        let padding = " ".repeat(available.saturating_sub(content_width));
+        let time_ago = format_time_ago(dp.pad.metadata.created_at);
+        let title_source = dp.pad.metadata.title.as_str();
+        let title_display = truncate_to_width(title_source, available);
+        let title_width = title_display.width();
+        let padding = " ".repeat(available.saturating_sub(title_width));
 
         let index_style = match dp.index {
-            DisplayIndex::Pinned(_) => "index_pinned",
-            DisplayIndex::Deleted(_) => "index_deleted",
-            DisplayIndex::Regular(_) => "index_regular",
-        };
+            DisplayIndex::Pinned(_) => names::PINNED,
+            DisplayIndex::Deleted(_) => names::DELETED,
+            DisplayIndex::Regular(_) => names::REGULAR,
+        }
+        .to_string();
+        let is_deleted_entry = matches!(dp.index, DisplayIndex::Deleted(_));
+        let title_style = if is_deleted_entry {
+            names::DELETED
+        } else {
+            names::TITLE
+        }
+        .to_string();
 
         pad_lines.push(PadLineData {
-            left_prefix,
+            left_pad,
+            left_icon,
+            left_post,
             index: idx_str,
-            title_content: title_display,
+            title: title_display,
             padding,
-            right_suffix,
+            right_icon,
+            right_post,
             time_ago,
-            index_style: index_style.to_string(),
+            index_style,
+            title_style,
         });
     }
 
     let data = ListData {
-        has_pinned,
         pads: pad_lines,
         empty: false,
     };
@@ -175,10 +192,35 @@ pub fn render_pad_list(pads: &[DisplayPad], use_color: bool) -> String {
 pub fn render_full_pads(pads: &[DisplayPad], use_color: bool) -> String {
     let entries = pads
         .iter()
-        .map(|dp| FullPadEntry {
-            index: format!("{}", dp.index),
-            title: dp.pad.metadata.title.clone(),
-            content: dp.pad.content.clone(),
+        .map(|dp| {
+            let index_style = match dp.index {
+                DisplayIndex::Pinned(_) => names::PINNED,
+                DisplayIndex::Deleted(_) => names::DELETED,
+                DisplayIndex::Regular(_) => names::REGULAR,
+            }
+            .to_string();
+            let is_deleted_entry = matches!(dp.index, DisplayIndex::Deleted(_));
+            let title_style = if is_deleted_entry {
+                names::DELETED
+            } else {
+                names::TITLE
+            }
+            .to_string();
+            let content_style = if is_deleted_entry {
+                names::DELETED
+            } else {
+                names::REGULAR
+            }
+            .to_string();
+
+            FullPadEntry {
+                index: format!("{}", dp.index),
+                title: dp.pad.metadata.title.clone(),
+                content: dp.pad.content.clone(),
+                index_style,
+                title_style,
+                content_style,
+            }
         })
         .collect();
 
@@ -213,10 +255,11 @@ fn truncate_to_width(s: &str, max_width: usize) -> String {
 
     let mut result = String::new();
     let mut current_width = 0;
+    let limit = max_width.saturating_sub(1);
 
     for c in s.chars() {
         let char_width = c.width().unwrap_or(0);
-        if current_width + char_width > max_width.saturating_sub(1) {
+        if current_width + char_width > limit {
             result.push('…');
             return result;
         }
@@ -372,8 +415,26 @@ mod tests {
         let output = render_full_pads(&[dp], false);
 
         assert!(output.contains("3 Full Pad"));
-        assert!(output.contains("--------------------------------"));
         assert!(output.contains("some content"));
+
+        let lines: Vec<&str> = output.lines().collect();
+        let header_index = lines
+            .iter()
+            .position(|line| line.contains("3 Full Pad"))
+            .expect("header line missing");
+        let spacer = lines.get(header_index + 1).copied().unwrap_or_default();
+        assert!(
+            spacer.trim().is_empty(),
+            "expected blank separator line between title and content, got: {:?}",
+            spacer
+        );
+        let body_section = &lines[(header_index + 2).min(lines.len())..];
+        assert!(
+            body_section
+                .iter()
+                .any(|line| line.contains("some content")),
+            "expected rendered body to include pad content"
+        );
     }
 
     #[test]
