@@ -40,6 +40,7 @@
 //! - `print_*()`: Output formatting functions
 
 use super::print::{print_full_pads, print_messages, print_pads};
+use super::render::render_pad_list;
 use super::setup::{
     print_grouped_help, print_help_for_command, print_subcommand_help, Cli, Commands,
     CompletionShell, CoreCommands, DataCommands, MiscCommands, PadCommands,
@@ -53,7 +54,6 @@ use padz::editor::{edit_content, EditorContent};
 use padz::error::{PadzError, Result};
 use padz::index::DisplayIndex;
 use padz::model::Scope;
-use padz::render::render_pad_list;
 use padz::store::fs::FileStore;
 use std::path::PathBuf;
 

@@ -3,10 +3,10 @@
 //! This module provides styled terminal output using the `outstanding` crate.
 //! Templates are defined here and rendered with automatic terminal color detection.
 
-use crate::index::{DisplayIndex, DisplayPad};
 use chrono::{DateTime, Utc};
 use console::Style;
 use outstanding::{render_with_color, Styles};
+use padz::index::{DisplayIndex, DisplayPad};
 use serde::Serialize;
 use unicode_width::UnicodeWidthStr;
 
@@ -205,7 +205,7 @@ fn format_time_ago(timestamp: DateTime<Utc>) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::model::Pad;
+    use padz::model::Pad;
 
     fn make_pad(title: &str, pinned: bool, deleted: bool) -> Pad {
         let mut p = Pad::new(title.to_string(), "some content".to_string());

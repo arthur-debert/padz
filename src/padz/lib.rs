@@ -88,7 +88,7 @@
 //! - [`editor`]: External editor integration
 //! - [`clipboard`]: Cross-platform clipboard support
 //! - [`error`]: Error types
-//! - `cli`: Argument parsing, printing, and shell completions for the binary (not part of the lib API)
+//! - `cli`: Argument parsing, printing, templated rendering, and shell completions for the binary (not part of the lib API)
 
 pub mod api;
 pub mod clipboard;
@@ -98,5 +98,4 @@ pub mod editor;
 pub mod error;
 pub mod index;
 pub mod model;
-pub mod render;
 pub mod store;
