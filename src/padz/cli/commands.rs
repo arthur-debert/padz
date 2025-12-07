@@ -263,8 +263,6 @@ fn handle_open(ctx: &mut AppContext, indexes: Vec<String>) -> Result<()> {
                 edited.title.clone(),
                 edited.content.clone(),
             ));
-        } else {
-            println!("Pad content copied to clipboard.");
         }
     }
 

@@ -1,9 +1,8 @@
-
 _pa_complete() {
     local cur prev cmd
     COMPREPLY=()
     cur="${COMP_WORDS[COMP_CWORD]}"
-    prev="${COMP_WORDS[COMP_CWORD-1]}"
+    prev="${COMP_WORDS[COMP_CWORD - 1]}"
 
     local global_opts="--global -g --verbose -v --help -h --version -V"
     local commands="create list view edit open delete pin unpin search path config init completions"
@@ -11,42 +10,42 @@ _pa_complete() {
 
     for word in "${COMP_WORDS[@]:1}"; do
         case "$word" in
-            -g|--global|--verbose|-v|-h|--help|-V|--version) ;;
-            create|list|view|edit|open|delete|pin|unpin|search|path|config|init|completions|n|ls|v|e|o|rm|p|u)
-                cmd="$word"
-                break
-                ;;
+        -g | --global | --verbose | -v | -h | --help | -V | --version) ;;
+        create | list | view | edit | open | delete | pin | unpin | search | path | config | init | completions | n | ls | v | e | o | rm | p | u)
+            cmd="$word"
+            break
+            ;;
         esac
     done
 
     if [[ -z "$cmd" ]]; then
-        COMPREPLY=( $(compgen -W "$global_opts $commands $aliases" -- "$cur") )
+        COMPREPLY=($(compgen -W "$global_opts $commands $aliases" -- "$cur"))
         return 0
     fi
 
     if [[ "$cur" == --* ]]; then
         case "$cmd" in
-            create|n)
-                COMPREPLY=( $(compgen -W "--no-editor" -- "$cur") )
-                return 0
-                ;;
-            list|ls)
-                COMPREPLY=( $(compgen -W "--deleted --search" -- "$cur") )
-                return 0
-                ;;
+        create | n)
+            COMPREPLY=($(compgen -W "--no-editor" -- "$cur"))
+            return 0
+            ;;
+        list | ls)
+            COMPREPLY=($(compgen -W "--deleted --search" -- "$cur"))
+            return 0
+            ;;
         esac
     fi
 
     case "$cmd" in
-        completions)
-            COMPREPLY=( $(compgen -W "bash zsh" -- "$cur") )
+    completions)
+        COMPREPLY=($(compgen -W "bash zsh" -- "$cur"))
+        return 0
+        ;;
+    view | v | edit | e | open | o | delete | rm | pin | p | unpin | u | path)
+        if __pa_pad_index_completion "$cmd" "$cur"; then
             return 0
-            ;;
-        view|v|edit|e|open|o|delete|rm|pin|p|unpin|u|path)
-            if __pa_pad_index_completion "$cmd" "$cur"; then
-                return 0
-            fi
-            ;;
+        fi
+        ;;
     esac
 }
 
@@ -55,17 +54,17 @@ __pa_pad_index_completion() {
     local cur="$2"
     local include_deleted="no"
     case "$cmd" in
-        view|v|open|o|path)
-            include_deleted="yes"
-            ;;
+    view | v | open | o | path)
+        include_deleted="yes"
+        ;;
     esac
 
     local -a scope_flags=()
     for word in "${COMP_WORDS[@]:1}"; do
         case "$word" in
-            -g|--global)
-                scope_flags+=(--global)
-                ;;
+        -g | --global)
+            scope_flags+=(--global)
+            ;;
         esac
     done
 
@@ -75,7 +74,7 @@ __pa_pad_index_completion() {
     fi
 
     local pad_output
-    pad_output="$( ${cmdline[@]} 2>/dev/null )" || return 1
+    pad_output="$(${cmdline[@]} 2>/dev/null)" || return 1
     if [[ -z "$pad_output" ]]; then
         return 1
     fi
@@ -88,9 +87,9 @@ __pa_pad_index_completion() {
         [[ -z "$index" ]] && continue
         values+=("$index")
         shown+=("$index # $title")
-    done <<< "$pad_output"
+    done <<<"$pad_output"
 
-    COMPREPLY=( $(compgen -W "${values[*]}" -- "$cur") )
+    COMPREPLY=($(compgen -W "${values[*]}" -- "$cur"))
     if [[ ${#COMPREPLY[@]} -gt 1 ]]; then
         printf '\n'
         printf '%s\n' "${shown[@]}"
