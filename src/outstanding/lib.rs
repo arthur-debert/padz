@@ -112,6 +112,7 @@
 //! ```
 
 use console::{Style, Term};
+use dark_light::{detect as detect_os_theme, Mode as OsThemeMode};
 use minijinja::{Environment, Error, Value};
 use once_cell::sync::Lazy;
 use serde::Serialize;
@@ -243,7 +244,7 @@ pub enum ColorMode {
 
 type ThemeDetector = fn() -> ColorMode;
 
-static THEME_DETECTOR: Lazy<Mutex<ThemeDetector>> = Lazy::new(|| Mutex::new(|| ColorMode::Light));
+static THEME_DETECTOR: Lazy<Mutex<ThemeDetector>> = Lazy::new(|| Mutex::new(os_theme_detector));
 
 /// Overrides the detector used to determine whether the user prefers a light or dark theme.
 /// Useful for testing.
@@ -255,6 +256,13 @@ pub fn set_theme_detector(detector: ThemeDetector) {
 fn detect_color_mode() -> ColorMode {
     let detector = THEME_DETECTOR.lock().unwrap();
     (*detector)()
+}
+
+fn os_theme_detector() -> ColorMode {
+    match detect_os_theme() {
+        OsThemeMode::Dark => ColorMode::Dark,
+        OsThemeMode::Light => ColorMode::Light,
+    }
 }
 
 impl Default for Styles {
