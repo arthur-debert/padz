@@ -9,7 +9,7 @@
 //!
 //! ```text
 //! ┌─────────────────────────────────────────────────────────────┐
-//! │  CLI Layer (main.rs)                                        │
+//! │  CLI Layer (cli/, wired by main.rs)                         │
 //! │  - Parses arguments, formats output, handles terminal I/O   │
 //! │  - The ONLY place that knows about stdout/stderr/exit codes │
 //! └─────────────────────────────────────────────────────────────┘
@@ -65,7 +65,7 @@
 //! 2. **API** (`api.rs`): Mock tests verifying correct dispatch and return types.
 //!    Tests that the right command is called with the right arguments—not the logic itself.
 //!
-//! 3. **CLI** (`main.rs`): Tests argument parsing and output formatting.
+//! 3. **CLI** (`cli/` + thin `main.rs`): Tests argument parsing and output formatting.
 //!    - Input: craft shell argument strings, verify correct API calls
 //!    - Output: given a `CmdResult`, verify correct terminal output
 //!
@@ -88,6 +88,7 @@
 //! - [`editor`]: External editor integration
 //! - [`clipboard`]: Cross-platform clipboard support
 //! - [`error`]: Error types
+//! - `cli`: Argument parsing, printing, and shell completions for the binary (not part of the lib API)
 
 pub mod api;
 pub mod clipboard;
