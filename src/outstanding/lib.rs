@@ -116,10 +116,14 @@ use minijinja::{Environment, Error, Value};
 use serde::Serialize;
 use std::collections::HashMap;
 
+/// Default prefix shown when a style name is not found.
+pub const DEFAULT_MISSING_STYLE_INDICATOR: &str = "(!?)";
+
 /// A collection of named styles.
 ///
 /// Styles are registered by name and applied via the `style` filter in templates.
-/// Unknown style names return the text unchanged (no error).
+/// When a style name is not found, a configurable indicator is prepended to the text
+/// to help catch typos in templates (defaults to `(!?)`).
 ///
 /// # Example
 ///
@@ -134,16 +138,52 @@ use std::collections::HashMap;
 ///
 /// // Apply a style (returns styled string)
 /// let styled = styles.apply("error", "Something went wrong");
+///
+/// // Unknown style shows indicator
+/// let unknown = styles.apply("typo", "Hello");
+/// assert!(unknown.starts_with("(!?)"));
 /// ```
-#[derive(Clone, Default)]
+#[derive(Clone)]
 pub struct Styles {
     styles: HashMap<String, Style>,
+    missing_indicator: String,
+}
+
+impl Default for Styles {
+    fn default() -> Self {
+        Self {
+            styles: HashMap::new(),
+            missing_indicator: DEFAULT_MISSING_STYLE_INDICATOR.to_string(),
+        }
+    }
 }
 
 impl Styles {
-    /// Creates an empty style registry.
+    /// Creates an empty style registry with the default missing style indicator.
     pub fn new() -> Self {
         Self::default()
+    }
+
+    /// Sets a custom indicator to prepend when a style name is not found.
+    ///
+    /// This helps catch typos in templates. Set to empty string to disable.
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// use outstanding::Styles;
+    ///
+    /// let styles = Styles::new()
+    ///     .missing_indicator("[MISSING]")
+    ///     .add("ok", console::Style::new().green());
+    ///
+    /// // Typo in style name
+    /// let output = styles.apply("typo", "Hello");
+    /// assert_eq!(output, "[MISSING] Hello");
+    /// ```
+    pub fn missing_indicator(mut self, indicator: &str) -> Self {
+        self.missing_indicator = indicator.to_string();
+        self
     }
 
     /// Adds a named style. Returns self for chaining.
@@ -156,13 +196,26 @@ impl Styles {
 
     /// Applies a named style to text.
     ///
-    /// Returns the styled string if the style exists, or the original text if not.
-    /// This method always applies the style (use in render functions to conditionally apply).
+    /// If the style exists, returns the styled string (with ANSI codes).
+    /// If not found, prepends the missing indicator (unless it's empty).
     pub fn apply(&self, name: &str, text: &str) -> String {
-        self.styles
-            .get(name)
-            .map(|s| s.apply_to(text).to_string())
-            .unwrap_or_else(|| text.to_string())
+        match self.styles.get(name) {
+            Some(style) => style.apply_to(text).to_string(),
+            None if self.missing_indicator.is_empty() => text.to_string(),
+            None => format!("{} {}", self.missing_indicator, text),
+        }
+    }
+
+    /// Applies style checking without ANSI codes (plain text mode).
+    ///
+    /// If the style exists, returns the text unchanged.
+    /// If not found, prepends the missing indicator (unless it's empty).
+    pub fn apply_plain(&self, name: &str, text: &str) -> String {
+        if self.styles.contains_key(name) || self.missing_indicator.is_empty() {
+            text.to_string()
+        } else {
+            format!("{} {}", self.missing_indicator, text)
+        }
     }
 
     /// Returns true if a style with the given name exists.
@@ -261,7 +314,8 @@ pub fn render_with_color<T: Serialize>(
         if use_color {
             styles.apply(&name, &text)
         } else {
-            text
+            // Still check for missing styles even when colors are disabled
+            styles.apply_plain(&name, &text)
         }
     });
 
@@ -343,7 +397,8 @@ fn register_style_filter(env: &mut Environment<'static>, styles: Styles, use_col
         if use_color {
             styles.apply(&name, &text)
         } else {
-            text
+            // Still check for missing styles even when colors are disabled
+            styles.apply_plain(&name, &text)
         }
     });
 }
@@ -383,10 +438,39 @@ mod tests {
     }
 
     #[test]
-    fn test_styles_apply_unknown_returns_original() {
+    fn test_styles_apply_unknown_shows_indicator() {
         let styles = Styles::new();
         let result = styles.apply("nonexistent", "hello");
+        assert_eq!(result, "(!?) hello");
+    }
+
+    #[test]
+    fn test_styles_apply_unknown_with_empty_indicator() {
+        let styles = Styles::new().missing_indicator("");
+        let result = styles.apply("nonexistent", "hello");
         assert_eq!(result, "hello");
+    }
+
+    #[test]
+    fn test_styles_apply_unknown_with_custom_indicator() {
+        let styles = Styles::new().missing_indicator("[MISSING]");
+        let result = styles.apply("nonexistent", "hello");
+        assert_eq!(result, "[MISSING] hello");
+    }
+
+    #[test]
+    fn test_styles_apply_plain_known_style() {
+        let styles = Styles::new().add("bold", Style::new().bold());
+        let result = styles.apply_plain("bold", "hello");
+        // apply_plain returns text without ANSI codes
+        assert_eq!(result, "hello");
+    }
+
+    #[test]
+    fn test_styles_apply_plain_unknown_shows_indicator() {
+        let styles = Styles::new();
+        let result = styles.apply_plain("nonexistent", "hello");
+        assert_eq!(result, "(!?) hello");
     }
 
     #[test]
@@ -429,8 +513,36 @@ mod tests {
     }
 
     #[test]
-    fn test_render_unknown_style_passthrough() {
+    fn test_render_unknown_style_shows_indicator() {
         let styles = Styles::new();
+        let data = SimpleData {
+            message: "hello".into(),
+        };
+
+        let output =
+            render_with_color(r#"{{ message | style("unknown") }}"#, &data, &styles, true).unwrap();
+
+        assert_eq!(output, "(!?) hello");
+    }
+
+    #[test]
+    fn test_render_unknown_style_shows_indicator_no_color() {
+        let styles = Styles::new();
+        let data = SimpleData {
+            message: "hello".into(),
+        };
+
+        // Even with colors disabled, missing indicator should appear
+        let output =
+            render_with_color(r#"{{ message | style("unknown") }}"#, &data, &styles, false)
+                .unwrap();
+
+        assert_eq!(output, "(!?) hello");
+    }
+
+    #[test]
+    fn test_render_unknown_style_silent_with_empty_indicator() {
+        let styles = Styles::new().missing_indicator("");
         let data = SimpleData {
             message: "hello".into(),
         };
