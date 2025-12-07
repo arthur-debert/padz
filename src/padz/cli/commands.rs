@@ -40,7 +40,7 @@
 //! - `print_*()`: Output formatting functions
 
 use super::print::print_messages;
-use super::render::{render_full_pads, render_pad_list};
+use super::render::{render_full_pads, render_pad_list, render_text_list};
 use super::setup::{
     print_grouped_help, print_help_for_command, print_subcommand_help, Cli, Commands,
     CompletionShell, CoreCommands, DataCommands, MiscCommands, PadCommands,
@@ -310,9 +310,14 @@ fn handle_search(ctx: &mut AppContext, term: String) -> Result<()> {
 fn handle_paths(ctx: &mut AppContext, indexes: Vec<String>) -> Result<()> {
     let parsed = parse_indexes(&indexes)?;
     let result = ctx.api.pad_paths(ctx.scope, &parsed)?;
-    for path in &result.pad_paths {
-        println!("{}", path.display());
-    }
+    let lines: Vec<String> = result
+        .pad_paths
+        .iter()
+        .map(|path| path.display().to_string())
+        .collect();
+    let use_color = console::Term::stdout().features().colors_supported();
+    let output = render_text_list(&lines, "No pad paths found.", use_color);
+    print!("{}", output);
     print_messages(&result.messages);
     Ok(())
 }
@@ -351,20 +356,32 @@ fn handle_doctor(ctx: &mut AppContext) -> Result<()> {
 }
 
 fn handle_config(ctx: &mut AppContext, key: Option<String>, value: Option<String>) -> Result<()> {
+    let use_color = console::Term::stdout().features().colors_supported();
     let action = match (key.as_deref(), value) {
         (None, _) => ConfigAction::ShowAll,
         (Some("file-ext"), None) => ConfigAction::ShowKey("file-ext".to_string()),
         (Some("file-ext"), Some(v)) => ConfigAction::SetFileExt(v),
         (Some(other), _) => {
-            println!("Unknown config key: {}", other);
+            let output =
+                render_text_list(&[format!("Unknown config key: {}", other)], "", use_color);
+            print!("{}", output);
             return Ok(());
         }
     };
 
     let result = ctx.api.config(ctx.scope, action)?;
+    let mut lines = Vec::new();
     if let Some(config) = &result.config {
-        println!("file-ext = {}", config.get_file_ext());
+        lines.push(format!("file-ext = {}", config.get_file_ext()));
+        if !config.import_extensions.is_empty() {
+            lines.push(format!(
+                "import-extensions = {}",
+                config.import_extensions.join(", ")
+            ));
+        }
     }
+    let output = render_text_list(&lines, "No configuration values.", use_color);
+    print!("{}", output);
     print_messages(&result.messages);
     Ok(())
 }

@@ -3,7 +3,7 @@
 //! This module provides styled terminal output using the `outstanding` crate.
 //! Templates are defined here and rendered with automatic terminal color detection.
 
-use super::templates::{FULL_PAD_TEMPLATE, LIST_TEMPLATE};
+use super::templates::{FULL_PAD_TEMPLATE, LIST_TEMPLATE, TEXT_LIST_TEMPLATE};
 use chrono::{DateTime, Utc};
 use console::Style;
 use outstanding::{render_with_color, Styles};
@@ -49,6 +49,12 @@ struct FullPadEntry {
     content: String,
 }
 
+#[derive(Serialize)]
+struct TextListData {
+    lines: Vec<String>,
+    empty_message: String,
+}
+
 /// Build the styles for list rendering.
 fn list_styles() -> Styles {
     Styles::new()
@@ -64,6 +70,10 @@ fn full_pad_styles() -> Styles {
         .missing_indicator("(!?)")
         .add("fp_index", Style::new().yellow())
         .add("fp_title", Style::new().bold())
+}
+
+fn text_list_styles() -> Styles {
+    Styles::new().missing_indicator("")
 }
 
 /// Renders a list of pads to a string.
@@ -192,6 +202,16 @@ pub fn render_full_pads(pads: &[DisplayPad], use_color: bool) -> String {
 
     render_with_color(FULL_PAD_TEMPLATE, &data, &full_pad_styles(), use_color)
         .unwrap_or_else(|e| format!("Render error: {}\n", e))
+}
+
+pub fn render_text_list(lines: &[String], empty_message: &str, use_color: bool) -> String {
+    let data = TextListData {
+        lines: lines.to_vec(),
+        empty_message: empty_message.to_string(),
+    };
+
+    render_with_color(TEXT_LIST_TEMPLATE, &data, &text_list_styles(), use_color)
+        .unwrap_or_else(|_| format!("{}\n", empty_message))
 }
 
 fn truncate_to_width(s: &str, max_width: usize) -> String {
@@ -360,5 +380,19 @@ mod tests {
         assert!(output.contains("3 Full Pad"));
         assert!(output.contains("--------------------------------"));
         assert!(output.contains("some content"));
+    }
+
+    #[test]
+    fn test_render_text_list_empty() {
+        let output = render_text_list(&[], "Nothing here.", false);
+        assert!(output.contains("Nothing here."));
+    }
+
+    #[test]
+    fn test_render_text_list_lines() {
+        let lines = vec!["first".to_string(), "second".to_string()];
+        let output = render_text_list(&lines, "", false);
+        assert!(output.contains("first"));
+        assert!(output.contains("second"));
     }
 }
