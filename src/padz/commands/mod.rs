@@ -69,6 +69,7 @@ pub mod create;
 pub mod delete;
 pub mod doctor;
 pub mod export;
+pub mod get;
 pub mod helpers;
 pub mod import;
 pub mod init;

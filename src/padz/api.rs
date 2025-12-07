@@ -70,6 +70,10 @@ impl<S: DataStore> PadzApi<S> {
         commands::list::run(&self.store, scope, show_deleted)
     }
 
+    pub fn get_pads(&self, scope: Scope, filter: PadFilter) -> Result<commands::CmdResult> {
+        commands::get::run(&self.store, scope, filter)
+    }
+
     pub fn view_pads<I: AsRef<str>>(
         &self,
         scope: Scope,
@@ -194,4 +198,5 @@ impl<S: DataStore> PadzApi<S> {
 }
 
 pub use crate::commands::config::ConfigAction;
+pub use commands::get::{PadFilter, PadStatusFilter};
 pub use commands::{CmdMessage, CmdResult, MessageLevel, PadUpdate, PadzPaths};

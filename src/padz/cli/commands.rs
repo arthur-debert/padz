@@ -47,12 +47,11 @@ use super::setup::{
 };
 use clap::Parser;
 use directories::ProjectDirs;
-use padz::api::{ConfigAction, PadUpdate, PadzApi, PadzPaths};
+use padz::api::{ConfigAction, PadFilter, PadStatusFilter, PadUpdate, PadzApi, PadzPaths};
 use padz::clipboard::{copy_to_clipboard, format_for_clipboard};
 use padz::config::PadzConfig;
 use padz::editor::{edit_content, EditorContent};
 use padz::error::{PadzError, Result};
-use padz::index::DisplayIndex;
 use padz::model::Scope;
 use padz::store::fs::FileStore;
 use std::path::PathBuf;
@@ -182,11 +181,27 @@ fn handle_create(
 }
 
 fn handle_list(ctx: &mut AppContext, search: Option<String>, deleted: bool) -> Result<()> {
-    let result = if let Some(term) = search {
-        ctx.api.search_pads(ctx.scope, &term)?
+    let filter = if let Some(term) = search {
+        PadFilter {
+            status: if deleted {
+                PadStatusFilter::Deleted
+            } else {
+                PadStatusFilter::Active
+            },
+            search_term: Some(term),
+        }
     } else {
-        ctx.api.list_pads(ctx.scope, deleted)?
+        PadFilter {
+            status: if deleted {
+                PadStatusFilter::Deleted
+            } else {
+                PadStatusFilter::Active
+            },
+            search_term: None,
+        }
     };
+
+    let result = ctx.api.get_pads(ctx.scope, filter)?;
 
     // Use outstanding-based rendering
     let use_color = console::Term::stdout().features().colors_supported();
@@ -291,7 +306,11 @@ fn handle_unpin(ctx: &mut AppContext, indexes: Vec<String>) -> Result<()> {
 }
 
 fn handle_search(ctx: &mut AppContext, term: String) -> Result<()> {
-    let result = ctx.api.search_pads(ctx.scope, &term)?;
+    let filter = PadFilter {
+        status: PadStatusFilter::Active,
+        search_term: Some(term),
+    };
+    let result = ctx.api.get_pads(ctx.scope, filter)?;
     let use_color = console::Term::stdout().features().colors_supported();
     let output = render_pad_list(&result.listed_pads, use_color);
     print!("{}", output);
@@ -396,23 +415,19 @@ fn handle_completions(shell: CompletionShell) -> Result<()> {
 fn handle_complete_pads(ctx: &mut AppContext, include_deleted: bool) -> Result<()> {
     let mut entries = Vec::new();
 
-    let non_deleted = ctx.api.list_pads(ctx.scope, false)?;
-    entries.extend(
-        non_deleted
-            .listed_pads
-            .into_iter()
-            .filter(|dp| !matches!(dp.index, DisplayIndex::Deleted(_)))
-            .map(|dp| (dp.index.to_string(), dp.pad.metadata.title)),
-    );
+    let filter = PadFilter {
+        status: if include_deleted {
+            PadStatusFilter::All
+        } else {
+            PadStatusFilter::Active
+        },
+        search_term: None,
+    };
 
-    if include_deleted {
-        let deleted = ctx.api.list_pads(ctx.scope, true)?;
-        entries.extend(
-            deleted
-                .listed_pads
-                .into_iter()
-                .map(|dp| (dp.index.to_string(), dp.pad.metadata.title)),
-        );
+    let result = ctx.api.get_pads(ctx.scope, filter)?;
+
+    for dp in result.listed_pads {
+        entries.push((dp.index.to_string(), dp.pad.metadata.title));
     }
 
     for (index, title) in entries {
