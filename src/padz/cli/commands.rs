@@ -204,8 +204,7 @@ fn handle_list(ctx: &mut AppContext, search: Option<String>, deleted: bool) -> R
     let result = ctx.api.get_pads(ctx.scope, filter)?;
 
     // Use outstanding-based rendering
-    let use_color = console::Term::stdout().features().colors_supported();
-    let output = render_pad_list(&result.listed_pads, use_color);
+    let output = render_pad_list(&result.listed_pads);
     print!("{}", output);
 
     print_messages(&result.messages);
@@ -214,8 +213,7 @@ fn handle_list(ctx: &mut AppContext, search: Option<String>, deleted: bool) -> R
 
 fn handle_view(ctx: &mut AppContext, indexes: Vec<String>) -> Result<()> {
     let result = ctx.api.view_pads(ctx.scope, &indexes)?;
-    let use_color = console::Term::stdout().features().colors_supported();
-    let output = render_full_pads(&result.listed_pads, use_color);
+    let output = render_full_pads(&result.listed_pads);
     print!("{}", output);
     print_messages(&result.messages);
     Ok(())
@@ -311,8 +309,7 @@ fn handle_search(ctx: &mut AppContext, term: String) -> Result<()> {
         search_term: Some(term),
     };
     let result = ctx.api.get_pads(ctx.scope, filter)?;
-    let use_color = console::Term::stdout().features().colors_supported();
-    let output = render_pad_list(&result.listed_pads, use_color);
+    let output = render_pad_list(&result.listed_pads);
     print!("{}", output);
     print_messages(&result.messages);
     Ok(())
@@ -325,8 +322,7 @@ fn handle_paths(ctx: &mut AppContext, indexes: Vec<String>) -> Result<()> {
         .iter()
         .map(|path| path.display().to_string())
         .collect();
-    let use_color = console::Term::stdout().features().colors_supported();
-    let output = render_text_list(&lines, "No pad paths found.", use_color);
+    let output = render_text_list(&lines, "No pad paths found.");
     print!("{}", output);
     print_messages(&result.messages);
     Ok(())
@@ -360,14 +356,12 @@ fn handle_doctor(ctx: &mut AppContext) -> Result<()> {
 }
 
 fn handle_config(ctx: &mut AppContext, key: Option<String>, value: Option<String>) -> Result<()> {
-    let use_color = console::Term::stdout().features().colors_supported();
     let action = match (key.as_deref(), value) {
         (None, _) => ConfigAction::ShowAll,
         (Some("file-ext"), None) => ConfigAction::ShowKey("file-ext".to_string()),
         (Some("file-ext"), Some(v)) => ConfigAction::SetFileExt(v),
         (Some(other), _) => {
-            let output =
-                render_text_list(&[format!("Unknown config key: {}", other)], "", use_color);
+            let output = render_text_list(&[format!("Unknown config key: {}", other)], "");
             print!("{}", output);
             return Ok(());
         }
@@ -384,7 +378,7 @@ fn handle_config(ctx: &mut AppContext, key: Option<String>, value: Option<String
             ));
         }
     }
-    let output = render_text_list(&lines, "No configuration values.", use_color);
+    let output = render_text_list(&lines, "No configuration values.");
     print!("{}", output);
     print_messages(&result.messages);
     Ok(())
