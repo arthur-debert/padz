@@ -1,7 +1,7 @@
-//! # Padz Data Model
+//! # Domain Model
 //!
-//! This module defines the core data structures for Padz, specifically the `Pad` and `Metadata` structs.
-//! It also handles the normalization logic crucial for the application's data integrity.
+//! This module defines the core data structures for padz: [`Pad`], [`Metadata`], and [`Scope`].
+//! It also handles content normalization, which is crucial for data integrity.
 //!
 //! ## Pad File Layout
 //!

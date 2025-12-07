@@ -1,5 +1,81 @@
+//! # Display Indexing System
+//!
+//! In a high-frequency shell application where users constantly refer to items by ID,
+//! auto-generated identifiers like UUIDs—or even large integers—become unwieldy to type
+//! repeatedly (e.g., `delete 34343 342334` instead of `delete 3 8`).
+//!
+//! ## Dual ID Design
+//!
+//! Padz uses a dual ID system:
+//! - **UUID**: Unambiguously identifies each pad (used internally, in storage)
+//! - **Display Index**: Ergonomic integer, small, and self-compacting (used in CLI)
+//!
+//! Display indexes don't grow unboundedly—they compact as items are deleted.
+//!
+//! ## Canonical Ordering
+//!
+//! The key insight is defining a **canonical view**: the "normal" way to see data.
+//! Display indexes are simply positions in this canonical ordering.
+//!
+//! For padz, the canonical view is:
+//! - Non-deleted pads
+//! - Reverse chronological order (newest first)
+//! - No filtering applied
+//!
+//! Items outside this "bucket" (deleted, pinned) have their own index namespaces.
+//!
+//! ## Why This Matters
+//!
+//! This design makes indexes **stable across filtered views**. You can:
+//!
+//! ```text
+//! $ padz search "meeting"     # Shows pads 2 and 4 match
+//! $ padz delete 2             # Deletes pad 2—unambiguously
+//! ```
+//!
+//! Because search results use canonical indexes, `2` means the same thing whether
+//! you're looking at all pads or a filtered subset. The index is independent of
+//! the current query.
+//!
+//! Some operations (like delete) do alter indexes—but this matches user expectations.
+//! If you see items 1-5 and delete #2, you expect the list to shrink to 4 items.
+//!
+//! ## Index Notation
+//!
+//! - **Regular**: `1`, `2`, `3`... — All non-deleted pads, newest first
+//! - **Pinned**: `p1`, `p2`, `p3`... — Pinned pads only, for quick access
+//! - **Deleted**: `d1`, `d2`, `d3`... — Soft-deleted pads (for recovery/purge)
+//!
+//! ## Dual Indexing for Pinned Pads
+//!
+//! **Pinned pads appear in BOTH the pinned list AND the regular list.**
+//!
+//! A pinned pad has two valid indexes:
+//! - `p1` (its pinned index)
+//! - `2` (its regular index, based on creation time)
+//!
+//! Why? **Canonical stability.** A pad's regular index doesn't change when pinned
+//! or unpinned. Users can always refer to pad `3` as `3`, regardless of pin status.
+//!
+//! ## Example
+//!
+//! Given 4 pads (newest to oldest): A (pinned), B, C, D (deleted)
+//!
+//! ```text
+//! p1. A          ← Pinned section
+//!
+//! 1. A           ← Regular section (A appears again!)
+//! 2. B
+//! 3. C
+//!
+//! d1. D          ← Deleted section (only with --deleted flag)
+//! ```
+//!
+//! User can refer to pad A as either `p1` or `1`.
+
 use crate::model::Pad;
 
+/// A user-facing index for a pad.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum DisplayIndex {
     Pinned(usize),
@@ -23,12 +99,13 @@ pub struct DisplayPad {
     pub index: DisplayIndex,
 }
 
-/// Takes a raw list of pads and assigns canonical indexes.
-/// This sort order MUST be stable.
+/// Assigns canonical display indexes to a list of pads.
 ///
-/// Important: Pinned pads appear in BOTH the pinned list (p1, p2...) AND
-/// the regular list (1, 2...). This ensures canonical indexes are stable
-/// across views - a pad always has the same regular index whether pinned or not.
+/// Returns a flat list of [`DisplayPad`] entries. Note that pinned pads will
+/// appear **twice**: once with a `Pinned` index and once with a `Regular` index.
+/// This is intentional—see module documentation for rationale.
+///
+/// The returned list is ordered: pinned entries first, then regular, then deleted.
 pub fn index_pads(mut pads: Vec<Pad>) -> Vec<DisplayPad> {
     // Sort by created_at descending (newest first) for stable ordering
     pads.sort_by(|a, b| b.metadata.created_at.cmp(&a.metadata.created_at));

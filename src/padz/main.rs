@@ -1,3 +1,45 @@
+//! # CLI Layer
+//!
+//! This module is **one possible UI client** for padz—it is not the application itself.
+//!
+//! The CLI layer is the **only** place in the codebase that:
+//! - Knows about terminal I/O (stdout, stderr)
+//! - Uses `std::process::exit`
+//! - Handles argument parsing
+//! - Formats output for human consumption
+//!
+//! ## Responsibilities
+//!
+//! 1. **Argument Parsing**: Convert shell arguments into typed commands via clap
+//! 2. **Context Setup**: Initialize `AppContext` with API, scope, and configuration
+//! 3. **API Dispatch**: Call the appropriate `PadzApi` method
+//! 4. **Output Formatting**: Convert `CmdResult` into terminal output (colors, tables, etc.)
+//! 5. **Error Handling**: Convert errors to user-friendly messages and exit codes
+//!
+//! ## Testing Strategy
+//!
+//! CLI tests verify two directions:
+//!
+//! **Input Testing**: Given shell argument strings, verify:
+//! - Arguments parse correctly
+//! - Correct API method is called
+//! - Arguments are passed correctly to API
+//!
+//! **Output Testing**: Given a `CmdResult`, verify:
+//! - Correct text is written to stdout
+//! - Colors and formatting are applied correctly
+//! - Error messages go to stderr
+//!
+//! CLI tests should **not** test business logic—that's the command layer's job.
+//!
+//! ## Structure
+//!
+//! - `main()`: Error handling wrapper
+//! - `run()`: Main dispatch logic
+//! - `init_context()`: Builds `AppContext` with API and configuration
+//! - `handle_*()`: Per-command handlers that call API and format output
+//! - `print_*()`: Output formatting functions
+
 use chrono::Utc;
 use clap::Parser;
 use colored::*;

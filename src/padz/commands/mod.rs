@@ -1,3 +1,63 @@
+//! # Command Layer
+//!
+//! This module contains the **core business logic** of padz. Each command lives in its
+//! own submodule and implements pure Rust functions that operate on data types.
+//!
+//! ## Role and Responsibilities
+//!
+//! Commands are where the real work happens:
+//! - Implement the actual logic for each operation
+//! - Operate on `Pad`, `Metadata`, and other domain types
+//! - Return structured `CmdResult` with affected pads and messages
+//! - Are completely UI-agnostic
+//!
+//! ## What Commands Do NOT Do
+//!
+//! Commands explicitly avoid:
+//! - **Any I/O**: No stdout, stderr, file formatting, or terminal concerns
+//! - **Argument parsing**: That's the CLI layer's job
+//! - **Exit codes**: Return `Result`, let the caller decide
+//! - **User interaction**: No prompts, confirmations (return data, UI decides)
+//!
+//! ## Structured Returns
+//!
+//! Commands return [`CmdResult`], not strings. This struct carries:
+//! - `affected_pads`: Pads that were modified
+//! - `listed_pads`: Pads to display (with display indexes)
+//! - `messages`: Structured messages with levels (info, success, warning, error)
+//! - `pad_paths`: File paths (for `path` command)
+//! - `config`: Configuration data (for `config` command)
+//!
+//! The UI layer (CLI, web, etc.) then decides how to render this data.
+//!
+//! ## Testing Strategy
+//!
+//! **This is where the lion's share of testing lives.**
+//!
+//! Command tests should:
+//! - Use `InMemoryStore` to avoid filesystem dependencies
+//! - Test all logic branches and edge cases
+//! - Verify correct `CmdResult` contents
+//! - Test error conditions
+//!
+//! ## Command Modules
+//!
+//! - [`create`]: Create new pads
+//! - [`list`]: List pads in a scope
+//! - [`view`]: Retrieve pad content
+//! - [`update`]: Modify existing pads
+//! - [`delete`]: Soft-delete pads
+//! - [`pinning`]: Pin/unpin pads
+//! - [`purge`]: Permanently remove deleted pads
+//! - [`search`]: Full-text search
+//! - [`export`]: Export pads to archive
+//! - [`import`]: Import pads from files
+//! - [`paths`]: Get filesystem paths to pads
+//! - [`config`]: Manage configuration
+//! - [`init`]: Initialize scope directories
+//! - [`doctor`]: Verify and fix data consistency
+//! - [`helpers`]: Shared utilities (index resolution, etc.)
+
 use crate::config::PadzConfig;
 use crate::error::{PadzError, Result};
 use crate::index::DisplayPad;

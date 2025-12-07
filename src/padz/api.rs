@@ -1,9 +1,51 @@
+//! # API Facade
+//!
+//! The API layer is a **thin facade** over the command layer. It serves as the single
+//! entry point for all padz operations, regardless of the UI being used.
+//!
+//! ## Role and Responsibilities
+//!
+//! The API facade:
+//! - **Dispatches** to the appropriate command function
+//! - **Normalizes inputs** (e.g., converting display indexes to UUIDs)
+//! - **Returns structured types** (`Result<CmdResult>`)
+//!
+//! ## What the API Does NOT Do
+//!
+//! The API explicitly avoids:
+//! - **Business logic**: That belongs in `commands/*.rs`
+//! - **I/O operations**: No stdout, stderr, or file formatting
+//! - **Presentation concerns**: Returns data structures, not strings
+//!
+//! ## Generic Over DataStore
+//!
+//! `PadzApi<S: DataStore>` is generic over the storage backend:
+//! - Production: `PadzApi<FileStore>`
+//! - Testing: `PadzApi<InMemoryStore>`
+//!
+//! This enables testing the API layer without touching the filesystem.
+//!
+//! ## Testing Strategy
+//!
+//! API tests should verify:
+//! - Correct command is called for each method
+//! - Arguments are passed/transformed correctly
+//! - Return types are appropriate
+//!
+//! API tests should **not** verify:
+//! - Command logic (tested in command modules)
+//! - Storage behavior (tested in store modules)
+
 use crate::commands;
 use crate::error::Result;
 use crate::index::DisplayIndex;
 use crate::model::Scope;
 use crate::store::DataStore;
 
+/// The main API facade for padz operations.
+///
+/// Generic over `DataStore` to allow different storage backends.
+/// All UI clients (CLI, web, etc.) should interact through this API.
 pub struct PadzApi<S: DataStore> {
     store: S,
     paths: commands::PadzPaths,
