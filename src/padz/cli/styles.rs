@@ -1,6 +1,6 @@
 use console::Style;
 use once_cell::sync::Lazy;
-use outstanding::Styles;
+use outstanding::{ColorSpace, Styles};
 
 pub static LIST_STYLES: Lazy<Styles> = Lazy::new(|| {
     Styles::new()
@@ -8,7 +8,8 @@ pub static LIST_STYLES: Lazy<Styles> = Lazy::new(|| {
         .add("index_pinned", Style::new().yellow())
         .add("index_deleted", Style::new().red())
         .add("index_regular", Style::new())
-        .add("time", Style::new().dim().italic())
+        .add_rgb("time", (, 154, 154), ColorSpace::Ansi256)
+        .add("time", Style::new().italic())
 });
 
 pub static FULL_PAD_STYLES: Lazy<Styles> = Lazy::new(|| {
