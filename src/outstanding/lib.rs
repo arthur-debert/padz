@@ -20,7 +20,7 @@
 //! ## Quick Example
 //!
 //! ```rust
-//! use outstanding::{Styles, render};
+//! use outstanding::{render, Theme, ThemeChoice};
 //! use console::Style;
 //! use serde::Serialize;
 //!
@@ -30,7 +30,7 @@
 //!     count: usize,
 //! }
 //!
-//! let styles = Styles::new()
+//! let theme = Theme::new()
 //!     .add("header", Style::new().bold().cyan())
 //!     .add("count", Style::new().green());
 //!
@@ -38,15 +38,15 @@
 //! Found {{ count | style("count") }} items"#;
 //!
 //! let data = Data { name: "test".into(), count: 42 };
-//! let output = render(template, &data, &styles).unwrap();
+//! let output = render(template, &data, ThemeChoice::from(&theme)).unwrap();
 //! println!("{}", output);
 //! ```
 //!
 //! ## How It Works
 //!
-//! 1. Define styles as named `console::Style` objects in a [`Styles`] registry
+//! 1. Define styles as named `console::Style` objects inside a [`Theme`]
 //! 2. Write templates using `{{ value | style("name") }}` filter syntax
-//! 3. Call [`render`] with template, data, and styles
+//! 3. Call [`render`] with template, data, and either a [`Theme`] or [`AdaptiveTheme`]
 //! 4. Outstanding auto-detects terminal capabilities and applies (or skips) ANSI codes
 //!
 //! ## Terminal Detection
@@ -78,13 +78,13 @@
 //! For applications with many templates, use [`Renderer`] to pre-register them:
 //!
 //! ```rust
-//! use outstanding::{Styles, Renderer};
+//! use outstanding::{Renderer, Theme};
 //! use console::Style;
 //!
-//! let styles = Styles::new()
+//! let theme = Theme::new()
 //!     .add("ok", Style::new().green());
 //!
-//! let mut renderer = Renderer::new(styles);
+//! let mut renderer = Renderer::new(theme);
 //! renderer.add_template("status", "Status: {{ msg | style(\"ok\") }}").unwrap();
 //!
 //! // Later, render by name
@@ -108,13 +108,15 @@
 //! }
 //!
 //! let cli = Cli::parse();
-//! let output = render_with_color(template, &data, &styles, !cli.no_color).unwrap();
+//! let output = render_with_color(template, &data, ThemeChoice::from(&theme), !cli.no_color).unwrap();
 //! ```
 
 use console::{Style, Term};
 use minijinja::{Environment, Error, Value};
+use once_cell::sync::Lazy;
 use serde::Serialize;
 use std::collections::HashMap;
+use std::sync::Mutex;
 
 /// Default prefix shown when a style name is not found.
 pub const DEFAULT_MISSING_STYLE_INDICATOR: &str = "(!?)";
@@ -147,6 +149,112 @@ pub const DEFAULT_MISSING_STYLE_INDICATOR: &str = "(!?)";
 pub struct Styles {
     styles: HashMap<String, Style>,
     missing_indicator: String,
+}
+
+/// A named collection of styles used when rendering templates.
+#[derive(Clone)]
+pub struct Theme {
+    styles: Styles,
+}
+
+impl Theme {
+    /// Creates an empty theme.
+    pub fn new() -> Self {
+        Self {
+            styles: Styles::new(),
+        }
+    }
+
+    /// Creates a theme from an existing [`Styles`] collection.
+    pub fn from_styles(styles: Styles) -> Self {
+        Self { styles }
+    }
+
+    /// Adds a named style, returning an updated theme for chaining.
+    pub fn add(mut self, name: &str, style: Style) -> Self {
+        self.styles = self.styles.add(name, style);
+        self
+    }
+
+    /// Returns the underlying styles.
+    pub fn styles(&self) -> &Styles {
+        &self.styles
+    }
+}
+
+impl Default for Theme {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+/// A theme that adapts based on the user's display mode.
+#[derive(Clone)]
+pub struct AdaptiveTheme {
+    light: Theme,
+    dark: Theme,
+}
+
+impl AdaptiveTheme {
+    pub fn new(light: Theme, dark: Theme) -> Self {
+        Self { light, dark }
+    }
+
+    fn resolve(&self) -> Theme {
+        match detect_color_mode() {
+            ColorMode::Light => self.light.clone(),
+            ColorMode::Dark => self.dark.clone(),
+        }
+    }
+}
+
+/// Reference to either a static theme or an adaptive theme.
+pub enum ThemeChoice<'a> {
+    Theme(&'a Theme),
+    Adaptive(&'a AdaptiveTheme),
+}
+
+impl<'a> ThemeChoice<'a> {
+    fn resolve(&self) -> Theme {
+        match self {
+            ThemeChoice::Theme(theme) => (*theme).clone(),
+            ThemeChoice::Adaptive(adaptive) => adaptive.resolve(),
+        }
+    }
+}
+
+impl<'a> From<&'a Theme> for ThemeChoice<'a> {
+    fn from(theme: &'a Theme) -> Self {
+        ThemeChoice::Theme(theme)
+    }
+}
+
+impl<'a> From<&'a AdaptiveTheme> for ThemeChoice<'a> {
+    fn from(adaptive: &'a AdaptiveTheme) -> Self {
+        ThemeChoice::Adaptive(adaptive)
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ColorMode {
+    Light,
+    Dark,
+}
+
+type ThemeDetector = fn() -> ColorMode;
+
+static THEME_DETECTOR: Lazy<Mutex<ThemeDetector>> = Lazy::new(|| Mutex::new(|| ColorMode::Light));
+
+/// Overrides the detector used to determine whether the user prefers a light or dark theme.
+/// Useful for testing.
+pub fn set_theme_detector(detector: ThemeDetector) {
+    let mut guard = THEME_DETECTOR.lock().unwrap();
+    *guard = detector;
+}
+
+fn detect_color_mode() -> ColorMode {
+    let detector = THEME_DETECTOR.lock().unwrap();
+    (*detector)()
 }
 
 impl Default for Styles {
@@ -243,28 +351,32 @@ impl Styles {
 ///
 /// * `template` - A minijinja template string
 /// * `data` - Any serializable data to pass to the template
-/// * `styles` - Style definitions to use for the `style` filter
+/// * `theme` - Theme definitions (or adaptive theme) to use for the `style` filter
 ///
 /// # Example
 ///
 /// ```rust
-/// use outstanding::{Styles, render};
+/// use outstanding::{render, Theme, ThemeChoice};
 /// use console::Style;
 /// use serde::Serialize;
 ///
 /// #[derive(Serialize)]
 /// struct Data { message: String }
 ///
-/// let styles = Styles::new().add("ok", Style::new().green());
+/// let theme = Theme::new().add("ok", Style::new().green());
 /// let output = render(
 ///     r#"{{ message | style("ok") }}"#,
 ///     &Data { message: "Success!".into() },
-///     &styles,
+///     ThemeChoice::from(&theme),
 /// ).unwrap();
 /// ```
-pub fn render<T: Serialize>(template: &str, data: &T, styles: &Styles) -> Result<String, Error> {
+pub fn render<T: Serialize>(
+    template: &str,
+    data: &T,
+    theme: ThemeChoice<'_>,
+) -> Result<String, Error> {
     let use_color = Term::stdout().features().colors_supported();
-    render_with_color(template, data, styles, use_color)
+    render_with_color(template, data, theme, use_color)
 }
 
 /// Renders a template with explicit color control.
@@ -282,20 +394,20 @@ pub fn render<T: Serialize>(template: &str, data: &T, styles: &Styles) -> Result
 /// # Example
 ///
 /// ```rust
-/// use outstanding::{Styles, render_with_color};
+/// use outstanding::{render_with_color, Theme, ThemeChoice};
 /// use console::Style;
 /// use serde::Serialize;
 ///
 /// #[derive(Serialize)]
 /// struct Data { status: String }
 ///
-/// let styles = Styles::new().add("ok", Style::new().green());
+/// let theme = Theme::new().add("ok", Style::new().green());
 ///
 /// // Force no color (e.g., --no-color flag)
 /// let plain = render_with_color(
 ///     r#"{{ status | style("ok") }}"#,
 ///     &Data { status: "done".into() },
-///     &styles,
+///     ThemeChoice::from(&theme),
 ///     false,
 /// ).unwrap();
 /// assert_eq!(plain, "done"); // No ANSI codes
@@ -303,21 +415,12 @@ pub fn render<T: Serialize>(template: &str, data: &T, styles: &Styles) -> Result
 pub fn render_with_color<T: Serialize>(
     template: &str,
     data: &T,
-    styles: &Styles,
+    theme: ThemeChoice<'_>,
     use_color: bool,
 ) -> Result<String, Error> {
-    let styles = styles.clone();
-
+    let theme = theme.resolve();
     let mut env = Environment::new();
-    env.add_filter("style", move |value: Value, name: String| -> String {
-        let text = value.to_string();
-        if use_color {
-            styles.apply(&name, &text)
-        } else {
-            // Still check for missing styles even when colors are disabled
-            styles.apply_plain(&name, &text)
-        }
-    });
+    register_style_filter(&mut env, theme, use_color);
 
     env.add_template_owned("_inline".to_string(), template.to_string())?;
     let tmpl = env.get_template("_inline")?;
@@ -332,15 +435,15 @@ pub fn render_with_color<T: Serialize>(
 /// # Example
 ///
 /// ```rust
-/// use outstanding::{Styles, Renderer};
+/// use outstanding::{Renderer, Theme};
 /// use console::Style;
 /// use serde::Serialize;
 ///
-/// let styles = Styles::new()
+/// let theme = Theme::new()
 ///     .add("title", Style::new().bold())
 ///     .add("count", Style::new().cyan());
 ///
-/// let mut renderer = Renderer::new(styles);
+/// let mut renderer = Renderer::new(theme);
 /// renderer.add_template("header", r#"{{ title | style("title") }}"#).unwrap();
 /// renderer.add_template("stats", r#"Count: {{ n | style("count") }}"#).unwrap();
 ///
@@ -359,15 +462,15 @@ pub struct Renderer {
 
 impl Renderer {
     /// Creates a new renderer with automatic color detection.
-    pub fn new(styles: Styles) -> Self {
+    pub fn new(theme: Theme) -> Self {
         let use_color = Term::stdout().features().colors_supported();
-        Self::with_color(styles, use_color)
+        Self::with_color(theme, use_color)
     }
 
     /// Creates a new renderer with explicit color control.
-    pub fn with_color(styles: Styles, use_color: bool) -> Self {
+    pub fn with_color(theme: Theme, use_color: bool) -> Self {
         let mut env = Environment::new();
-        register_style_filter(&mut env, styles, use_color);
+        register_style_filter(&mut env, theme, use_color);
         Self { env }
     }
 
@@ -391,7 +494,8 @@ impl Renderer {
 }
 
 /// Registers the `style` filter on a minijinja environment.
-fn register_style_filter(env: &mut Environment<'static>, styles: Styles, use_color: bool) {
+fn register_style_filter(env: &mut Environment<'static>, theme: Theme, use_color: bool) {
+    let styles = theme.styles.clone();
     env.add_filter("style", move |value: Value, name: String| -> String {
         let text = value.to_string();
         if use_color {
@@ -510,12 +614,18 @@ mod tests {
     #[test]
     fn test_render_with_color_false_no_ansi() {
         let styles = Styles::new().add("red", Style::new().red());
+        let theme = Theme::from_styles(styles);
         let data = SimpleData {
             message: "test".into(),
         };
 
-        let output =
-            render_with_color(r#"{{ message | style("red") }}"#, &data, &styles, false).unwrap();
+        let output = render_with_color(
+            r#"{{ message | style("red") }}"#,
+            &data,
+            ThemeChoice::from(&theme),
+            false,
+        )
+        .unwrap();
 
         assert_eq!(output, "test");
         assert!(!output.contains("\x1b["));
@@ -525,12 +635,18 @@ mod tests {
     fn test_render_with_color_true_has_ansi() {
         // Use force_styling to ensure ANSI codes are emitted even in test environment
         let styles = Styles::new().add("green", Style::new().green().force_styling(true));
+        let theme = Theme::from_styles(styles);
         let data = SimpleData {
             message: "success".into(),
         };
 
-        let output =
-            render_with_color(r#"{{ message | style("green") }}"#, &data, &styles, true).unwrap();
+        let output = render_with_color(
+            r#"{{ message | style("green") }}"#,
+            &data,
+            ThemeChoice::from(&theme),
+            true,
+        )
+        .unwrap();
 
         assert!(output.contains("success"));
         assert!(output.contains("\x1b[")); // Contains ANSI escape
@@ -539,12 +655,18 @@ mod tests {
     #[test]
     fn test_render_unknown_style_shows_indicator() {
         let styles = Styles::new();
+        let theme = Theme::from_styles(styles);
         let data = SimpleData {
             message: "hello".into(),
         };
 
-        let output =
-            render_with_color(r#"{{ message | style("unknown") }}"#, &data, &styles, true).unwrap();
+        let output = render_with_color(
+            r#"{{ message | style("unknown") }}"#,
+            &data,
+            ThemeChoice::from(&theme),
+            true,
+        )
+        .unwrap();
 
         assert_eq!(output, "(!?) hello");
     }
@@ -552,14 +674,19 @@ mod tests {
     #[test]
     fn test_render_unknown_style_shows_indicator_no_color() {
         let styles = Styles::new();
+        let theme = Theme::from_styles(styles);
         let data = SimpleData {
             message: "hello".into(),
         };
 
         // Even with colors disabled, missing indicator should appear
-        let output =
-            render_with_color(r#"{{ message | style("unknown") }}"#, &data, &styles, false)
-                .unwrap();
+        let output = render_with_color(
+            r#"{{ message | style("unknown") }}"#,
+            &data,
+            ThemeChoice::from(&theme),
+            false,
+        )
+        .unwrap();
 
         assert_eq!(output, "(!?) hello");
     }
@@ -567,12 +694,18 @@ mod tests {
     #[test]
     fn test_render_unknown_style_silent_with_empty_indicator() {
         let styles = Styles::new().missing_indicator("");
+        let theme = Theme::from_styles(styles);
         let data = SimpleData {
             message: "hello".into(),
         };
 
-        let output =
-            render_with_color(r#"{{ message | style("unknown") }}"#, &data, &styles, true).unwrap();
+        let output = render_with_color(
+            r#"{{ message | style("unknown") }}"#,
+            &data,
+            ThemeChoice::from(&theme),
+            true,
+        )
+        .unwrap();
 
         assert_eq!(output, "hello");
     }
@@ -580,6 +713,7 @@ mod tests {
     #[test]
     fn test_render_template_with_loop() {
         let styles = Styles::new().add("item", Style::new().cyan());
+        let theme = Theme::from_styles(styles);
         let data = ListData {
             items: vec!["one".into(), "two".into()],
             count: 2,
@@ -588,20 +722,21 @@ mod tests {
         let template = r#"{% for item in items %}{{ item | style("item") }}
 {% endfor %}"#;
 
-        let output = render_with_color(template, &data, &styles, false).unwrap();
+        let output = render_with_color(template, &data, ThemeChoice::from(&theme), false).unwrap();
         assert_eq!(output, "one\ntwo\n");
     }
 
     #[test]
     fn test_render_mixed_styled_and_plain() {
         let styles = Styles::new().add("count", Style::new().bold());
+        let theme = Theme::from_styles(styles);
         let data = ListData {
             items: vec![],
             count: 42,
         };
 
         let template = r#"Total: {{ count | style("count") }} items"#;
-        let output = render_with_color(template, &data, &styles, false).unwrap();
+        let output = render_with_color(template, &data, ThemeChoice::from(&theme), false).unwrap();
 
         assert_eq!(output, "Total: 42 items");
     }
@@ -609,6 +744,7 @@ mod tests {
     #[test]
     fn test_render_literal_string_styled() {
         let styles = Styles::new().add("header", Style::new().bold());
+        let theme = Theme::from_styles(styles);
 
         #[derive(Serialize)]
         struct Empty {}
@@ -616,7 +752,7 @@ mod tests {
         let output = render_with_color(
             r#"{{ "Header" | style("header") }}"#,
             &Empty {},
-            &styles,
+            ThemeChoice::from(&theme),
             false,
         )
         .unwrap();
@@ -626,8 +762,8 @@ mod tests {
 
     #[test]
     fn test_renderer_add_and_render() {
-        let styles = Styles::new().add("ok", Style::new().green());
-        let mut renderer = Renderer::with_color(styles, false);
+        let theme = Theme::new().add("ok", Style::new().green());
+        let mut renderer = Renderer::with_color(theme, false);
 
         renderer
             .add_template("test", r#"{{ message | style("ok") }}"#)
@@ -646,8 +782,8 @@ mod tests {
 
     #[test]
     fn test_renderer_unknown_template_error() {
-        let styles = Styles::new();
-        let renderer = Renderer::with_color(styles, false);
+        let theme = Theme::new();
+        let renderer = Renderer::with_color(theme, false);
 
         let result = renderer.render(
             "nonexistent",
@@ -660,11 +796,11 @@ mod tests {
 
     #[test]
     fn test_renderer_multiple_templates() {
-        let styles = Styles::new()
+        let theme = Theme::new()
             .add("a", Style::new().red())
             .add("b", Style::new().blue());
 
-        let mut renderer = Renderer::with_color(styles, false);
+        let mut renderer = Renderer::with_color(theme, false);
         renderer
             .add_template("tmpl_a", r#"A: {{ message | style("a") }}"#)
             .unwrap();
@@ -694,6 +830,7 @@ mod tests {
         }
 
         let styles = Styles::new().add("name", Style::new().bold());
+        let theme = Theme::from_styles(styles);
         let data = Container {
             items: vec![
                 Item {
@@ -710,7 +847,7 @@ mod tests {
         let template = r#"{% for item in items %}{{ item.name | style("name") }}={{ item.value }}
 {% endfor %}"#;
 
-        let output = render_with_color(template, &data, &styles, false).unwrap();
+        let output = render_with_color(template, &data, ThemeChoice::from(&theme), false).unwrap();
         assert_eq!(output, "foo=1\nbar=2\n");
     }
 
@@ -728,22 +865,24 @@ mod tests {
     #[test]
     fn test_empty_template() {
         let styles = Styles::new();
+        let theme = Theme::from_styles(styles);
 
         #[derive(Serialize)]
         struct Empty {}
 
-        let output = render_with_color("", &Empty {}, &styles, false).unwrap();
+        let output = render_with_color("", &Empty {}, ThemeChoice::from(&theme), false).unwrap();
         assert_eq!(output, "");
     }
 
     #[test]
     fn test_template_syntax_error() {
         let styles = Styles::new();
+        let theme = Theme::from_styles(styles);
 
         #[derive(Serialize)]
         struct Empty {}
 
-        let result = render_with_color("{{ unclosed", &Empty {}, &styles, false);
+        let result = render_with_color("{{ unclosed", &Empty {}, ThemeChoice::from(&theme), false);
         assert!(result.is_err());
     }
 
@@ -760,5 +899,39 @@ mod tests {
         assert_eq!(rgb_to_ansi256((255, 0, 0)), 196);
         assert_eq!(rgb_to_ansi256((0, 255, 0)), 46);
         assert_eq!(rgb_to_ansi256((0, 0, 255)), 21);
+    }
+
+    #[test]
+    fn test_adaptive_theme_uses_detector() {
+        console::set_colors_enabled(true);
+        let light = Theme::new().add("tone", Style::new().green().force_styling(true));
+        let dark = Theme::new().add("tone", Style::new().red().force_styling(true));
+        let adaptive = AdaptiveTheme::new(light, dark);
+        let data = SimpleData {
+            message: "hi".into(),
+        };
+
+        set_theme_detector(|| ColorMode::Dark);
+        let dark_output = render_with_color(
+            r#"{{ message | style("tone") }}"#,
+            &data,
+            ThemeChoice::Adaptive(&adaptive),
+            true,
+        )
+        .unwrap();
+        assert!(dark_output.contains("\x1b[31"));
+
+        set_theme_detector(|| ColorMode::Light);
+        let light_output = render_with_color(
+            r#"{{ message | style("tone") }}"#,
+            &data,
+            ThemeChoice::Adaptive(&adaptive),
+            true,
+        )
+        .unwrap();
+        assert!(light_output.contains("\x1b[32"));
+
+        // Reset to default for other tests
+        set_theme_detector(|| ColorMode::Light);
     }
 }

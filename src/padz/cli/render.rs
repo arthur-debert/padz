@@ -3,10 +3,10 @@
 //! This module provides styled terminal output using the `outstanding` crate.
 //! Templates are defined here and rendered with automatic terminal color detection.
 
-use super::styles::{FULL_PAD_STYLES, LIST_STYLES, TEXT_LIST_STYLES};
+use super::styles::PADZ_THEME;
 use super::templates::{FULL_PAD_TEMPLATE, LIST_TEMPLATE, TEXT_LIST_TEMPLATE};
 use chrono::{DateTime, Utc};
-use outstanding::render_with_color;
+use outstanding::{render_with_color, ThemeChoice};
 use padz::index::{DisplayIndex, DisplayPad};
 use serde::Serialize;
 use unicode_width::UnicodeWidthStr;
@@ -65,7 +65,7 @@ pub fn render_pad_list(pads: &[DisplayPad], use_color: bool) -> String {
                 pads: vec![],
                 empty: true,
             },
-            &LIST_STYLES,
+            ThemeChoice::from(&*PADZ_THEME),
             use_color,
         )
         .unwrap_or_else(|_| "No pads found.\n".to_string());
@@ -162,8 +162,13 @@ pub fn render_pad_list(pads: &[DisplayPad], use_color: bool) -> String {
         empty: false,
     };
 
-    render_with_color(LIST_TEMPLATE, &data, &LIST_STYLES, use_color)
-        .unwrap_or_else(|e| format!("Render error: {}\n", e))
+    render_with_color(
+        LIST_TEMPLATE,
+        &data,
+        ThemeChoice::from(&*PADZ_THEME),
+        use_color,
+    )
+    .unwrap_or_else(|e| format!("Render error: {}\n", e))
 }
 
 /// Renders full pad contents similar to the legacy `print_full_pads` output.
@@ -179,8 +184,13 @@ pub fn render_full_pads(pads: &[DisplayPad], use_color: bool) -> String {
 
     let data = FullPadData { pads: entries };
 
-    render_with_color(FULL_PAD_TEMPLATE, &data, &FULL_PAD_STYLES, use_color)
-        .unwrap_or_else(|e| format!("Render error: {}\n", e))
+    render_with_color(
+        FULL_PAD_TEMPLATE,
+        &data,
+        ThemeChoice::from(&*PADZ_THEME),
+        use_color,
+    )
+    .unwrap_or_else(|e| format!("Render error: {}\n", e))
 }
 
 pub fn render_text_list(lines: &[String], empty_message: &str, use_color: bool) -> String {
@@ -189,8 +199,13 @@ pub fn render_text_list(lines: &[String], empty_message: &str, use_color: bool) 
         empty_message: empty_message.to_string(),
     };
 
-    render_with_color(TEXT_LIST_TEMPLATE, &data, &TEXT_LIST_STYLES, use_color)
-        .unwrap_or_else(|_| format!("{}\n", empty_message))
+    render_with_color(
+        TEXT_LIST_TEMPLATE,
+        &data,
+        ThemeChoice::from(&*PADZ_THEME),
+        use_color,
+    )
+    .unwrap_or_else(|_| format!("{}\n", empty_message))
 }
 
 fn truncate_to_width(s: &str, max_width: usize) -> String {
