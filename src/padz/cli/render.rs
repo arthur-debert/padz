@@ -3,7 +3,7 @@
 //! This module provides styled terminal output using the `outstanding` crate.
 //! Templates are defined here and rendered with automatic terminal color detection.
 
-use super::templates::LIST_TEMPLATE;
+use super::templates::{FULL_PAD_TEMPLATE, LIST_TEMPLATE};
 use chrono::{DateTime, Utc};
 use console::Style;
 use outstanding::{render_with_color, Styles};
@@ -37,6 +37,18 @@ struct ListData {
     empty: bool,
 }
 
+#[derive(Serialize)]
+struct FullPadData {
+    pads: Vec<FullPadEntry>,
+}
+
+#[derive(Serialize)]
+struct FullPadEntry {
+    index: String,
+    title: String,
+    content: String,
+}
+
 /// Build the styles for list rendering.
 fn list_styles() -> Styles {
     Styles::new()
@@ -45,6 +57,13 @@ fn list_styles() -> Styles {
         .add("index_deleted", Style::new().red())
         .add("index_regular", Style::new())
         .add("time", Style::new().dim())
+}
+
+fn full_pad_styles() -> Styles {
+    Styles::new()
+        .missing_indicator("(!?)")
+        .add("fp_index", Style::new().yellow())
+        .add("fp_title", Style::new().bold())
 }
 
 /// Renders a list of pads to a string.
@@ -155,6 +174,23 @@ pub fn render_pad_list(pads: &[DisplayPad], use_color: bool) -> String {
     };
 
     render_with_color(LIST_TEMPLATE, &data, &list_styles(), use_color)
+        .unwrap_or_else(|e| format!("Render error: {}\n", e))
+}
+
+/// Renders full pad contents similar to the legacy `print_full_pads` output.
+pub fn render_full_pads(pads: &[DisplayPad], use_color: bool) -> String {
+    let entries = pads
+        .iter()
+        .map(|dp| FullPadEntry {
+            index: format!("{}", dp.index),
+            title: dp.pad.metadata.title.clone(),
+            content: dp.pad.content.clone(),
+        })
+        .collect();
+
+    let data = FullPadData { pads: entries };
+
+    render_with_color(FULL_PAD_TEMPLATE, &data, &full_pad_styles(), use_color)
         .unwrap_or_else(|e| format!("Render error: {}\n", e))
 }
 
@@ -306,5 +342,23 @@ mod tests {
         // When use_color is true, should include ANSI codes (at least for time which is dimmed)
         // Note: console crate may not emit codes in test env, so we just verify it runs
         assert!(output.contains("Test"));
+    }
+
+    #[test]
+    fn test_render_full_pads_empty() {
+        let output = render_full_pads(&[], false);
+        assert!(output.contains("No pads found."));
+    }
+
+    #[test]
+    fn test_render_full_pads_single() {
+        let pad = make_pad("Full Pad", false, false);
+        let dp = make_display_pad(pad, DisplayIndex::Regular(3));
+
+        let output = render_full_pads(&[dp], false);
+
+        assert!(output.contains("3 Full Pad"));
+        assert!(output.contains("--------------------------------"));
+        assert!(output.contains("some content"));
     }
 }

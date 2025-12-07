@@ -39,8 +39,8 @@
 //! - `handle_*()`: Per-command handlers that call API and format output
 //! - `print_*()`: Output formatting functions
 
-use super::print::{print_full_pads, print_messages, print_pads};
-use super::render::render_pad_list;
+use super::print::print_messages;
+use super::render::{render_full_pads, render_pad_list};
 use super::setup::{
     print_grouped_help, print_help_for_command, print_subcommand_help, Cli, Commands,
     CompletionShell, CoreCommands, DataCommands, MiscCommands, PadCommands,
@@ -200,7 +200,9 @@ fn handle_list(ctx: &mut AppContext, search: Option<String>, deleted: bool) -> R
 fn handle_view(ctx: &mut AppContext, indexes: Vec<String>) -> Result<()> {
     let parsed = parse_indexes(&indexes)?;
     let result = ctx.api.view_pads(ctx.scope, &parsed)?;
-    print_full_pads(&result.listed_pads);
+    let use_color = console::Term::stdout().features().colors_supported();
+    let output = render_full_pads(&result.listed_pads, use_color);
+    print!("{}", output);
     print_messages(&result.messages);
     Ok(())
 }
@@ -298,7 +300,9 @@ fn handle_unpin(ctx: &mut AppContext, indexes: Vec<String>) -> Result<()> {
 
 fn handle_search(ctx: &mut AppContext, term: String) -> Result<()> {
     let result = ctx.api.search_pads(ctx.scope, &term)?;
-    print_pads(&result.listed_pads);
+    let use_color = console::Term::stdout().features().colors_supported();
+    let output = render_pad_list(&result.listed_pads, use_color);
+    print!("{}", output);
     print_messages(&result.messages);
     Ok(())
 }

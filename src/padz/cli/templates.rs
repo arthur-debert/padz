@@ -1,1 +1,2 @@
 pub const LIST_TEMPLATE: &str = include_str!("templates/list.tmp");
+pub const FULL_PAD_TEMPLATE: &str = include_str!("templates/full_pad.tmp");

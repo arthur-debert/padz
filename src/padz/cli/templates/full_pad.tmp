@@ -1,0 +1,13 @@
+{% if pads | length == 0 %}No pads found.
+{% else -%}
+{% for pad in pads -%}
+{%- if not loop.first %}
+
+================================
+
+{%- endif %}
+{{ pad.index | style("fp_index") }} {{ pad.title | style("fp_title") }}
+--------------------------------
+{{ pad.content }}
+{%- endfor %}
+{% endif %}
