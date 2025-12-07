@@ -1085,6 +1085,7 @@ dependencies = [
  "minijinja",
  "once_cell",
  "serde",
+ "serde_json",
 ]
 
 [[package]]

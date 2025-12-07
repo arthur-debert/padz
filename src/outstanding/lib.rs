@@ -1,23 +1,26 @@
 //! # Outstanding - Styled CLI Template Rendering
 //!
-//! A lightweight system for rendering styled terminal output using templates with
-//! automatic terminal capability detection and graceful degradation.
+//! Outstanding lets you render rich CLI output from templates while keeping all
+//! presentation details (colors, bold, underline, layout) outside of your
+//! application logic. It layers [`minijinja`] (templates) with the [`console`]
+//! crate (terminal styling) and handles:
 //!
-//! ## The Problem
+//! - Clean templates: no inline `\x1b` escape codes
+//! - Shared style definitions across multiple templates
+//! - Automatic detection of terminal capabilities (TTY vs. pipes, `CLICOLOR`, etc.)
+//! - Optional light/dark mode via [`AdaptiveTheme`]
+//! - RGB helpers that convert `#rrggbb` values to the nearest ANSI color
 //!
-//! CLI applications need styled output (colors, bold, underline) for good UX, but:
-//! - Inline ANSI codes in templates are ugly and hard to maintain
-//! - Not all terminals support colors (pipes, CI, `TERM=dumb`)
-//! - Mixing presentation logic with template structure creates coupling
+//! ## Concepts at a Glance
 //!
-//! ## The Solution
+//! - [`Theme`]: Named collection of `console::Style` values (e.g., `"header"` → bold cyan)
+//! - [`AdaptiveTheme`]: Pair of themes (light/dark) with OS detection (powered by `dark-light`)
+//! - [`ThemeChoice`]: Pass either a theme or an adaptive theme to `render`
+//! - `style` filter: `{{ value | style("name") }}` inside templates applies the registered style
+//! - `Renderer`: Compile templates ahead of time if you render them repeatedly
+//! - `rgb_to_ansi256`: Helper for turning `#rrggbb` into the closest ANSI palette entry
 //!
-//! Outstanding separates concerns:
-//! - **Templates** define structure using Jinja2 syntax (via minijinja)
-//! - **Styles** are defined separately and applied via template filters
-//! - **Terminal detection** happens automatically, with graceful degradation
-//!
-//! ## Quick Example
+//! ## Quick Start
 //!
 //! ```rust
 //! use outstanding::{render, Theme, ThemeChoice};
@@ -25,78 +28,77 @@
 //! use serde::Serialize;
 //!
 //! #[derive(Serialize)]
-//! struct Data {
-//!     name: String,
-//!     count: usize,
+//! struct Summary {
+//!     title: String,
+//!     total: usize,
 //! }
 //!
 //! let theme = Theme::new()
-//!     .add("header", Style::new().bold().cyan())
-//!     .add("count", Style::new().green());
+//!     .add("title", Style::new().bold())
+//!     .add("count", Style::new().cyan());
 //!
-//! let template = r#"{{ "Results for" | style("header") }} {{ name }}
-//! Found {{ count | style("count") }} items"#;
+//! let template = r#"
+//! {{ title | style("title") }}
+//! ---------------------------
+//! Total items: {{ total | style("count") }}
+//! "#;
 //!
-//! let data = Data { name: "test".into(), count: 42 };
-//! let output = render(template, &data, ThemeChoice::from(&theme)).unwrap();
+//! let output = render(
+//!     template,
+//!     &Summary { title: "Report".into(), total: 3 },
+//!     ThemeChoice::from(&theme),
+//! ).unwrap();
 //! println!("{}", output);
 //! ```
 //!
-//! ## How It Works
+//! ## Adaptive Themes (Light & Dark)
 //!
-//! 1. Define styles as named `console::Style` objects inside a [`Theme`]
-//! 2. Write templates using `{{ value | style("name") }}` filter syntax
-//! 3. Call [`render`] with template, data, and either a [`Theme`] or [`AdaptiveTheme`]
-//! 4. Outstanding auto-detects terminal capabilities and applies (or skips) ANSI codes
+//! ```rust
+//! use outstanding::{AdaptiveTheme, Theme, ThemeChoice};
+//! use console::Style;
 //!
-//! ## Terminal Detection
+//! let light = Theme::new().add("tone", Style::new().green());
+//! let dark  = Theme::new().add("tone", Style::new().yellow().italic());
+//! let adaptive = AdaptiveTheme::new(light, dark);
 //!
-//! Outstanding uses the `console` crate to detect if stdout supports colors.
-//! When colors are unsupported (piped output, `TERM=dumb`, etc.), the `style`
-//! filter becomes a no-op, returning plain text.
-//!
-//! You can override detection:
-//! - [`render_with_color`]: Force color on/off regardless of detection
-//! - [`Renderer::with_color`]: Create a renderer with explicit color setting
-//!
-//! ## Template Syntax
-//!
-//! Templates use [minijinja](https://docs.rs/minijinja) (Jinja2-compatible):
-//!
-//! ```jinja
-//! {{ "Header" | style("header") }}
-//!
-//! {% for item in items %}
-//!   {{ item.name | style("name") }}: {{ item.value }}
-//! {% endfor %}
-//!
-//! {{ "Total:" | style("dim") }} {{ count | style("count") }}
+//! // Automatically renders with the user's OS theme (via the `dark-light` crate)
+//! let banner = outstanding::render_with_color(
+//!     r#"Mode: {{ "active" | style("tone") }}"#,
+//!     &serde_json::json!({}),
+//!     ThemeChoice::Adaptive(&adaptive),
+//!     true,
+//! ).unwrap();
 //! ```
 //!
-//! ## Renderer for Multiple Templates
+//! ## Rendering Strategy
 //!
-//! For applications with many templates, use [`Renderer`] to pre-register them:
+//! 1. Build a [`Theme`] (or [`AdaptiveTheme`]) using the fluent `console::Style` API.
+//! 2. Load/define templates using regular MiniJinja syntax (`{{ value }}`, `{% for %}`, etc.).
+//! 3. Call [`render`] for ad-hoc rendering or create a [`Renderer`] if you have many templates.
+//! 4. Outstanding injects the `style` filter, auto-detects colors, and returns the final string.
+//!
+//! Everything from the theme inward is pure Rust data: no code outside Outstanding needs
+//! to touch stdout/stderr or ANSI escape sequences directly.
+//!
+//! ## More Examples
 //!
 //! ```rust
 //! use outstanding::{Renderer, Theme};
 //! use console::Style;
+//! use serde::Serialize;
+//!
+//! #[derive(Serialize)]
+//! struct Entry { label: String, value: i32 }
 //!
 //! let theme = Theme::new()
-//!     .add("ok", Style::new().green());
+//!     .add("label", Style::new().bold())
+//!     .add("value", Style::new().green());
 //!
 //! let mut renderer = Renderer::new(theme);
-//! renderer.add_template("status", "Status: {{ msg | style(\"ok\") }}").unwrap();
-//!
-//! // Later, render by name
-//! # use serde::Serialize;
-//! # #[derive(Serialize)]
-//! # struct StatusData { msg: String }
-//! let output = renderer.render("status", &StatusData { msg: "ready".into() }).unwrap();
+//! renderer.add_template("row", "{{ label | style(\"label\") }}: {{ value | style(\"value\") }}").unwrap();
+//! let rendered = renderer.render("row", &Entry { label: "Count".into(), value: 42 }).unwrap();
+//! assert_eq!(rendered, "Count: 42");
 //! ```
-//!
-//! ## Integration with clap
-//!
-//! Works alongside clap with no conflicts:
 //!
 //! ```rust,ignore
 //! use clap::Parser;
@@ -108,7 +110,12 @@
 //! }
 //!
 //! let cli = Cli::parse();
-//! let output = render_with_color(template, &data, ThemeChoice::from(&theme), !cli.no_color).unwrap();
+//! let output = outstanding::render_with_color(
+//!     template,
+//!     &data,
+//!     ThemeChoice::from(&theme),
+//!     !cli.no_color,
+//! ).unwrap();
 //! ```
 
 use console::{Style, Term};
