@@ -10,6 +10,7 @@ pub mod memory;
 pub struct DoctorReport {
     pub fixed_missing_files: usize,
     pub recovered_files: usize,
+    pub fixed_content_files: usize,
 }
 
 /// Abstract interface for Pad storage.

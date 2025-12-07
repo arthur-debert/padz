@@ -175,7 +175,7 @@ fn handle_edit(ctx: &mut AppContext, indexes: Vec<String>) -> Result<()> {
 
     let mut updates = Vec::new();
     for dp in &result.listed_pads {
-        let initial = EditorContent::new(dp.pad.metadata.title.clone(), dp.pad.content.clone());
+        let initial = EditorContent::from_buffer(&dp.pad.content);
         let edited = edit_content(&initial, &ctx.file_ext)?;
         if edited.title.is_empty() {
             return Err(PadzError::Api("Title cannot be empty".into()));
@@ -208,7 +208,7 @@ fn handle_open(ctx: &mut AppContext, indexes: Vec<String>) -> Result<()> {
 
     let mut updates = Vec::new();
     for dp in &result.listed_pads {
-        let initial = EditorContent::new(dp.pad.metadata.title.clone(), dp.pad.content.clone());
+        let initial = EditorContent::from_buffer(&dp.pad.content);
         let edited = edit_content(&initial, &ctx.file_ext)?;
 
         let clipboard_text = format_for_clipboard(&edited.title, &edited.content);

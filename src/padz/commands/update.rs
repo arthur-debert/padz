@@ -17,9 +17,14 @@ pub fn run<S: DataStore>(store: &mut S, scope: Scope, updates: &[PadUpdate]) -> 
 
     for ((display_index, uuid), update) in resolved.into_iter().zip(updates.iter()) {
         let mut pad = store.get_pad(&uuid, scope)?;
+        // We accept updates from editor which splits title and body.
+        // We must re-normalize to get the correct full content.
+        let (_, normalized_content) =
+            crate::model::normalize_pad_content(&update.title, &update.content);
+
         pad.metadata.title = update.title.clone();
         pad.metadata.updated_at = Utc::now();
-        pad.content = update.content.clone();
+        pad.content = normalized_content;
         store.save_pad(&pad, scope)?;
 
         result.add_message(CmdMessage::success(format!(
@@ -50,6 +55,6 @@ mod tests {
         let pads = view::run(&store, Scope::Project, &[DisplayIndex::Regular(1)])
             .unwrap()
             .listed_pads;
-        assert_eq!(pads[0].pad.content, "New");
+        assert_eq!(pads[0].pad.content, "Title\n\nNew");
     }
 }

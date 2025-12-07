@@ -215,38 +215,45 @@ impl DataStore for FileStore {
                             if let std::collections::hash_map::Entry::Vacant(e) = meta_map.entry(id)
                             {
                                 // Orphan found
-                                let content = fs::read_to_string(&path).unwrap_or_default();
-                                let title = content
-                                    .lines()
-                                    .next()
-                                    .unwrap_or("Recovered Pad")
-                                    .trim()
-                                    .to_string();
+                                let content_raw = fs::read_to_string(&path).unwrap_or_default();
 
-                                let meta = fs::metadata(&path).map_err(PadzError::Io)?;
-                                let created: DateTime<Utc> =
-                                    meta.created().unwrap_or(SystemTime::now()).into();
-                                let modified: DateTime<Utc> =
-                                    meta.modified().unwrap_or(SystemTime::now()).into();
+                                if let Some((title, normalized_content)) =
+                                    crate::model::parse_pad_content(&content_raw)
+                                {
+                                    // Fix content if needed
+                                    if content_raw != normalized_content {
+                                        if let Err(e) = fs::write(&path, &normalized_content) {
+                                            eprintln!(
+                                                "Failed to normalize orphan file {}: {}",
+                                                path.display(),
+                                                e
+                                            );
+                                        } else {
+                                            report.fixed_content_files += 1;
+                                        }
+                                    }
 
-                                let metadata = Metadata {
-                                    id,
-                                    created_at: created,
-                                    updated_at: modified,
-                                    is_pinned: false,
-                                    pinned_at: None,
-                                    is_deleted: false,
-                                    deleted_at: None,
-                                    title: if title.is_empty() {
-                                        "Recovered Pad".to_string()
-                                    } else {
-                                        title
-                                    },
-                                };
+                                    let meta = fs::metadata(&path).map_err(PadzError::Io)?;
+                                    let created: DateTime<Utc> =
+                                        meta.created().unwrap_or(SystemTime::now()).into();
+                                    let modified: DateTime<Utc> =
+                                        meta.modified().unwrap_or(SystemTime::now()).into();
 
-                                e.insert(metadata);
-                                report.recovered_files += 1;
-                                changes = true;
+                                    let metadata = Metadata {
+                                        id,
+                                        created_at: created,
+                                        updated_at: modified,
+                                        is_pinned: false,
+                                        pinned_at: None,
+                                        is_deleted: false,
+                                        deleted_at: None,
+                                        title,
+                                    };
+
+                                    e.insert(metadata);
+                                    report.recovered_files += 1;
+                                    changes = true;
+                                }
                             }
                         }
                     }

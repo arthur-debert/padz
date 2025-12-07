@@ -68,20 +68,13 @@ fn import_file<S: DataStore>(store: &mut S, scope: Scope, path: &Path) -> Result
 }
 
 fn import_content<S: DataStore>(store: &mut S, scope: Scope, content_raw: &str) -> Result<usize> {
-    let mut lines = content_raw.lines();
-    let title = lines.next().unwrap_or("Untitled").trim().to_string();
-
-    let mut content_lines: Vec<&str> = lines.collect();
-
-    // Trim leading blank lines
-    while !content_lines.is_empty() && content_lines[0].trim().is_empty() {
-        content_lines.remove(0);
+    if let Some((title, body)) = crate::model::extract_title_and_body(content_raw) {
+        crate::commands::create::run(store, scope, title, body)?;
+        Ok(1)
+    } else {
+        // Empty content, treated as ignore
+        Ok(0)
     }
-
-    let content = content_lines.join("\n");
-
-    crate::commands::create::run(store, scope, title, content)?;
-    Ok(1)
 }
 
 #[cfg(test)]
@@ -99,7 +92,7 @@ mod tests {
         let pads = store.list_pads(Scope::Project).unwrap();
         assert_eq!(pads.len(), 1);
         assert_eq!(pads[0].metadata.title, "My Title");
-        assert_eq!(pads[0].content, "Line 1\nLine 2");
+        assert_eq!(pads[0].content, "My Title\n\nLine 1\nLine 2");
     }
 
     #[test]
@@ -111,6 +104,6 @@ mod tests {
         let pads = store.list_pads(Scope::Project).unwrap();
         assert_eq!(pads.len(), 1);
         assert_eq!(pads[0].metadata.title, "Title");
-        assert_eq!(pads[0].content, "Real Content");
+        assert_eq!(pads[0].content, "Title\n\nReal Content");
     }
 }
