@@ -198,8 +198,7 @@ fn handle_list(ctx: &mut AppContext, search: Option<String>, deleted: bool) -> R
 }
 
 fn handle_view(ctx: &mut AppContext, indexes: Vec<String>) -> Result<()> {
-    let parsed = parse_indexes(&indexes)?;
-    let result = ctx.api.view_pads(ctx.scope, &parsed)?;
+    let result = ctx.api.view_pads(ctx.scope, &indexes)?;
     let use_color = console::Term::stdout().features().colors_supported();
     let output = render_full_pads(&result.listed_pads, use_color);
     print!("{}", output);
@@ -208,8 +207,7 @@ fn handle_view(ctx: &mut AppContext, indexes: Vec<String>) -> Result<()> {
 }
 
 fn handle_edit(ctx: &mut AppContext, indexes: Vec<String>) -> Result<()> {
-    let parsed = parse_indexes(&indexes)?;
-    let result = ctx.api.view_pads(ctx.scope, &parsed)?;
+    let result = ctx.api.view_pads(ctx.scope, &indexes)?;
 
     let mut updates = Vec::new();
     for dp in &result.listed_pads {
@@ -241,8 +239,7 @@ fn handle_edit(ctx: &mut AppContext, indexes: Vec<String>) -> Result<()> {
 }
 
 fn handle_open(ctx: &mut AppContext, indexes: Vec<String>) -> Result<()> {
-    let parsed = parse_indexes(&indexes)?;
-    let result = ctx.api.view_pads(ctx.scope, &parsed)?;
+    let result = ctx.api.view_pads(ctx.scope, &indexes)?;
 
     let mut updates = Vec::new();
     for dp in &result.listed_pads {
@@ -276,22 +273,19 @@ fn handle_open(ctx: &mut AppContext, indexes: Vec<String>) -> Result<()> {
 }
 
 fn handle_delete(ctx: &mut AppContext, indexes: Vec<String>) -> Result<()> {
-    let parsed = parse_indexes(&indexes)?;
-    let result = ctx.api.delete_pads(ctx.scope, &parsed)?;
+    let result = ctx.api.delete_pads(ctx.scope, &indexes)?;
     print_messages(&result.messages);
     Ok(())
 }
 
 fn handle_pin(ctx: &mut AppContext, indexes: Vec<String>) -> Result<()> {
-    let parsed = parse_indexes(&indexes)?;
-    let result = ctx.api.pin_pads(ctx.scope, &parsed)?;
+    let result = ctx.api.pin_pads(ctx.scope, &indexes)?;
     print_messages(&result.messages);
     Ok(())
 }
 
 fn handle_unpin(ctx: &mut AppContext, indexes: Vec<String>) -> Result<()> {
-    let parsed = parse_indexes(&indexes)?;
-    let result = ctx.api.unpin_pads(ctx.scope, &parsed)?;
+    let result = ctx.api.unpin_pads(ctx.scope, &indexes)?;
     print_messages(&result.messages);
     Ok(())
 }
@@ -306,8 +300,7 @@ fn handle_search(ctx: &mut AppContext, term: String) -> Result<()> {
 }
 
 fn handle_paths(ctx: &mut AppContext, indexes: Vec<String>) -> Result<()> {
-    let parsed = parse_indexes(&indexes)?;
-    let result = ctx.api.pad_paths(ctx.scope, &parsed)?;
+    let result = ctx.api.pad_paths(ctx.scope, &indexes)?;
     let lines: Vec<String> = result
         .pad_paths
         .iter()
@@ -321,19 +314,13 @@ fn handle_paths(ctx: &mut AppContext, indexes: Vec<String>) -> Result<()> {
 }
 
 fn handle_purge(ctx: &mut AppContext, indexes: Vec<String>, yes: bool) -> Result<()> {
-    let parsed = if indexes.is_empty() {
-        Vec::new()
-    } else {
-        parse_indexes(&indexes)?
-    };
-    let result = ctx.api.purge_pads(ctx.scope, &parsed, yes)?;
+    let result = ctx.api.purge_pads(ctx.scope, &indexes, yes)?;
     print_messages(&result.messages);
     Ok(())
 }
 
 fn handle_export(ctx: &mut AppContext, indexes: Vec<String>) -> Result<()> {
-    let parsed = parse_indexes(&indexes)?; // Empty vec remains empty, api handles logic
-    let result = ctx.api.export_pads(ctx.scope, &parsed)?;
+    let result = ctx.api.export_pads(ctx.scope, &indexes)?;
     print_messages(&result.messages);
     Ok(())
 }
@@ -396,27 +383,6 @@ fn handle_help(command: Option<String>) -> Result<()> {
         None => print_grouped_help(),
     }
     Ok(())
-}
-
-fn parse_index(s: &str) -> Result<DisplayIndex> {
-    if let Some(rest) = s.strip_prefix('p') {
-        if let Ok(n) = rest.parse() {
-            return Ok(DisplayIndex::Pinned(n));
-        }
-    }
-    if let Some(rest) = s.strip_prefix('d') {
-        if let Ok(n) = rest.parse() {
-            return Ok(DisplayIndex::Deleted(n));
-        }
-    }
-    if let Ok(n) = s.parse() {
-        return Ok(DisplayIndex::Regular(n));
-    }
-    Err(PadzError::Api(format!("Invalid index format: {}", s)))
-}
-
-fn parse_indexes(strs: &[String]) -> Result<Vec<DisplayIndex>> {
-    strs.iter().map(|s| parse_index(s)).collect()
 }
 
 fn handle_completions(shell: CompletionShell) -> Result<()> {

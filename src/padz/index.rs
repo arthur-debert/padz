@@ -152,6 +152,27 @@ pub fn index_pads(mut pads: Vec<Pad>) -> Vec<DisplayPad> {
     results
 }
 
+impl std::str::FromStr for DisplayIndex {
+    type Err = String;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        if let Some(rest) = s.strip_prefix('p') {
+            if let Ok(n) = rest.parse() {
+                return Ok(DisplayIndex::Pinned(n));
+            }
+        }
+        if let Some(rest) = s.strip_prefix('d') {
+            if let Ok(n) = rest.parse() {
+                return Ok(DisplayIndex::Deleted(n));
+            }
+        }
+        if let Ok(n) = s.parse() {
+            return Ok(DisplayIndex::Regular(n));
+        }
+        Err(format!("Invalid index format: {}", s))
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -239,5 +260,24 @@ mod tests {
         assert!(note_b_entries
             .iter()
             .any(|dp| dp.index == DisplayIndex::Regular(2)));
+    }
+
+    #[test]
+    fn test_parsing() {
+        use std::str::FromStr;
+
+        assert_eq!(DisplayIndex::from_str("1"), Ok(DisplayIndex::Regular(1)));
+        assert_eq!(DisplayIndex::from_str("42"), Ok(DisplayIndex::Regular(42)));
+        assert_eq!(DisplayIndex::from_str("p1"), Ok(DisplayIndex::Pinned(1)));
+        assert_eq!(DisplayIndex::from_str("p99"), Ok(DisplayIndex::Pinned(99)));
+        assert_eq!(DisplayIndex::from_str("d1"), Ok(DisplayIndex::Deleted(1)));
+        assert_eq!(DisplayIndex::from_str("d5"), Ok(DisplayIndex::Deleted(5)));
+
+        assert!(DisplayIndex::from_str("").is_err());
+        assert!(DisplayIndex::from_str("abc").is_err());
+        assert!(DisplayIndex::from_str("p").is_err());
+        assert!(DisplayIndex::from_str("d").is_err());
+        assert!(DisplayIndex::from_str("12a").is_err());
+        assert!(DisplayIndex::from_str("p1a").is_err());
     }
 }

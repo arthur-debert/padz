@@ -37,10 +37,11 @@
 //! - Storage behavior (tested in store modules)
 
 use crate::commands;
-use crate::error::Result;
+use crate::error::{PadzError, Result};
 use crate::index::DisplayIndex;
 use crate::model::Scope;
 use crate::store::DataStore;
+use std::str::FromStr;
 
 /// The main API facade for padz operations.
 ///
@@ -69,32 +70,52 @@ impl<S: DataStore> PadzApi<S> {
         commands::list::run(&self.store, scope, show_deleted)
     }
 
-    pub fn view_pads(&self, scope: Scope, indexes: &[DisplayIndex]) -> Result<commands::CmdResult> {
-        commands::view::run(&self.store, scope, indexes)
+    pub fn view_pads<I: AsRef<str>>(
+        &self,
+        scope: Scope,
+        indexes: &[I],
+    ) -> Result<commands::CmdResult> {
+        let parsed: Result<Vec<DisplayIndex>> = indexes
+            .iter()
+            .map(|s| DisplayIndex::from_str(s.as_ref()).map_err(PadzError::Api))
+            .collect();
+        commands::view::run(&self.store, scope, &parsed?)
     }
 
-    pub fn delete_pads(
+    pub fn delete_pads<I: AsRef<str>>(
         &mut self,
         scope: Scope,
-        indexes: &[DisplayIndex],
+        indexes: &[I],
     ) -> Result<commands::CmdResult> {
-        commands::delete::run(&mut self.store, scope, indexes)
+        let parsed: Result<Vec<DisplayIndex>> = indexes
+            .iter()
+            .map(|s| DisplayIndex::from_str(s.as_ref()).map_err(PadzError::Api))
+            .collect();
+        commands::delete::run(&mut self.store, scope, &parsed?)
     }
 
-    pub fn pin_pads(
+    pub fn pin_pads<I: AsRef<str>>(
         &mut self,
         scope: Scope,
-        indexes: &[DisplayIndex],
+        indexes: &[I],
     ) -> Result<commands::CmdResult> {
-        commands::pinning::pin(&mut self.store, scope, indexes)
+        let parsed: Result<Vec<DisplayIndex>> = indexes
+            .iter()
+            .map(|s| DisplayIndex::from_str(s.as_ref()).map_err(PadzError::Api))
+            .collect();
+        commands::pinning::pin(&mut self.store, scope, &parsed?)
     }
 
-    pub fn unpin_pads(
+    pub fn unpin_pads<I: AsRef<str>>(
         &mut self,
         scope: Scope,
-        indexes: &[DisplayIndex],
+        indexes: &[I],
     ) -> Result<commands::CmdResult> {
-        commands::pinning::unpin(&mut self.store, scope, indexes)
+        let parsed: Result<Vec<DisplayIndex>> = indexes
+            .iter()
+            .map(|s| DisplayIndex::from_str(s.as_ref()).map_err(PadzError::Api))
+            .collect();
+        commands::pinning::unpin(&mut self.store, scope, &parsed?)
     }
 
     pub fn update_pads(
@@ -105,21 +126,29 @@ impl<S: DataStore> PadzApi<S> {
         commands::update::run(&mut self.store, scope, updates)
     }
 
-    pub fn purge_pads(
+    pub fn purge_pads<I: AsRef<str>>(
         &mut self,
         scope: Scope,
-        indexes: &[DisplayIndex],
+        indexes: &[I],
         skip_confirm: bool,
     ) -> Result<commands::CmdResult> {
-        commands::purge::run(&mut self.store, scope, indexes, skip_confirm)
+        let parsed: Result<Vec<DisplayIndex>> = indexes
+            .iter()
+            .map(|s| DisplayIndex::from_str(s.as_ref()).map_err(PadzError::Api))
+            .collect();
+        commands::purge::run(&mut self.store, scope, &parsed?, skip_confirm)
     }
 
-    pub fn export_pads(
+    pub fn export_pads<I: AsRef<str>>(
         &self,
         scope: Scope,
-        indexes: &[DisplayIndex],
+        indexes: &[I],
     ) -> Result<commands::CmdResult> {
-        commands::export::run(&self.store, scope, indexes)
+        let parsed: Result<Vec<DisplayIndex>> = indexes
+            .iter()
+            .map(|s| DisplayIndex::from_str(s.as_ref()).map_err(PadzError::Api))
+            .collect();
+        commands::export::run(&self.store, scope, &parsed?)
     }
 
     pub fn import_pads(
@@ -135,8 +164,16 @@ impl<S: DataStore> PadzApi<S> {
         commands::doctor::run(&mut self.store, scope)
     }
 
-    pub fn pad_paths(&self, scope: Scope, indexes: &[DisplayIndex]) -> Result<commands::CmdResult> {
-        commands::paths::run(&self.store, scope, indexes)
+    pub fn pad_paths<I: AsRef<str>>(
+        &self,
+        scope: Scope,
+        indexes: &[I],
+    ) -> Result<commands::CmdResult> {
+        let parsed: Result<Vec<DisplayIndex>> = indexes
+            .iter()
+            .map(|s| DisplayIndex::from_str(s.as_ref()).map_err(PadzError::Api))
+            .collect();
+        commands::paths::run(&self.store, scope, &parsed?)
     }
 
     pub fn search_pads(&self, scope: Scope, term: &str) -> Result<commands::CmdResult> {
