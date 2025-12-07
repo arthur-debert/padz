@@ -461,6 +461,7 @@ dependencies = [
  "console",
  "directories",
  "flate2",
+ "once_cell",
  "outstanding",
  "serde",
  "serde_json",
