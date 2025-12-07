@@ -31,3 +31,6 @@ jobs:
 
       - name: Run tests
         run: cargo test --all --locked
+
+      - name: Run Outstanding doctests
+        run: cargo test -p outstanding --doc --locked
