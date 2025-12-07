@@ -1,5 +1,5 @@
 use crate::error::{PadzError, Result};
-use crate::model::parse_pad_content;
+use crate::model::extract_title_and_body;
 use std::env;
 use std::fs;
 use std::path::Path;
@@ -32,110 +32,16 @@ impl EditorContent {
     /// Parses an editor buffer back into title and content.
     /// Format: first line is title, skip blank line, rest is content.
     pub fn from_buffer(buffer: &str) -> Self {
-        if let Some((title, full_content)) = parse_pad_content(buffer) {
-            // parse_pad_content returns (title, full_title_and_content)
-            // But EditorContent seems to want (title, body) to separate?
-            // Wait, parse_pad_content returns (Title, FullContent).
-            // EditorContent currently stores `content` as Body.
-            // If I change EditorContent semantics, I break main.rs logic?
-            // Let's see. main.rs uses `edited.title` and `edited.content`.
-            // And `Pad::new(title, content)` expects `content` to be Body?
-            // No, Pad::new implementation I just wrote:
-            // normalize_pad_content(title, content) -> returns Full Content.
-            // It assumes `content` passed to it is BODY.
-            // So if `edited.content` is Full Content, `Pad::new` will produce Double Title?
-
-            // normalize_pad_content(title, body) -> (title, Title\n\nBody).
-
-            // If parse_pad_content returns (Title, FullString).
-            // We need to extract Body from FullString?
-            // Or better, let parse_pad_content return (Title, Body)?
-            // normalize_pad_content returns (Title, FullString).
-
-            // Let's look at `model.rs` again.
-            // `parse_pad_content` calls `normalize_pad_content`.
-            // `normalize_pad_content` returns `full_content`.
-
-            // If I want to split them effectively, I should maybe have `parse` return `(Title, Body)`?
-            // `parse_pad_content` in my implementation:
-            // extracts title, extracts body_raw.
-            // calls normalize -> returns (Title, FullCanonical).
-
-            // So I don't have a clean way to get canonical Body from `model` yet.
-            // I should modify `model.rs` to expose body?
-
-            // Actually, `EditorContent` is "Title" and "Content".
-            // If I want to keep semantics of "Content" = "Body", I need to extract body.
-            // But `Pad` now stores Full Content.
-
-            // If I change `EditorContent` sematics to "Content" = "Full Content",
-            // then `to_buffer` should just print `content` (since it has title).
-            // And `from_buffer` should just return `(parsed_title, buffer)`.
-
-            // Let's modify EditorContent semantics to align with Pad.
-            // `EditorContent.content` = Full Normalized Content.
-            // `to_buffer` -> returns `.content`.
-            // `from_buffer` -> `parse_pad_content(buf)`.
-            // `new` -> `normalize_pad_content(title, body)`.
-
-            // This seems consistent.
-
-            // Check main.rs usage:
-            // create: new(title, body_arg). -> OK.
-            // edit_content calls to_buffer. -> Returns Full.
-            // edit returns edited EditorContent.
-            // main calls `api.create_pad(scope, edited.title, edited.content)`.
-            // `api.create_pad` calls `Pad::new(title, content)`.
-            // `Pad::new` calls `normalize_pad_content(title, content)`.
-
-            // IF `edited.content` is Full Content (Title\n\nBody).
-            // `normalize` will treat it as Body!
-            // Result: Title\n\n(Title\n\nBody). Double Title!
-
-            // So Pad::new expects Body.
-            // So EditorContent should store Body?
-
-            // OR Pad::new should be smart?
-            // No, Pad::new(title, body) is standard API.
-
-            // So EditorContent MUST store Body.
-
-            // I need `model::parse` to return Body.
-            // My `model::parse_pad_content` currently returns Full Content.
-
-            // I will modify `EditorContent.from_buffer` to strip title from full content.
-            // Or better, modify `model.rs` to return `(Title, Body)` as well?
-
-            // Let's parse manually in `from_buffer` using `model` helpers if possible.
-            // Or just do `parse_pad_content` then strip title?
-
-            let (p_title, p_full) = match parse_pad_content(buffer) {
-                Some(res) => res,
-                None => {
-                    return Self {
-                        title: String::new(),
-                        content: String::new(),
-                    }
-                }
-            };
-
-            // strip title from p_full?
-            // format is Title\n\nBody or Title.
-            let body = if p_full.starts_with(&p_title) {
-                p_full[p_title.len()..].trim().to_string()
-            } else {
-                String::new() // Should not happen if normalized
-            };
-
-            Self {
-                title: p_title,
+        if let Some((title, body)) = extract_title_and_body(buffer) {
+            return Self {
+                title,
                 content: body,
-            }
-        } else {
-            Self {
-                title: String::new(),
-                content: String::new(),
-            }
+            };
+        }
+
+        Self {
+            title: String::new(),
+            content: String::new(),
         }
     }
 }
