@@ -1,13 +1,13 @@
-{% if pads | length == 0 %}No pads found.
+{% if pads | length == 0 %}{{ "No pads found." | style("muted") }}
 {% else -%}
 {% for pad in pads -%}
 {%- if not loop.first %}
 
-================================
+{{ " " | style("faint") }}
 
 {%- endif %}
-{{ pad.index | style("fp_index") }} {{ pad.title | style("fp_title") }}
---------------------------------
-{{ pad.content }}
+{{ pad.index | style(pad.index_style) }} {{ pad.title | style(pad.title_style) }}
+{{ " " | style("faint") }}
+{{ pad.content | style(pad.content_style) }}
 {%- endfor %}
 {% endif %}

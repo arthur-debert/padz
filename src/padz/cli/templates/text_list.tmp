@@ -1,7 +1,7 @@
 {% if lines | length == 0 %}
-{{ empty_message }}
+{{ empty_message | style("muted") }}
 {% else -%}
 {% for line in lines -%}
-{{ line }}
+{{ line | style("regular") }}
 {% endfor -%}
 {% endif %}
