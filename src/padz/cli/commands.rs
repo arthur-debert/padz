@@ -356,26 +356,31 @@ fn handle_doctor(ctx: &mut AppContext) -> Result<()> {
 }
 
 fn handle_config(ctx: &mut AppContext, key: Option<String>, value: Option<String>) -> Result<()> {
-    let action = match (key.as_deref(), value) {
+    let action = match (key.clone(), value) {
         (None, _) => ConfigAction::ShowAll,
-        (Some("file-ext"), None) => ConfigAction::ShowKey("file-ext".to_string()),
-        (Some("file-ext"), Some(v)) => ConfigAction::SetFileExt(v),
-        (Some(other), _) => {
-            let output = render_text_list(&[format!("Unknown config key: {}", other)], "");
-            print!("{}", output);
-            return Ok(());
-        }
+        (Some(k), None) => ConfigAction::ShowKey(k),
+        (Some(k), Some(v)) => ConfigAction::Set(k, v),
     };
 
     let result = ctx.api.config(ctx.scope, action)?;
     let mut lines = Vec::new();
+
+    // If showing all, we need to iterate available keys manually since we don't have an iterator yet.
+    // Or we just show known keys.
     if let Some(config) = &result.config {
-        lines.push(format!("file-ext = {}", config.get_file_ext()));
-        if !config.import_extensions.is_empty() {
-            lines.push(format!(
-                "import-extensions = {}",
-                config.import_extensions.join(", ")
-            ));
+        // If specific key was requested, show just that (handled by messages mostly,
+        // but let's see what result.config has).
+        // If action was ShowAll, we show everything.
+        // If action was ShowKey, API might return config but messages have the info.
+
+        if key.is_none() {
+            // Show all known keys
+            if let Some(val) = config.get("file-ext") {
+                lines.push(format!("file-ext = {}", val));
+            }
+            if let Some(val) = config.get("import-extensions") {
+                lines.push(format!("import-extensions = {}", val));
+            }
         }
     }
     let output = render_text_list(&lines, "No configuration values.");

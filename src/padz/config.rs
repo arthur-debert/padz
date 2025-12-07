@@ -70,6 +70,35 @@ impl PadzConfig {
         Ok(())
     }
 
+    /// Get a config value by key.
+    pub fn get(&self, key: &str) -> Option<String> {
+        match key {
+            "file-ext" => Some(self.file_ext.clone()),
+            "import-extensions" => Some(self.import_extensions.join(", ")),
+            _ => None,
+        }
+    }
+
+    /// Set a config value by key. Returns Ok if successful, Err with message if invalid key/value.
+    pub fn set(&mut self, key: &str, value: &str) -> std::result::Result<(), String> {
+        match key {
+            "file-ext" => {
+                self.set_file_ext(value);
+                Ok(())
+            }
+            "import-extensions" => {
+                // simple CSV parsing for basic support
+                self.import_extensions = value
+                    .split(',')
+                    .map(|s| s.trim().to_string())
+                    .filter(|s| !s.is_empty())
+                    .collect();
+                Ok(())
+            }
+            _ => Err(format!("Unknown config key: {}", key)),
+        }
+    }
+
     /// Get the file extension (ensures it starts with a dot)
     pub fn get_file_ext(&self) -> &str {
         &self.file_ext
@@ -147,5 +176,36 @@ mod tests {
         let parsed: PadzConfig = serde_json::from_str(&json).unwrap();
 
         assert_eq!(config, parsed);
+    }
+    #[test]
+    fn test_config_get_set() {
+        let mut config = PadzConfig::default();
+
+        // Get unknown
+        assert_eq!(config.get("unknown"), None);
+
+        // Get known
+        assert_eq!(config.get("file-ext"), Some(".txt".to_string()));
+
+        // Set known
+        assert!(config.set("file-ext", "md").is_ok());
+        assert_eq!(config.get("file-ext"), Some(".md".to_string()));
+        assert_eq!(config.file_ext, ".md");
+
+        // Set invalid
+        assert!(config.set("unknown", "value").is_err());
+    }
+
+    #[test]
+    fn test_import_extensions_set() {
+        let mut config = PadzConfig::default();
+        config
+            .set("import-extensions", ".rs, .toml")
+            .expect("failed to set import-extensions");
+        assert_eq!(config.import_extensions, vec![".rs", ".toml"]);
+        assert_eq!(
+            config.get("import-extensions"),
+            Some(".rs, .toml".to_string())
+        );
     }
 }
