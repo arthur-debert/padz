@@ -1,0 +1,16 @@
+[package]
+name = "outstanding"
+version = "0.1.0"
+edition = "2021"
+description = "Styled CLI template rendering with automatic terminal detection"
+license = "MIT"
+keywords = ["cli", "terminal", "colors", "template", "styling"]
+categories = ["command-line-interface", "template-engine"]
+
+[lib]
+path = "lib.rs"
+
+[dependencies]
+console = "0.15"
+minijinja = { version = "2", features = ["loader"] }
+serde = { version = "1", features = ["derive"] }

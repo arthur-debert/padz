@@ -1,3 +1,6 @@
+[workspace]
+members = [".", "src/outstanding"]
+
 [package]
 name = "padz"
 version = "0.3.0"
@@ -10,6 +13,7 @@ categories = ["command-line-utilities"]
 readme = "README.md"
 
 [lib]
+name = "padz"
 path = "src/padz/lib.rs"
 
 [[bin]]
