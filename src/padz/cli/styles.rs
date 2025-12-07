@@ -8,7 +8,7 @@ pub static LIST_STYLES: Lazy<Styles> = Lazy::new(|| {
         .add("index_pinned", Style::new().yellow())
         .add("index_deleted", Style::new().red())
         .add("index_regular", Style::new())
-        .add("time", Style::new().dim())
+        .add("time", Style::new().dim().italic())
 });
 
 pub static FULL_PAD_STYLES: Lazy<Styles> = Lazy::new(|| {

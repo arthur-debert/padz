@@ -149,6 +149,16 @@ pub struct Styles {
     missing_indicator: String,
 }
 
+/// Color space selection when converting RGB values to console styles.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ColorSpace {
+    /// Map the RGB value to the nearest ANSI 256-color palette entry.
+    Ansi256,
+    /// Intended for 24-bit color output. Currently falls back to the 256-color palette until
+    /// the underlying `console` crate exposes true-color support.
+    TrueColor,
+}
+
 impl Default for Styles {
     fn default() -> Self {
         Self {
@@ -190,6 +200,21 @@ impl Styles {
     ///
     /// If a style with the same name exists, it is replaced.
     pub fn add(mut self, name: &str, style: Style) -> Self {
+        self.styles.insert(name.to_string(), style);
+        self
+    }
+
+    /// Adds a style by converting an RGB color into the specified color space.
+    ///
+    /// # Note
+    /// `ColorSpace::TrueColor` currently behaves the same as [`ColorSpace::Ansi256`], as the
+    /// underlying `console` crate does not yet expose true-color escape sequences.
+    pub fn add_rgb(mut self, name: &str, rgb: (u8, u8, u8), space: ColorSpace) -> Self {
+        let style = match space {
+            ColorSpace::Ansi256 | ColorSpace::TrueColor => {
+                Style::new().color256(rgb_to_ansi256(rgb))
+            }
+        };
         self.styles.insert(name.to_string(), style);
         self
     }
@@ -401,6 +426,23 @@ fn register_style_filter(env: &mut Environment<'static>, styles: Styles, use_col
             styles.apply_plain(&name, &text)
         }
     });
+}
+
+fn rgb_to_ansi256((r, g, b): (u8, u8, u8)) -> u8 {
+    if r == g && g == b {
+        if r < 8 {
+            16
+        } else if r > 248 {
+            231
+        } else {
+            232 + ((r as u16 - 8) * 24 / 247) as u8
+        }
+    } else {
+        let red = (r as u16 * 5 / 255) as u8;
+        let green = (g as u16 * 5 / 255) as u8;
+        let blue = (b as u16 * 5 / 255) as u8;
+        16 + 36 * red + 6 * green + blue
+    }
 }
 
 #[cfg(test)]
@@ -721,5 +763,22 @@ mod tests {
 
         let result = render_with_color("{{ unclosed", &Empty {}, &styles, false);
         assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_add_rgb_registers_style() {
+        console::set_colors_enabled(true);
+        let styles = Styles::new().add_rgb("accent", (255, 0, 0), ColorSpace::Ansi256);
+        let out = styles.apply("accent", "hi");
+        assert!(out.contains("hi"));
+        assert!(out.contains("38;5"));
+    }
+
+    #[test]
+    fn test_rgb_to_ansi256_grayscale() {
+        assert_eq!(rgb_to_ansi256((0, 0, 0)), 16);
+        assert_eq!(rgb_to_ansi256((255, 255, 255)), 231);
+        let mid = rgb_to_ansi256((128, 128, 128));
+        assert!((232..=255).contains(&mid));
     }
 }
