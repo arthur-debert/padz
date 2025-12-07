@@ -97,4 +97,5 @@ pub mod editor;
 pub mod error;
 pub mod index;
 pub mod model;
+pub mod render;
 pub mod store;

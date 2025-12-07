@@ -51,6 +51,7 @@ use padz::editor::{edit_content, EditorContent};
 use padz::error::{PadzError, Result};
 use padz::index::{DisplayIndex, DisplayPad};
 use padz::model::Scope;
+use padz::render::render_pad_list;
 use padz::store::fs::FileStore;
 use std::path::PathBuf;
 use unicode_width::UnicodeWidthStr;
@@ -198,7 +199,12 @@ fn handle_list(ctx: &mut AppContext, search: Option<String>, deleted: bool) -> R
     } else {
         ctx.api.list_pads(ctx.scope, deleted)?
     };
-    print_pads(&result.listed_pads);
+
+    // Use outstanding-based rendering
+    let use_color = console::Term::stdout().features().colors_supported();
+    let output = render_pad_list(&result.listed_pads, use_color);
+    print!("{}", output);
+
     print_messages(&result.messages);
     Ok(())
 }
