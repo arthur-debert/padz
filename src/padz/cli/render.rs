@@ -2,6 +2,14 @@
 //!
 //! This module provides styled terminal output using the `outstanding` crate.
 //! Templates are defined here and rendered with automatic terminal color detection.
+//!
+//! ## Design Philosophy
+//!
+//! Layout calculations (width, truncation, padding) stay in Rust because they require
+//! Unicode-aware processing. Templates handle presentation concerns:
+//! - Style selection based on semantic flags (is_pinned, is_deleted, etc.)
+//! - Section separators and grouping
+//! - Conditional icon rendering
 
 use super::styles::{names, PADZ_THEME};
 use super::templates::{FULL_PAD_TEMPLATE, LIST_TEMPLATE, MESSAGES_TEMPLATE, TEXT_LIST_TEMPLATE};
@@ -17,21 +25,25 @@ pub const LINE_WIDTH: usize = 100;
 pub const TIME_WIDTH: usize = 14;
 pub const PIN_MARKER: &str = "⚲";
 
-/// Data structure for rendering a single pad line.
+/// Semantic pad data for template rendering.
+///
+/// Contains pre-computed layout strings plus semantic flags that templates
+/// use to select styles. This keeps layout math in Rust while letting
+/// templates handle style selection through conditionals.
 #[derive(Serialize)]
 struct PadLineData {
+    // Pre-computed layout components (Rust handles width calculations)
     left_pad: String,
-    left_icon: Option<String>,
-    left_post: String,
     index: String,
     title: String,
     padding: String,
-    right_icon: Option<String>,
-    right_post: String,
     time_ago: String,
-    // Style hints
-    index_style: String,
-    title_style: String,
+    // Semantic flags for template-driven style selection
+    is_pinned_section: bool, // In the pinned section (p1, p2, etc.)
+    is_deleted: bool,        // In the deleted section (d1, d2, etc.)
+    show_left_pin: bool,     // Show pin marker on left (pinned section)
+    show_right_pin: bool,    // Show pin marker on right (pinned pad in regular section)
+    is_separator: bool,      // Empty line separator between sections
 }
 
 /// Data structure for the full list template.
@@ -39,6 +51,7 @@ struct PadLineData {
 struct ListData {
     pads: Vec<PadLineData>,
     empty: bool,
+    pin_marker: String,
 }
 
 #[derive(Serialize)]
@@ -46,14 +59,15 @@ struct FullPadData {
     pads: Vec<FullPadEntry>,
 }
 
+/// Full pad data with semantic flags for template-driven styling.
 #[derive(Serialize)]
 struct FullPadEntry {
     index: String,
     title: String,
     content: String,
-    index_style: String,
-    title_style: String,
-    content_style: String,
+    // Semantic flags for style selection in template
+    is_pinned: bool,
+    is_deleted: bool,
 }
 
 #[derive(Serialize)]
@@ -79,25 +93,21 @@ pub fn render_pad_list(pads: &[DisplayPad]) -> String {
 }
 
 fn render_pad_list_internal(pads: &[DisplayPad], use_color: Option<bool>) -> String {
+    let empty_data = ListData {
+        pads: vec![],
+        empty: true,
+        pin_marker: PIN_MARKER.to_string(),
+    };
+
     if pads.is_empty() {
         return match use_color {
             Some(c) => render_with_color(
                 LIST_TEMPLATE,
-                &ListData {
-                    pads: vec![],
-                    empty: true,
-                },
+                &empty_data,
                 ThemeChoice::from(&*PADZ_THEME),
                 c,
             ),
-            None => render(
-                LIST_TEMPLATE,
-                &ListData {
-                    pads: vec![],
-                    empty: true,
-                },
-                ThemeChoice::from(&*PADZ_THEME),
-            ),
+            None => render(LIST_TEMPLATE, &empty_data, ThemeChoice::from(&*PADZ_THEME)),
         }
         .unwrap_or_else(|_| "No pads found.\n".to_string());
     }
@@ -106,103 +116,81 @@ fn render_pad_list_internal(pads: &[DisplayPad], use_color: Option<bool>) -> Str
     let mut last_was_pinned = false;
 
     for dp in pads {
-        let is_pinned_entry = matches!(dp.index, DisplayIndex::Pinned(_));
+        let is_pinned_section = matches!(dp.index, DisplayIndex::Pinned(_));
+        let is_deleted = matches!(dp.index, DisplayIndex::Deleted(_));
+        let show_right_pin = dp.pad.metadata.is_pinned && !is_pinned_section;
 
         // Add separator line between pinned and regular sections
-        if last_was_pinned && !is_pinned_entry {
+        if last_was_pinned && !is_pinned_section {
             pad_lines.push(PadLineData {
                 left_pad: String::new(),
-                left_icon: None,
-                left_post: String::new(),
                 index: String::new(),
                 title: String::new(),
                 padding: String::new(),
-                right_icon: None,
-                right_post: String::new(),
                 time_ago: String::new(),
-                index_style: names::REGULAR.to_string(),
-                title_style: names::REGULAR.to_string(),
+                is_pinned_section: false,
+                is_deleted: false,
+                show_left_pin: false,
+                show_right_pin: false,
+                is_separator: true,
             });
         }
-        last_was_pinned = is_pinned_entry;
+        last_was_pinned = is_pinned_section;
 
+        // Format index string
         let idx_str = match &dp.index {
             DisplayIndex::Pinned(n) => format!("p{}. ", n),
             DisplayIndex::Regular(n) => format!("{}. ", n),
             DisplayIndex::Deleted(n) => format!("d{}. ", n),
         };
 
-        let (left_pad, left_icon, left_post) = if is_pinned_entry {
-            (
-                "  ".to_string(),
-                Some(PIN_MARKER.to_string()),
-                " ".to_string(),
-            )
+        // Calculate left padding (accounts for pin marker space)
+        let left_pad = if is_pinned_section {
+            "  ".to_string() // Space for "⚲ " prefix
         } else {
-            ("    ".to_string(), None, String::new())
+            "    ".to_string() // 4 spaces to align with pinned entries
         };
 
-        let (right_icon, right_post) = if dp.pad.metadata.is_pinned && !is_pinned_entry {
-            (Some(PIN_MARKER.to_string()), " ".to_string())
+        // Calculate available width for title
+        let pin_width = PIN_MARKER.width();
+        let left_prefix_width = if is_pinned_section {
+            2 + pin_width + 1 // "  " + pin + " "
         } else {
-            (None, "  ".to_string())
+            4 // "    "
         };
-
-        let left_prefix_width = left_pad.width()
-            + left_icon
-                .as_deref()
-                .map(UnicodeWidthStr::width)
-                .unwrap_or(0)
-            + left_post.width();
-
-        let right_suffix_width = right_icon
-            .as_deref()
-            .map(UnicodeWidthStr::width)
-            .unwrap_or(0)
-            + right_post.width();
+        let right_suffix_width = if show_right_pin {
+            pin_width + 1 // pin + " "
+        } else {
+            2 // "  "
+        };
 
         let idx_width = idx_str.width();
         let fixed_width = left_prefix_width + idx_width + right_suffix_width + TIME_WIDTH;
         let available = LINE_WIDTH.saturating_sub(fixed_width);
 
-        let time_ago = format_time_ago(dp.pad.metadata.created_at);
-        let title_source = dp.pad.metadata.title.as_str();
-        let title_display = truncate_to_width(title_source, available);
+        // Truncate title and calculate padding
+        let title_display = truncate_to_width(dp.pad.metadata.title.as_str(), available);
         let title_width = title_display.width();
         let padding = " ".repeat(available.saturating_sub(title_width));
 
-        let index_style = match dp.index {
-            DisplayIndex::Pinned(_) => names::PINNED,
-            DisplayIndex::Deleted(_) => names::DELETED,
-            DisplayIndex::Regular(_) => names::REGULAR,
-        }
-        .to_string();
-        let is_deleted_entry = matches!(dp.index, DisplayIndex::Deleted(_));
-        let title_style = if is_deleted_entry {
-            names::DELETED
-        } else {
-            names::TITLE
-        }
-        .to_string();
-
         pad_lines.push(PadLineData {
             left_pad,
-            left_icon,
-            left_post,
             index: idx_str,
             title: title_display,
             padding,
-            right_icon,
-            right_post,
-            time_ago,
-            index_style,
-            title_style,
+            time_ago: format_time_ago(dp.pad.metadata.created_at),
+            is_pinned_section,
+            is_deleted,
+            show_left_pin: is_pinned_section,
+            show_right_pin,
+            is_separator: false,
         });
     }
 
     let data = ListData {
         pads: pad_lines,
         empty: false,
+        pin_marker: PIN_MARKER.to_string(),
     };
 
     match use_color {
@@ -221,33 +209,15 @@ fn render_full_pads_internal(pads: &[DisplayPad], use_color: Option<bool>) -> St
     let entries = pads
         .iter()
         .map(|dp| {
-            let index_style = match dp.index {
-                DisplayIndex::Pinned(_) => names::PINNED,
-                DisplayIndex::Deleted(_) => names::DELETED,
-                DisplayIndex::Regular(_) => names::REGULAR,
-            }
-            .to_string();
-            let is_deleted_entry = matches!(dp.index, DisplayIndex::Deleted(_));
-            let title_style = if is_deleted_entry {
-                names::DELETED
-            } else {
-                names::TITLE
-            }
-            .to_string();
-            let content_style = if is_deleted_entry {
-                names::DELETED
-            } else {
-                names::REGULAR
-            }
-            .to_string();
+            let is_pinned = matches!(dp.index, DisplayIndex::Pinned(_));
+            let is_deleted = matches!(dp.index, DisplayIndex::Deleted(_));
 
             FullPadEntry {
                 index: format!("{}", dp.index),
                 title: dp.pad.metadata.title.clone(),
                 content: dp.pad.content.clone(),
-                index_style,
-                title_style,
-                content_style,
+                is_pinned,
+                is_deleted,
             }
         })
         .collect();

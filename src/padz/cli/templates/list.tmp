@@ -1,6 +1,9 @@
 {% if empty %}{{ "No pads found." | style("muted") }}
 {% else -%}
 {% for pad in pads -%}
-{{ pad.left_pad }}{% if pad.left_icon %}{{ pad.left_icon | style("pinned") }}{% endif %}{{ pad.left_post }}{{ pad.index | style(pad.index_style) }}{{ pad.title | style(pad.title_style) }}{{ pad.padding }}{% if pad.right_icon %}{{ pad.right_icon | style("pinned") }}{% endif %}{{ pad.right_post }}{{ pad.time_ago | style("time") }}
+{% if pad.is_separator %}
+{% else -%}
+{{ pad.left_pad }}{% if pad.show_left_pin %}{{ pin_marker | style("pinned") }} {% endif %}{% if pad.is_pinned_section %}{{ pad.index | style("pinned") }}{% elif pad.is_deleted %}{{ pad.index | style("deleted") }}{% else %}{{ pad.index | style("regular") }}{% endif %}{% if pad.is_deleted %}{{ pad.title | style("deleted") }}{% else %}{{ pad.title | style("title") }}{% endif %}{{ pad.padding }}{% if pad.show_right_pin %}{{ pin_marker | style("pinned") }} {% else %}  {% endif %}{{ pad.time_ago | style("time") }}
+{% endif -%}
 {% endfor -%}
 {% endif %}
