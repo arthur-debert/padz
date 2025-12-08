@@ -180,6 +180,10 @@ impl<S: DataStore> PadzApi<S> {
         commands::paths::run(&self.store, scope, &parsed?)
     }
 
+    pub fn get_path_by_id(&self, scope: Scope, id: uuid::Uuid) -> Result<std::path::PathBuf> {
+        self.store.get_pad_path(&id, scope)
+    }
+
     pub fn search_pads(&self, scope: Scope, term: &str) -> Result<commands::CmdResult> {
         commands::search::run(&self.store, scope, term)
     }

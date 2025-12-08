@@ -93,6 +93,111 @@ impl FileStore {
         fs::write(data_file, content).map_err(PadzError::Io)?;
         Ok(())
     }
+
+    pub fn sync(&self, scope: Scope) -> Result<()> {
+        let root = self.get_store_path(scope)?;
+        if !root.exists() {
+            return Ok(());
+        }
+
+        let mut meta_map = self.load_metadata(&root)?;
+        let mut changes = false;
+
+        // 1. Identify valid files and sync their state
+        let entries = fs::read_dir(&root).map_err(PadzError::Io)?;
+        let mut found_ids = Vec::new();
+
+        for entry in entries {
+            let entry = entry.map_err(PadzError::Io)?;
+            let path = entry.path();
+            if path.is_file() {
+                if let Some(file_name) = path.file_name().and_then(|s| s.to_str()) {
+                    if file_name.starts_with("pad-") {
+                        let stem = path.file_stem().and_then(|s| s.to_str()).unwrap_or("");
+                        let uuid_part = stem.strip_prefix("pad-").unwrap_or("");
+
+                        if let Ok(id) = Uuid::parse_str(uuid_part) {
+                            found_ids.push(id);
+
+                            // Read file metadata for mtime
+                            let sys_meta = fs::metadata(&path).map_err(PadzError::Io)?;
+                            let modified: DateTime<Utc> =
+                                sys_meta.modified().unwrap_or(SystemTime::now()).into();
+
+                            // Read content if:
+                            // a) Orphan (not in DB)
+                            // b) File is newer than DB entry
+                            let needs_read = match meta_map.get(&id) {
+                                None => true,
+                                Some(meta) => modified > meta.updated_at,
+                            };
+
+                            if needs_read {
+                                let content_raw =
+                                    fs::read_to_string(&path).unwrap_or_else(|_| String::new()); // Best effort read
+
+                                // Check for empty/useless files
+                                if content_raw.trim().is_empty() {
+                                    // Delete empty file
+                                    let _ = fs::remove_file(&path);
+                                    if meta_map.remove(&id).is_some() {
+                                        changes = true;
+                                    }
+                                    continue;
+                                }
+
+                                // Update/Add to DB
+                                if let Some((title, _)) =
+                                    crate::model::parse_pad_content(&content_raw)
+                                {
+                                    if let Some(meta) = meta_map.get_mut(&id) {
+                                        // Update existing
+                                        if meta.title != title || meta.updated_at != modified {
+                                            meta.title = title;
+                                            meta.updated_at = modified;
+                                            changes = true;
+                                        }
+                                    } else {
+                                        // New / Orphan
+                                        let created: DateTime<Utc> =
+                                            sys_meta.created().unwrap_or(SystemTime::now()).into();
+                                        let new_meta = Metadata {
+                                            id,
+                                            created_at: created,
+                                            updated_at: modified,
+                                            is_pinned: false,
+                                            pinned_at: None,
+                                            is_deleted: false,
+                                            deleted_at: None,
+                                            title,
+                                        };
+                                        meta_map.insert(id, new_meta);
+                                        changes = true;
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        // 2. Remove DB entries that have no files
+        let db_ids: Vec<Uuid> = meta_map.keys().cloned().collect();
+        for id in db_ids {
+            if !found_ids.contains(&id) {
+                // Determine if really missing? found_ids contains all visible files.
+                // If it was in DB but not in found_ids, it is deleted.
+                meta_map.remove(&id);
+                changes = true;
+            }
+        }
+
+        if changes {
+            self.save_metadata(&root, &meta_map)?;
+        }
+        Ok(())
+    }
 }
 
 impl DataStore for FileStore {
@@ -130,6 +235,16 @@ impl DataStore for FileStore {
     }
 
     fn list_pads(&self, scope: Scope) -> Result<Vec<Pad>> {
+        // Sync before listing to ensure we have the latest state from disk
+        let _ = self.sync(scope); // Ignore errors? Sync failure shouldn't block listing?
+                                  // Better to propagate sync error potentially, but list_pads is generic.
+                                  // Let's log if it fails? or unwrap?
+                                  // Since sync is IO, it can fail.
+                                  // For robustness, maybe just proceed?
+                                  // But if sync fails, the list might be wrong.
+                                  // However, self.get_store_path will fail inside sync anyway if root invalid.
+                                  // And calling sync before getting path here is safer.
+
         let root = self.get_store_path(scope)?;
         if !root.exists() {
             return Ok(Vec::new());
@@ -181,6 +296,13 @@ impl DataStore for FileStore {
     }
 
     fn doctor(&mut self, scope: Scope) -> Result<DoctorReport> {
+        // Reuse sync for the heavy lifting?
+        // Doctor reports stats. Sync is silent.
+        // Let's keep doctor mostly as is but maybe call sync first?
+        // Or implement doctor *as* sync + reporting.
+        // For now, let's leave doctor independent to avoid breaking it during refactor.
+        // Just fixing imports/deps.
+
         let root = self.get_store_path(scope)?;
         if !root.exists() {
             return Ok(DoctorReport::default());

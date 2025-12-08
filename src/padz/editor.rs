@@ -1,7 +1,6 @@
 use crate::error::{PadzError, Result};
 use crate::model::extract_title_and_body;
 use std::env;
-use std::fs;
 use std::path::Path;
 use std::process::Command;
 
@@ -79,8 +78,7 @@ pub fn get_editor() -> Result<String> {
 }
 
 /// Opens a file in the user's editor and waits for it to close.
-/// Returns the contents of the file after editing.
-pub fn open_in_editor<P: AsRef<Path>>(file_path: P) -> Result<String> {
+pub fn open_in_editor<P: AsRef<Path>>(file_path: P) -> Result<()> {
     let editor = get_editor()?;
     let path = file_path.as_ref();
 
@@ -96,25 +94,7 @@ pub fn open_in_editor<P: AsRef<Path>>(file_path: P) -> Result<String> {
         )));
     }
 
-    fs::read_to_string(path).map_err(PadzError::Io)
-}
-
-/// Opens an editor with initial content and returns the edited content.
-/// Creates a temporary file with the given extension.
-pub fn edit_content(initial: &EditorContent, file_extension: &str) -> Result<EditorContent> {
-    let temp_dir = env::temp_dir();
-    let temp_file = temp_dir.join(format!("padz_edit{}", file_extension));
-
-    // Write initial content
-    fs::write(&temp_file, initial.to_buffer()).map_err(PadzError::Io)?;
-
-    // Open editor
-    let result = open_in_editor(&temp_file)?;
-
-    // Clean up temp file
-    let _ = fs::remove_file(&temp_file);
-
-    Ok(EditorContent::from_buffer(&result))
+    Ok(())
 }
 
 #[cfg(test)]

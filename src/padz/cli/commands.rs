@@ -47,10 +47,9 @@ use super::setup::{
 };
 use clap::Parser;
 use directories::ProjectDirs;
-use padz::api::{ConfigAction, PadFilter, PadStatusFilter, PadUpdate, PadzApi, PadzPaths};
-use padz::clipboard::{copy_to_clipboard, format_for_clipboard};
+use padz::api::{ConfigAction, PadFilter, PadStatusFilter, PadzApi, PadzPaths};
 use padz::config::PadzConfig;
-use padz::editor::{edit_content, EditorContent};
+use padz::editor::open_in_editor;
 use padz::error::{PadzError, Result};
 use padz::model::Scope;
 use padz::store::fs::FileStore;
@@ -163,20 +162,25 @@ fn handle_create(
     content: Option<String>,
     no_editor: bool,
 ) -> Result<()> {
-    let (final_title, final_content) = if no_editor {
-        (title.unwrap_or_default(), content.unwrap_or_default())
-    } else {
-        let initial = EditorContent::new(title.unwrap_or_default(), content.unwrap_or_default());
-        let edited = edit_content(&initial, &ctx.file_ext)?;
-        (edited.title, edited.content)
-    };
+    // 1. Create the pad first (file + db entry)
+    let final_title = title.unwrap_or_else(|| "Untitled".to_string());
+    let final_content = content.unwrap_or_default();
 
-    if final_title.is_empty() {
+    // If title is empty, API might complain? "Title cannot be empty" check was here previously.
+    if final_title.trim().is_empty() {
         return Err(PadzError::Api("Title cannot be empty".into()));
     }
 
     let result = ctx.api.create_pad(ctx.scope, final_title, final_content)?;
     print_messages(&result.messages);
+
+    // 2. Open editor if requested
+    if !no_editor && !result.affected_pads.is_empty() {
+        let pad = &result.affected_pads[0];
+        let path = ctx.api.get_path_by_id(ctx.scope, pad.metadata.id)?;
+        open_in_editor(&path)?;
+    }
+
     Ok(())
 }
 
@@ -222,67 +226,18 @@ fn handle_view(ctx: &mut AppContext, indexes: Vec<String>) -> Result<()> {
 fn handle_edit(ctx: &mut AppContext, indexes: Vec<String>) -> Result<()> {
     let result = ctx.api.view_pads(ctx.scope, &indexes)?;
 
-    let mut updates = Vec::new();
     for dp in &result.listed_pads {
-        let initial = EditorContent::from_buffer(&dp.pad.content);
-        let edited = edit_content(&initial, &ctx.file_ext)?;
-        if edited.title.is_empty() {
-            return Err(PadzError::Api("Title cannot be empty".into()));
-        }
-
-        let clipboard_text = format_for_clipboard(&edited.title, &edited.content);
-        if let Err(e) = copy_to_clipboard(&clipboard_text) {
-            eprintln!("Warning: Failed to copy to clipboard: {}", e);
-        }
-
-        updates.push(PadUpdate::new(
-            dp.index.clone(),
-            edited.title.clone(),
-            edited.content.clone(),
-        ));
+        let path = ctx.api.get_path_by_id(ctx.scope, dp.pad.metadata.id)?;
+        open_in_editor(&path)?;
     }
 
-    if updates.is_empty() {
-        return Ok(());
-    }
-
-    let result = ctx.api.update_pads(ctx.scope, &updates)?;
-    print_messages(&result.messages);
     Ok(())
 }
 
 fn handle_open(ctx: &mut AppContext, indexes: Vec<String>) -> Result<()> {
-    let result = ctx.api.view_pads(ctx.scope, &indexes)?;
-
-    let mut updates = Vec::new();
-    for dp in &result.listed_pads {
-        let initial = EditorContent::from_buffer(&dp.pad.content);
-        let edited = edit_content(&initial, &ctx.file_ext)?;
-
-        let clipboard_text = format_for_clipboard(&edited.title, &edited.content);
-        if let Err(e) = copy_to_clipboard(&clipboard_text) {
-            eprintln!("Warning: Failed to copy to clipboard: {}", e);
-        }
-
-        if edited.title != dp.pad.metadata.title || edited.content != dp.pad.content {
-            if edited.title.is_empty() {
-                return Err(PadzError::Api("Title cannot be empty".into()));
-            }
-            updates.push(PadUpdate::new(
-                dp.index.clone(),
-                edited.title.clone(),
-                edited.content.clone(),
-            ));
-        }
-    }
-
-    if updates.is_empty() {
-        return Ok(());
-    }
-
-    let result = ctx.api.update_pads(ctx.scope, &updates)?;
-    print_messages(&result.messages);
-    Ok(())
+    // Open behaves exactly like edit now - just open the file.
+    // The "sync only if changed" logic is handled by the lazy reconciler (padz list).
+    handle_edit(ctx, indexes)
 }
 
 fn handle_delete(ctx: &mut AppContext, indexes: Vec<String>) -> Result<()> {
