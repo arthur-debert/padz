@@ -218,11 +218,8 @@ fn render_pad_list_internal(pads: &[DisplayPad], use_color: Option<bool>) -> Str
                 // Calculate indentation width for matches
                 // Template: "{{ pad.left_pad }}    {{ match.line_number }} "
                 // left_pad + 4 spaces + 2 digits + 1 space
-                let indent_width = left_prefix_width + 4 + 2 + 1; // left_prefix_width includes left_pad + surrounding spaces if any?
-                                                                  // Wait, left_prefix_width was calculated for TITLE line:
-                                                                  // if is_pinned_section { 2 + pin + 1 } else { 4 }
-                                                                  // left_pad string is "  " (2 chars) or "    " (4 chars).
-                                                                  // Let's use left_pad.width() directly.
+                // left_pad string is "  " (2 chars) or "    " (4 chars).
+                // Let's use left_pad.width() directly.
                 let indent_width = left_pad.width() + 4 + 2 + 1;
 
                 // Available width for match content
@@ -278,7 +275,7 @@ fn truncate_match_segments(
 
     let mut result = Vec::new();
     let mut current_width = 0;
-    let limit = max_width.saturating_sub(1); // Reserve space for ellipsis if needed
+    // Reserve space for ellipsis if needed
 
     for seg in segments {
         let w = seg.text.width();
