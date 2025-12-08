@@ -1,0 +1,3 @@
+{% for msg in messages -%}
+{{ msg.content | style(msg.style) }}
+{% endfor %}

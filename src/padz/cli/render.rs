@@ -4,9 +4,10 @@
 //! Templates are defined here and rendered with automatic terminal color detection.
 
 use super::styles::{names, PADZ_THEME};
-use super::templates::{FULL_PAD_TEMPLATE, LIST_TEMPLATE, TEXT_LIST_TEMPLATE};
+use super::templates::{FULL_PAD_TEMPLATE, LIST_TEMPLATE, MESSAGES_TEMPLATE, TEXT_LIST_TEMPLATE};
 use chrono::{DateTime, Utc};
 use outstanding::{render, render_with_color, ThemeChoice};
+use padz::api::{CmdMessage, MessageLevel};
 use padz::index::{DisplayIndex, DisplayPad};
 use serde::Serialize;
 use unicode_width::UnicodeWidthStr;
@@ -59,6 +60,17 @@ struct FullPadEntry {
 struct TextListData {
     lines: Vec<String>,
     empty_message: String,
+}
+
+#[derive(Serialize)]
+struct MessageData {
+    content: String,
+    style: String,
+}
+
+#[derive(Serialize)]
+struct MessagesData {
+    messages: Vec<MessageData>,
 }
 
 /// Renders a list of pads to a string.
@@ -275,6 +287,40 @@ fn render_text_list_internal(
     .unwrap_or_else(|_| format!("{}\n", empty_message))
 }
 
+/// Renders command messages using the template system with themed styles.
+pub fn render_messages(messages: &[CmdMessage]) -> String {
+    if messages.is_empty() {
+        return String::new();
+    }
+
+    let message_data: Vec<MessageData> = messages
+        .iter()
+        .map(|msg| {
+            let style = match msg.level {
+                MessageLevel::Info => names::INFO,
+                MessageLevel::Success => names::SUCCESS,
+                MessageLevel::Warning => names::WARNING,
+                MessageLevel::Error => names::ERROR,
+            };
+            MessageData {
+                content: msg.content.clone(),
+                style: style.to_string(),
+            }
+        })
+        .collect();
+
+    let data = MessagesData {
+        messages: message_data,
+    };
+
+    render(MESSAGES_TEMPLATE, &data, ThemeChoice::from(&*PADZ_THEME)).unwrap_or_else(|_| {
+        messages
+            .iter()
+            .map(|m| format!("{}\n", m.content))
+            .collect()
+    })
+}
+
 fn truncate_to_width(s: &str, max_width: usize) -> String {
     use unicode_width::UnicodeWidthChar;
 
@@ -474,5 +520,31 @@ mod tests {
         let output = render_text_list_internal(&lines, "", Some(false));
         assert!(output.contains("first"));
         assert!(output.contains("second"));
+    }
+
+    #[test]
+    fn test_render_messages_empty() {
+        let output = render_messages(&[]);
+        assert!(output.is_empty());
+    }
+
+    #[test]
+    fn test_render_messages_success() {
+        let messages = vec![CmdMessage::success("Pad created: Test")];
+        let output = render_messages(&messages);
+        assert!(output.contains("Pad created: Test"));
+    }
+
+    #[test]
+    fn test_render_messages_multiple() {
+        let messages = vec![
+            CmdMessage::info("Info message"),
+            CmdMessage::warning("Warning message"),
+            CmdMessage::error("Error message"),
+        ];
+        let output = render_messages(&messages);
+        assert!(output.contains("Info message"));
+        assert!(output.contains("Warning message"));
+        assert!(output.contains("Error message"));
     }
 }
