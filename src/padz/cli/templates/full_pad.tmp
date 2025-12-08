@@ -5,9 +5,9 @@
 
 {{ " " | style("faint") }}
 
-{%- endif %}
-{{ pad.index | style(pad.index_style) }} {{ pad.title | style(pad.title_style) }}
+{% endif -%}
+{% if pad.is_pinned %}{{ pad.index | style("pinned") }}{% elif pad.is_deleted %}{{ pad.index | style("deleted") }}{% else %}{{ pad.index | style("regular") }}{% endif %} {% if pad.is_deleted %}{{ pad.title | style("deleted") }}{% else %}{{ pad.title | style("title") }}{% endif %}
 {{ " " | style("faint") }}
-{{ pad.content | style(pad.content_style) }}
+{% if pad.is_deleted %}{{ pad.content | style("deleted") }}{% else %}{{ pad.content | style("regular") }}{% endif %}
 {%- endfor %}
 {% endif %}

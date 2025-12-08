@@ -39,25 +39,36 @@
 //! - `handle_*()`: Per-command handlers that call API and format output
 //! - `print_*()`: Output formatting functions
 
-use super::print::print_messages;
-use super::render::{render_full_pads, render_pad_list, render_text_list};
+use super::render::{print_messages, render_full_pads, render_pad_list, render_text_list};
 use super::setup::{
     print_grouped_help, print_help_for_command, print_subcommand_help, Cli, Commands,
     CompletionShell, CoreCommands, DataCommands, MiscCommands, PadCommands,
 };
 use clap::Parser;
 use padz::api::{ConfigAction, PadFilter, PadStatusFilter, PadzApi};
+use padz::clipboard::{copy_to_clipboard, format_for_clipboard};
 use padz::editor::open_in_editor;
-use padz::error::{PadzError, Result};
+use padz::error::Result;
 use padz::init::initialize;
+use padz::model::extract_title_and_body;
 use padz::model::Scope;
 use padz::store::fs::FileStore;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
+
+/// Helper to read a pad file and copy its content to the system clipboard.
+/// Silently ignores errors (clipboard operations are best-effort).
+fn copy_pad_to_clipboard(path: &Path) {
+    if let Ok(content) = std::fs::read_to_string(path) {
+        if let Some((title, body)) = extract_title_and_body(&content) {
+            let clipboard_text = format_for_clipboard(&title, &body);
+            let _ = copy_to_clipboard(&clipboard_text);
+        }
+    }
+}
 
 struct AppContext {
     api: PadzApi<FileStore>,
     scope: Scope,
-    file_ext: String,
     import_extensions: Vec<String>,
 }
 
@@ -83,11 +94,15 @@ pub fn run() -> Result<()> {
 
     match cli.command {
         Some(Commands::Core(cmd)) => match cmd {
-            CoreCommands::Create {
-                title,
-                content,
-                no_editor,
-            } => handle_create(&mut ctx, title, content, no_editor),
+            CoreCommands::Create { title, no_editor } => {
+                // Join all title words with spaces
+                let title = if title.is_empty() {
+                    None
+                } else {
+                    Some(title.join(" "))
+                };
+                handle_create(&mut ctx, title, no_editor)
+            }
             CoreCommands::List { search, deleted } => handle_list(&mut ctx, search, deleted),
             CoreCommands::Search { term } => handle_search(&mut ctx, term),
         },
@@ -125,34 +140,25 @@ fn init_context(cli: &Cli) -> Result<AppContext> {
     Ok(AppContext {
         api: ctx.api,
         scope: ctx.scope,
-        file_ext: ctx.config.get_file_ext().to_string(),
         import_extensions: ctx.config.import_extensions.clone(),
     })
 }
 
-fn handle_create(
-    ctx: &mut AppContext,
-    title: Option<String>,
-    content: Option<String>,
-    no_editor: bool,
-) -> Result<()> {
-    // 1. Create the pad first (file + db entry)
+fn handle_create(ctx: &mut AppContext, title: Option<String>, no_editor: bool) -> Result<()> {
+    // Use provided title or "Untitled" as placeholder
     let final_title = title.unwrap_or_else(|| "Untitled".to_string());
-    let final_content = content.unwrap_or_default();
 
-    // If title is empty, API might complain? "Title cannot be empty" check was here previously.
-    if final_title.trim().is_empty() {
-        return Err(PadzError::Api("Title cannot be empty".into()));
-    }
-
-    let result = ctx.api.create_pad(ctx.scope, final_title, final_content)?;
+    let result = ctx.api.create_pad(ctx.scope, final_title, String::new())?;
     print_messages(&result.messages);
 
-    // 2. Open editor if requested
+    // Open editor unless --no-editor was passed
     if !no_editor && !result.affected_pads.is_empty() {
         let pad = &result.affected_pads[0];
         let path = ctx.api.get_path_by_id(ctx.scope, pad.metadata.id)?;
         open_in_editor(&path)?;
+
+        // Re-read the pad after editing and copy to clipboard
+        copy_pad_to_clipboard(&path);
     }
 
     Ok(())
@@ -194,6 +200,19 @@ fn handle_view(ctx: &mut AppContext, indexes: Vec<String>) -> Result<()> {
     let output = render_full_pads(&result.listed_pads);
     print!("{}", output);
     print_messages(&result.messages);
+
+    // Copy viewed pads to clipboard
+    // Note: dp.pad.content already includes the title as the first line
+    if !result.listed_pads.is_empty() {
+        let clipboard_text: String = result
+            .listed_pads
+            .iter()
+            .map(|dp| dp.pad.content.clone())
+            .collect::<Vec<_>>()
+            .join("\n\n---\n\n");
+        let _ = copy_to_clipboard(&clipboard_text);
+    }
+
     Ok(())
 }
 
@@ -203,6 +222,9 @@ fn handle_edit(ctx: &mut AppContext, indexes: Vec<String>) -> Result<()> {
     for dp in &result.listed_pads {
         let path = ctx.api.get_path_by_id(ctx.scope, dp.pad.metadata.id)?;
         open_in_editor(&path)?;
+
+        // Re-read the pad after editing and copy to clipboard
+        copy_pad_to_clipboard(&path);
     }
 
     Ok(())

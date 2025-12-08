@@ -36,6 +36,8 @@ pub mod names {
     pub const DELETED: &str = "deleted";
     pub const ERROR: &str = "error";
     pub const WARNING: &str = "warning";
+    pub const SUCCESS: &str = "success";
+    pub const INFO: &str = "info";
     pub const TITLE: &str = "title";
     pub const TIME: &str = "time";
 }
@@ -51,6 +53,8 @@ fn build_light_theme() -> Theme {
     let deleted = Style::new().color256(rgb_to_ansi256((186, 33, 45)));
     let warning = Style::new().yellow().bold();
     let error = Style::new().red().bold();
+    let success = Style::new().green();
+    let info = muted.clone();
     let highlight = Style::new()
         .black()
         .on_color256(rgb_to_ansi256((255, 235, 59)));
@@ -66,6 +70,8 @@ fn build_light_theme() -> Theme {
         .add(names::DELETED, deleted.clone())
         .add(names::ERROR, error)
         .add(names::WARNING, warning)
+        .add(names::SUCCESS, success)
+        .add(names::INFO, info)
         .add(names::TITLE, title)
         .add(names::TIME, time)
 }
@@ -78,6 +84,8 @@ fn build_dark_theme() -> Theme {
     let deleted = Style::new().color256(rgb_to_ansi256((255, 138, 128)));
     let warning = Style::new().yellow().bold();
     let error = Style::new().red().bold();
+    let success = Style::new().green();
+    let info = muted.clone();
     let highlight = Style::new()
         .black()
         .on_color256(rgb_to_ansi256((229, 185, 0)));
@@ -93,6 +101,8 @@ fn build_dark_theme() -> Theme {
         .add(names::DELETED, deleted.clone())
         .add(names::ERROR, error)
         .add(names::WARNING, warning)
+        .add(names::SUCCESS, success)
+        .add(names::INFO, info)
         .add(names::TITLE, title)
         .add(names::TIME, time)
 }

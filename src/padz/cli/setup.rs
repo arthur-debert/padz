@@ -193,17 +193,13 @@ pub enum CoreCommands {
     /// Create a new pad
     #[command(alias = "n", display_order = 1)]
     Create {
-        /// Title of the pad (optional, opens editor if not provided)
-        #[arg(required = false)]
-        title: Option<String>,
-
-        /// Content of the pad
-        #[arg(required = false)]
-        content: Option<String>,
-
         /// Skip opening the editor
         #[arg(long)]
         no_editor: bool,
+
+        /// Title words (joined with spaces, optional - opens empty editor if not provided)
+        #[arg(trailing_var_arg = true)]
+        title: Vec<String>,
     },
 
     /// List pads
