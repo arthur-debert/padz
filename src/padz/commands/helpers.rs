@@ -37,7 +37,11 @@ pub fn pads_by_indexes<S: DataStore>(
     let mut pads = Vec::with_capacity(resolved.len());
     for (index, id) in resolved {
         let pad = store.get_pad(&id, scope)?;
-        pads.push(DisplayPad { pad, index });
+        pads.push(DisplayPad {
+            pad,
+            index,
+            matches: None,
+        });
     }
     Ok(pads)
 }

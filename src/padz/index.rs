@@ -1,79 +1,18 @@
-//! # Display Indexing System
-//!
-//! In a high-frequency shell application where users constantly refer to items by ID,
-//! auto-generated identifiers like UUIDs—or even large integers—become unwieldy to type
-//! repeatedly (e.g., `delete 34343 342334` instead of `delete 3 8`).
-//!
-//! ## Dual ID Design
-//!
-//! Padz uses a dual ID system:
-//! - **UUID**: Unambiguously identifies each pad (used internally, in storage)
-//! - **Display Index**: Ergonomic integer, small, and self-compacting (used in CLI)
-//!
-//! Display indexes don't grow unboundedly—they compact as items are deleted.
-//!
-//! ## Canonical Ordering
-//!
-//! The key insight is defining a **canonical view**: the "normal" way to see data.
-//! Display indexes are simply positions in this canonical ordering.
-//!
-//! For padz, the canonical view is:
-//! - Non-deleted pads
-//! - Reverse chronological order (newest first)
-//! - No filtering applied
-//!
-//! Items outside this "bucket" (deleted, pinned) have their own index namespaces.
-//!
-//! ## Why This Matters
-//!
-//! This design makes indexes **stable across filtered views**. You can:
-//!
-//! ```text
-//! $ padz search "meeting"     # Shows pads 2 and 4 match
-//! $ padz delete 2             # Deletes pad 2—unambiguously
-//! ```
-//!
-//! Because search results use canonical indexes, `2` means the same thing whether
-//! you're looking at all pads or a filtered subset. The index is independent of
-//! the current query.
-//!
-//! Some operations (like delete) do alter indexes—but this matches user expectations.
-//! If you see items 1-5 and delete #2, you expect the list to shrink to 4 items.
-//!
-//! ## Index Notation
-//!
-//! - **Regular**: `1`, `2`, `3`... — All non-deleted pads, newest first
-//! - **Pinned**: `p1`, `p2`, `p3`... — Pinned pads only, for quick access
-//! - **Deleted**: `d1`, `d2`, `d3`... — Soft-deleted pads (for recovery/purge)
-//!
-//! ## Dual Indexing for Pinned Pads
-//!
-//! **Pinned pads appear in BOTH the pinned list AND the regular list.**
-//!
-//! A pinned pad has two valid indexes:
-//! - `p1` (its pinned index)
-//! - `2` (its regular index, based on creation time)
-//!
-//! Why? **Canonical stability.** A pad's regular index doesn't change when pinned
-//! or unpinned. Users can always refer to pad `3` as `3`, regardless of pin status.
-//!
-//! ## Example
-//!
-//! Given 4 pads (newest to oldest): A (pinned), B, C, D (deleted)
-//!
-//! ```text
-//! p1. A          ← Pinned section
-//!
-//! 1. A           ← Regular section (A appears again!)
-//! 2. B
-//! 3. C
-//!
-//! d1. D          ← Deleted section (only with --deleted flag)
-//! ```
-//!
-//! User can refer to pad A as either `p1` or `1`.
-
 use crate::model::Pad;
+
+/// A segment of text in a search match, either plain text or a matched term.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum MatchSegment {
+    Plain(String),
+    Match(String),
+}
+
+/// A line containing a search match.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SearchMatch {
+    pub line_number: usize, // 0 for title, 1+ for content lines
+    pub segments: Vec<MatchSegment>,
+}
 
 /// A user-facing index for a pad.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -97,6 +36,7 @@ impl std::fmt::Display for DisplayIndex {
 pub struct DisplayPad {
     pub pad: Pad,
     pub index: DisplayIndex,
+    pub matches: Option<Vec<SearchMatch>>,
 }
 
 /// Assigns canonical display indexes to a list of pads.
@@ -119,6 +59,7 @@ pub fn index_pads(mut pads: Vec<Pad>) -> Vec<DisplayPad> {
             results.push(DisplayPad {
                 pad: pad.clone(),
                 index: DisplayIndex::Pinned(pinned_idx),
+                matches: None,
             });
             pinned_idx += 1;
         }
@@ -132,6 +73,7 @@ pub fn index_pads(mut pads: Vec<Pad>) -> Vec<DisplayPad> {
             results.push(DisplayPad {
                 pad: pad.clone(),
                 index: DisplayIndex::Regular(regular_idx),
+                matches: None,
             });
             regular_idx += 1;
         }
@@ -144,6 +86,7 @@ pub fn index_pads(mut pads: Vec<Pad>) -> Vec<DisplayPad> {
             results.push(DisplayPad {
                 pad: pad.clone(),
                 index: DisplayIndex::Deleted(deleted_idx),
+                matches: None,
             });
             deleted_idx += 1;
         }

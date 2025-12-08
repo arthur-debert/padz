@@ -18,6 +18,12 @@ NC='\033[0m'          # No Color
 # Usage function
 usage() {
     echo "Usage: ./run [options] [script_file]"
+    echo
+    echo "This script creates a sub-shell, with a fresh temp directory, and drops you in it with an "
+    echo "inited padz store. This allows you to fully e2e test the padz app without overwriting a live pad install"
+    echo "It will build the bynari padz to be used, so you're sure to use the last version."
+    echo
+    echo
     echo "Options:"
     echo "  -i, --interactive    Start interactive shell after script execution"
     echo "  -h, --help           Show this help message"
@@ -130,7 +136,7 @@ export PATH="${PROJECT_ROOT}/target/debug:${PATH}"
 export HISTFILE="${TEMP_DIR}/.zsh_history"
 export HISTSIZE=10000
 export SAVEHIST=10000
-
+export EDITOR=ed
 # Create a function to export history without line numbers
 function export_history() {
     fc -ln 1 2>/dev/null || echo "# No history available"

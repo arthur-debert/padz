@@ -25,6 +25,18 @@ pub const LINE_WIDTH: usize = 100;
 pub const TIME_WIDTH: usize = 14;
 pub const PIN_MARKER: &str = "⚲";
 
+#[derive(Serialize)]
+struct MatchSegmentData {
+    text: String,
+    style: String,
+}
+
+#[derive(Serialize)]
+struct MatchLineData {
+    segments: Vec<MatchSegmentData>,
+    line_number: String,
+}
+
 /// Semantic pad data for template rendering.
 ///
 /// Contains pre-computed layout strings plus semantic flags that templates
@@ -44,6 +56,9 @@ struct PadLineData {
     show_left_pin: bool,     // Show pin marker on left (pinned section)
     show_right_pin: bool,    // Show pin marker on right (pinned pad in regular section)
     is_separator: bool,      // Empty line separator between sections
+    // Search matches
+    matches: Vec<MatchLineData>,
+    more_matches_count: usize,
 }
 
 /// Data structure for the full list template.
@@ -133,6 +148,8 @@ fn render_pad_list_internal(pads: &[DisplayPad], use_color: Option<bool>) -> Str
                 show_left_pin: false,
                 show_right_pin: false,
                 is_separator: true,
+                matches: vec![],
+                more_matches_count: 0,
             });
         }
         last_was_pinned = is_pinned_section;
@@ -173,6 +190,54 @@ fn render_pad_list_internal(pads: &[DisplayPad], use_color: Option<bool>) -> Str
         let title_width = title_display.width();
         let padding = " ".repeat(available.saturating_sub(title_width));
 
+        // Process matches
+        let mut match_lines = Vec::new();
+        let more_matches = 0;
+
+        if let Some(matches) = &dp.matches {
+            for m in matches {
+                if m.line_number == 0 {
+                    continue;
+                }
+
+                let segments: Vec<MatchSegmentData> = m
+                    .segments
+                    .iter()
+                    .map(|s| match s {
+                        padz::index::MatchSegment::Plain(t) => MatchSegmentData {
+                            text: t.clone(),
+                            style: names::MUTED.to_string(),
+                        },
+                        padz::index::MatchSegment::Match(t) => MatchSegmentData {
+                            text: t.clone(),
+                            style: names::HIGHLIGHT.to_string(),
+                        },
+                    })
+                    .collect();
+
+                // Calculate indentation width for matches
+                // Template: "{{ pad.left_pad }}    {{ match.line_number }} "
+                // left_pad + 4 spaces + 2 digits + 1 space
+                // left_pad string is "  " (2 chars) or "    " (4 chars).
+                // Let's use left_pad.width() directly.
+                let indent_width = left_pad.width() + 4 + 2 + 1;
+
+                // Available width for match content
+                // User wants to avoid time column.
+                // LINE_WIDTH - TIME_WIDTH - indent
+                let match_available = LINE_WIDTH
+                    .saturating_sub(TIME_WIDTH)
+                    .saturating_sub(indent_width);
+
+                let truncated_segments = truncate_match_segments(segments, match_available);
+
+                match_lines.push(MatchLineData {
+                    line_number: format!("{:02}", m.line_number),
+                    segments: truncated_segments,
+                });
+            }
+        }
+
         pad_lines.push(PadLineData {
             left_pad,
             index: idx_str,
@@ -184,6 +249,8 @@ fn render_pad_list_internal(pads: &[DisplayPad], use_color: Option<bool>) -> Str
             show_left_pin: is_pinned_section,
             show_right_pin,
             is_separator: false,
+            matches: match_lines,
+            more_matches_count: more_matches,
         });
     }
 
@@ -198,6 +265,38 @@ fn render_pad_list_internal(pads: &[DisplayPad], use_color: Option<bool>) -> Str
         None => render(LIST_TEMPLATE, &data, ThemeChoice::from(&*PADZ_THEME)),
     }
     .unwrap_or_else(|e| format!("Render error: {}\n", e))
+}
+
+fn truncate_match_segments(
+    segments: Vec<MatchSegmentData>,
+    max_width: usize,
+) -> Vec<MatchSegmentData> {
+    use unicode_width::UnicodeWidthStr;
+
+    let mut result = Vec::new();
+    let mut current_width = 0;
+    // Reserve space for ellipsis if needed
+
+    for seg in segments {
+        let w = seg.text.width();
+        if current_width + w <= max_width {
+            result.push(seg);
+            current_width += w;
+        } else {
+            // Truncate this segment
+            let remaining = max_width.saturating_sub(current_width);
+            let truncated = truncate_to_width(&seg.text, remaining);
+            // truncate_to_width adds ellipsis if needed, but we passed strictly remaining width.
+            // If truncate_to_width adds ellipsis, it fits in `remaining`.
+
+            result.push(MatchSegmentData {
+                text: truncated,
+                style: seg.style,
+            });
+            return result;
+        }
+    }
+    result
 }
 
 /// Renders full pad contents similar to the legacy `print_full_pads` output.
@@ -304,11 +403,48 @@ fn truncate_to_width(s: &str, max_width: usize) -> String {
 
     let mut result = String::new();
     let mut current_width = 0;
+    // We only reserve space for ellipsis if we actually truncate.
+    // simpler to just build and check.
+    // Existing logic used `limit = max_width.saturating_sub(1)`.
+    // But if s fits in max_width, we don't need ellipsis space.
+
+    // Let's reuse existing logic but handle full fit case?
+    // The existing function:
+    // let limit = max_width.saturating_sub(1);
+    // for c in s.chars() { ... current + char > limit ... }
+    // This implies it ALWAYS reserves 1 char if it gets close?
+    // If s.width() == max_width, current+char > limit might trigger early?
+    // Example: max=5, limit=4. s="12345".
+    // i=0, w=1, cur=1. 1 > 4 false.
+    // ...
+    // i=4, w=1, cur=5. 5 > 4 true. Returns "1234…" (len 5). Correct.
+    // But what if s="1234"?
+    // i=3, w=1, cur=4. 4 > 4 false.
+    // Returns "1234". Correct.
+
+    // So existing logic is correct for "if overflow, replace last char with …".
+
     let limit = max_width.saturating_sub(1);
 
     for c in s.chars() {
         let char_width = c.width().unwrap_or(0);
         if current_width + char_width > limit {
+            // Check if this IS the last char and it fits exactly?
+            // "12345", max=5. limit=4.
+            // At '5', cur=4. 4+1 > 4. Triggers. Returns "1234…".
+            // Wait, "12345" fits in 5. So it shouldn't be truncated.
+            // The existing logic seems to force ellipsis if it *hits* the limit?
+            // "1234" fits in 4. "12345" fits in 5.
+            // If max=5, s="12345".
+            // i=4 ('5'), current=4. 4+1=5. 5 > 4 is true.
+            // So it returns "1234…".
+            // This suggests `truncate_to_width` aggressively truncates even if exact fit?
+
+            // Let's check `s.width()`.
+            if s.width() <= max_width {
+                return s.to_string();
+            }
+
             result.push('…');
             return result;
         }
@@ -362,7 +498,11 @@ mod tests {
     }
 
     fn make_display_pad(pad: Pad, index: DisplayIndex) -> DisplayPad {
-        DisplayPad { pad, index }
+        DisplayPad {
+            pad,
+            index,
+            matches: None,
+        }
     }
 
     #[test]
@@ -458,6 +598,30 @@ mod tests {
         // When use_color is true, should include ANSI codes (at least for time which is dimmed)
         // Note: console crate may not emit codes in test env, so we just verify it runs
         assert!(output.contains("Test"));
+    }
+
+    #[test]
+    fn test_render_search_results() {
+        use padz::index::{MatchSegment, SearchMatch};
+
+        let pad = make_pad("Search Result", false, false);
+        let mut dp = make_display_pad(pad, DisplayIndex::Regular(1));
+
+        dp.matches = Some(vec![SearchMatch {
+            line_number: 2,
+            segments: vec![
+                MatchSegment::Plain("Found ".to_string()),
+                MatchSegment::Match("match".to_string()),
+                MatchSegment::Plain(" here".to_string()),
+            ],
+        }]);
+
+        let output = render_pad_list_internal(&[dp], Some(false));
+
+        assert!(output.contains("1."));
+        assert!(output.contains("Search Result"));
+        // Check indentation of match line (should have padding)
+        assert!(output.contains("    02 Found match here"));
     }
 
     #[test]
