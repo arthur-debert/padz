@@ -47,7 +47,7 @@ use super::setup::{
 use clap::Parser;
 use padz::api::{ConfigAction, PadFilter, PadStatusFilter, PadzApi};
 use padz::editor::open_in_editor;
-use padz::error::{PadzError, Result};
+use padz::error::Result;
 use padz::init::initialize;
 use padz::model::Scope;
 use padz::store::fs::FileStore;
@@ -81,11 +81,15 @@ pub fn run() -> Result<()> {
 
     match cli.command {
         Some(Commands::Core(cmd)) => match cmd {
-            CoreCommands::Create {
-                title,
-                content,
-                no_editor,
-            } => handle_create(&mut ctx, title, content, no_editor),
+            CoreCommands::Create { title, no_editor } => {
+                // Join all title words with spaces
+                let title = if title.is_empty() {
+                    None
+                } else {
+                    Some(title.join(" "))
+                };
+                handle_create(&mut ctx, title, no_editor)
+            }
             CoreCommands::List { search, deleted } => handle_list(&mut ctx, search, deleted),
             CoreCommands::Search { term } => handle_search(&mut ctx, term),
         },
@@ -127,25 +131,14 @@ fn init_context(cli: &Cli) -> Result<AppContext> {
     })
 }
 
-fn handle_create(
-    ctx: &mut AppContext,
-    title: Option<String>,
-    content: Option<String>,
-    no_editor: bool,
-) -> Result<()> {
-    // 1. Create the pad first (file + db entry)
+fn handle_create(ctx: &mut AppContext, title: Option<String>, no_editor: bool) -> Result<()> {
+    // Use provided title or "Untitled" as placeholder
     let final_title = title.unwrap_or_else(|| "Untitled".to_string());
-    let final_content = content.unwrap_or_default();
 
-    // If title is empty, API might complain? "Title cannot be empty" check was here previously.
-    if final_title.trim().is_empty() {
-        return Err(PadzError::Api("Title cannot be empty".into()));
-    }
-
-    let result = ctx.api.create_pad(ctx.scope, final_title, final_content)?;
+    let result = ctx.api.create_pad(ctx.scope, final_title, String::new())?;
     print_messages(&result.messages);
 
-    // 2. Open editor if requested
+    // Open editor unless --no-editor was passed
     if !no_editor && !result.affected_pads.is_empty() {
         let pad = &result.affected_pads[0];
         let path = ctx.api.get_path_by_id(ctx.scope, pad.metadata.id)?;
