@@ -291,6 +291,14 @@ pub fn render_messages(messages: &[CmdMessage]) -> String {
     })
 }
 
+/// Prints command messages to stdout using the template system.
+pub fn print_messages(messages: &[CmdMessage]) {
+    let output = render_messages(messages);
+    if !output.is_empty() {
+        print!("{}", output);
+    }
+}
+
 fn truncate_to_width(s: &str, max_width: usize) -> String {
     use unicode_width::UnicodeWidthChar;
 

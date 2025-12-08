@@ -39,8 +39,7 @@
 //! - `handle_*()`: Per-command handlers that call API and format output
 //! - `print_*()`: Output formatting functions
 
-use super::print::print_messages;
-use super::render::{render_full_pads, render_pad_list, render_text_list};
+use super::render::{print_messages, render_full_pads, render_pad_list, render_text_list};
 use super::setup::{
     print_grouped_help, print_help_for_command, print_subcommand_help, Cli, Commands,
     CompletionShell, CoreCommands, DataCommands, MiscCommands, PadCommands,
