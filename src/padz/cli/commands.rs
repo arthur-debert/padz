@@ -46,11 +46,10 @@ use super::setup::{
     CompletionShell, CoreCommands, DataCommands, MiscCommands, PadCommands,
 };
 use clap::Parser;
-use directories::ProjectDirs;
-use padz::api::{ConfigAction, PadFilter, PadStatusFilter, PadzApi, PadzPaths};
-use padz::config::PadzConfig;
+use padz::api::{ConfigAction, PadFilter, PadStatusFilter, PadzApi};
 use padz::editor::open_in_editor;
 use padz::error::{PadzError, Result};
+use padz::init::initialize;
 use padz::model::Scope;
 use padz::store::fs::FileStore;
 use std::path::PathBuf;
@@ -120,39 +119,14 @@ pub fn run() -> Result<()> {
 
 fn init_context(cli: &Cli) -> Result<AppContext> {
     let cwd = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
-    let project_padz_dir = cwd.join(".padz");
 
-    let proj_dirs =
-        ProjectDirs::from("com", "padz", "padz").expect("Could not determine config dir");
-    let global_data_dir = proj_dirs.data_dir().to_path_buf();
-
-    let scope = if cli.global {
-        Scope::Global
-    } else {
-        Scope::Project
-    };
-
-    let config_dir = match scope {
-        Scope::Project => &project_padz_dir,
-        Scope::Global => &global_data_dir,
-    };
-    let config = PadzConfig::load(config_dir).unwrap_or_default();
-    let file_ext = config.get_file_ext().to_string();
-    let import_extensions = config.import_extensions.clone();
-
-    let store = FileStore::new(Some(project_padz_dir.clone()), global_data_dir.clone())
-        .with_file_ext(&file_ext);
-    let paths = PadzPaths {
-        project: Some(project_padz_dir),
-        global: global_data_dir,
-    };
-    let api = PadzApi::new(store, paths);
+    let ctx = initialize(&cwd, cli.global);
 
     Ok(AppContext {
-        api,
-        scope,
-        file_ext,
-        import_extensions,
+        api: ctx.api,
+        scope: ctx.scope,
+        file_ext: ctx.config.get_file_ext().to_string(),
+        import_extensions: ctx.config.import_extensions.clone(),
     })
 }
 
