@@ -32,6 +32,22 @@ impl std::fmt::Display for DisplayIndex {
     }
 }
 
+/// A user input to select a pad, either by its index or a search term for its title.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum PadSelector {
+    Index(DisplayIndex),
+    Title(String),
+}
+
+impl std::fmt::Display for PadSelector {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            PadSelector::Index(idx) => write!(f, "{}", idx),
+            PadSelector::Title(t) => write!(f, "\"{}\"", t),
+        }
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct DisplayPad {
     pub pad: Pad,

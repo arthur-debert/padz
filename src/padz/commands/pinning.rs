@@ -1,35 +1,35 @@
 use crate::commands::{CmdMessage, CmdResult};
 use crate::error::Result;
-use crate::index::DisplayIndex;
+use crate::index::PadSelector;
 use crate::model::Scope;
 use crate::store::DataStore;
 use chrono::Utc;
 
-use super::helpers::resolve_indexes;
+use super::helpers::resolve_selectors;
 
 pub fn pin<S: DataStore>(
     store: &mut S,
     scope: Scope,
-    indexes: &[DisplayIndex],
+    selectors: &[PadSelector],
 ) -> Result<CmdResult> {
-    pin_state(store, scope, indexes, true)
+    pin_state(store, scope, selectors, true)
 }
 
 pub fn unpin<S: DataStore>(
     store: &mut S,
     scope: Scope,
-    indexes: &[DisplayIndex],
+    selectors: &[PadSelector],
 ) -> Result<CmdResult> {
-    pin_state(store, scope, indexes, false)
+    pin_state(store, scope, selectors, false)
 }
 
 fn pin_state<S: DataStore>(
     store: &mut S,
     scope: Scope,
-    indexes: &[DisplayIndex],
+    selectors: &[PadSelector],
     is_pinned: bool,
 ) -> Result<CmdResult> {
-    let resolved = resolve_indexes(store, scope, indexes)?;
+    let resolved = resolve_selectors(store, scope, selectors)?;
     let mut result = CmdResult::default();
 
     for (display_index, uuid) in resolved {
@@ -64,8 +64,8 @@ mod tests {
         create::run(&mut store, Scope::Project, "A".into(), "".into()).unwrap();
         create::run(&mut store, Scope::Project, "B".into(), "".into()).unwrap();
 
-        let idx = DisplayIndex::Regular(1);
-        pin(&mut store, Scope::Project, slice::from_ref(&idx)).unwrap();
+        let sel = PadSelector::Index(DisplayIndex::Regular(1));
+        pin(&mut store, Scope::Project, slice::from_ref(&sel)).unwrap();
 
         let result = get::run(&store, Scope::Project, get::PadFilter::default()).unwrap();
         assert!(result
@@ -78,9 +78,9 @@ mod tests {
     fn unpinning_removes_pinned_flag() {
         let mut store = InMemoryStore::new();
         create::run(&mut store, Scope::Project, "A".into(), "".into()).unwrap();
-        let idx = DisplayIndex::Regular(1);
-        pin(&mut store, Scope::Project, slice::from_ref(&idx)).unwrap();
-        unpin(&mut store, Scope::Project, slice::from_ref(&idx)).unwrap();
+        let sel = PadSelector::Index(DisplayIndex::Regular(1));
+        pin(&mut store, Scope::Project, slice::from_ref(&sel)).unwrap();
+        unpin(&mut store, Scope::Project, slice::from_ref(&sel)).unwrap();
 
         let result = get::run(&store, Scope::Project, get::PadFilter::default()).unwrap();
         assert!(result

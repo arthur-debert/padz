@@ -1,17 +1,18 @@
 use crate::commands::{CmdMessage, CmdResult};
 use crate::error::Result;
+use crate::index::PadSelector;
 use crate::model::Scope;
 use crate::store::DataStore;
 use chrono::Utc;
 
-use super::helpers::resolve_indexes;
+use super::helpers::resolve_selectors;
 
 pub fn run<S: DataStore>(
     store: &mut S,
     scope: Scope,
-    indexes: &[crate::index::DisplayIndex],
+    selectors: &[PadSelector],
 ) -> Result<CmdResult> {
-    let resolved = resolve_indexes(store, scope, indexes)?;
+    let resolved = resolve_selectors(store, scope, selectors)?;
     let mut result = CmdResult::default();
 
     for (display_index, uuid) in resolved {
@@ -41,7 +42,12 @@ mod tests {
     fn marks_pad_as_deleted() {
         let mut store = InMemoryStore::new();
         create::run(&mut store, Scope::Project, "Title".into(), "".into()).unwrap();
-        run(&mut store, Scope::Project, &[DisplayIndex::Regular(1)]).unwrap();
+        run(
+            &mut store,
+            Scope::Project,
+            &[PadSelector::Index(DisplayIndex::Regular(1))],
+        )
+        .unwrap();
 
         let deleted = get::run(
             &store,

@@ -249,6 +249,7 @@ fn extract_context(line: &str, term_lower: &str, context_words: usize) -> Vec<Ma
 mod tests {
     use super::*;
     use crate::commands::{create, delete};
+    use crate::index::PadSelector;
     use crate::model::Scope;
     use crate::store::memory::InMemoryStore;
 
@@ -259,7 +260,12 @@ mod tests {
         create::run(&mut store, Scope::Project, "Deleted".into(), "".into()).unwrap();
 
         // Delete the second one
-        delete::run(&mut store, Scope::Project, &[DisplayIndex::Regular(1)]).unwrap();
+        delete::run(
+            &mut store,
+            Scope::Project,
+            &[PadSelector::Index(DisplayIndex::Regular(1))],
+        )
+        .unwrap();
 
         // 1. Test Active
         let res = run(
