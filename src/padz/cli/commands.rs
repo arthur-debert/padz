@@ -46,12 +46,25 @@ use super::setup::{
 };
 use clap::Parser;
 use padz::api::{ConfigAction, PadFilter, PadStatusFilter, PadzApi};
+use padz::clipboard::{copy_to_clipboard, format_for_clipboard};
 use padz::editor::open_in_editor;
 use padz::error::Result;
 use padz::init::initialize;
+use padz::model::parse_pad_content;
 use padz::model::Scope;
 use padz::store::fs::FileStore;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
+
+/// Helper to read a pad file and copy its content to the system clipboard.
+/// Silently ignores errors (clipboard operations are best-effort).
+fn copy_pad_to_clipboard(path: &Path) {
+    if let Ok(content) = std::fs::read_to_string(path) {
+        if let Some((title, body)) = parse_pad_content(&content) {
+            let clipboard_text = format_for_clipboard(&title, &body);
+            let _ = copy_to_clipboard(&clipboard_text);
+        }
+    }
+}
 
 struct AppContext {
     api: PadzApi<FileStore>,
@@ -143,6 +156,9 @@ fn handle_create(ctx: &mut AppContext, title: Option<String>, no_editor: bool) -
         let pad = &result.affected_pads[0];
         let path = ctx.api.get_path_by_id(ctx.scope, pad.metadata.id)?;
         open_in_editor(&path)?;
+
+        // Re-read the pad after editing and copy to clipboard
+        copy_pad_to_clipboard(&path);
     }
 
     Ok(())
@@ -184,6 +200,18 @@ fn handle_view(ctx: &mut AppContext, indexes: Vec<String>) -> Result<()> {
     let output = render_full_pads(&result.listed_pads);
     print!("{}", output);
     print_messages(&result.messages);
+
+    // Copy viewed pads to clipboard
+    if !result.listed_pads.is_empty() {
+        let clipboard_text: String = result
+            .listed_pads
+            .iter()
+            .map(|dp| format_for_clipboard(&dp.pad.metadata.title, &dp.pad.content))
+            .collect::<Vec<_>>()
+            .join("\n---\n\n");
+        let _ = copy_to_clipboard(&clipboard_text);
+    }
+
     Ok(())
 }
 
@@ -193,6 +221,9 @@ fn handle_edit(ctx: &mut AppContext, indexes: Vec<String>) -> Result<()> {
     for dp in &result.listed_pads {
         let path = ctx.api.get_path_by_id(ctx.scope, dp.pad.metadata.id)?;
         open_in_editor(&path)?;
+
+        // Re-read the pad after editing and copy to clipboard
+        copy_pad_to_clipboard(&path);
     }
 
     Ok(())
