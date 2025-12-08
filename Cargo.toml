@@ -3,7 +3,7 @@ members = [".", "src/outstanding"]
 
 [package]
 name = "padz"
-version = "0.8.0"
+version = "0.8.1"
 edition = "2021"
 description = "A fast, project-aware scratch pad for the command line"
 license = "MIT"
