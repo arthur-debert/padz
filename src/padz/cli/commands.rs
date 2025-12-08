@@ -50,7 +50,7 @@ use padz::clipboard::{copy_to_clipboard, format_for_clipboard};
 use padz::editor::open_in_editor;
 use padz::error::Result;
 use padz::init::initialize;
-use padz::model::parse_pad_content;
+use padz::model::extract_title_and_body;
 use padz::model::Scope;
 use padz::store::fs::FileStore;
 use std::path::{Path, PathBuf};
@@ -59,7 +59,7 @@ use std::path::{Path, PathBuf};
 /// Silently ignores errors (clipboard operations are best-effort).
 fn copy_pad_to_clipboard(path: &Path) {
     if let Ok(content) = std::fs::read_to_string(path) {
-        if let Some((title, body)) = parse_pad_content(&content) {
+        if let Some((title, body)) = extract_title_and_body(&content) {
             let clipboard_text = format_for_clipboard(&title, &body);
             let _ = copy_to_clipboard(&clipboard_text);
         }
@@ -202,13 +202,14 @@ fn handle_view(ctx: &mut AppContext, indexes: Vec<String>) -> Result<()> {
     print_messages(&result.messages);
 
     // Copy viewed pads to clipboard
+    // Note: dp.pad.content already includes the title as the first line
     if !result.listed_pads.is_empty() {
         let clipboard_text: String = result
             .listed_pads
             .iter()
-            .map(|dp| format_for_clipboard(&dp.pad.metadata.title, &dp.pad.content))
+            .map(|dp| dp.pad.content.clone())
             .collect::<Vec<_>>()
-            .join("\n---\n\n");
+            .join("\n\n---\n\n");
         let _ = copy_to_clipboard(&clipboard_text);
     }
 
