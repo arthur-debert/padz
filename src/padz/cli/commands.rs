@@ -57,7 +57,6 @@ use std::path::PathBuf;
 struct AppContext {
     api: PadzApi<FileStore>,
     scope: Scope,
-    file_ext: String,
     import_extensions: Vec<String>,
 }
 
@@ -125,7 +124,6 @@ fn init_context(cli: &Cli) -> Result<AppContext> {
     Ok(AppContext {
         api: ctx.api,
         scope: ctx.scope,
-        file_ext: ctx.config.get_file_ext().to_string(),
         import_extensions: ctx.config.import_extensions.clone(),
     })
 }
