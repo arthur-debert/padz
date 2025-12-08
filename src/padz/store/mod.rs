@@ -3,44 +3,53 @@
 //! This module defines the storage abstraction for padz. The [`DataStore`] trait
 //! allows the application to work with different storage backends.
 //!
-//! ## Design Rationale
+//! ## Architecture: Lazy Reconciler
 //!
-//! Storage is abstracted behind a trait to:
-//! - Enable **testing** with `InMemoryStore` (no filesystem needed)
-//! - Allow **future backends** (database, cloud, etc.) without changing core logic
-//! - Keep business logic **decoupled** from persistence details
+//! Padz uses a **file-system-centric** architecture where the file system is the ultimate
+//! source of truth. The database (`data.json`) acts as a lightweight metadata cache/registry.
+//!
+//! ### Philosophy
+//! - **Files are Truth**: If a file exists in `.padz/`, it is a valid pad. If it is deleted, the pad is gone.
+//! - **Lazy Reconciliation**: The database is updated (reconciled) lazily whenever a "read" operation (like `list`) occurs.
+//! - **Robustness**: Operations are robust against process termination. The editor saves content directly to disk.
+//!   If `padz` crashes or is killed, the file remains safe on disk and will be picked up by the next reconciliation.
+//!
+//! ### Reconciliation Logic
+//!
+//! The reconciliation process (`sync`) runs automatically before listing pads. It handles three key scenarios:
+//!
+//! 1. **Zombie Files** (Database Clean-up)
+//!    - **Condition**: File is listed in `data.json` but does not exist on disk.
+//!    - **Action**: The database entry is removed.
+//!
+//! 2. **Orphaned Files** (Discovery)
+//!    - **Condition**: File exists on disk (`pad-{uuid}.txt`) but has no entry in `data.json`.
+//!    - **Action**: The file is parsed, and a new entry is added to the database.
+//!
+//! 3. **Empty Files** (Garbage Collection)
+//!    - **Condition**: A file on disk has empty or whitespace-only content.
+//!    - **Action**: The file is deleted from disk, and its database entry is removed.
+//!
+//! ### Safety & Recovery
+//!
+//! This design provides strong safety guarantees:
+//! - **Crash Recovery**: Since the editor operates directly on the file, saving works independently of the `padz` process.
+//!   Any content saved by the editor is "safe" and will be discovered by the Reconciler.
+//! - **External Edits**: Users can manually create or edit files in `.padz/`. The system accepts these as valid changes.
 //!
 //! ## Implementations
 //!
-//! - [`fs::FileStore`]: Production file-based storage
-//!   - Metadata stored in `data.json`
-//!   - Pad content in individual files: `pad-{uuid}.{ext}`
-//!   - Supports configurable file extensions
-//!
-//! - [`memory::InMemoryStore`]: In-memory storage for testing
-//!   - No persistence
-//!   - Fast, isolated test execution
-//!
-//! ## Scope Pattern
-//!
-//! All operations take a [`Scope`] parameter:
-//! - `Scope::Project`: Local `.padz/` directory in current project
-//! - `Scope::Global`: User-wide storage (`~/.local/share/padz/padz/`)
-//!
-//! This allows pads to be scoped per-project or shared globally.
+//! - [`fs::FileStore`]: Production implementation of the Lazy Reconciler architecture.
+//! - [`memory::InMemoryStore`]: For testing logic without filesystem I/O.
 //!
 //! ## Storage Format
 //!
-//! For `FileStore`:
 //! ```text
 //! .padz/
-//! ├── data.json           # Metadata for all pads (JSON array)
-//! ├── pad-{uuid}.txt      # Individual pad content files
+//! ├── data.json           # Metadata Cache (Registry, pinned status, cached titles)
+//! ├── pad-{uuid}.{ext}    # Source of Truth: Pad content
 //! └── config.json         # Scope configuration
 //! ```
-//!
-//! Metadata and content are stored separately so listing pads doesn't require
-//! reading all content files.
 
 use crate::error::Result;
 use crate::model::{Pad, Scope};
