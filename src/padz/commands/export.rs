@@ -2,6 +2,7 @@ use crate::commands::{CmdMessage, CmdResult};
 use crate::error::{PadzError, Result};
 use crate::index::DisplayIndex;
 use crate::index::DisplayPad;
+use crate::index::PadSelector;
 use crate::model::Scope;
 use crate::store::DataStore;
 use chrono::Utc;
@@ -10,11 +11,11 @@ use flate2::Compression;
 use std::fs::File;
 use std::io::Write;
 
-use super::helpers::{indexed_pads, pads_by_indexes};
+use super::helpers::{indexed_pads, pads_by_selectors};
 
-pub fn run<S: DataStore>(store: &S, scope: Scope, indexes: &[DisplayIndex]) -> Result<CmdResult> {
+pub fn run<S: DataStore>(store: &S, scope: Scope, selectors: &[PadSelector]) -> Result<CmdResult> {
     // 1. Resolve pads
-    let pads = resolve_pads(store, scope, indexes)?;
+    let pads = resolve_pads(store, scope, selectors)?;
 
     if pads.is_empty() {
         let mut res = CmdResult::default();
@@ -38,15 +39,15 @@ pub fn run<S: DataStore>(store: &S, scope: Scope, indexes: &[DisplayIndex]) -> R
 fn resolve_pads<S: DataStore>(
     store: &S,
     scope: Scope,
-    indexes: &[DisplayIndex],
+    selectors: &[PadSelector],
 ) -> Result<Vec<DisplayPad>> {
-    if indexes.is_empty() {
+    if selectors.is_empty() {
         Ok(indexed_pads(store, scope)?
             .into_iter()
             .filter(|dp| !matches!(dp.index, DisplayIndex::Deleted(_)))
             .collect())
     } else {
-        pads_by_indexes(store, scope, indexes)
+        pads_by_selectors(store, scope, selectors)
     }
 }
 

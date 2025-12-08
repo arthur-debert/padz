@@ -1,18 +1,22 @@
 use crate::commands::{CmdMessage, CmdResult, PadUpdate};
 use crate::error::Result;
+use crate::index::PadSelector;
 use crate::model::Scope;
 use crate::store::DataStore;
 use chrono::Utc;
 
-use super::helpers::resolve_indexes;
+use super::helpers::resolve_selectors;
 
 pub fn run<S: DataStore>(store: &mut S, scope: Scope, updates: &[PadUpdate]) -> Result<CmdResult> {
     if updates.is_empty() {
         return Ok(CmdResult::default());
     }
 
-    let indexes: Vec<_> = updates.iter().map(|u| u.index.clone()).collect();
-    let resolved = resolve_indexes(store, scope, &indexes)?;
+    let selectors: Vec<_> = updates
+        .iter()
+        .map(|u| PadSelector::Index(u.index.clone()))
+        .collect();
+    let resolved = resolve_selectors(store, scope, &selectors)?;
     let mut result = CmdResult::default();
 
     for ((display_index, uuid), update) in resolved.into_iter().zip(updates.iter()) {
@@ -41,7 +45,7 @@ pub fn run<S: DataStore>(store: &mut S, scope: Scope, updates: &[PadUpdate]) -> 
 mod tests {
     use super::*;
     use crate::commands::{create, view};
-    use crate::index::DisplayIndex;
+    use crate::index::{DisplayIndex, PadSelector};
     use crate::model::Scope;
     use crate::store::memory::InMemoryStore;
 
@@ -52,9 +56,13 @@ mod tests {
         let update = PadUpdate::new(DisplayIndex::Regular(1), "Title".into(), "New".into());
         run(&mut store, Scope::Project, &[update]).unwrap();
 
-        let pads = view::run(&store, Scope::Project, &[DisplayIndex::Regular(1)])
-            .unwrap()
-            .listed_pads;
+        let pads = view::run(
+            &store,
+            Scope::Project,
+            &[PadSelector::Index(DisplayIndex::Regular(1))],
+        )
+        .unwrap()
+        .listed_pads;
         assert_eq!(pads[0].pad.content, "Title\n\nNew");
     }
 }

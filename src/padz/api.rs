@@ -37,8 +37,8 @@
 //! - Storage behavior (tested in store modules)
 
 use crate::commands;
-use crate::error::{PadzError, Result};
-use crate::index::DisplayIndex;
+use crate::error::Result;
+use crate::index::{DisplayIndex, PadSelector};
 use crate::model::Scope;
 use crate::store::DataStore;
 use std::str::FromStr;
@@ -75,11 +75,8 @@ impl<S: DataStore> PadzApi<S> {
         scope: Scope,
         indexes: &[I],
     ) -> Result<commands::CmdResult> {
-        let parsed: Result<Vec<DisplayIndex>> = indexes
-            .iter()
-            .map(|s| DisplayIndex::from_str(s.as_ref()).map_err(PadzError::Api))
-            .collect();
-        commands::view::run(&self.store, scope, &parsed?)
+        let selectors = parse_selectors(indexes)?;
+        commands::view::run(&self.store, scope, &selectors)
     }
 
     pub fn delete_pads<I: AsRef<str>>(
@@ -87,11 +84,8 @@ impl<S: DataStore> PadzApi<S> {
         scope: Scope,
         indexes: &[I],
     ) -> Result<commands::CmdResult> {
-        let parsed: Result<Vec<DisplayIndex>> = indexes
-            .iter()
-            .map(|s| DisplayIndex::from_str(s.as_ref()).map_err(PadzError::Api))
-            .collect();
-        commands::delete::run(&mut self.store, scope, &parsed?)
+        let selectors = parse_selectors(indexes)?;
+        commands::delete::run(&mut self.store, scope, &selectors)
     }
 
     pub fn pin_pads<I: AsRef<str>>(
@@ -99,11 +93,8 @@ impl<S: DataStore> PadzApi<S> {
         scope: Scope,
         indexes: &[I],
     ) -> Result<commands::CmdResult> {
-        let parsed: Result<Vec<DisplayIndex>> = indexes
-            .iter()
-            .map(|s| DisplayIndex::from_str(s.as_ref()).map_err(PadzError::Api))
-            .collect();
-        commands::pinning::pin(&mut self.store, scope, &parsed?)
+        let selectors = parse_selectors(indexes)?;
+        commands::pinning::pin(&mut self.store, scope, &selectors)
     }
 
     pub fn unpin_pads<I: AsRef<str>>(
@@ -111,11 +102,8 @@ impl<S: DataStore> PadzApi<S> {
         scope: Scope,
         indexes: &[I],
     ) -> Result<commands::CmdResult> {
-        let parsed: Result<Vec<DisplayIndex>> = indexes
-            .iter()
-            .map(|s| DisplayIndex::from_str(s.as_ref()).map_err(PadzError::Api))
-            .collect();
-        commands::pinning::unpin(&mut self.store, scope, &parsed?)
+        let selectors = parse_selectors(indexes)?;
+        commands::pinning::unpin(&mut self.store, scope, &selectors)
     }
 
     pub fn update_pads(
@@ -132,11 +120,8 @@ impl<S: DataStore> PadzApi<S> {
         indexes: &[I],
         skip_confirm: bool,
     ) -> Result<commands::CmdResult> {
-        let parsed: Result<Vec<DisplayIndex>> = indexes
-            .iter()
-            .map(|s| DisplayIndex::from_str(s.as_ref()).map_err(PadzError::Api))
-            .collect();
-        commands::purge::run(&mut self.store, scope, &parsed?, skip_confirm)
+        let selectors = parse_selectors(indexes)?;
+        commands::purge::run(&mut self.store, scope, &selectors, skip_confirm)
     }
 
     pub fn export_pads<I: AsRef<str>>(
@@ -144,11 +129,8 @@ impl<S: DataStore> PadzApi<S> {
         scope: Scope,
         indexes: &[I],
     ) -> Result<commands::CmdResult> {
-        let parsed: Result<Vec<DisplayIndex>> = indexes
-            .iter()
-            .map(|s| DisplayIndex::from_str(s.as_ref()).map_err(PadzError::Api))
-            .collect();
-        commands::export::run(&self.store, scope, &parsed?)
+        let selectors = parse_selectors(indexes)?;
+        commands::export::run(&self.store, scope, &selectors)
     }
 
     pub fn import_pads(
@@ -169,11 +151,8 @@ impl<S: DataStore> PadzApi<S> {
         scope: Scope,
         indexes: &[I],
     ) -> Result<commands::CmdResult> {
-        let parsed: Result<Vec<DisplayIndex>> = indexes
-            .iter()
-            .map(|s| DisplayIndex::from_str(s.as_ref()).map_err(PadzError::Api))
-            .collect();
-        commands::paths::run(&self.store, scope, &parsed?)
+        let selectors = parse_selectors(indexes)?;
+        commands::paths::run(&self.store, scope, &selectors)
     }
 
     pub fn get_path_by_id(&self, scope: Scope, id: uuid::Uuid) -> Result<std::path::PathBuf> {
@@ -191,6 +170,28 @@ impl<S: DataStore> PadzApi<S> {
     pub fn paths(&self) -> &commands::PadzPaths {
         &self.paths
     }
+}
+
+fn parse_selectors<I: AsRef<str>>(inputs: &[I]) -> Result<Vec<PadSelector>> {
+    // 1. Try to parse ALL inputs as DisplayIndex
+    let all_indexes: std::result::Result<Vec<DisplayIndex>, _> = inputs
+        .iter()
+        .map(|s| DisplayIndex::from_str(s.as_ref()))
+        .collect();
+
+    if let Ok(indexes) = all_indexes {
+        return Ok(indexes.into_iter().map(PadSelector::Index).collect());
+    }
+
+    // 2. If any failed (meaning there are non-index strings), treat as ONE search query
+    // Join all parts with space
+    let search_term = inputs
+        .iter()
+        .map(|s| s.as_ref())
+        .collect::<Vec<&str>>()
+        .join(" ");
+
+    Ok(vec![PadSelector::Title(search_term)])
 }
 
 pub use crate::commands::config::ConfigAction;

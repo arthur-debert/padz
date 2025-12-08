@@ -1,21 +1,22 @@
 use crate::commands::{CmdMessage, CmdResult};
 use crate::error::{PadzError, Result};
 use crate::index::DisplayIndex;
+use crate::index::PadSelector;
 use crate::model::Scope;
 use crate::store::DataStore;
 use std::io::{self, Write};
 
-use super::helpers::{indexed_pads, pads_by_indexes};
+use super::helpers::{indexed_pads, pads_by_selectors};
 
 pub fn run<S: DataStore>(
     store: &mut S,
     scope: Scope,
-    indexes: &[DisplayIndex],
+    selectors: &[PadSelector],
     skip_confirm: bool,
 ) -> Result<CmdResult> {
     // 1. Resolve targets
-    let pads_to_purge = if indexes.is_empty() {
-        // If no indexes, target ALL currently deleted pads
+    let pads_to_purge = if selectors.is_empty() {
+        // If no selectors, target ALL currently deleted pads
         let all_pads = indexed_pads(store, scope)?;
         all_pads
             .into_iter()
@@ -23,7 +24,7 @@ pub fn run<S: DataStore>(
             .collect()
     } else {
         // Specific pads
-        pads_by_indexes(store, scope, indexes)?
+        pads_by_selectors(store, scope, selectors)?
     };
 
     if pads_to_purge.is_empty() {
@@ -78,7 +79,12 @@ mod tests {
         create::run(&mut store, Scope::Project, "A".into(), "".into()).unwrap();
 
         // Delete it
-        delete::run(&mut store, Scope::Project, &[DisplayIndex::Regular(1)]).unwrap();
+        delete::run(
+            &mut store,
+            Scope::Project,
+            &[PadSelector::Index(DisplayIndex::Regular(1))],
+        )
+        .unwrap();
 
         // Verify it's deleted
         let deleted = get::run(
@@ -126,7 +132,7 @@ mod tests {
         let res = run(
             &mut store,
             Scope::Project,
-            &[DisplayIndex::Regular(1)],
+            &[PadSelector::Index(DisplayIndex::Regular(1))],
             true,
         )
         .unwrap();
