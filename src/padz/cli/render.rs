@@ -326,16 +326,26 @@ fn format_time_ago(timestamp: DateTime<Utc>) -> String {
     let formatter = timeago::Formatter::new();
     let time_str = formatter.convert(duration.to_std().unwrap_or_default());
 
-    // Pad single-unit times for alignment
+    // Left-pad time units so they align vertically with "seconds" (7 chars)
+    // This makes columns line up nicely:
+    //   3 seconds ago
+    //   1     day ago
+    //   2   hours ago
+    // Match with " ago" suffix to avoid substring issues (e.g., "hour" in "hours")
+    // Note: seconds/minutes are already 7 chars, no replacement needed
     let time_str = time_str
-        .replace("hour ago", "hour  ago")
-        .replace("minute ago", "minute  ago")
-        .replace("second ago", "second  ago")
-        .replace("day ago", "day  ago")
-        .replace("week ago", "week  ago")
-        .replace("month ago", "month  ago")
-        .replace("year ago", "year  ago");
+        .replace("hours ago", "  hours ago") // 5 -> 7
+        .replace("hour ago", "   hour ago") // 4 -> 7
+        .replace("days ago", "   days ago") // 4 -> 7
+        .replace("day ago", "    day ago") // 3 -> 7
+        .replace("weeks ago", "  weeks ago") // 5 -> 7
+        .replace("week ago", "   week ago") // 4 -> 7
+        .replace("months ago", " months ago") // 6 -> 7
+        .replace("month ago", "  month ago") // 5 -> 7
+        .replace("years ago", "  years ago") // 5 -> 7
+        .replace("year ago", "   year ago"); // 4 -> 7
 
+    // Right-pad to TIME_WIDTH for consistent column alignment
     format!("{:>width$}", time_str, width = TIME_WIDTH)
 }
 
@@ -524,5 +534,37 @@ mod tests {
         assert!(output.contains("Info message"));
         assert!(output.contains("Warning message"));
         assert!(output.contains("Error message"));
+    }
+
+    #[test]
+    fn test_format_time_ago_alignment() {
+        // All time units should be padded to 7 chars for vertical alignment
+        use chrono::Duration;
+
+        let now = Utc::now();
+
+        // Test that various time units are padded correctly
+        // The padded unit + " ago" should show consistent alignment
+        let test_cases = [
+            (Duration::seconds(30), "seconds ago"), // 7 chars - no padding
+            (Duration::minutes(5), "minutes ago"),  // 7 chars - no padding
+            (Duration::hours(2), "  hours ago"),    // 5 -> 7 chars
+            (Duration::days(3), "   days ago"),     // 4 -> 7 chars
+            (Duration::weeks(1), "   week ago"),    // 4 -> 7 chars
+            (Duration::days(45), " month ago"),     // 6 -> 7 chars (singular)
+            (Duration::days(400), "   year ago"),   // 4 -> 7 chars
+        ];
+
+        for (duration, expected_pattern) in test_cases {
+            let timestamp = now - duration;
+            let formatted = format_time_ago(timestamp);
+            assert!(
+                formatted.contains(expected_pattern),
+                "Expected '{}' to contain '{}' for duration {:?}",
+                formatted.trim(),
+                expected_pattern,
+                duration
+            );
+        }
     }
 }
