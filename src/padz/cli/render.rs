@@ -11,6 +11,7 @@
 //! - Section separators and grouping
 //! - Conditional icon rendering
 
+use super::setup::get_grouped_help;
 use super::styles::{names, PADZ_THEME};
 use super::templates::{FULL_PAD_TEMPLATE, LIST_TEMPLATE, MESSAGES_TEMPLATE, TEXT_LIST_TEMPLATE};
 use chrono::{DateTime, Utc};
@@ -67,6 +68,7 @@ struct ListData {
     pads: Vec<PadLineData>,
     empty: bool,
     pin_marker: String,
+    help_text: String,
 }
 
 #[derive(Serialize)]
@@ -112,6 +114,7 @@ fn render_pad_list_internal(pads: &[DisplayPad], use_color: Option<bool>) -> Str
         pads: vec![],
         empty: true,
         pin_marker: PIN_MARKER.to_string(),
+        help_text: get_grouped_help(),
     };
 
     if pads.is_empty() {
@@ -258,6 +261,7 @@ fn render_pad_list_internal(pads: &[DisplayPad], use_color: Option<bool>) -> Str
         pads: pad_lines,
         empty: false,
         pin_marker: PIN_MARKER.to_string(),
+        help_text: String::new(), // Not used when not empty
     };
 
     match use_color {
@@ -508,7 +512,9 @@ mod tests {
     #[test]
     fn test_render_empty_list() {
         let output = render_pad_list_internal(&[], Some(false));
-        assert_eq!(output.trim(), "No pads found.");
+        // Should show the "no pads yet" message with help text
+        assert!(output.contains("No pads yet, create one with `padz create`"));
+        assert!(output.contains("Usage: padz [OPTIONS] [COMMAND]"));
     }
 
     #[test]

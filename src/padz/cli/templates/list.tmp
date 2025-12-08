@@ -1,4 +1,6 @@
-{% if empty %}{{ "No pads found." | style("muted") }}
+{% if empty %}{{ "No pads yet, create one with `padz create`" | style("muted") }}
+
+{{ help_text }}
 {% else -%}
 {% for pad in pads -%}
 {% if pad.is_separator %}

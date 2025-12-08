@@ -75,15 +75,16 @@ impl CommandGroup {
     }
 }
 
-/// Generates the custom grouped help output
-pub fn print_grouped_help() {
+/// Returns the custom grouped help output as a string
+pub fn get_grouped_help() -> String {
     let cmd = Cli::command();
     let version = cmd.get_version().unwrap_or("unknown");
 
-    println!("padz {version}");
-    println!("Context-aware command-line note-taking tool");
-    println!();
-    println!("Usage: padz [OPTIONS] [COMMAND]");
+    let mut output = String::new();
+    output.push_str(&format!("padz {version}\n"));
+    output.push_str("Context-aware command-line note-taking tool\n");
+    output.push('\n');
+    output.push_str("Usage: padz [OPTIONS] [COMMAND]\n");
 
     // Collect subcommands into groups
     let subcommands: Vec<_> = cmd.get_subcommands().collect();
@@ -97,22 +98,29 @@ pub fn print_grouped_help() {
             .collect();
 
         if !group_cmds.is_empty() {
-            println!();
-            println!("{}", group.heading());
+            output.push('\n');
+            output.push_str(&format!("{}\n", group.heading()));
             for sc in group_cmds {
                 let name = sc.get_name();
                 let about = sc.get_about().map(|s| s.to_string()).unwrap_or_default();
-                println!("  {:<12} {}", name, about);
+                output.push_str(&format!("  {:<12} {}\n", name, about));
             }
         }
     }
 
-    println!();
-    println!("Options:");
-    println!("  -g, --global     Operate on global pads");
-    println!("  -v, --verbose    Verbose output");
-    println!("  -h, --help       Print help");
-    println!("  -V, --version    Print version");
+    output.push('\n');
+    output.push_str("Options:\n");
+    output.push_str("  -g, --global     Operate on global pads\n");
+    output.push_str("  -v, --verbose    Verbose output\n");
+    output.push_str("  -h, --help       Print help\n");
+    output.push_str("  -V, --version    Print version\n");
+
+    output
+}
+
+/// Generates the custom grouped help output
+pub fn print_grouped_help() {
+    print!("{}", get_grouped_help());
 }
 
 /// Prints help for a specific subcommand using clap's built-in rendering
