@@ -66,10 +66,6 @@ impl<S: DataStore> PadzApi<S> {
         commands::create::run(&mut self.store, scope, title, content)
     }
 
-    pub fn list_pads(&self, scope: Scope, show_deleted: bool) -> Result<commands::CmdResult> {
-        commands::list::run(&self.store, scope, show_deleted)
-    }
-
     pub fn get_pads(&self, scope: Scope, filter: PadFilter) -> Result<commands::CmdResult> {
         commands::get::run(&self.store, scope, filter)
     }
@@ -182,10 +178,6 @@ impl<S: DataStore> PadzApi<S> {
 
     pub fn get_path_by_id(&self, scope: Scope, id: uuid::Uuid) -> Result<std::path::PathBuf> {
         self.store.get_pad_path(&id, scope)
-    }
-
-    pub fn search_pads(&self, scope: Scope, term: &str) -> Result<commands::CmdResult> {
-        commands::search::run(&self.store, scope, term)
     }
 
     pub fn config(&self, scope: Scope, action: ConfigAction) -> Result<commands::CmdResult> {

@@ -67,7 +67,7 @@ pub fn run<S: DataStore>(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::commands::{create, delete, list};
+    use crate::commands::{create, delete, get};
     use crate::index::DisplayIndex;
     use crate::model::Scope;
     use crate::store::memory::InMemoryStore;
@@ -81,7 +81,15 @@ mod tests {
         delete::run(&mut store, Scope::Project, &[DisplayIndex::Regular(1)]).unwrap();
 
         // Verify it's deleted
-        let deleted = list::run(&store, Scope::Project, true).unwrap();
+        let deleted = get::run(
+            &store,
+            Scope::Project,
+            get::PadFilter {
+                status: get::PadStatusFilter::Deleted,
+                ..Default::default()
+            },
+        )
+        .unwrap();
         assert_eq!(deleted.listed_pads.len(), 1);
 
         // Purge
@@ -97,7 +105,15 @@ mod tests {
         assert!(res.messages[0].content.contains("Purged: d1 A"));
 
         // Verify empty
-        let deleted_after = list::run(&store, Scope::Project, true).unwrap();
+        let deleted_after = get::run(
+            &store,
+            Scope::Project,
+            get::PadFilter {
+                status: get::PadStatusFilter::Deleted,
+                ..Default::default()
+            },
+        )
+        .unwrap();
         assert_eq!(deleted_after.listed_pads.len(), 0);
     }
 
@@ -119,7 +135,7 @@ mod tests {
         assert!(res.messages[0].content.contains("Purged: 1 A"));
 
         // Verify gone
-        let listed = list::run(&store, Scope::Project, false).unwrap();
+        let listed = get::run(&store, Scope::Project, get::PadFilter::default()).unwrap();
         assert_eq!(listed.listed_pads.len(), 0);
     }
 
@@ -135,7 +151,7 @@ mod tests {
         assert!(res.messages[0].content.contains("No pads to purge"));
 
         // A still exists
-        let listed = list::run(&store, Scope::Project, false).unwrap();
+        let listed = get::run(&store, Scope::Project, get::PadFilter::default()).unwrap();
         assert_eq!(listed.listed_pads.len(), 1);
     }
 }

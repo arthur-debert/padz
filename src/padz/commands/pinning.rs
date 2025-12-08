@@ -52,7 +52,7 @@ fn pin_state<S: DataStore>(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::commands::{create, list};
+    use crate::commands::{create, get};
     use crate::index::DisplayIndex;
     use crate::model::Scope;
     use crate::store::memory::InMemoryStore;
@@ -67,7 +67,7 @@ mod tests {
         let idx = DisplayIndex::Regular(1);
         pin(&mut store, Scope::Project, slice::from_ref(&idx)).unwrap();
 
-        let result = list::run(&store, Scope::Project, false).unwrap();
+        let result = get::run(&store, Scope::Project, get::PadFilter::default()).unwrap();
         assert!(result
             .listed_pads
             .iter()
@@ -82,7 +82,7 @@ mod tests {
         pin(&mut store, Scope::Project, slice::from_ref(&idx)).unwrap();
         unpin(&mut store, Scope::Project, slice::from_ref(&idx)).unwrap();
 
-        let result = list::run(&store, Scope::Project, false).unwrap();
+        let result = get::run(&store, Scope::Project, get::PadFilter::default()).unwrap();
         assert!(result
             .listed_pads
             .iter()
