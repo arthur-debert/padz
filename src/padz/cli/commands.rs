@@ -46,13 +46,10 @@ use super::setup::{
     CompletionShell, CoreCommands, DataCommands, MiscCommands, PadCommands,
 };
 use clap::Parser;
-use directories::ProjectDirs;
-use padz::api::{ConfigAction, PadUpdate, PadzApi, PadzPaths};
-use padz::clipboard::{copy_to_clipboard, format_for_clipboard};
-use padz::config::PadzConfig;
-use padz::editor::{edit_content, EditorContent};
+use padz::api::{ConfigAction, PadFilter, PadStatusFilter, PadzApi};
+use padz::editor::open_in_editor;
 use padz::error::{PadzError, Result};
-use padz::index::DisplayIndex;
+use padz::init::initialize;
 use padz::model::Scope;
 use padz::store::fs::FileStore;
 use std::path::PathBuf;
@@ -122,39 +119,14 @@ pub fn run() -> Result<()> {
 
 fn init_context(cli: &Cli) -> Result<AppContext> {
     let cwd = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
-    let project_padz_dir = cwd.join(".padz");
 
-    let proj_dirs =
-        ProjectDirs::from("com", "padz", "padz").expect("Could not determine config dir");
-    let global_data_dir = proj_dirs.data_dir().to_path_buf();
-
-    let scope = if cli.global {
-        Scope::Global
-    } else {
-        Scope::Project
-    };
-
-    let config_dir = match scope {
-        Scope::Project => &project_padz_dir,
-        Scope::Global => &global_data_dir,
-    };
-    let config = PadzConfig::load(config_dir).unwrap_or_default();
-    let file_ext = config.get_file_ext().to_string();
-    let import_extensions = config.import_extensions.clone();
-
-    let store = FileStore::new(Some(project_padz_dir.clone()), global_data_dir.clone())
-        .with_file_ext(&file_ext);
-    let paths = PadzPaths {
-        project: Some(project_padz_dir),
-        global: global_data_dir,
-    };
-    let api = PadzApi::new(store, paths);
+    let ctx = initialize(&cwd, cli.global);
 
     Ok(AppContext {
-        api,
-        scope,
-        file_ext,
-        import_extensions,
+        api: ctx.api,
+        scope: ctx.scope,
+        file_ext: ctx.config.get_file_ext().to_string(),
+        import_extensions: ctx.config.import_extensions.clone(),
     })
 }
 
@@ -164,33 +136,53 @@ fn handle_create(
     content: Option<String>,
     no_editor: bool,
 ) -> Result<()> {
-    let (final_title, final_content) = if no_editor {
-        (title.unwrap_or_default(), content.unwrap_or_default())
-    } else {
-        let initial = EditorContent::new(title.unwrap_or_default(), content.unwrap_or_default());
-        let edited = edit_content(&initial, &ctx.file_ext)?;
-        (edited.title, edited.content)
-    };
+    // 1. Create the pad first (file + db entry)
+    let final_title = title.unwrap_or_else(|| "Untitled".to_string());
+    let final_content = content.unwrap_or_default();
 
-    if final_title.is_empty() {
+    // If title is empty, API might complain? "Title cannot be empty" check was here previously.
+    if final_title.trim().is_empty() {
         return Err(PadzError::Api("Title cannot be empty".into()));
     }
 
     let result = ctx.api.create_pad(ctx.scope, final_title, final_content)?;
     print_messages(&result.messages);
+
+    // 2. Open editor if requested
+    if !no_editor && !result.affected_pads.is_empty() {
+        let pad = &result.affected_pads[0];
+        let path = ctx.api.get_path_by_id(ctx.scope, pad.metadata.id)?;
+        open_in_editor(&path)?;
+    }
+
     Ok(())
 }
 
 fn handle_list(ctx: &mut AppContext, search: Option<String>, deleted: bool) -> Result<()> {
-    let result = if let Some(term) = search {
-        ctx.api.search_pads(ctx.scope, &term)?
+    let filter = if let Some(term) = search {
+        PadFilter {
+            status: if deleted {
+                PadStatusFilter::Deleted
+            } else {
+                PadStatusFilter::Active
+            },
+            search_term: Some(term),
+        }
     } else {
-        ctx.api.list_pads(ctx.scope, deleted)?
+        PadFilter {
+            status: if deleted {
+                PadStatusFilter::Deleted
+            } else {
+                PadStatusFilter::Active
+            },
+            search_term: None,
+        }
     };
 
+    let result = ctx.api.get_pads(ctx.scope, filter)?;
+
     // Use outstanding-based rendering
-    let use_color = console::Term::stdout().features().colors_supported();
-    let output = render_pad_list(&result.listed_pads, use_color);
+    let output = render_pad_list(&result.listed_pads);
     print!("{}", output);
 
     print_messages(&result.messages);
@@ -198,142 +190,81 @@ fn handle_list(ctx: &mut AppContext, search: Option<String>, deleted: bool) -> R
 }
 
 fn handle_view(ctx: &mut AppContext, indexes: Vec<String>) -> Result<()> {
-    let parsed = parse_indexes(&indexes)?;
-    let result = ctx.api.view_pads(ctx.scope, &parsed)?;
-    let use_color = console::Term::stdout().features().colors_supported();
-    let output = render_full_pads(&result.listed_pads, use_color);
+    let result = ctx.api.view_pads(ctx.scope, &indexes)?;
+    let output = render_full_pads(&result.listed_pads);
     print!("{}", output);
     print_messages(&result.messages);
     Ok(())
 }
 
 fn handle_edit(ctx: &mut AppContext, indexes: Vec<String>) -> Result<()> {
-    let parsed = parse_indexes(&indexes)?;
-    let result = ctx.api.view_pads(ctx.scope, &parsed)?;
+    let result = ctx.api.view_pads(ctx.scope, &indexes)?;
 
-    let mut updates = Vec::new();
     for dp in &result.listed_pads {
-        let initial = EditorContent::from_buffer(&dp.pad.content);
-        let edited = edit_content(&initial, &ctx.file_ext)?;
-        if edited.title.is_empty() {
-            return Err(PadzError::Api("Title cannot be empty".into()));
-        }
-
-        let clipboard_text = format_for_clipboard(&edited.title, &edited.content);
-        if let Err(e) = copy_to_clipboard(&clipboard_text) {
-            eprintln!("Warning: Failed to copy to clipboard: {}", e);
-        }
-
-        updates.push(PadUpdate::new(
-            dp.index.clone(),
-            edited.title.clone(),
-            edited.content.clone(),
-        ));
+        let path = ctx.api.get_path_by_id(ctx.scope, dp.pad.metadata.id)?;
+        open_in_editor(&path)?;
     }
 
-    if updates.is_empty() {
-        return Ok(());
-    }
-
-    let result = ctx.api.update_pads(ctx.scope, &updates)?;
-    print_messages(&result.messages);
     Ok(())
 }
 
 fn handle_open(ctx: &mut AppContext, indexes: Vec<String>) -> Result<()> {
-    let parsed = parse_indexes(&indexes)?;
-    let result = ctx.api.view_pads(ctx.scope, &parsed)?;
-
-    let mut updates = Vec::new();
-    for dp in &result.listed_pads {
-        let initial = EditorContent::from_buffer(&dp.pad.content);
-        let edited = edit_content(&initial, &ctx.file_ext)?;
-
-        let clipboard_text = format_for_clipboard(&edited.title, &edited.content);
-        if let Err(e) = copy_to_clipboard(&clipboard_text) {
-            eprintln!("Warning: Failed to copy to clipboard: {}", e);
-        }
-
-        if edited.title != dp.pad.metadata.title || edited.content != dp.pad.content {
-            if edited.title.is_empty() {
-                return Err(PadzError::Api("Title cannot be empty".into()));
-            }
-            updates.push(PadUpdate::new(
-                dp.index.clone(),
-                edited.title.clone(),
-                edited.content.clone(),
-            ));
-        }
-    }
-
-    if updates.is_empty() {
-        return Ok(());
-    }
-
-    let result = ctx.api.update_pads(ctx.scope, &updates)?;
-    print_messages(&result.messages);
-    Ok(())
+    // Open behaves exactly like edit now - just open the file.
+    // The "sync only if changed" logic is handled by the lazy reconciler (padz list).
+    handle_edit(ctx, indexes)
 }
 
 fn handle_delete(ctx: &mut AppContext, indexes: Vec<String>) -> Result<()> {
-    let parsed = parse_indexes(&indexes)?;
-    let result = ctx.api.delete_pads(ctx.scope, &parsed)?;
+    let result = ctx.api.delete_pads(ctx.scope, &indexes)?;
     print_messages(&result.messages);
     Ok(())
 }
 
 fn handle_pin(ctx: &mut AppContext, indexes: Vec<String>) -> Result<()> {
-    let parsed = parse_indexes(&indexes)?;
-    let result = ctx.api.pin_pads(ctx.scope, &parsed)?;
+    let result = ctx.api.pin_pads(ctx.scope, &indexes)?;
     print_messages(&result.messages);
     Ok(())
 }
 
 fn handle_unpin(ctx: &mut AppContext, indexes: Vec<String>) -> Result<()> {
-    let parsed = parse_indexes(&indexes)?;
-    let result = ctx.api.unpin_pads(ctx.scope, &parsed)?;
+    let result = ctx.api.unpin_pads(ctx.scope, &indexes)?;
     print_messages(&result.messages);
     Ok(())
 }
 
 fn handle_search(ctx: &mut AppContext, term: String) -> Result<()> {
-    let result = ctx.api.search_pads(ctx.scope, &term)?;
-    let use_color = console::Term::stdout().features().colors_supported();
-    let output = render_pad_list(&result.listed_pads, use_color);
+    let filter = PadFilter {
+        status: PadStatusFilter::Active,
+        search_term: Some(term),
+    };
+    let result = ctx.api.get_pads(ctx.scope, filter)?;
+    let output = render_pad_list(&result.listed_pads);
     print!("{}", output);
     print_messages(&result.messages);
     Ok(())
 }
 
 fn handle_paths(ctx: &mut AppContext, indexes: Vec<String>) -> Result<()> {
-    let parsed = parse_indexes(&indexes)?;
-    let result = ctx.api.pad_paths(ctx.scope, &parsed)?;
+    let result = ctx.api.pad_paths(ctx.scope, &indexes)?;
     let lines: Vec<String> = result
         .pad_paths
         .iter()
         .map(|path| path.display().to_string())
         .collect();
-    let use_color = console::Term::stdout().features().colors_supported();
-    let output = render_text_list(&lines, "No pad paths found.", use_color);
+    let output = render_text_list(&lines, "No pad paths found.");
     print!("{}", output);
     print_messages(&result.messages);
     Ok(())
 }
 
 fn handle_purge(ctx: &mut AppContext, indexes: Vec<String>, yes: bool) -> Result<()> {
-    let parsed = if indexes.is_empty() {
-        Vec::new()
-    } else {
-        parse_indexes(&indexes)?
-    };
-    let result = ctx.api.purge_pads(ctx.scope, &parsed, yes)?;
+    let result = ctx.api.purge_pads(ctx.scope, &indexes, yes)?;
     print_messages(&result.messages);
     Ok(())
 }
 
 fn handle_export(ctx: &mut AppContext, indexes: Vec<String>) -> Result<()> {
-    let parsed = parse_indexes(&indexes)?; // Empty vec remains empty, api handles logic
-    let result = ctx.api.export_pads(ctx.scope, &parsed)?;
+    let result = ctx.api.export_pads(ctx.scope, &indexes)?;
     print_messages(&result.messages);
     Ok(())
 }
@@ -354,31 +285,31 @@ fn handle_doctor(ctx: &mut AppContext) -> Result<()> {
 }
 
 fn handle_config(ctx: &mut AppContext, key: Option<String>, value: Option<String>) -> Result<()> {
-    let use_color = console::Term::stdout().features().colors_supported();
-    let action = match (key.as_deref(), value) {
+    let action = match (key.clone(), value) {
         (None, _) => ConfigAction::ShowAll,
-        (Some("file-ext"), None) => ConfigAction::ShowKey("file-ext".to_string()),
-        (Some("file-ext"), Some(v)) => ConfigAction::SetFileExt(v),
-        (Some(other), _) => {
-            let output =
-                render_text_list(&[format!("Unknown config key: {}", other)], "", use_color);
-            print!("{}", output);
-            return Ok(());
-        }
+        (Some(k), None) => ConfigAction::ShowKey(k),
+        (Some(k), Some(v)) => ConfigAction::Set(k, v),
     };
 
     let result = ctx.api.config(ctx.scope, action)?;
     let mut lines = Vec::new();
+
+    // If showing all, we need to iterate available keys manually since we don't have an iterator yet.
+    // Or we just show known keys.
     if let Some(config) = &result.config {
-        lines.push(format!("file-ext = {}", config.get_file_ext()));
-        if !config.import_extensions.is_empty() {
-            lines.push(format!(
-                "import-extensions = {}",
-                config.import_extensions.join(", ")
-            ));
+        // If specific key was requested, show just that (handled by messages mostly,
+        // but let's see what result.config has).
+        // If action was ShowAll, we show everything.
+        // If action was ShowKey, API might return config but messages have the info.
+
+        if key.is_none() {
+            // Show all known keys
+            for (k, v) in config.list_all() {
+                lines.push(format!("{} = {}", k, v));
+            }
         }
     }
-    let output = render_text_list(&lines, "No configuration values.", use_color);
+    let output = render_text_list(&lines, "No configuration values.");
     print!("{}", output);
     print_messages(&result.messages);
     Ok(())
@@ -398,27 +329,6 @@ fn handle_help(command: Option<String>) -> Result<()> {
     Ok(())
 }
 
-fn parse_index(s: &str) -> Result<DisplayIndex> {
-    if let Some(rest) = s.strip_prefix('p') {
-        if let Ok(n) = rest.parse() {
-            return Ok(DisplayIndex::Pinned(n));
-        }
-    }
-    if let Some(rest) = s.strip_prefix('d') {
-        if let Ok(n) = rest.parse() {
-            return Ok(DisplayIndex::Deleted(n));
-        }
-    }
-    if let Ok(n) = s.parse() {
-        return Ok(DisplayIndex::Regular(n));
-    }
-    Err(PadzError::Api(format!("Invalid index format: {}", s)))
-}
-
-fn parse_indexes(strs: &[String]) -> Result<Vec<DisplayIndex>> {
-    strs.iter().map(|s| parse_index(s)).collect()
-}
-
 fn handle_completions(shell: CompletionShell) -> Result<()> {
     match shell {
         CompletionShell::Bash => print!("{}", BASH_COMPLETION_SCRIPT),
@@ -430,23 +340,19 @@ fn handle_completions(shell: CompletionShell) -> Result<()> {
 fn handle_complete_pads(ctx: &mut AppContext, include_deleted: bool) -> Result<()> {
     let mut entries = Vec::new();
 
-    let non_deleted = ctx.api.list_pads(ctx.scope, false)?;
-    entries.extend(
-        non_deleted
-            .listed_pads
-            .into_iter()
-            .filter(|dp| !matches!(dp.index, DisplayIndex::Deleted(_)))
-            .map(|dp| (dp.index.to_string(), dp.pad.metadata.title)),
-    );
+    let filter = PadFilter {
+        status: if include_deleted {
+            PadStatusFilter::All
+        } else {
+            PadStatusFilter::Active
+        },
+        search_term: None,
+    };
 
-    if include_deleted {
-        let deleted = ctx.api.list_pads(ctx.scope, true)?;
-        entries.extend(
-            deleted
-                .listed_pads
-                .into_iter()
-                .map(|dp| (dp.index.to_string(), dp.pad.metadata.title)),
-        );
+    let result = ctx.api.get_pads(ctx.scope, filter)?;
+
+    for dp in result.listed_pads {
+        entries.push((dp.index.to_string(), dp.pad.metadata.title));
     }
 
     for (index, title) in entries {

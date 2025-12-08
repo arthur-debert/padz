@@ -97,5 +97,6 @@ pub mod config;
 pub mod editor;
 pub mod error;
 pub mod index;
+pub mod init;
 pub mod model;
 pub mod store;

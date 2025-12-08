@@ -32,7 +32,7 @@ pub fn run<S: DataStore>(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::commands::{create, list};
+    use crate::commands::{create, get};
     use crate::index::DisplayIndex;
     use crate::model::Scope;
     use crate::store::memory::InMemoryStore;
@@ -43,7 +43,15 @@ mod tests {
         create::run(&mut store, Scope::Project, "Title".into(), "".into()).unwrap();
         run(&mut store, Scope::Project, &[DisplayIndex::Regular(1)]).unwrap();
 
-        let deleted = list::run(&store, Scope::Project, true).unwrap();
+        let deleted = get::run(
+            &store,
+            Scope::Project,
+            get::PadFilter {
+                status: get::PadStatusFilter::Deleted,
+                ..Default::default()
+            },
+        )
+        .unwrap();
         assert_eq!(deleted.listed_pads.len(), 1);
         assert!(matches!(
             deleted.listed_pads[0].index,

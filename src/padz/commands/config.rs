@@ -7,7 +7,7 @@ use crate::model::Scope;
 pub enum ConfigAction {
     ShowAll,
     ShowKey(String),
-    SetFileExt(String),
+    Set(String, String),
 }
 
 pub fn run(paths: &PadzPaths, scope: Scope, action: ConfigAction) -> Result<CmdResult> {
@@ -20,25 +20,31 @@ pub fn run(paths: &PadzPaths, scope: Scope, action: ConfigAction) -> Result<CmdR
         ConfigAction::ShowKey(key) => {
             let config = PadzConfig::load(&dir)?;
             let mut result = CmdResult::default();
-            match key.as_str() {
-                "file-ext" => {
-                    result.add_message(CmdMessage::info(config.get_file_ext().to_string()));
+            match config.get(&key) {
+                Some(val) => {
+                    result.add_message(CmdMessage::info(val));
                     Ok(result)
                 }
-                _ => {
+                None => {
                     result.add_message(CmdMessage::error(format!("Unknown config key: {}", key)));
                     Ok(result)
                 }
             }
         }
-        ConfigAction::SetFileExt(ext) => {
+        ConfigAction::Set(key, value) => {
             let mut config = PadzConfig::load(&dir)?;
-            config.set_file_ext(&ext);
+            if let Err(e) = config.set(&key, &value) {
+                let mut res = CmdResult::default();
+                res.add_message(CmdMessage::error(e));
+                return Ok(res);
+            }
             config.save(&dir)?;
             let mut result = CmdResult::default().with_config(config.clone());
+            // Fetch formatted value back
+            let display_val = config.get(&key).unwrap_or_else(|| value.clone());
             result.add_message(CmdMessage::success(format!(
-                "file-ext set to {}",
-                config.get_file_ext()
+                "{} set to {}",
+                key, display_val
             )));
             Ok(result)
         }
