@@ -42,6 +42,7 @@ pub mod names {
     pub const TIME: &str = "time";
     // Semantic list styles
     pub const LIST_INDEX: &str = "list-index";
+    pub const LIST_TITLE: &str = "list-title";
     pub const DELETED_INDEX: &str = "deleted-index";
     pub const DELETED_TITLE: &str = "deleted-title";
 }
@@ -66,6 +67,7 @@ fn build_light_theme() -> Theme {
     let time = muted.clone().italic();
     // Semantic list styles
     let list_index = Style::new().color256(rgb_to_ansi256((196, 140, 0))); // Yellow/gold for regular indexes
+    let list_title = regular.clone(); // Normal text for list titles (not bold)
     let deleted_index = Style::new().color256(rgb_to_ansi256((186, 33, 45))); // Red for deleted indexes
     let deleted_title = muted.clone(); // Muted gray for deleted titles
 
@@ -83,6 +85,7 @@ fn build_light_theme() -> Theme {
         .add(names::TITLE, title)
         .add(names::TIME, time)
         .add(names::LIST_INDEX, list_index)
+        .add(names::LIST_TITLE, list_title)
         .add(names::DELETED_INDEX, deleted_index)
         .add(names::DELETED_TITLE, deleted_title)
 }
@@ -104,6 +107,7 @@ fn build_dark_theme() -> Theme {
     let time = muted.clone().italic();
     // Semantic list styles
     let list_index = Style::new().color256(rgb_to_ansi256((255, 214, 10))); // Yellow for regular indexes
+    let list_title = regular.clone(); // Normal text for list titles (not bold)
     let deleted_index = Style::new().color256(rgb_to_ansi256((255, 138, 128))); // Red for deleted indexes
     let deleted_title = muted.clone(); // Muted gray for deleted titles
 
@@ -121,6 +125,7 @@ fn build_dark_theme() -> Theme {
         .add(names::TITLE, title)
         .add(names::TIME, time)
         .add(names::LIST_INDEX, list_index)
+        .add(names::LIST_TITLE, list_title)
         .add(names::DELETED_INDEX, deleted_index)
         .add(names::DELETED_TITLE, deleted_title)
 }
