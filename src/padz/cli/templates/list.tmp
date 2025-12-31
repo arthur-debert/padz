@@ -15,12 +15,13 @@
 {% if pad.peek -%}
     
     {{ pad.left_pad }}    {{ pad.peek.opening_lines | style("faint") | indent(8) }}
-{% if pad.peek.truncated_count -%}
+{% if pad.peek.truncated_count %}
     
     {{ pad.left_pad }}                      {{ ("... " ~ pad.peek.truncated_count ~ " lines not shown ...") | style("muted") }}
     
 {% endif -%}
 {% if pad.peek.closing_lines -%}
+    
     {{ pad.left_pad }}    {{ pad.peek.closing_lines | style("faint") | indent(8) }}
 {% endif -%}
 
