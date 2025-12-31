@@ -72,6 +72,7 @@ struct ListData {
     pin_marker: String,
     help_text: String,
     deleted_help: bool,
+    peek: bool,
 }
 
 #[derive(Serialize)]
@@ -129,6 +130,7 @@ fn render_pad_list_internal(
         pin_marker: PIN_MARKER.to_string(),
         help_text: get_grouped_help(),
         deleted_help: false,
+        peek: false,
     };
 
     if pads.is_empty() {
@@ -294,6 +296,7 @@ fn render_pad_list_internal(
         pin_marker: PIN_MARKER.to_string(),
         help_text: String::new(), // Not used when not empty
         deleted_help: show_deleted_help,
+        peek,
     };
 
     match use_color {

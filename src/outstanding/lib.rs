@@ -435,7 +435,7 @@ pub fn render_with_color<T: Serialize>(
 ) -> Result<String, Error> {
     let theme = theme.resolve();
     let mut env = Environment::new();
-    register_style_filter(&mut env, theme, use_color);
+    register_filters(&mut env, theme, use_color);
 
     env.add_template_owned("_inline".to_string(), template.to_string())?;
     let tmpl = env.get_template("_inline")?;
@@ -485,7 +485,7 @@ impl Renderer {
     /// Creates a new renderer with explicit color control.
     pub fn with_color(theme: Theme, use_color: bool) -> Self {
         let mut env = Environment::new();
-        register_style_filter(&mut env, theme, use_color);
+        register_filters(&mut env, theme, use_color);
         Self { env }
     }
 
@@ -508,8 +508,8 @@ impl Renderer {
     }
 }
 
-/// Registers the `style` filter on a minijinja environment.
-fn register_style_filter(env: &mut Environment<'static>, theme: Theme, use_color: bool) {
+/// Registers all built-in filters on a minijinja environment.
+fn register_filters(env: &mut Environment<'static>, theme: Theme, use_color: bool) {
     let styles = theme.styles.clone();
     env.add_filter("style", move |value: Value, name: String| -> String {
         let text = value.to_string();
@@ -520,6 +520,11 @@ fn register_style_filter(env: &mut Environment<'static>, theme: Theme, use_color
             styles.apply_plain(&name, &text)
         }
     });
+
+    // Filter to append a newline to the value, enabling explicit line break control.
+    // Usage: {{ content | nl }} outputs content followed by \n
+    //        {{ "" | nl }} outputs just \n (a blank line)
+    env.add_filter("nl", |value: Value| -> String { format!("{}\n", value) });
 }
 
 /// Converts an RGB triplet to the nearest ANSI 256-color palette index.
