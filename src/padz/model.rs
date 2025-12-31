@@ -117,7 +117,8 @@ pub fn normalize_pad_content(title: &str, body: &str) -> (String, String) {
     // Let's truncate metadata title but keep full title in content.
 
     let display_title = if clean_title.chars().count() > 60 {
-        clean_title.chars().take(60).collect::<String>()
+        let truncated: String = clean_title.chars().take(59).collect();
+        format!("{}…", truncated)
     } else {
         clean_title.to_string()
     };
@@ -210,7 +211,12 @@ mod tests {
     fn test_normalize_truncates_title_metadata() {
         let long_title = "a".repeat(100);
         let (title, content) = normalize_pad_content(&long_title, "Body");
-        assert_eq!(title.len(), 60);
+        // Title should be 59 chars + ellipsis = 60 chars total
+        assert_eq!(title.chars().count(), 60);
+        assert!(
+            title.ends_with('…'),
+            "Truncated title should end with ellipsis"
+        );
         assert_eq!(content, format!("{}\n\nBody", long_title));
     }
 
