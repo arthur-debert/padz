@@ -39,7 +39,9 @@
 //! - `handle_*()`: Per-command handlers that call API and format output
 //! - `print_*()`: Output formatting functions
 
-use super::render::{print_messages, render_full_pads, render_pad_list, render_text_list};
+use super::render::{
+    print_messages, render_full_pads, render_pad_list, render_pad_list_deleted, render_text_list,
+};
 use super::setup::{
     print_grouped_help, print_help_for_command, print_subcommand_help, Cli, Commands,
     CompletionShell, CoreCommands, DataCommands, MiscCommands, PadCommands,
@@ -191,7 +193,11 @@ fn handle_list(ctx: &mut AppContext, search: Option<String>, deleted: bool) -> R
     let result = ctx.api.get_pads(ctx.scope, filter)?;
 
     // Use outstanding-based rendering
-    let output = render_pad_list(&result.listed_pads);
+    let output = if deleted {
+        render_pad_list_deleted(&result.listed_pads)
+    } else {
+        render_pad_list(&result.listed_pads)
+    };
     print!("{}", output);
 
     print_messages(&result.messages);

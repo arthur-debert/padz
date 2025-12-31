@@ -40,6 +40,11 @@ pub mod names {
     pub const INFO: &str = "info";
     pub const TITLE: &str = "title";
     pub const TIME: &str = "time";
+    // Semantic list styles
+    pub const LIST_INDEX: &str = "list-index";
+    pub const LIST_TITLE: &str = "list-title";
+    pub const DELETED_INDEX: &str = "deleted-index";
+    pub const DELETED_TITLE: &str = "deleted-title";
 }
 
 pub static PADZ_THEME: Lazy<AdaptiveTheme> =
@@ -60,6 +65,11 @@ fn build_light_theme() -> Theme {
         .on_color256(rgb_to_ansi256((255, 235, 59)));
     let title = regular.clone().bold();
     let time = muted.clone().italic();
+    // Semantic list styles
+    let list_index = Style::new().color256(rgb_to_ansi256((196, 140, 0))); // Yellow/gold for regular indexes
+    let list_title = regular.clone(); // Normal text for list titles (not bold)
+    let deleted_index = Style::new().color256(rgb_to_ansi256((186, 33, 45))); // Red for deleted indexes
+    let deleted_title = muted.clone(); // Muted gray for deleted titles
 
     Theme::new()
         .add(names::REGULAR, regular)
@@ -74,6 +84,10 @@ fn build_light_theme() -> Theme {
         .add(names::INFO, info)
         .add(names::TITLE, title)
         .add(names::TIME, time)
+        .add(names::LIST_INDEX, list_index)
+        .add(names::LIST_TITLE, list_title)
+        .add(names::DELETED_INDEX, deleted_index)
+        .add(names::DELETED_TITLE, deleted_title)
 }
 
 fn build_dark_theme() -> Theme {
@@ -91,6 +105,11 @@ fn build_dark_theme() -> Theme {
         .on_color256(rgb_to_ansi256((229, 185, 0)));
     let title = regular.clone().bold();
     let time = muted.clone().italic();
+    // Semantic list styles
+    let list_index = Style::new().color256(rgb_to_ansi256((255, 214, 10))); // Yellow for regular indexes
+    let list_title = regular.clone(); // Normal text for list titles (not bold)
+    let deleted_index = Style::new().color256(rgb_to_ansi256((255, 138, 128))); // Red for deleted indexes
+    let deleted_title = muted.clone(); // Muted gray for deleted titles
 
     Theme::new()
         .add(names::REGULAR, regular)
@@ -105,4 +124,8 @@ fn build_dark_theme() -> Theme {
         .add(names::INFO, info)
         .add(names::TITLE, title)
         .add(names::TIME, time)
+        .add(names::LIST_INDEX, list_index)
+        .add(names::LIST_TITLE, list_title)
+        .add(names::DELETED_INDEX, deleted_index)
+        .add(names::DELETED_TITLE, deleted_title)
 }

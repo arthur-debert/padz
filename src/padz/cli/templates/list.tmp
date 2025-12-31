@@ -5,7 +5,7 @@
 {% for pad in pads -%}
 {% if pad.is_separator %}
 {% else -%}
-{{ pad.left_pad }}{% if pad.show_left_pin %}{{ pin_marker | style("pinned") }} {% endif %}{% if pad.is_pinned_section %}{{ pad.index | style("pinned") }}{% elif pad.is_deleted %}{{ pad.index | style("deleted") }}{% else %}{{ pad.index | style("regular") }}{% endif %}{% if pad.is_deleted %}{{ pad.title | style("deleted") }}{% else %}{{ pad.title | style("title") }}{% endif %}{{ pad.padding }}{% if pad.show_right_pin %}{{ pin_marker | style("pinned") }} {% else %}  {% endif %}{{ pad.time_ago | style("time") }}
+{{ pad.left_pad }}{% if pad.show_left_pin %}{{ pin_marker | style("pinned") }} {% endif %}{% if pad.is_pinned_section %}{{ pad.index | style("pinned") }}{% elif pad.is_deleted %}{{ pad.index | style("deleted-index") }}{% else %}{{ pad.index | style("list-index") }}{% endif %}{% if pad.is_deleted %}{{ pad.title | style("deleted-title") }}{% else %}{{ pad.title | style("list-title") }}{% endif %}{{ pad.padding }}{% if pad.show_right_pin %}{{ pin_marker | style("pinned") }} {% else %}  {% endif %}{{ pad.time_ago | style("time") }}
 {% for match in pad.matches -%}
     {{ pad.left_pad }}    {{ match.line_number | style("muted") }} {% for seg in match.segments %}{{ seg.text | style(seg.style) }}{% endfor %}
 {% endfor -%}
@@ -14,4 +14,15 @@
 {% endif -%}
 {% endif -%}
 {% endfor -%}
+{% endif %}
+{% if deleted_help %}
+{{ "Deleted Pads" | style("muted") }}
+
+{{ "These pads are marked for deletion and will be permanently deleted after a month." | style("faint") }}
+{{ "To restore a pad:" | style("faint") }}
+{{ "    padz restore <index>      - Restore specific pads" | style("faint") }}
+{{ "    padz restore              - Restore all deleted pads" | style("faint") }}
+{{ "To permanently delete:" | style("faint") }}
+{{ "    padz purge <index>        - Permanently delete specific pads" | style("faint") }}
+{{ "    padz purge                - Permanently delete all deleted pads" | style("faint") }}
 {% endif %}
