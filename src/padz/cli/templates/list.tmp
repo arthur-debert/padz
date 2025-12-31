@@ -13,6 +13,7 @@
     {{ pad.left_pad }}    And {{ pad.more_matches_count }} more results
 {% endif -%}
 {% if pad.peek -%}
+    
     {{ pad.left_pad }}    {{ pad.peek.opening_lines | style("faint") | indent(8) }}
 {% if pad.peek.truncated_count -%}
     
@@ -22,6 +23,7 @@
 {% if pad.peek.closing_lines -%}
     {{ pad.left_pad }}    {{ pad.peek.closing_lines | style("faint") | indent(8) }}
 {% endif -%}
+
 {% endif -%}
 {% endif -%}
 {% endfor -%}

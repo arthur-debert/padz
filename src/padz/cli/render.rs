@@ -257,7 +257,16 @@ fn render_pad_list_internal(
         }
 
         let peek_data = if peek {
-            Some(format_as_peek(&dp.pad.content, 3))
+            // Strip the first line (title) to avoid duplication
+            let body_lines: Vec<&str> = dp.pad.content.lines().skip(1).collect();
+            let body = body_lines.join("\n");
+
+            let result = format_as_peek(&body, 3);
+            if result.opening_lines.is_empty() {
+                None
+            } else {
+                Some(result)
+            }
         } else {
             None
         };
