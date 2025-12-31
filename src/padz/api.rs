@@ -133,6 +133,16 @@ impl<S: DataStore> PadzApi<S> {
         commands::export::run(&self.store, scope, &selectors)
     }
 
+    pub fn export_pads_single_file<I: AsRef<str>>(
+        &self,
+        scope: Scope,
+        indexes: &[I],
+        title: &str,
+    ) -> Result<commands::CmdResult> {
+        let selectors = parse_selectors(indexes)?;
+        commands::export::run_single_file(&self.store, scope, &selectors, title)
+    }
+
     pub fn import_pads(
         &mut self,
         scope: Scope,

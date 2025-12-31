@@ -8,10 +8,38 @@ use crate::store::DataStore;
 use chrono::Utc;
 use flate2::write::GzEncoder;
 use flate2::Compression;
+use pulldown_cmark::{Event, HeadingLevel, Options, Parser, Tag, TagEnd};
+use pulldown_cmark_to_cmark::cmark;
 use std::fs::File;
 use std::io::Write;
 
 use super::helpers::{indexed_pads, pads_by_selectors};
+
+/// Format for single-file export, determined by file extension.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SingleFileFormat {
+    Text,
+    Markdown,
+}
+
+impl SingleFileFormat {
+    /// Detect format from filename extension.
+    pub fn from_filename(filename: &str) -> Self {
+        let lower = filename.to_lowercase();
+        if lower.ends_with(".md") || lower.ends_with(".markdown") {
+            SingleFileFormat::Markdown
+        } else {
+            SingleFileFormat::Text
+        }
+    }
+}
+
+/// Result of a single-file export operation.
+#[derive(Debug)]
+pub struct SingleFileExportResult {
+    pub content: String,
+    pub format: SingleFileFormat,
+}
 
 pub fn run<S: DataStore>(store: &S, scope: Scope, selectors: &[PadSelector]) -> Result<CmdResult> {
     // 1. Resolve pads
@@ -93,6 +121,197 @@ fn sanitize_filename(name: &str) -> String {
         .to_string()
 }
 
+/// Run single-file export, returning structured result.
+pub fn run_single_file<S: DataStore>(
+    store: &S,
+    scope: Scope,
+    selectors: &[PadSelector],
+    title: &str,
+) -> Result<CmdResult> {
+    let pads = resolve_pads(store, scope, selectors)?;
+
+    if pads.is_empty() {
+        let mut res = CmdResult::default();
+        res.add_message(CmdMessage::info("No pads to export."));
+        return Ok(res);
+    }
+
+    let format = SingleFileFormat::from_filename(title);
+    let result = merge_pads_to_single_file(&pads, title, format);
+
+    // Write to file
+    let filename = sanitize_output_filename(title, format);
+    std::fs::write(&filename, &result.content).map_err(PadzError::Io)?;
+
+    let mut cmd_result = CmdResult::default();
+    cmd_result.add_message(CmdMessage::success(format!(
+        "Exported {} pads to {}",
+        pads.len(),
+        filename
+    )));
+    Ok(cmd_result)
+}
+
+/// Merge pads into a single file content string.
+pub fn merge_pads_to_single_file(
+    pads: &[DisplayPad],
+    title: &str,
+    format: SingleFileFormat,
+) -> SingleFileExportResult {
+    let content = match format {
+        SingleFileFormat::Text => merge_as_text(pads),
+        SingleFileFormat::Markdown => merge_as_markdown(pads, title),
+    };
+    SingleFileExportResult { content, format }
+}
+
+/// Merge pads as plain text with headers separating each file.
+fn merge_as_text(pads: &[DisplayPad]) -> String {
+    let mut output = String::new();
+
+    for (i, dp) in pads.iter().enumerate() {
+        if i > 0 {
+            output.push_str("\n\n");
+        }
+
+        // Add header with pad title
+        let title = &dp.pad.metadata.title;
+        let separator = "=".repeat(title.len().max(40));
+        output.push_str(&separator);
+        output.push('\n');
+        output.push_str(title);
+        output.push('\n');
+        output.push_str(&separator);
+        output.push_str("\n\n");
+
+        // Add pad content (skip the title line since we already printed it)
+        let content = &dp.pad.content;
+        if let Some(body_start) = content.find("\n\n") {
+            output.push_str(content[body_start + 2..].trim());
+        }
+    }
+
+    output
+}
+
+/// Merge pads as markdown with the export title as H1 and bumped headers.
+fn merge_as_markdown(pads: &[DisplayPad], export_title: &str) -> String {
+    let mut output = String::new();
+
+    // Export title as H1
+    output.push_str("# ");
+    output.push_str(export_title);
+    output.push_str("\n\n");
+
+    for (i, dp) in pads.iter().enumerate() {
+        if i > 0 {
+            output.push_str("\n\n---\n\n");
+        }
+
+        // Pad title becomes H2
+        output.push_str("## ");
+        output.push_str(&dp.pad.metadata.title);
+        output.push_str("\n\n");
+
+        // Get body content (skip title line)
+        let content = &dp.pad.content;
+        let body = if let Some(body_start) = content.find("\n\n") {
+            content[body_start + 2..].trim()
+        } else {
+            ""
+        };
+
+        if !body.is_empty() {
+            // Bump all headers in the body
+            let bumped = bump_markdown_headers(body);
+            output.push_str(&bumped);
+        }
+    }
+
+    output
+}
+
+/// Bump all markdown header levels by 2 (H1->H3, H2->H4, etc., H6 stays H6).
+/// Uses pulldown-cmark for proper markdown parsing.
+pub fn bump_markdown_headers(content: &str) -> String {
+    let options = Options::all();
+    let parser = Parser::new_ext(content, options);
+
+    let events: Vec<Event> = parser
+        .map(|event| match event {
+            Event::Start(Tag::Heading {
+                level,
+                id,
+                classes,
+                attrs,
+            }) => {
+                let new_level = bump_heading_level(level);
+                Event::Start(Tag::Heading {
+                    level: new_level,
+                    id,
+                    classes,
+                    attrs,
+                })
+            }
+            Event::End(TagEnd::Heading(level)) => {
+                let new_level = bump_heading_level(level);
+                Event::End(TagEnd::Heading(new_level))
+            }
+            other => other,
+        })
+        .collect();
+
+    let mut output = String::new();
+    // cmark returns Result, unwrap is safe for valid events
+    cmark(events.iter(), &mut output).expect("cmark serialization failed");
+    output
+}
+
+/// Bump a heading level by 2, capped at H6.
+fn bump_heading_level(level: HeadingLevel) -> HeadingLevel {
+    match level {
+        HeadingLevel::H1 => HeadingLevel::H3,
+        HeadingLevel::H2 => HeadingLevel::H4,
+        HeadingLevel::H3 => HeadingLevel::H5,
+        HeadingLevel::H4 => HeadingLevel::H6,
+        HeadingLevel::H5 => HeadingLevel::H6,
+        HeadingLevel::H6 => HeadingLevel::H6,
+    }
+}
+
+/// Generate output filename, ensuring proper extension.
+fn sanitize_output_filename(title: &str, format: SingleFileFormat) -> String {
+    let lower = title.to_lowercase();
+
+    // Strip existing extension if present, then sanitize, then add correct extension
+    let base_name = match format {
+        SingleFileFormat::Markdown => {
+            if lower.ends_with(".md") {
+                &title[..title.len() - 3]
+            } else if lower.ends_with(".markdown") {
+                &title[..title.len() - 9]
+            } else {
+                title
+            }
+        }
+        SingleFileFormat::Text => {
+            if lower.ends_with(".txt") {
+                &title[..title.len() - 4]
+            } else {
+                title
+            }
+        }
+    };
+
+    let sanitized_base = sanitize_filename(base_name);
+    let ext = match format {
+        SingleFileFormat::Markdown => "md",
+        SingleFileFormat::Text => "txt",
+    };
+
+    format!("{}.{}", sanitized_base, ext)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -135,5 +354,146 @@ mod tests {
         assert_eq!(sanitize_filename("Hello World"), "Hello World");
         assert_eq!(sanitize_filename("foo/bar"), "foo_bar");
         assert_eq!(sanitize_filename("baz\\qux"), "baz_qux");
+    }
+
+    #[test]
+    fn test_format_detection() {
+        assert_eq!(
+            SingleFileFormat::from_filename("notes.md"),
+            SingleFileFormat::Markdown
+        );
+        assert_eq!(
+            SingleFileFormat::from_filename("notes.MD"),
+            SingleFileFormat::Markdown
+        );
+        assert_eq!(
+            SingleFileFormat::from_filename("notes.markdown"),
+            SingleFileFormat::Markdown
+        );
+        assert_eq!(
+            SingleFileFormat::from_filename("notes.txt"),
+            SingleFileFormat::Text
+        );
+        assert_eq!(
+            SingleFileFormat::from_filename("notes"),
+            SingleFileFormat::Text
+        );
+        assert_eq!(
+            SingleFileFormat::from_filename("My Notes"),
+            SingleFileFormat::Text
+        );
+    }
+
+    #[test]
+    fn test_bump_markdown_headers_basic() {
+        let input = "# Heading 1\n\nSome text\n\n## Heading 2\n\nMore text";
+        let output = bump_markdown_headers(input);
+        assert!(output.contains("### Heading 1"), "H1 should become H3");
+        assert!(output.contains("#### Heading 2"), "H2 should become H4");
+        assert!(output.contains("Some text"));
+        assert!(output.contains("More text"));
+    }
+
+    #[test]
+    fn test_bump_markdown_headers_caps_at_h6() {
+        let input = "##### H5\n\n###### H6\n\nText";
+        let output = bump_markdown_headers(input);
+        // H5 -> H6, H6 stays H6
+        assert!(output.contains("###### H5"), "H5 should become H6");
+        // H6 stays H6 - both should be H6
+        let h6_count = output.matches("######").count();
+        assert_eq!(h6_count, 2, "Both headers should be H6");
+    }
+
+    #[test]
+    fn test_bump_markdown_headers_preserves_non_headers() {
+        let input = "Regular paragraph\n\n- List item\n- Another item\n\n```rust\ncode\n```";
+        let output = bump_markdown_headers(input);
+        assert!(output.contains("Regular paragraph"));
+        assert!(output.contains("List item"));
+        assert!(output.contains("code"));
+    }
+
+    #[test]
+    fn test_merge_as_text() {
+        use crate::index::DisplayIndex;
+
+        let pad1 = DisplayPad {
+            pad: crate::model::Pad::new("First Pad".into(), "Content one".into()),
+            index: DisplayIndex::Regular(1),
+            matches: None,
+        };
+        let pad2 = DisplayPad {
+            pad: crate::model::Pad::new("Second Pad".into(), "Content two".into()),
+            index: DisplayIndex::Regular(2),
+            matches: None,
+        };
+
+        let output = merge_as_text(&[pad1, pad2]);
+
+        // Check headers are present
+        assert!(output.contains("First Pad"));
+        assert!(output.contains("Second Pad"));
+        // Check separators (at least 40 =)
+        assert!(output.contains("========================================"));
+        // Check content
+        assert!(output.contains("Content one"));
+        assert!(output.contains("Content two"));
+    }
+
+    #[test]
+    fn test_merge_as_markdown() {
+        use crate::index::DisplayIndex;
+
+        let pad1 = DisplayPad {
+            pad: crate::model::Pad::new("First Pad".into(), "# Internal H1\n\nBody text".into()),
+            index: DisplayIndex::Regular(1),
+            matches: None,
+        };
+        let pad2 = DisplayPad {
+            pad: crate::model::Pad::new("Second Pad".into(), "## Internal H2\n\nMore body".into()),
+            index: DisplayIndex::Regular(2),
+            matches: None,
+        };
+
+        let output = merge_as_markdown(&[pad1, pad2], "My Export");
+
+        // Check export title is H1
+        assert!(output.starts_with("# My Export"));
+        // Check pad titles are H2
+        assert!(output.contains("## First Pad"));
+        assert!(output.contains("## Second Pad"));
+        // Check internal headers are bumped (H1->H3, H2->H4)
+        assert!(output.contains("### Internal H1"));
+        assert!(output.contains("#### Internal H2"));
+        // Check body content
+        assert!(output.contains("Body text"));
+        assert!(output.contains("More body"));
+        // Check separator between pads
+        assert!(output.contains("---"));
+    }
+
+    #[test]
+    fn test_sanitize_output_filename() {
+        assert_eq!(
+            sanitize_output_filename("notes", SingleFileFormat::Markdown),
+            "notes.md"
+        );
+        assert_eq!(
+            sanitize_output_filename("notes.md", SingleFileFormat::Markdown),
+            "notes.md"
+        );
+        assert_eq!(
+            sanitize_output_filename("notes", SingleFileFormat::Text),
+            "notes.txt"
+        );
+        assert_eq!(
+            sanitize_output_filename("notes.txt", SingleFileFormat::Text),
+            "notes.txt"
+        );
+        assert_eq!(
+            sanitize_output_filename("my/notes", SingleFileFormat::Markdown),
+            "my_notes.md"
+        );
     }
 }

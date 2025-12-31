@@ -117,7 +117,10 @@ pub fn run() -> Result<()> {
         },
         Some(Commands::Data(cmd)) => match cmd {
             DataCommands::Purge { indexes, yes } => handle_purge(&mut ctx, indexes, yes),
-            DataCommands::Export { indexes } => handle_export(&mut ctx, indexes),
+            DataCommands::Export {
+                single_file,
+                indexes,
+            } => handle_export(&mut ctx, indexes, single_file),
             DataCommands::Import { paths } => handle_import(&mut ctx, paths),
         },
         Some(Commands::Misc(cmd)) => match cmd {
@@ -285,8 +288,17 @@ fn handle_purge(ctx: &mut AppContext, indexes: Vec<String>, yes: bool) -> Result
     Ok(())
 }
 
-fn handle_export(ctx: &mut AppContext, indexes: Vec<String>) -> Result<()> {
-    let result = ctx.api.export_pads(ctx.scope, &indexes)?;
+fn handle_export(
+    ctx: &mut AppContext,
+    indexes: Vec<String>,
+    single_file: Option<String>,
+) -> Result<()> {
+    let result = if let Some(title) = single_file {
+        ctx.api
+            .export_pads_single_file(ctx.scope, &indexes, &title)?
+    } else {
+        ctx.api.export_pads(ctx.scope, &indexes)?
+    };
     print_messages(&result.messages);
     Ok(())
 }

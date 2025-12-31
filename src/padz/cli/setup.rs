@@ -300,9 +300,13 @@ pub enum DataCommands {
         yes: bool,
     },
 
-    /// Export pads to a tar.gz archive
+    /// Export pads to a tar.gz archive (or single file with --single-file)
     #[command(display_order = 21)]
     Export {
+        /// Export all pads to a single file with this title (format detected from extension: .md for markdown, otherwise text)
+        #[arg(long, value_name = "TITLE")]
+        single_file: Option<String>,
+
         /// Indexes of the pads (e.g. 1 2) - if omitted, exports all active pads
         #[arg(required = false, num_args = 0..)]
         indexes: Vec<String>,
