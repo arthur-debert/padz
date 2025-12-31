@@ -99,4 +99,5 @@ pub mod error;
 pub mod index;
 pub mod init;
 pub mod model;
+pub mod peek;
 pub mod store;
