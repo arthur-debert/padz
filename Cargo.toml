@@ -3,7 +3,7 @@ members = [".", "src/outstanding"]
 
 [package]
 name = "padz"
-version = "0.8.6"
+version = "0.8.8"
 edition = "2021"
 description = "A fast, project-aware scratch pad for the command line"
 license = "MIT"
@@ -41,6 +41,8 @@ uuid = { version = "1.19.0", features = ["v4", "serde"] }
 
 [dev-dependencies]
 tempfile = "3.10.1"
+assert_cmd = "2.0.16"
+predicates = "3.1.2"
 
 [features]
 default = []

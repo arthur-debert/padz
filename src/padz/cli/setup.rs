@@ -220,6 +220,10 @@ pub enum CoreCommands {
         /// Show deleted pads
         #[arg(long)]
         deleted: bool,
+
+        /// Peek at pad content
+        #[arg(long)]
+        peek: bool,
     },
 
     /// Search pads (dedicated command)
@@ -235,6 +239,10 @@ pub enum PadCommands {
         /// Indexes of the pads (e.g. 1 p1 d1)
         #[arg(required = true, num_args = 1..)]
         indexes: Vec<String>,
+
+        /// Peek at pad content
+        #[arg(long)]
+        peek: bool,
     },
 
     /// Edit a pad in the editor

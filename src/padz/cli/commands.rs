@@ -105,11 +105,15 @@ pub fn run() -> Result<()> {
                 };
                 handle_create(&mut ctx, title, no_editor)
             }
-            CoreCommands::List { search, deleted } => handle_list(&mut ctx, search, deleted),
+            CoreCommands::List {
+                search,
+                deleted,
+                peek,
+            } => handle_list(&mut ctx, search, deleted, peek),
             CoreCommands::Search { term } => handle_search(&mut ctx, term),
         },
         Some(Commands::Pad(cmd)) => match cmd {
-            PadCommands::View { indexes } => handle_view(&mut ctx, indexes),
+            PadCommands::View { indexes, peek } => handle_view(&mut ctx, indexes, peek),
             PadCommands::Edit { indexes } => handle_edit(&mut ctx, indexes),
             PadCommands::Open { indexes } => handle_open(&mut ctx, indexes),
             PadCommands::Delete { indexes } => handle_delete(&mut ctx, indexes),
@@ -133,7 +137,7 @@ pub fn run() -> Result<()> {
             MiscCommands::Completions { shell } => handle_completions(shell),
             MiscCommands::CompletePads { deleted } => handle_complete_pads(&mut ctx, deleted),
         },
-        None => handle_list(&mut ctx, None, false),
+        None => handle_list(&mut ctx, None, false, false),
     }
 }
 
@@ -169,7 +173,12 @@ fn handle_create(ctx: &mut AppContext, title: Option<String>, no_editor: bool) -
     Ok(())
 }
 
-fn handle_list(ctx: &mut AppContext, search: Option<String>, deleted: bool) -> Result<()> {
+fn handle_list(
+    ctx: &mut AppContext,
+    search: Option<String>,
+    deleted: bool,
+    peek: bool,
+) -> Result<()> {
     let filter = if let Some(term) = search {
         PadFilter {
             status: if deleted {
@@ -194,9 +203,9 @@ fn handle_list(ctx: &mut AppContext, search: Option<String>, deleted: bool) -> R
 
     // Use outstanding-based rendering
     let output = if deleted {
-        render_pad_list_deleted(&result.listed_pads)
+        render_pad_list_deleted(&result.listed_pads, peek)
     } else {
-        render_pad_list(&result.listed_pads)
+        render_pad_list(&result.listed_pads, peek)
     };
     print!("{}", output);
 
@@ -204,9 +213,14 @@ fn handle_list(ctx: &mut AppContext, search: Option<String>, deleted: bool) -> R
     Ok(())
 }
 
-fn handle_view(ctx: &mut AppContext, indexes: Vec<String>) -> Result<()> {
+fn handle_view(ctx: &mut AppContext, indexes: Vec<String>, peek: bool) -> Result<()> {
     let result = ctx.api.view_pads(ctx.scope, &indexes)?;
-    let output = render_full_pads(&result.listed_pads);
+    let output = if peek {
+        // Reuse list rendering for peek view
+        render_pad_list(&result.listed_pads, true)
+    } else {
+        render_full_pads(&result.listed_pads)
+    };
     print!("{}", output);
     print_messages(&result.messages);
 
@@ -269,7 +283,7 @@ fn handle_search(ctx: &mut AppContext, term: String) -> Result<()> {
         search_term: Some(term),
     };
     let result = ctx.api.get_pads(ctx.scope, filter)?;
-    let output = render_pad_list(&result.listed_pads);
+    let output = render_pad_list(&result.listed_pads, false);
     print!("{}", output);
     print_messages(&result.messages);
     Ok(())

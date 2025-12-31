@@ -18,6 +18,7 @@ use chrono::{DateTime, Utc};
 use outstanding::{render, render_with_color, ThemeChoice};
 use padz::api::{CmdMessage, MessageLevel};
 use padz::index::{DisplayIndex, DisplayPad};
+use padz::peek::{format_as_peek, PeekResult};
 use serde::Serialize;
 use unicode_width::UnicodeWidthStr;
 
@@ -60,6 +61,7 @@ struct PadLineData {
     // Search matches
     matches: Vec<MatchLineData>,
     more_matches_count: usize,
+    peek: Option<PeekResult>,
 }
 
 /// Data structure for the full list template.
@@ -70,6 +72,7 @@ struct ListData {
     pin_marker: String,
     help_text: String,
     deleted_help: bool,
+    peek: bool,
 }
 
 #[derive(Serialize)]
@@ -106,19 +109,20 @@ struct MessagesData {
 }
 
 /// Renders a list of pads to a string.
-pub fn render_pad_list(pads: &[DisplayPad]) -> String {
-    render_pad_list_internal(pads, None, false)
+pub fn render_pad_list(pads: &[DisplayPad], peek: bool) -> String {
+    render_pad_list_internal(pads, None, false, peek)
 }
 
 /// Renders a list of pads with optional deleted help text.
-pub fn render_pad_list_deleted(pads: &[DisplayPad]) -> String {
-    render_pad_list_internal(pads, None, true)
+pub fn render_pad_list_deleted(pads: &[DisplayPad], peek: bool) -> String {
+    render_pad_list_internal(pads, None, true, peek)
 }
 
 fn render_pad_list_internal(
     pads: &[DisplayPad],
     use_color: Option<bool>,
     show_deleted_help: bool,
+    peek: bool,
 ) -> String {
     let empty_data = ListData {
         pads: vec![],
@@ -126,6 +130,7 @@ fn render_pad_list_internal(
         pin_marker: PIN_MARKER.to_string(),
         help_text: get_grouped_help(),
         deleted_help: false,
+        peek: false,
     };
 
     if pads.is_empty() {
@@ -164,6 +169,7 @@ fn render_pad_list_internal(
                 is_separator: true,
                 matches: vec![],
                 more_matches_count: 0,
+                peek: None,
             });
         }
         last_was_pinned = is_pinned_section;
@@ -252,6 +258,21 @@ fn render_pad_list_internal(
             }
         }
 
+        let peek_data = if peek {
+            // Strip the first line (title) to avoid duplication
+            let body_lines: Vec<&str> = dp.pad.content.lines().skip(1).collect();
+            let body = body_lines.join("\n");
+
+            let result = format_as_peek(&body, 3);
+            if result.opening_lines.is_empty() {
+                None
+            } else {
+                Some(result)
+            }
+        } else {
+            None
+        };
+
         pad_lines.push(PadLineData {
             left_pad,
             index: idx_str,
@@ -265,6 +286,7 @@ fn render_pad_list_internal(
             is_separator: false,
             matches: match_lines,
             more_matches_count: more_matches,
+            peek: peek_data,
         });
     }
 
@@ -274,6 +296,7 @@ fn render_pad_list_internal(
         pin_marker: PIN_MARKER.to_string(),
         help_text: String::new(), // Not used when not empty
         deleted_help: show_deleted_help,
+        peek,
     };
 
     match use_color {
@@ -523,7 +546,7 @@ mod tests {
 
     #[test]
     fn test_render_empty_list() {
-        let output = render_pad_list_internal(&[], Some(false), false);
+        let output = render_pad_list_internal(&[], Some(false), false, false);
         // Should show the "no pads yet" message with help text
         assert!(output.contains("No pads yet, create one with `padz create`"));
         assert!(output.contains("Usage: padz [OPTIONS] [COMMAND]"));
@@ -534,7 +557,7 @@ mod tests {
         let pad = make_pad("Test Note", false, false);
         let dp = make_display_pad(pad, DisplayIndex::Regular(1));
 
-        let output = render_pad_list_internal(&[dp], Some(false), false);
+        let output = render_pad_list_internal(&[dp], Some(false), false, false);
 
         // Should contain the index and title
         assert!(output.contains("1."));
@@ -548,7 +571,7 @@ mod tests {
         let pad = make_pad("Pinned Note", true, false);
         let dp = make_display_pad(pad, DisplayIndex::Pinned(1));
 
-        let output = render_pad_list_internal(&[dp], Some(false), false);
+        let output = render_pad_list_internal(&[dp], Some(false), false, false);
 
         // Should contain pinned index
         assert!(output.contains("p1."));
@@ -562,7 +585,7 @@ mod tests {
         let pad = make_pad("Deleted Note", false, true);
         let dp = make_display_pad(pad, DisplayIndex::Deleted(1));
 
-        let output = render_pad_list_internal(&[dp], Some(false), false);
+        let output = render_pad_list_internal(&[dp], Some(false), false, false);
 
         // Should contain deleted index
         assert!(output.contains("d1."));
@@ -580,7 +603,7 @@ mod tests {
             make_display_pad(pinned, DisplayIndex::Regular(2)),
         ];
 
-        let output = render_pad_list_internal(&pads, Some(false), false);
+        let output = render_pad_list_internal(&pads, Some(false), false, false);
 
         // Should have pinned section with marker
         assert!(output.contains("p1."));
@@ -599,7 +622,7 @@ mod tests {
 
         let dp = make_display_pad(pad, DisplayIndex::Regular(1));
 
-        let output = render_pad_list_internal(&[dp], Some(false), false);
+        let output = render_pad_list_internal(&[dp], Some(false), false, false);
 
         // Should have pin marker on the right side
         assert!(output.contains(PIN_MARKER));
@@ -611,7 +634,7 @@ mod tests {
         let dp = make_display_pad(pad, DisplayIndex::Regular(1));
 
         // Force styling for test environment
-        let output = render_pad_list_internal(&[dp], Some(true), false);
+        let output = render_pad_list_internal(&[dp], Some(true), false, false);
 
         // When use_color is true, should include ANSI codes (at least for time which is dimmed)
         // Note: console crate may not emit codes in test env, so we just verify it runs
@@ -634,7 +657,7 @@ mod tests {
             ],
         }]);
 
-        let output = render_pad_list_internal(&[dp], Some(false), false);
+        let output = render_pad_list_internal(&[dp], Some(false), false, false);
 
         assert!(output.contains("1."));
         assert!(output.contains("Search Result"));
