@@ -7,7 +7,8 @@ pub enum CompletionShell {
 }
 
 /// Returns the version string, including git hash and commit date for non-release builds.
-/// Format: "0.8.10" for releases, "0.8.10@abc1234 2024-01-15 14:30" for dev builds
+/// Format for releases: "v0.8.10"
+/// Format for dev builds: "v0.8.10\ndev: abc1234 2024-01-15 14:30"
 fn get_version() -> &'static str {
     const VERSION: &str = env!("CARGO_PKG_VERSION");
     const GIT_HASH: &str = env!("GIT_HASH");
@@ -20,9 +21,9 @@ fn get_version() -> &'static str {
 
     VERSION_STRING.get_or_init(|| {
         if IS_RELEASE == "true" || GIT_HASH.is_empty() {
-            VERSION.to_string()
+            format!("v{}", VERSION)
         } else {
-            format!("{}@{} {}", VERSION, GIT_HASH, GIT_COMMIT_DATE)
+            format!("v{}\ndev: {} {}", VERSION, GIT_HASH, GIT_COMMIT_DATE)
         }
     })
 }
