@@ -37,11 +37,11 @@
 //! - Storage behavior (tested in store modules)
 
 use crate::commands;
-use crate::error::Result;
-use crate::index::{DisplayIndex, PadSelector};
+use crate::error::{PadzError, Result};
+use crate::index::{parse_index_or_range, DisplayIndex, PadSelector};
 use crate::model::Scope;
 use crate::store::DataStore;
-use std::str::FromStr;
+use std::collections::HashSet;
 
 /// The main API facade for padz operations.
 ///
@@ -183,14 +183,33 @@ impl<S: DataStore> PadzApi<S> {
 }
 
 fn parse_selectors<I: AsRef<str>>(inputs: &[I]) -> Result<Vec<PadSelector>> {
-    // 1. Try to parse ALL inputs as DisplayIndex
-    let all_indexes: std::result::Result<Vec<DisplayIndex>, _> = inputs
-        .iter()
-        .map(|s| DisplayIndex::from_str(s.as_ref()))
-        .collect();
+    // 1. Try to parse ALL inputs as DisplayIndex (including ranges like "3-5")
+    let mut all_indexes: Vec<DisplayIndex> = Vec::new();
+    let mut parse_failed = false;
 
-    if let Ok(indexes) = all_indexes {
-        return Ok(indexes.into_iter().map(PadSelector::Index).collect());
+    for input in inputs {
+        match parse_index_or_range(input.as_ref()) {
+            Ok(indexes) => all_indexes.extend(indexes),
+            Err(e) => {
+                // Check if it's a range error (explicit error message) vs just not an index
+                if e.contains("Invalid range") || e.contains("cannot mix") {
+                    return Err(PadzError::Api(e));
+                }
+                parse_failed = true;
+                break;
+            }
+        }
+    }
+
+    if !parse_failed {
+        // Deduplicate while preserving order
+        let mut seen = HashSet::new();
+        let unique_indexes: Vec<DisplayIndex> = all_indexes
+            .into_iter()
+            .filter(|idx| seen.insert(idx.clone()))
+            .collect();
+
+        return Ok(unique_indexes.into_iter().map(PadSelector::Index).collect());
     }
 
     // 2. If any failed (meaning there are non-index strings), treat as ONE search query
