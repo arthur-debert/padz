@@ -24,7 +24,7 @@ path = "src/padz/main.rs"
 chrono = { version = "0.4.42", features = ["serde"] }
 clap = { version = "4.5.53", features = ["derive"] }
 console = "0.15"
-outstanding = { version = "0.2.0", path = "src/outstanding" }
+outstanding = { version = "0.2.1", path = "src/outstanding" }
 colored = "3.0.0"
 directories = "6.0.0"
 flate2 = "1.1.5"

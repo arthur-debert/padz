@@ -1,11 +1,12 @@
 [package]
 name = "outstanding"
-version = "0.2.0"
+version = "0.2.1"
 edition = "2021"
 description = "Styled CLI template rendering with automatic terminal detection"
 license = "MIT"
 keywords = ["cli", "terminal", "colors", "template", "styling"]
 categories = ["command-line-interface", "template-engine"]
+repository = "https://github.com/arthur-debert/padz"
 
 [lib]
 path = "lib.rs"

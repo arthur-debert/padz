@@ -1134,7 +1134,7 @@ dependencies = [
 
 [[package]]
 name = "outstanding"
-version = "0.2.0"
+version = "0.2.1"
 dependencies = [
  "console",
  "dark-light",
@@ -1146,7 +1146,7 @@ dependencies = [
 
 [[package]]
 name = "padz"
-version = "0.8.8"
+version = "0.8.9"
 dependencies = [
  "assert_cmd",
  "chrono",
