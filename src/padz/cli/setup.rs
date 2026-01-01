@@ -6,11 +6,32 @@ pub enum CompletionShell {
     Zsh,
 }
 
+/// Returns the version string, including git hash and commit date for non-release builds.
+/// Format: "0.8.10" for releases, "0.8.10@abc1234 2024-01-15 14:30" for dev builds
+fn get_version() -> &'static str {
+    const VERSION: &str = env!("CARGO_PKG_VERSION");
+    const GIT_HASH: &str = env!("GIT_HASH");
+    const GIT_COMMIT_DATE: &str = env!("GIT_COMMIT_DATE");
+    const IS_RELEASE: &str = env!("IS_RELEASE");
+
+    // Use a static to compute the version string once
+    use std::sync::OnceLock;
+    static VERSION_STRING: OnceLock<String> = OnceLock::new();
+
+    VERSION_STRING.get_or_init(|| {
+        if IS_RELEASE == "true" || GIT_HASH.is_empty() {
+            VERSION.to_string()
+        } else {
+            format!("{}@{} {}", VERSION, GIT_HASH, GIT_COMMIT_DATE)
+        }
+    })
+}
+
 #[derive(Parser, Debug)]
 #[command(
     name = "padz",
     bin_name = "padz",
-    version,
+    version = get_version(),
     disable_help_flag = true,
     disable_help_subcommand = true
 )]
