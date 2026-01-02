@@ -16,7 +16,7 @@ pub fn run<S: DataStore>(store: &mut S, scope: Scope, updates: &[PadUpdate]) -> 
         .iter()
         .map(|u| PadSelector::Index(u.index.clone()))
         .collect();
-    let resolved = resolve_selectors(store, scope, &selectors)?;
+    let resolved = resolve_selectors(store, scope, &selectors, false)?;
     let mut result = CmdResult::default();
 
     for ((display_index, uuid), update) in resolved.into_iter().zip(updates.iter()) {

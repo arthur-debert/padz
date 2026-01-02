@@ -75,7 +75,7 @@ fn resolve_pads<S: DataStore>(
             .filter(|dp| !matches!(dp.index, DisplayIndex::Deleted(_)))
             .collect())
     } else {
-        pads_by_selectors(store, scope, selectors)
+        pads_by_selectors(store, scope, selectors, false)
     }
 }
 

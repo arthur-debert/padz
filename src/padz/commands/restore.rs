@@ -11,7 +11,7 @@ pub fn run<S: DataStore>(
     scope: Scope,
     selectors: &[PadSelector],
 ) -> Result<CmdResult> {
-    let resolved = resolve_selectors(store, scope, selectors)?;
+    let resolved = resolve_selectors(store, scope, selectors, false)?;
     let mut result = CmdResult::default();
 
     for (display_index, uuid) in resolved {

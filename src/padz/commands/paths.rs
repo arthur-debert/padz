@@ -7,7 +7,7 @@ use crate::store::DataStore;
 use super::helpers::resolve_selectors;
 
 pub fn run<S: DataStore>(store: &S, scope: Scope, selectors: &[PadSelector]) -> Result<CmdResult> {
-    let resolved = resolve_selectors(store, scope, selectors)?;
+    let resolved = resolve_selectors(store, scope, selectors, false)?;
     let mut paths = Vec::with_capacity(resolved.len());
 
     for (_, uuid) in resolved {

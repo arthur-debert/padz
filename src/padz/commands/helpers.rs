@@ -15,17 +15,32 @@ pub fn resolve_selectors<S: DataStore>(
     store: &S,
     scope: Scope,
     selectors: &[PadSelector],
+    check_delete_protection: bool,
 ) -> Result<Vec<(DisplayIndex, Uuid)>> {
     let indexed = indexed_pads(store, scope)?;
 
     selectors
         .iter()
         .map(|selector| match selector {
-            PadSelector::Index(idx) => indexed
-                .iter()
-                .find(|dp| &dp.index == idx)
-                .map(|dp| (idx.clone(), dp.pad.metadata.id))
-                .ok_or_else(|| PadzError::Api(format!("Index {} not found in current scope", idx))),
+            PadSelector::Index(idx) => {
+                 let found = indexed
+                    .iter()
+                    .find(|dp| &dp.index == idx)
+                    .map(|dp| (idx.clone(), dp.pad.metadata.id));
+
+                match found {
+                    Some((idx, id)) => {
+                        if check_delete_protection {
+                            let pad = store.get_pad(&id, scope)?;
+                            if pad.metadata.delete_protected {
+                                return Err(PadzError::Api("Pinned pads are delete protected, unpin then delete it".to_string()));
+                            }
+                        }
+                        Ok((idx, id))
+                    }
+                     None => Err(PadzError::Api(format!("Index {} not found in current scope", idx))),
+                }
+            },
             PadSelector::Title(term) => {
                 let term_lower = term.to_lowercase();
                 let matches: Vec<&DisplayPad> = indexed
@@ -44,7 +59,16 @@ pub fn resolve_selectors<S: DataStore>(
 
                 match matches.len() {
                     0 => Err(PadzError::Api(format!("No pad found matching \"{}\"", term))),
-                    1 => Ok((matches[0].index.clone(), matches[0].pad.metadata.id)),
+                    1 => {
+                        let id = matches[0].pad.metadata.id;
+                         if check_delete_protection {
+                             // We already have the pad in matches[0].pad, no need to refetch
+                             if matches[0].pad.metadata.delete_protected {
+                                 return Err(PadzError::Api("Pinned pads are delete protected, unpin then delete it".to_string()));
+                             }
+                         }
+                        Ok((matches[0].index.clone(), id))
+                    },
                     n => Err(PadzError::Api(format!(
                         "Term \"{}\" matches multiple paths, add more to make it unique(matched {} pads). Please be more specific.",
                         term, n
@@ -59,8 +83,9 @@ pub fn pads_by_selectors<S: DataStore>(
     store: &S,
     scope: Scope,
     selectors: &[PadSelector],
+    check_delete_protection: bool,
 ) -> Result<Vec<DisplayPad>> {
-    let resolved = resolve_selectors(store, scope, selectors)?;
+    let resolved = resolve_selectors(store, scope, selectors, check_delete_protection)?;
     let mut pads = Vec::with_capacity(resolved.len());
     for (index, id) in resolved {
         let pad = store.get_pad(&id, scope)?;
