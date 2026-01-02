@@ -24,7 +24,7 @@ pub fn run<S: DataStore>(
             .collect()
     } else {
         // Specific pads
-        pads_by_selectors(store, scope, selectors)?
+        pads_by_selectors(store, scope, selectors, true)?
     };
 
     if pads_to_purge.is_empty() {

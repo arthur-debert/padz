@@ -169,6 +169,7 @@ impl FileStore {
                                             pinned_at: None,
                                             is_deleted: false,
                                             deleted_at: None,
+                                            delete_protected: false,
                                             title,
                                         };
                                         meta_map.insert(id, new_meta);
@@ -369,6 +370,7 @@ impl DataStore for FileStore {
                                         pinned_at: None,
                                         is_deleted: false,
                                         deleted_at: None,
+                                        delete_protected: false,
                                         title,
                                     };
 

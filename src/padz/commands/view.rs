@@ -7,6 +7,6 @@ use crate::store::DataStore;
 use super::helpers::pads_by_selectors;
 
 pub fn run<S: DataStore>(store: &S, scope: Scope, selectors: &[PadSelector]) -> Result<CmdResult> {
-    let pads = pads_by_selectors(store, scope, selectors)?;
+    let pads = pads_by_selectors(store, scope, selectors, false)?;
     Ok(CmdResult::default().with_listed_pads(pads))
 }

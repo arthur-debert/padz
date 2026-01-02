@@ -284,7 +284,7 @@ pub enum PadCommands {
         indexes: Vec<String>,
     },
 
-    /// Delete one or more pads
+    /// Delete one or more pads (protected pads must be unpinned first)
     #[command(alias = "rm", display_order = 13)]
     Delete {
         /// Indexes of the pads (e.g. 1 3 5)
@@ -300,7 +300,7 @@ pub enum PadCommands {
         indexes: Vec<String>,
     },
 
-    /// Pin one or more pads
+    /// Pin one or more pads (makes them delete-protected)
     #[command(alias = "p", display_order = 15)]
     Pin {
         /// Indexes of the pads (e.g. 1 3 5)

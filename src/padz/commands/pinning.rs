@@ -29,13 +29,14 @@ fn pin_state<S: DataStore>(
     selectors: &[PadSelector],
     is_pinned: bool,
 ) -> Result<CmdResult> {
-    let resolved = resolve_selectors(store, scope, selectors)?;
+    let resolved = resolve_selectors(store, scope, selectors, false)?;
     let mut result = CmdResult::default();
 
     for (display_index, uuid) in resolved {
         let mut pad = store.get_pad(&uuid, scope)?;
         pad.metadata.is_pinned = is_pinned;
         pad.metadata.pinned_at = if is_pinned { Some(Utc::now()) } else { None };
+        pad.metadata.delete_protected = is_pinned;
         store.save_pad(&pad, scope)?;
 
         let verb = if is_pinned { "pinned" } else { "unpinned" };
@@ -87,5 +88,52 @@ mod tests {
             .listed_pads
             .iter()
             .all(|dp| !matches!(dp.index, DisplayIndex::Pinned(_))));
+    }
+
+    #[test]
+    fn pinning_enables_delete_protection() {
+        let mut store = InMemoryStore::new();
+        create::run(&mut store, Scope::Project, "A".into(), "".into()).unwrap();
+
+        // Pin it
+        pin(
+            &mut store,
+            Scope::Project,
+            &[PadSelector::Index(DisplayIndex::Regular(1))],
+        )
+        .unwrap();
+
+        // Check if protected
+        let pads = get::run(&store, Scope::Project, get::PadFilter::default()).unwrap();
+        assert!(pads.listed_pads[0].pad.metadata.delete_protected);
+
+        // Try to delete (should fail)
+        use crate::commands::delete;
+        let err = delete::run(
+            &mut store,
+            Scope::Project,
+            &[PadSelector::Index(DisplayIndex::Pinned(1))],
+        );
+        assert!(err.is_err());
+
+        // Unpin it
+        unpin(
+            &mut store,
+            Scope::Project,
+            &[PadSelector::Index(DisplayIndex::Pinned(1))],
+        )
+        .unwrap();
+
+        // Check is unprotected
+        let pads_after = get::run(&store, Scope::Project, get::PadFilter::default()).unwrap();
+        assert!(!pads_after.listed_pads[0].pad.metadata.delete_protected);
+
+        // Try to delete (should succeed)
+        let success = delete::run(
+            &mut store,
+            Scope::Project,
+            &[PadSelector::Index(DisplayIndex::Regular(1))],
+        );
+        assert!(success.is_ok());
     }
 }

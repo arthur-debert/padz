@@ -50,7 +50,7 @@ pub enum Scope {
     Global,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize)]
 pub struct Metadata {
     pub id: Uuid,
     pub created_at: DateTime<Utc>,
@@ -59,8 +59,48 @@ pub struct Metadata {
     pub pinned_at: Option<DateTime<Utc>>,
     pub is_deleted: bool,
     pub deleted_at: Option<DateTime<Utc>>,
+    pub delete_protected: bool,
     // We store the title in metadata to list without reading content files
     pub title: String,
+}
+
+// Custom deserializer to handle legacy data where `delete_protected` is missing.
+// If missing, it defaults to the value of `is_pinned`.
+impl<'de> Deserialize<'de> for Metadata {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        #[derive(Deserialize)]
+        struct MetadataHelper {
+            id: Uuid,
+            created_at: DateTime<Utc>,
+            updated_at: DateTime<Utc>,
+            is_pinned: bool,
+            pinned_at: Option<DateTime<Utc>>,
+            is_deleted: bool,
+            deleted_at: Option<DateTime<Utc>>,
+            #[serde(default)]
+            delete_protected: Option<bool>,
+            title: String,
+        }
+
+        let helper = MetadataHelper::deserialize(deserializer)?;
+
+        Ok(Metadata {
+            id: helper.id,
+            created_at: helper.created_at,
+            updated_at: helper.updated_at,
+            is_pinned: helper.is_pinned,
+            pinned_at: helper.pinned_at,
+            is_deleted: helper.is_deleted,
+            deleted_at: helper.deleted_at,
+            // If delete_protected is missing (None), default to is_pinned.
+            // This ensures legacy pinned pads are protected.
+            delete_protected: helper.delete_protected.unwrap_or(helper.is_pinned),
+            title: helper.title,
+        })
+    }
 }
 
 impl Metadata {
@@ -74,6 +114,7 @@ impl Metadata {
             pinned_at: None,
             is_deleted: false,
             deleted_at: None,
+            delete_protected: false,
             title,
         }
     }
