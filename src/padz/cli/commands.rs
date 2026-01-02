@@ -117,6 +117,7 @@ pub fn run() -> Result<()> {
             PadCommands::Edit { indexes } => handle_edit(&mut ctx, indexes),
             PadCommands::Open { indexes } => handle_open(&mut ctx, indexes),
             PadCommands::Delete { indexes } => handle_delete(&mut ctx, indexes),
+            PadCommands::Restore { indexes } => handle_restore(&mut ctx, indexes),
             PadCommands::Pin { indexes } => handle_pin(&mut ctx, indexes),
             PadCommands::Unpin { indexes } => handle_unpin(&mut ctx, indexes),
             PadCommands::Path { indexes } => handle_paths(&mut ctx, indexes),
@@ -261,6 +262,12 @@ fn handle_open(ctx: &mut AppContext, indexes: Vec<String>) -> Result<()> {
 
 fn handle_delete(ctx: &mut AppContext, indexes: Vec<String>) -> Result<()> {
     let result = ctx.api.delete_pads(ctx.scope, &indexes)?;
+    print_messages(&result.messages);
+    Ok(())
+}
+
+fn handle_restore(ctx: &mut AppContext, indexes: Vec<String>) -> Result<()> {
+    let result = ctx.api.restore_pads(ctx.scope, &indexes)?;
     print_messages(&result.messages);
     Ok(())
 }
