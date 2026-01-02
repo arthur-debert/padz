@@ -124,6 +124,16 @@ impl<S: DataStore> PadzApi<S> {
         commands::purge::run(&mut self.store, scope, &selectors, skip_confirm)
     }
 
+    pub fn restore_pads<I: AsRef<str>>(
+        &mut self,
+        scope: Scope,
+        indexes: &[I],
+    ) -> Result<commands::CmdResult> {
+        // Normalize inputs: bare numbers become deleted indexes (e.g., "3" -> "d3")
+        let selectors = parse_selectors_for_deleted(indexes)?;
+        commands::restore::run(&mut self.store, scope, &selectors)
+    }
+
     pub fn export_pads<I: AsRef<str>>(
         &self,
         scope: Scope,
@@ -223,6 +233,114 @@ fn parse_selectors<I: AsRef<str>>(inputs: &[I]) -> Result<Vec<PadSelector>> {
     Ok(vec![PadSelector::Title(search_term)])
 }
 
+/// Parses selectors for commands that operate on deleted pads (restore, purge).
+/// Bare numbers are treated as deleted indexes: "3" -> "d3", but "d3" stays "d3".
+fn parse_selectors_for_deleted<I: AsRef<str>>(inputs: &[I]) -> Result<Vec<PadSelector>> {
+    let normalized: Vec<String> = inputs
+        .iter()
+        .map(|s| normalize_to_deleted_index(s.as_ref()))
+        .collect();
+
+    parse_selectors(&normalized)
+}
+
+/// Normalizes an index string to a deleted index if it's a bare number.
+/// "3" -> "d3", "d3" -> "d3", "p1" -> "p1", "3-5" -> "d3-d5"
+fn normalize_to_deleted_index(s: &str) -> String {
+    // Handle ranges: if it contains a dash (not at start), normalize both parts
+    if let Some(dash_pos) = s.find('-') {
+        if dash_pos > 0 {
+            let start = &s[..dash_pos];
+            let end = &s[dash_pos + 1..];
+            let norm_start = normalize_single_to_deleted(start);
+            let norm_end = normalize_single_to_deleted(end);
+            return format!("{}-{}", norm_start, norm_end);
+        }
+    }
+    normalize_single_to_deleted(s)
+}
+
+/// Normalizes a single index (not a range) to deleted format.
+/// "3" -> "d3", "d3" -> "d3", "p1" -> "p1"
+fn normalize_single_to_deleted(s: &str) -> String {
+    // If it's a bare number, prefix with 'd'
+    if s.chars().all(|c| c.is_ascii_digit()) && !s.is_empty() {
+        format!("d{}", s)
+    } else {
+        s.to_string()
+    }
+}
+
 pub use crate::commands::config::ConfigAction;
 pub use commands::get::{PadFilter, PadStatusFilter};
 pub use commands::{CmdMessage, CmdResult, MessageLevel, PadUpdate, PadzPaths};
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_normalize_single_to_deleted() {
+        // Bare numbers get 'd' prefix
+        assert_eq!(normalize_single_to_deleted("1"), "d1");
+        assert_eq!(normalize_single_to_deleted("42"), "d42");
+
+        // Already prefixed stays the same
+        assert_eq!(normalize_single_to_deleted("d1"), "d1");
+        assert_eq!(normalize_single_to_deleted("d42"), "d42");
+
+        // Pinned indexes stay as-is
+        assert_eq!(normalize_single_to_deleted("p1"), "p1");
+        assert_eq!(normalize_single_to_deleted("p99"), "p99");
+
+        // Empty string stays empty
+        assert_eq!(normalize_single_to_deleted(""), "");
+
+        // Non-numeric stays the same
+        assert_eq!(normalize_single_to_deleted("abc"), "abc");
+    }
+
+    #[test]
+    fn test_normalize_to_deleted_index_ranges() {
+        // Bare number ranges get 'd' prefix on both sides
+        assert_eq!(normalize_to_deleted_index("3-5"), "d3-d5");
+        assert_eq!(normalize_to_deleted_index("1-10"), "d1-d10");
+
+        // Already deleted ranges stay the same
+        assert_eq!(normalize_to_deleted_index("d3-d5"), "d3-d5");
+
+        // Mixed input: bare start, prefixed end
+        assert_eq!(normalize_to_deleted_index("3-d5"), "d3-d5");
+
+        // Mixed input: prefixed start, bare end
+        assert_eq!(normalize_to_deleted_index("d3-5"), "d3-d5");
+
+        // Single indexes (no range)
+        assert_eq!(normalize_to_deleted_index("3"), "d3");
+        assert_eq!(normalize_to_deleted_index("d3"), "d3");
+    }
+
+    #[test]
+    fn test_parse_selectors_for_deleted() {
+        // Test that bare numbers become deleted indexes
+        let inputs = vec!["1", "3", "d5"];
+        let selectors = parse_selectors_for_deleted(&inputs).unwrap();
+
+        assert_eq!(selectors.len(), 3);
+        assert_eq!(selectors[0], PadSelector::Index(DisplayIndex::Deleted(1)));
+        assert_eq!(selectors[1], PadSelector::Index(DisplayIndex::Deleted(3)));
+        assert_eq!(selectors[2], PadSelector::Index(DisplayIndex::Deleted(5)));
+    }
+
+    #[test]
+    fn test_parse_selectors_for_deleted_with_range() {
+        // Test range normalization
+        let inputs = vec!["1-3"];
+        let selectors = parse_selectors_for_deleted(&inputs).unwrap();
+
+        assert_eq!(selectors.len(), 3);
+        assert_eq!(selectors[0], PadSelector::Index(DisplayIndex::Deleted(1)));
+        assert_eq!(selectors[1], PadSelector::Index(DisplayIndex::Deleted(2)));
+        assert_eq!(selectors[2], PadSelector::Index(DisplayIndex::Deleted(3)));
+    }
+}

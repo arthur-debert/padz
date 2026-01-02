@@ -77,7 +77,7 @@ impl CommandGroup {
     pub fn for_command(name: &str) -> Option<Self> {
         match name {
             "create" | "list" | "search" => Some(CommandGroup::Core),
-            "view" | "edit" | "open" | "delete" | "pin" | "unpin" | "path" => {
+            "view" | "edit" | "open" | "delete" | "restore" | "pin" | "unpin" | "path" => {
                 Some(CommandGroup::Pad)
             }
             "purge" | "export" | "import" => Some(CommandGroup::Data),
@@ -158,6 +158,7 @@ pub fn print_subcommand_help(command: &Option<Commands>) {
             PadCommands::Edit { .. } => "edit",
             PadCommands::Open { .. } => "open",
             PadCommands::Delete { .. } => "delete",
+            PadCommands::Restore { .. } => "restore",
             PadCommands::Pin { .. } => "pin",
             PadCommands::Unpin { .. } => "unpin",
             PadCommands::Path { .. } => "path",
@@ -291,8 +292,16 @@ pub enum PadCommands {
         indexes: Vec<String>,
     },
 
+    /// Restore deleted pads
+    #[command(display_order = 14)]
+    Restore {
+        /// Indexes of deleted pads (e.g. d1 d2 or just 1 2)
+        #[arg(required = true, num_args = 1..)]
+        indexes: Vec<String>,
+    },
+
     /// Pin one or more pads
-    #[command(alias = "p", display_order = 14)]
+    #[command(alias = "p", display_order = 15)]
     Pin {
         /// Indexes of the pads (e.g. 1 3 5)
         #[arg(required = true, num_args = 1..)]
@@ -300,7 +309,7 @@ pub enum PadCommands {
     },
 
     /// Unpin one or more pads
-    #[command(alias = "u", display_order = 15)]
+    #[command(alias = "u", display_order = 16)]
     Unpin {
         /// Indexes of the pads (e.g. p1 p2 p3)
         #[arg(required = true, num_args = 1..)]
@@ -308,7 +317,7 @@ pub enum PadCommands {
     },
 
     /// Print the file path to one or more pads
-    #[command(display_order = 16)]
+    #[command(display_order = 17)]
     Path {
         /// Indexes of the pads (e.g. 1 p1 d1)
         #[arg(required = true, num_args = 1..)]
