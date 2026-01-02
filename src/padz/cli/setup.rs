@@ -97,6 +97,30 @@ impl CommandGroup {
     }
 }
 
+/// Returns the short help output for -h flag
+pub fn get_short_help() -> String {
+    r#"Padz: notes for shell.
+
+padz create (c, new) <title> : creates note in $EDITOR (aliases: new, c)
+
+padz list (ls)               : shows notes (alias: ls, or no args)
+padz search                  : search your notes
+
+padz {view (v), edit (e), delete (d)}: do what they say. (aliases v, e, d)
+padz pin (p) / unpin (u)     : keep your favs on top (aliases p, u)
+
+Deletes are soft deletes, use purge (hard delete) or restore to bring it back.
+
+More: padz help
+"#
+    .to_string()
+}
+
+/// Prints the short help output
+pub fn print_short_help() {
+    print!("{}", get_short_help());
+}
+
 /// Returns the custom grouped help output as a string
 pub fn get_grouped_help() -> String {
     let cmd = Cli::command();

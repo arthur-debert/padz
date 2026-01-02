@@ -43,8 +43,8 @@ use super::render::{
     print_messages, render_full_pads, render_pad_list, render_pad_list_deleted, render_text_list,
 };
 use super::setup::{
-    print_grouped_help, print_help_for_command, print_subcommand_help, Cli, Commands,
-    CompletionShell, CoreCommands, DataCommands, MiscCommands, PadCommands,
+    print_grouped_help, print_help_for_command, print_short_help, print_subcommand_help, Cli,
+    Commands, CompletionShell, CoreCommands, DataCommands, MiscCommands, PadCommands,
 };
 use clap::Parser;
 use padz::api::{ConfigAction, PadFilter, PadStatusFilter, PadzApi};
@@ -78,10 +78,10 @@ struct AppContext {
 pub fn run() -> Result<()> {
     let cli = Cli::parse();
 
-    // Handle help flag - at top level use grouped help, for subcommands use clap's default
+    // Handle help flag - at top level use short help, for subcommands use clap's default
     if cli.help {
         if cli.command.is_none() {
-            print_grouped_help();
+            print_short_help();
         } else {
             print_subcommand_help(&cli.command);
         }
