@@ -48,13 +48,14 @@ use super::setup::{
 };
 use clap::Parser;
 use padz::api::{ConfigAction, PadFilter, PadStatusFilter, PadzApi};
-use padz::clipboard::{copy_to_clipboard, format_for_clipboard};
+use padz::clipboard::{copy_to_clipboard, format_for_clipboard, get_from_clipboard};
 use padz::editor::open_in_editor;
 use padz::error::Result;
 use padz::init::initialize;
-use padz::model::extract_title_and_body;
 use padz::model::Scope;
+use padz::model::{extract_title_and_body, parse_pad_content};
 use padz::store::fs::FileStore;
+use std::io::{IsTerminal, Read};
 use std::path::{Path, PathBuf};
 
 /// Helper to read a pad file and copy its content to the system clipboard.
@@ -155,14 +156,53 @@ fn init_context(cli: &Cli) -> Result<AppContext> {
 }
 
 fn handle_create(ctx: &mut AppContext, title: Option<String>, no_editor: bool) -> Result<()> {
-    // Use provided title or "Untitled" as placeholder
-    let final_title = title.unwrap_or_else(|| "Untitled".to_string());
+    let mut final_title = title;
+    let mut initial_content = String::new();
+    let mut should_open_editor = !no_editor;
 
-    let result = ctx.api.create_pad(ctx.scope, final_title, String::new())?;
+    // 1. Check for piped input (stdin)
+    if !std::io::stdin().is_terminal() {
+        let mut buffer = String::new();
+        // Read stdin content
+        if std::io::stdin().read_to_string(&mut buffer).is_ok() && !buffer.trim().is_empty() {
+            // If pipe has content, we use it.
+            // If no title was provided in args, we extract it from the content.
+            if final_title.is_none() {
+                if let Some((parsed_title, _)) = parse_pad_content(&buffer) {
+                    final_title = Some(parsed_title);
+                }
+            }
+            initial_content = buffer;
+            // Piped input skips the editor by default, as per requirement
+            should_open_editor = false;
+        }
+    }
+
+    // 2. If still no content/title, check clipboard
+    // "In case it's called with no text as the padz content as argument, use the clipboard data as the padz content."
+    if final_title.is_none() && initial_content.is_empty() {
+        if let Ok(clipboard_content) = get_from_clipboard() {
+            if !clipboard_content.trim().is_empty() {
+                // Parse title from clipboard content
+                if let Some((parsed_title, _)) = parse_pad_content(&clipboard_content) {
+                    final_title = Some(parsed_title);
+                }
+                initial_content = clipboard_content;
+                // Clipboard creation preserves editor behavior (opens unless --no-editor)
+            }
+        }
+    }
+
+    // Use provided/parsed title or "Untitled" as placeholder
+    let title_to_use = final_title.unwrap_or_else(|| "Untitled".to_string());
+
+    let result = ctx
+        .api
+        .create_pad(ctx.scope, title_to_use, initial_content)?;
     print_messages(&result.messages);
 
-    // Open editor unless --no-editor was passed
-    if !no_editor && !result.affected_pads.is_empty() {
+    // Open editor if requested/appropriate
+    if should_open_editor && !result.affected_pads.is_empty() {
         let pad = &result.affected_pads[0];
         let path = ctx.api.get_path_by_id(ctx.scope, pad.metadata.id)?;
         open_in_editor(&path)?;
