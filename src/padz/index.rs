@@ -1,4 +1,5 @@
 use crate::model::Pad;
+use std::str::FromStr;
 
 /// A segment of text in a search match, either plain text or a matched term.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -15,7 +16,7 @@ pub struct SearchMatch {
 }
 
 /// A user-facing index for a pad.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum DisplayIndex {
     Pinned(usize),
     Regular(usize),
@@ -132,6 +133,77 @@ impl std::str::FromStr for DisplayIndex {
     }
 }
 
+/// Parses a single input string that may be either a single index or a range.
+///
+/// Supports formats:
+/// - Single index: "3", "p1", "d2"
+/// - Range: "3-5" (expands to 3, 4, 5), "p1-p3" (expands to p1, p2, p3)
+///
+/// Range rules:
+/// - Both endpoints must be the same type (Regular, Pinned, or Deleted)
+/// - Start must be <= end (e.g., "3-3" is valid, "3-2" is an error)
+/// - Validation that the indexes actually exist happens later during resolution
+pub fn parse_index_or_range(s: &str) -> Result<Vec<DisplayIndex>, String> {
+    // Check if it's a range (contains '-' but not at the start for negative numbers)
+    // We need to be careful: "p1-p3" has '-' in the middle
+    if let Some(dash_pos) = s.find('-') {
+        // Don't treat leading '-' as a range separator (though we don't support negative indexes)
+        if dash_pos > 0 {
+            let start_str = &s[..dash_pos];
+            let end_str = &s[dash_pos + 1..];
+
+            // Try to parse both as DisplayIndex
+            let start = DisplayIndex::from_str(start_str)?;
+            let end = DisplayIndex::from_str(end_str)?;
+
+            return expand_range(start, end);
+        }
+    }
+
+    // Not a range, parse as single index
+    DisplayIndex::from_str(s).map(|idx| vec![idx])
+}
+
+/// Expands a range of DisplayIndex values.
+///
+/// Both endpoints must be the same variant (Regular, Pinned, or Deleted).
+/// Start must be <= end.
+fn expand_range(start: DisplayIndex, end: DisplayIndex) -> Result<Vec<DisplayIndex>, String> {
+    match (&start, &end) {
+        (DisplayIndex::Regular(s), DisplayIndex::Regular(e)) => {
+            if s > e {
+                return Err(format!(
+                    "Invalid range: start ({}) must be <= end ({})",
+                    s, e
+                ));
+            }
+            Ok((*s..=*e).map(DisplayIndex::Regular).collect())
+        }
+        (DisplayIndex::Pinned(s), DisplayIndex::Pinned(e)) => {
+            if s > e {
+                return Err(format!(
+                    "Invalid range: start (p{}) must be <= end (p{})",
+                    s, e
+                ));
+            }
+            Ok((*s..=*e).map(DisplayIndex::Pinned).collect())
+        }
+        (DisplayIndex::Deleted(s), DisplayIndex::Deleted(e)) => {
+            if s > e {
+                return Err(format!(
+                    "Invalid range: start (d{}) must be <= end (d{})",
+                    s, e
+                ));
+            }
+            Ok((*s..=*e).map(DisplayIndex::Deleted).collect())
+        }
+        _ => Err(format!(
+            "Invalid range: cannot mix index types ({} and {})",
+            start, end
+        )),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -238,5 +310,107 @@ mod tests {
         assert!(DisplayIndex::from_str("d").is_err());
         assert!(DisplayIndex::from_str("12a").is_err());
         assert!(DisplayIndex::from_str("p1a").is_err());
+    }
+
+    #[test]
+    fn test_parse_single_index() {
+        // Single indexes should return a vec with one element
+        assert_eq!(
+            parse_index_or_range("3"),
+            Ok(vec![DisplayIndex::Regular(3)])
+        );
+        assert_eq!(
+            parse_index_or_range("p2"),
+            Ok(vec![DisplayIndex::Pinned(2)])
+        );
+        assert_eq!(
+            parse_index_or_range("d1"),
+            Ok(vec![DisplayIndex::Deleted(1)])
+        );
+    }
+
+    #[test]
+    fn test_parse_regular_range() {
+        assert_eq!(
+            parse_index_or_range("3-5"),
+            Ok(vec![
+                DisplayIndex::Regular(3),
+                DisplayIndex::Regular(4),
+                DisplayIndex::Regular(5)
+            ])
+        );
+
+        // Single element range (start == end)
+        assert_eq!(
+            parse_index_or_range("3-3"),
+            Ok(vec![DisplayIndex::Regular(3)])
+        );
+    }
+
+    #[test]
+    fn test_parse_pinned_range() {
+        assert_eq!(
+            parse_index_or_range("p1-p3"),
+            Ok(vec![
+                DisplayIndex::Pinned(1),
+                DisplayIndex::Pinned(2),
+                DisplayIndex::Pinned(3)
+            ])
+        );
+    }
+
+    #[test]
+    fn test_parse_deleted_range() {
+        assert_eq!(
+            parse_index_or_range("d2-d4"),
+            Ok(vec![
+                DisplayIndex::Deleted(2),
+                DisplayIndex::Deleted(3),
+                DisplayIndex::Deleted(4)
+            ])
+        );
+    }
+
+    #[test]
+    fn test_parse_range_invalid_order() {
+        // Start > end should error
+        let result = parse_index_or_range("5-3");
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("must be <= end"));
+
+        let result = parse_index_or_range("p3-p1");
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("must be <= end"));
+    }
+
+    #[test]
+    fn test_parse_range_mixed_types() {
+        // Cannot mix Regular and Pinned
+        let result = parse_index_or_range("1-p3");
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("cannot mix index types"));
+
+        // Cannot mix Pinned and Deleted
+        let result = parse_index_or_range("p1-d3");
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("cannot mix index types"));
+    }
+
+    #[test]
+    fn test_parse_range_invalid_format() {
+        // Invalid start
+        let result = parse_index_or_range("abc-5");
+        assert!(result.is_err());
+
+        // Invalid end
+        let result = parse_index_or_range("3-xyz");
+        assert!(result.is_err());
+
+        // Empty parts
+        let result = parse_index_or_range("-5");
+        assert!(result.is_err());
+
+        let result = parse_index_or_range("3-");
+        assert!(result.is_err());
     }
 }
