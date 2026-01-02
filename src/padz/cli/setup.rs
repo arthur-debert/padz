@@ -20,7 +20,7 @@ fn get_version() -> &'static str {
     static VERSION_STRING: OnceLock<String> = OnceLock::new();
 
     VERSION_STRING.get_or_init(|| {
-        if IS_RELEASE == "true" || GIT_HASH.is_empty() {
+        if IS_RELEASE == "true" {
             format!("v{}", VERSION)
         } else {
             format!("v{}\ndev: {} {}", VERSION, GIT_HASH, GIT_COMMIT_DATE)

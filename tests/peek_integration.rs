@@ -1,6 +1,5 @@
 use assert_cmd::Command;
 use predicates::prelude::PredicateBooleanExt;
-use predicates::prelude::*;
 
 #[test]
 fn test_list_peek() {
@@ -8,7 +7,7 @@ fn test_list_peek() {
     let db_path = temp_dir.path().join("db.sqlite");
 
     // Create a long pad
-    let mut cmd = Command::cargo_bin("padz").unwrap();
+    let mut cmd = Command::new(assert_cmd::cargo::cargo_bin!("padz"));
     cmd.env("PADZ_DB", &db_path)
         .env("PADZ_HOME", temp_dir.path());
     cmd.arg("n")
@@ -30,7 +29,7 @@ fn test_list_peek() {
     let content = format!("Long Pad Title\n\n{}", lines.join("\n"));
     std::fs::write(&import_file, content).unwrap();
 
-    let mut cmd = Command::cargo_bin("padz").unwrap();
+    let mut cmd = Command::new(assert_cmd::cargo::cargo_bin!("padz"));
     cmd.current_dir(temp_dir.path())
         .env("PADZ_HOME", temp_dir.path()) // Ensure it uses temp home
         .arg("import")
@@ -39,7 +38,7 @@ fn test_list_peek() {
         .success();
 
     // Now list with peek
-    let mut cmd = Command::cargo_bin("padz").unwrap();
+    let mut cmd = Command::new(assert_cmd::cargo::cargo_bin!("padz"));
     cmd.current_dir(temp_dir.path())
         .env("PADZ_HOME", temp_dir.path())
         .arg("list")
@@ -62,7 +61,7 @@ fn test_view_peek_truncation() {
     let content = format!("Long View Title\n\n{}", lines.join("\n"));
     std::fs::write(&import_file, content).unwrap();
 
-    let mut cmd = Command::cargo_bin("padz").unwrap();
+    let mut cmd = Command::new(assert_cmd::cargo::cargo_bin!("padz"));
     cmd.current_dir(temp_dir.path())
         .env("PADZ_HOME", temp_dir.path())
         .arg("import")
@@ -72,7 +71,7 @@ fn test_view_peek_truncation() {
 
     // Now view with peek (should reuse list rendering logic)
     // Index should be 1
-    let mut cmd = Command::cargo_bin("padz").unwrap();
+    let mut cmd = Command::new(assert_cmd::cargo::cargo_bin!("padz"));
     cmd.current_dir(temp_dir.path())
         .env("PADZ_HOME", temp_dir.path())
         .arg("view")
@@ -102,7 +101,7 @@ fn test_peek_spacing_and_limits() {
     let path_9 = temp_dir.path().join("limit_9.txt");
     std::fs::write(&path_9, content_9).unwrap();
 
-    let mut cmd = Command::cargo_bin("padz").unwrap();
+    let mut cmd = Command::new(assert_cmd::cargo::cargo_bin!("padz"));
     cmd.current_dir(temp_dir.path())
         .env("PADZ_HOME", temp_dir.path())
         .arg("import")
@@ -110,7 +109,7 @@ fn test_peek_spacing_and_limits() {
         .assert()
         .success();
 
-    let mut cmd = Command::cargo_bin("padz").unwrap();
+    let mut cmd = Command::new(assert_cmd::cargo::cargo_bin!("padz"));
     cmd.current_dir(temp_dir.path())
         .env("PADZ_HOME", temp_dir.path())
         .arg("list")
@@ -126,7 +125,7 @@ fn test_peek_spacing_and_limits() {
     let path_10 = temp_dir.path().join("limit_10.txt");
     std::fs::write(&path_10, content_10).unwrap();
 
-    let mut cmd = Command::cargo_bin("padz").unwrap();
+    let mut cmd = Command::new(assert_cmd::cargo::cargo_bin!("padz"));
     cmd.current_dir(temp_dir.path())
         .env("PADZ_HOME", temp_dir.path())
         .arg("import")
@@ -134,7 +133,7 @@ fn test_peek_spacing_and_limits() {
         .assert()
         .success();
 
-    let mut cmd = Command::cargo_bin("padz").unwrap();
+    let mut cmd = Command::new(assert_cmd::cargo::cargo_bin!("padz"));
     let output = cmd
         .current_dir(temp_dir.path())
         .env("PADZ_HOME", temp_dir.path())
@@ -214,7 +213,7 @@ fn test_peek_spacing_and_limits() {
         .find("Line 8")
         .expect("Should have closing lines")
         + truncated_idx;
-    let gap2 = &stdout[truncated_idx + "... 4 lines not shown ...".len()..closing_start];
+    let _gap2 = &stdout[truncated_idx + "... 4 lines not shown ...".len()..closing_start];
 
     assert!(
         gap.contains("\n"),
