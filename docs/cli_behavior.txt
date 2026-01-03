@@ -1,0 +1,42 @@
+# CLI Behavior Specifics
+
+## The Problem
+
+Standard CLIs are "dumb". They do exactly what they are told, often requiring verbose flags for common actions.
+-   Creating a note from clipboard requires `pbpaste | padz create`.
+-   Creating a quick note requires `padz create -m "Title"`.
+-   Just running `padz` shows help instead of the useful list.
+
+## The Solution: Context-Aware Intelligence
+
+Padz infers intent from the context of execution (Arguments, Stdin, Clipboard).
+
+### 1. Naked Execution (`padz`)
+-   **Behavior**: Running `padz` (no args) defaults to `padz list`.
+-   **Location**: [`padz::cli::commands::run`](file:///src/padz/cli/commands.rs)
+-   **Logic**: If `cli.command` is `None`, dispatch `handle_list`.
+-   **Why**: The "Read" operation is 90% of usage. It should be the path of least resistance.
+
+### 2. Smart Create (`padz create`)
+-   **Location**: [`padz::cli::commands::handle_create`](file:///src/padz/cli/commands.rs)
+
+**Scenario A: Piped Input**
+-   `echo "foo" | padz create`
+-   **Logic**: Detects stdin is not TTY. Reads content.
+-   **Action**: Creates note with content "foo". **Skips Editor**.
+-   **Why**: Scripting/Automation.
+
+**Scenario B: Clipboard (Magic)**
+-   `padz create` (no input, empty stdin)
+-   **Logic**: Checks system clipboard via `padz::clipboard`.
+-   **Action**: Pre-fills editor with clipboard content. **Opens Editor**.
+-   **Why**: "I just copied this snippet, I want to save it." - Removes the `pbpaste` friction but allows review.
+
+**Scenario C: Quick Title**
+-   `padz create "Meeting Notes"`
+-   **Action**: Uses argument as title. Opens editor for body.
+
+### 3. Search Fallback
+-   `padz foo` (where `foo` is not a command)
+-   **Note**: Currently Padz uses explicit subcommands. The "Search" fallback is commonly implemented in `handle_list` argument parsing or a catch-all, but Padz favors explicit `search` or `list --search`.
+-   **Design Choice**: Explicit over implicit for commands to avoid "creating a note named list".

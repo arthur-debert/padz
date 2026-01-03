@@ -1,0 +1,39 @@
+# Scopes: Project vs Global
+
+## The Problem
+
+Command line tools typically operate in one of two modes:
+1.  **Global**: Like a centralized database (e.g., standard notes apps).
+2.  **Local**: Only in the current folder (e.g., `git`).
+
+For a developer-focused note tool, neither is sufficient. You want context-aware notes ("TODOs for *this* project") but occasionally need global notes ("Grocery list") without leaving your terminal. Furthermore, in nested repository structures (monorepos), "Local" is ambiguous.
+
+## The Solution: Heuristic Scope Detection
+
+Padz implements a git-aware scope detection algorithm to robustly identify the "Project Root".
+
+### 1. The Scopes
+-   **Project**: Bound to a specific code repository. Data lives in `<repo_root>/.padz`.
+-   **Global**: Bound to the user. Data lives in `~/.local/share/padz`.
+
+### 2. Detection Logic
+
+-   **Location**: [`padz::init::find_project_root`](file:///src/padz/init.rs)
+-   **Algorithm**:
+    1.  Start at `CWD` (Current Working Directory).
+    2.  Check for **Evidence**: Does this directory have `.git` AND `.padz`?
+    3.  **Match**: If yes, this is the Project Root.
+    4.  **No Match**: Move to parent directory.
+    5.  **Stop**: If we hit `HOME` or filesystem root, fail (default to Global or Error depending on strictness).
+
+**Why checks for `.git` AND `.padz`?**
+This dual-check is the strictness filter.
+-   If we just checked `.git`: We might accidentally pollute a parent repo (e.g., checking out a sub-repo inside a larger one).
+-   If we just checked `.padz`: We lose the semantic binding to the "Project".
+
+### Implementation Note
+The scope is resolved during `padz::init::initialize`.
+-   If `-g` flag is present -> Force `Scope::Global`.
+-   Else -> Run `find_project_root`.
+    -   Found -> `Scope::Project(path)`.
+    -   Not Found -> `Scope::Project(CWD)` (but will likely trigger init prompt or error if writing).

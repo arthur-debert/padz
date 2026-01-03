@@ -1,0 +1,46 @@
+# CLI / Logic Architecture
+
+## The Problem
+.
+    Shell programs tend to conflate interface and logic by adapting to shell's limitations and strengths. Before you know it logic is outputting strings all over the place and calculations are converting strings to integers. 
+    
+    This makes the program unyieldly and notoriously hard to test. So now you forgo unittests, and do shell integration tests. Now testings is slower and harder. You're parsing the output stings, breaking the code base on small text changes and o 
+
+## The Solution: Strict Layering
+
+Padz enforces a strict uncoupling of the User Interface (CLI) from the Application Logic (API/Commands).
+
+### 1. The CLI Layer (The "Skin")
+-   **Location**: [`src/padz/cli`](file:///src/padz/cli)
+-   **Key Function**: `padz::cli::commands::run`
+-   **Responsibility**:
+    -   Translates `argv` into Rust types (via `clap`).
+    -   Initializes the `AppContext`.
+    -   Calls the API.
+    -   Renders the `CmdResult` to stdout using `padz::cli::render`.
+-   **Constraint**: *Never* makes decisions about state. It only asks the API to do things.
+
+### 2. The API Layer (The "Facade")
+-   **Location**: [`src/padz/api.rs`](file:///src/padz/api.rs)
+-   **Key Struct**: `PadzApi`
+-   **Responsibility**:
+    -   **The Boundary**: This is where the edges meet the core.
+    -   **Translation**: Converts user-facing concepts (Display Indexes `1-3`) into internal concepts (UUIDs).
+    -   **Dispatch**: Routes requests to the appropriate command module.
+    -   **Isolation**: Returns `Result<CmdResult>`, a data structure describing what happened, *not* a string to print.
+
+### 3. The Command Layer (The "Brain")
+-   **Location**: [`src/padz/commands/*.rs`](file:///src/padz/commands)
+-   **Responsibility**:
+    -   Pure business logic.
+    -   Validates state (e.g., "Pad `abc` exists?", "Is it pinned?").
+    -   Mutates the `DataStore`.
+-   **Testing**: Unit tested heavily with in-memory stores.
+
+## Data Flow Example: `padz delete 1`
+
+1.  **CLI**: `clap` parses `1`. `handle_delete` receives `vec!["1"]`.
+2.  **API**: `PadzApi::delete_pads` calls `parse_selectors` to map `"1"` -> `UUID-XYZ`.
+3.  **Command**: `commands::delete::run` receives `[UUID-XYZ]`. It checks if `UUID-XYZ` is protected. If not, it tells store to mark as deleted.
+4.  **Return**: Command returns `CmdResult` saying "Deleted 1 pad".
+5.  **CLI**: `render` prints "Deleted 1 pad" in red.

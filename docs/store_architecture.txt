@@ -1,0 +1,42 @@
+# Store and Database Architecture
+
+## The Problem
+
+Users trust plain text files—they are future-proof and editable by any tool. However, scanning and parsing hundreds of text files for every `padz list` command is prohibitively slow. We need the speed of a database with the transparency of files.
+
+## The Solution: Hybrid Store + Self-Healing
+
+Padz maintains a split-brain model:
+1.  **Truth**: Text Files on disk.
+2.  **Cache**: A JSON metadata "database" (`data.json`).
+
+The system is designed to assume the cache is *always dirty*. It lazily self-heals whenever it touches data.
+
+### 1. Filesystem Layout (The Truth)
+-   **Location**: [`padz::store::fs`](file:///src/padz/store/fs.rs)
+-   **Format**: `pad-{UUID}.txt` (or configured ext).
+-   **Philosophy**: If a user manually deletes a file, the pad is gone. If they manually create a file, the pad exists.
+
+### 2. Metadata Database (The Cache)
+-   **Location**: `data.json` in the store root.
+-   **Struct**: `HashMap<Uuid, Metadata>` (see [`padz::model::Metadata`](file:///src/padz/model.rs))
+-   **Role**: Stores O(1) access stats: Title, Created Date, Pinned Status, Delete Protection.
+
+### 3. Synchronization (Self-Healing)
+
+The magic happens in `padz::store::fs::FileStore::sync`. This function is lightweight enough to run often.
+
+-   **Code**: `FileStore::sync`
+-   **Logic**:
+    1.  **Orphan Adoption**: Scans directory. If `pad-X.txt` exists but `X` is not in DB -> Parse file and Add to DB.
+    2.  **Zombie Cleanup**: If `X` is in DB but `pad-X.txt` is missing -> Remove from DB.
+    3.  **Staleness Check**: If file `mtime` > DB `updated_at` -> Re-parse file content to update cached Title.
+    4.  **Garbage Collection**: If a file is 0 bytes or whitespace only -> Delete it.
+
+### Lifecycle: Deletion
+
+-   **Soft Delete**: `is_deleted = true` in Metadata. File is touched but remains.
+    -   *Why*: Instant undo.
+-   **Purge**: `commands::purge` calls `store.delete_pad`.
+    -   *Action*: Removes File physicaly AND removes Metadata entry.
+    -   *Why*: Permanent removal.

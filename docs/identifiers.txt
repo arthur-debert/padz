@@ -1,0 +1,73 @@
+# Pad Identifiers: UUID vs Display Index
+
+## The Problem
+
+Padz needs to be referenced by ID. Since it's a CLI tool, the primary interface is text. While `UUID`s are the correct technical choice for unique identification, they are cumbersome to type.
+
+Sequential IDs are the logical user-facing choice. However, naive sequential indexing (e.g., just numbering the current output list 1..N) creates ambiguity and "index drift".
+
+Consider:
+```bash
+$ padz list
+1. Hi Mom
+2. Hi Dad
+```
+
+If the user searches for "Dad":
+```bash
+$ padz search Dad
+1. Hi Dad
+```
+If we naively assigned `1` to "Hi Dad" in this view, running `padz delete 1` becomes dangerous. Is the user deleting "Hi Mom" (Global ID 1) or "Hi Dad" (Search ID 1)?
+
+## The Solution: Dual Identifiers
+
+Padz uses a dual-identifier system to balance stability (for storage) and usability (for the user).
+
+1.  **UUID (Internal)**: Immutable, canonical, globally unique.
+2.  **Display Index (External)**: A semi-stable integer generated from a canonical "expected" ordering.
+
+### Canonical Ordering
+
+Even when filtering or searching, the ID assigned to a pad remains consistent with its position in the full, unfiltered list of active pads.
+
+```bash
+$ padz search Dad
+2. Hi Dad  <-- Still ID 2, even though it's the only result!
+```
+
+This ensures that `padz delete 2` always targets "Hi Dad", regardless of the current view.
+
+**Ordering Logic**:
+-   **Active Pads**: Reverse chronological order (Newest = 1).
+-   **Pinned Pads**: Separate bucket `p1`, `p2`...
+-   **Deleted Pads**: Separate bucket `d1`, `d2`...
+
+## Implementation Details
+
+### 1. Generating Indexes (Output)
+
+The mapping from Pad -> Display Index happens dynamically during listing.
+
+-   **Location**: [`padz::index::index_pads`](file:///src/padz/index.rs)
+-   **How it works**:
+    1.  Sorts all pads by `created_at` descending.
+    2.  Iterates and assigns `pX`, `N`, `dX` based on state (`is_pinned`, `is_deleted`).
+    3.  Returns a `DisplayPad` struct connecting the `Pad` and its `DisplayIndex`.
+
+**Developer Note**: When implementing list/view commands, **always** use `index_pads` (or the `PadzApi::get_pads` wrapper). Never manually enumerate a list of pads, as you will break the canonical ID association.
+
+### 2. Resolving Indexes (Input)
+
+Input resolution happens exclusively at the API boundary ("The Edges").
+
+-   **Location**: [`padz::api::parse_selectors`](file:///src/padz/api.rs)
+-   **Process**: `Input String` -> `DisplayIndex` -> `UUID`
+-   **Design**:
+    1.  The user types `padz delete 1`.
+    2.  The CLI passes string `"1"` to the API.
+    3.  `padz::api` calls `parse_selectors`, which internally re-runs the canonical `index_pads` to rebuild the map.
+    4.  It finds the UUID currently associated with Index `1`.
+    5.  The command (`padz::commands::delete`) receives the **UUID**, not the index.
+
+**Critical**: Internal business logic (`src/padz/commands/*`) **only** knows about UUIDs. It should never see or handle a `DisplayIndex`. This separation ensures that logic is testable and safe, while the fragility of human-friendly IDs is contained entirely within the API/CLI boundary layer.

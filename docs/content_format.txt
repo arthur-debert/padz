@@ -1,0 +1,51 @@
+# Pad Content: Format and Normalization
+
+## The Problem
+
+Users dump text into notes in chaotic formats.
+-   Sometimes they write a title, sometimes not.
+-   Sometimes they leave 10 blank lines at the top.
+-   Sometimes they pipe in logs.
+
+If we display this raw content in lists/peeks, the UI looks broken. We need a "Canonical Format" without forcing the user to fill out a form.
+
+## The Solution: The Normalization Pipeline
+
+Padz accepts any UTF-8 text but aggressively normalizes it upon save. This ensures that the file on disk and the metadata cache are continually converging toward a clean state.
+
+### 1. The Canonical Format
+
+```text
+Title Line     <-- Line 1 (Non-empty)
+               <-- Line 2 (Blank Separator)
+Body Content   <-- Line 3+ (Trimmed)
+...
+```
+
+### 2. Implementation
+
+-   **Location**: [`padz::model::normalize_pad_content`](file:///src/padz/model.rs)
+-   **Trigger**: Called explicitly by `Pad::new` and implicit via `FileStore::sync` (when adopting orphans).
+
+**The Pipeline**:
+1.  **Input**: Raw string (`"  \n  My Title \n\n  Body  "`).
+2.  **Title Extraction**:
+    -   Explode lines.
+    -   Take first non-empty line as Title.
+    -   *Logic*: `extract_title_and_body` in `model.rs`.
+3.  **Body Cleaning**:
+    -   Take all remaining lines.
+    -   `trim()` global whitespace (strips leading/trailing newlines).
+4.  **Reassembly**:
+    -   Construct: `format!("{}\n\n{}", title, body)`.
+    -   **Rule**: Always exactly one blank line separator.
+
+### 3. Edge Cases
+
+-   **One-Liner**: "Only Title".
+    -   Normalized to: `"Only Title"` (No trailing newlines/separators).
+-   **Empty Input**:
+    -   Rejected. Padz does not store empty notes. `FileStore` garbage collects them.
+-   **Long Titles**:
+    -   In **File**: Full title stored.
+    -   In **Metadata**: Truncated to 60 chars for table display (`model.rs` handles this during metadata generation).

@@ -1,0 +1,31 @@
+# Configuration
+
+## The Problem
+
+Users need to customize defaults (e.g., "I prefer Markdown over Text"), but requiring them to find, create, and edit a hidden JSON file is a bad UX.
+
+## The Solution: Config Command + Hierarchy
+
+Padz exposes configuration as a first-class command, backed by a simple hierarchical lookup.
+
+### 1. Storage Hierarchy
+-   **Location**: [`padz::config`](file:///src/padz/config.rs)
+-   **Priority 1: Project Config**: `.padz/config.json`. Overrides everything for this repo.
+-   **Priority 2: Global Config**: `~/.config/padz/config.json`. User defaults.
+-   **Priority 3: Hardcoded Defaults**: built-in fallbacks (e.g., ext = `.txt`).
+
+### 2. The Config Command
+-   **Location**: [`padz::cli::commands::handle_config`](file:///src/padz/cli/commands.rs)
+-   **API**: `PadzApi::config`
+-   **Usage**:
+    -   `padz config`: Dump effective config.
+    -   `padz config file-ext`: Get specific value.
+    -   `padz config file-ext .md`: Set value (persists to the active scope's JSON file).
+
+### 3. Key Settings
+-   `file-ext`: Controls the extension used for *new* files.
+    -   *Design*: Changing this doesn't rename old files. Padz supports mixed extensions gracefully (see `Store` docs).
+-   `import-extensions`: Controls which files `padz import .` will slurp up.
+
+### Developer Note
+The `PadzConfig` struct uses `serde` for serialization. New settings should be added there with `#[serde(default)]` to ensure backward compatibility with older config files.
