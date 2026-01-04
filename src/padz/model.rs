@@ -1,44 +1,53 @@
-//! # Domain Model
+//! # Domain Model: Pad Content Format and Normalization
 //!
 //! This module defines the core data structures for padz: [`Pad`], [`Metadata`], and [`Scope`].
 //! It also handles content normalization, which is crucial for data integrity.
 //!
-//! ## Pad File Layout
+//! ## The Problem
 //!
-//! Padz stores pad content in plain text files with a canonical format:
+//! Users dump text into notes in chaotic formats:
+//! - Sometimes they write a title, sometimes not.
+//! - Sometimes they leave blank lines at the top.
+//! - Sometimes they pipe in logs or code snippets.
 //!
-//! 1.  **Title**: The first line of the file.
-//! 2.  **Separator**: A single blank line.
-//! 3.  **Content**: The remainder of the file.
+//! If we display this raw content in lists/peeks, the UI looks broken.
+//! We need a "Canonical Format" without forcing the user to fill out a form.
 //!
-//! ### Normalization Rules
+//! ## The Canonical Format
 //!
-//! -   **Title**: Defined as the first line of content. For display purposes (metadata), it is truncated to 60 characters.
-//! -   **Blank Line**: A single blank line is enforced between the title and the content body.
-//! -   **Content**: Starts from the third line (if a blank line exists) to EOF.
-//! -   **Whitespace**:
-//!     -   Leading blank lines before the title are stripped.
-//!     -   Trailing blank lines in the content are stripped (though internal blank lines are preserved).
-//! -   **Validity**:
-//!     -   A one-line pad (Title only) is valid.
-//!     -   A pad with no text at all is invalid and should not be stored.
-//!
-//! ### Examples
-//!
-//! A standard pad:
 //! ```text
-//! My Title
-//!
-//! This is the body content.
-//! It can have multiple lines.
+//! Title Line     <-- Line 1 (first non-empty line)
+//!                <-- Line 2 (blank separator)
+//! Body Content   <-- Line 3+ (remaining content, trimmed)
 //! ```
 //!
-//! A one-line pad:
-//! ```text
-//! Just A Title
-//! ```
+//! ## Normalization Pipeline
 //!
-//! The normalization logic ensures that any input is transformed into this structure before storage.
+//! Padz accepts any UTF-8 text but normalizes it upon save:
+//!
+//! 1. **Title Extraction**: Trim input, take first non-empty line as title.
+//! 2. **Body Extraction**: Take remaining lines, trim whitespace.
+//! 3. **Reassembly**:
+//!    - If body is non-empty: `"{title}\n\n{body}"`
+//!    - If body is empty: Just the title (no trailing newlines)
+//!
+//! ## Title Truncation
+//!
+//! - **In File**: The full title is stored as the first line.
+//! - **In Metadata**: Truncated to 60 characters for display (59 chars + ellipsis `…`).
+//!
+//! ## Edge Cases
+//!
+//! - **One-Liner**: `"Only Title"` → Normalized to `"Only Title"` (no separator or body).
+//! - **Empty Input**: Rejected. The store garbage collects empty files.
+//! - **Multiple Blank Lines**: Collapsed to a single separator line.
+//! - **Leading Blank Lines**: Stripped before title extraction.
+//!
+//! ## Key Functions
+//!
+//! - [`normalize_pad_content`]: Normalizes title and body into canonical format
+//! - [`extract_title_and_body`]: Parses raw content into (title, body) tuple
+//! - [`parse_pad_content`]: Combines extraction and normalization
 
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};

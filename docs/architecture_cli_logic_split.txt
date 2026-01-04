@@ -1,0 +1,77 @@
+# CLI / Logic Architecture
+
+## The Problem
+
+Shell programs tend to conflate interface and logic by adapting to shell's limitations and strengths. Before you know it, logic is outputting strings all over the place and calculations are converting strings to integers.
+
+This makes the program unwieldy and notoriously hard to test. So you forgo unit tests and do shell integration tests instead. Now testing is slower and harder. You're parsing output strings, breaking the codebase on small text changes, and struggling with test maintenance.
+
+## The Solution: Strict Layering
+
+Padz enforces a strict separation of the User Interface (CLI) from the Application Logic (API/Commands).
+
+### 1. The CLI Layer (The "Skin")
+-   **Location**: `src/padz/cli/`
+-   **Entry Point**: `src/padz/cli/commands.rs` — function `run`
+-   **Responsibility**:
+    -   Translates `argv` into Rust types (via `clap`).
+    -   Initializes the `AppContext` (API, scope, config).
+    -   Calls the API.
+    -   Renders the `CmdResult` to stdout using `src/padz/cli/render.rs`.
+-   **Constraint**: *Never* makes decisions about business state. It only asks the API to do things.
+
+### 2. The API Layer (The "Facade")
+-   **Location**: `src/padz/api.rs`
+-   **Key Struct**: `PadzApi<S: DataStore>`
+-   **Responsibility**:
+    -   **The Boundary**: Where the edges meet the core.
+    -   **Translation**: Converts user-facing concepts (Display Indexes like `1-3`) into internal concepts (UUIDs).
+    -   **Dispatch**: Routes requests to the appropriate command module.
+    -   **Isolation**: Returns `Result<CmdResult>`, a data structure describing what happened, *not* a string to print.
+-   **Generic Over Storage**: `PadzApi<FileStore>` in production, `PadzApi<InMemoryStore>` in tests.
+
+### 3. The Command Layer (The "Brain")
+-   **Location**: `src/padz/commands/*.rs`
+-   **Responsibility**:
+    -   Pure business logic.
+    -   Validates state (e.g., "Does this pad exist?", "Is it pinned?").
+    -   Mutates the `DataStore`.
+-   **Testing**: Unit tested heavily with in-memory stores. No I/O dependencies.
+
+### 4. The Store Layer (The "Memory")
+-   **Location**: `src/padz/store/`
+-   **Trait**: `DataStore` (defined in `src/padz/store/mod.rs`)
+-   **Implementations**:
+    -   `FileStore`: Production filesystem storage
+    -   `InMemoryStore`: Test-only in-memory storage
+
+## Data Flow Example: `padz delete 1`
+
+```
+┌─────────┐     ┌─────────┐     ┌──────────┐     ┌─────────┐
+│   CLI   │ ──▶ │   API   │ ──▶ │ Commands │ ──▶ │  Store  │
+└─────────┘     └─────────┘     └──────────┘     └─────────┘
+   "1"         DisplayIndex      UUID-XYZ        file ops
+              → PadSelector    → is_deleted=true
+```
+
+1.  **CLI**: `clap` parses `1`. `handle_delete` receives `vec!["1"]`.
+2.  **API**: `PadzApi::delete_pads` calls `parse_selectors` to map `"1"` → `PadSelector::Index(Regular(1))`.
+3.  **Command**: `commands::delete::run` resolves index to `UUID-XYZ`. Checks if protected. Marks as deleted.
+4.  **Return**: Command returns `CmdResult` with message "Deleted 1 pad".
+5.  **CLI**: `render::print_messages` outputs the message.
+
+## Testing Strategy
+
+| Layer | Test Type | What to Test |
+|-------|-----------|--------------|
+| CLI | Integration | Arg parsing, output formatting |
+| API | Unit | Dispatch correctness, input normalization |
+| Commands | Unit | Business logic, state transitions |
+| Store | Unit | Read/write operations, sync behavior |
+
+This separation enables:
+-   Fast, isolated unit tests for business logic
+-   Easy mocking of storage for deterministic tests
+-   UI changes without touching business logic
+-   Alternative UIs (web, TUI) using the same API

@@ -1,0 +1,53 @@
+# Pad Content: Format and Normalization
+
+## The Problem
+
+Users dump text into notes in chaotic formats:
+-   Sometimes they write a title, sometimes not.
+-   Sometimes they leave blank lines at the top.
+-   Sometimes they pipe in logs or code snippets.
+
+If we display this raw content in lists/peeks, the UI looks broken. We need a "Canonical Format" without forcing the user to fill out a form.
+
+## The Solution: The Normalization Pipeline
+
+Padz accepts any UTF-8 text but aggressively normalizes it upon save. This ensures that the file on disk and the metadata cache converge toward a clean, consistent state.
+
+### 1. The Canonical Format
+
+```text
+Title Line     <-- Line 1 (first non-empty line)
+               <-- Line 2 (blank separator)
+Body Content   <-- Line 3+ (remaining content, trimmed)
+...
+```
+
+### 2. Implementation
+
+-   **Location**: `src/padz/model.rs` — functions `normalize_pad_content`, `extract_title_and_body`, `parse_pad_content`
+-   **Trigger**: Called by `Pad::new` during creation and by `FileStore::sync` when adopting orphan files.
+
+**The Pipeline**:
+1.  **Input**: Raw string (e.g., `"  \n  My Title \n\n  Body  "`).
+2.  **Title Extraction**:
+    -   Trim leading/trailing whitespace from entire input.
+    -   Take first non-empty line as Title.
+3.  **Body Extraction**:
+    -   Take all remaining lines after the title.
+    -   Trim leading/trailing whitespace from the body.
+4.  **Reassembly**:
+    -   If body is non-empty: `format!("{}\n\n{}", title, body)`
+    -   If body is empty: Just the title (no trailing newlines)
+
+### 3. Title Truncation
+
+-   **In File**: The full title is stored as the first line.
+-   **In Metadata**: Truncated to 60 characters for display (59 chars + ellipsis `…`).
+-   This happens in `normalize_pad_content` when generating the display title.
+
+### 4. Edge Cases
+
+-   **One-Liner**: Input `"Only Title"` → Normalized to `"Only Title"` (no separator or body).
+-   **Empty Input**: Rejected. Padz does not store empty pads. `FileStore::sync` garbage collects files that become empty.
+-   **Multiple Blank Lines**: Collapsed to a single separator line between title and body.
+-   **Leading Blank Lines**: Stripped before title extraction.

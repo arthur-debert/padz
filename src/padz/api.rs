@@ -17,6 +17,34 @@
 //! - **I/O operations**: No stdout, stderr, or file formatting
 //! - **Presentation concerns**: Returns data structures, not strings
 //!
+//! ## Selectors: Multi-IDs and Ranges
+//!
+//! Users often need to act on batches of items (`padz delete 1-3`).
+//! The API handles parsing and resolution of these selectors.
+//!
+//! ### Selector Grammar
+//!
+//! - **Regular Index**: `N` (e.g., `1`, `42`)
+//! - **Pinned Index**: `pX` (e.g., `p1`, `p2`)
+//! - **Deleted Index**: `dX` (e.g., `d1`, `d5`)
+//! - **Ranges**: `Start-End` (e.g., `1-5`, `p1-p3`)
+//!   - Must be homogeneous: `1-p3` is **invalid**
+//!   - Start must be ≤ end: `5-3` is **invalid**
+//!
+//! ### Processing Pipeline
+//!
+//! 1. **Parsing**: [`crate::index::parse_index_or_range`] expands `"1-3"` → `[Regular(1), Regular(2), Regular(3)]`
+//! 2. **Resolution**: `parse_selectors` converts to `Vec<PadSelector>`, deduplicating while preserving order
+//! 3. **Search Fallback**: If parsing fails, the entire input becomes a title search term
+//!
+//! ### Special: Restore and Purge
+//!
+//! For commands on deleted pads, bare numbers auto-prefix with `d`:
+//! - `padz restore 3` → Internally becomes `d3`
+//! - `padz restore 1-3` → Internally becomes `d1-d3`
+//!
+//! See `parse_selectors_for_deleted` for implementation.
+//!
 //! ## Generic Over DataStore
 //!
 //! `PadzApi<S: DataStore>` is generic over the storage backend:
