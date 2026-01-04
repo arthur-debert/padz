@@ -1,3 +1,50 @@
+//! # Scopes: Project vs Global
+//!
+//! Command line tools typically operate in one of two modes:
+//! 1. **Global**: Like a centralized database (e.g., standard notes apps).
+//! 2. **Local**: Only in the current folder (e.g., `git`).
+//!
+//! For a developer-focused note tool, neither is sufficient. You want context-aware notes
+//! ("TODOs for *this* project") but occasionally need global notes ("Grocery list")
+//! without leaving your terminal.
+//!
+//! ## The Scopes
+//!
+//! - **Project**: Bound to a specific code repository. Data lives in `<repo_root>/.padz/`.
+//! - **Global**: Bound to the user. Data lives in the OS-appropriate data directory
+//!   (via the `directories` crate).
+//!
+//! ## Scope Detection Algorithm
+//!
+//! [`find_project_root`] implements git-aware scope detection:
+//!
+//! 1. Start at `CWD` (Current Working Directory).
+//! 2. Check: Does this directory have BOTH `.git` AND `.padz`?
+//! 3. **Match**: If yes, this is the Project Root.
+//! 4. **No Match**: Move to parent directory.
+//! 5. **Stop**: If we reach `HOME` or filesystem root, return `None`.
+//!
+//! **Why require both `.git` AND `.padz`?**
+//! - If we only checked `.git`: We might accidentally use a parent repo in monorepos.
+//! - If we only checked `.padz`: We lose the semantic binding to the "Project" concept.
+//!
+//! This means you must explicitly `padz init` in a repo to opt-in to project scope.
+//!
+//! ## Nested Repositories
+//!
+//! When working in nested repos (e.g., `parent-repo/child-repo`):
+//! - If only `parent-repo` has `.padz`, starting from `child-repo` will find and use `parent-repo`
+//! - If both have `.padz`, the innermost one (closest to cwd) wins
+//! - If neither has `.padz`, uses `cwd/.padz` as default (may need `init`)
+//!
+//! ## Scope Resolution Flow
+//!
+//! The scope is resolved during [`initialize`]:
+//! 1. If `-g` flag is present → Force `Scope::Global`.
+//! 2. Otherwise → Run [`find_project_root`].
+//!    - Found → `Scope::Project`.
+//!    - Not Found → `Scope::Project` with `cwd/.padz` as path.
+
 use crate::api::{PadzApi, PadzPaths};
 use crate::config::PadzConfig;
 use crate::model::Scope;

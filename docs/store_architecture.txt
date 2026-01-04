@@ -7,36 +7,49 @@ Users trust plain text files—they are future-proof and editable by any tool. H
 ## The Solution: Hybrid Store + Self-Healing
 
 Padz maintains a split-brain model:
-1.  **Truth**: Text Files on disk.
+1.  **Truth**: Text files on disk.
 2.  **Cache**: A JSON metadata "database" (`data.json`).
 
-The system is designed to assume the cache is *always dirty*. It lazily self-heals whenever it touches data.
+The system is designed to assume the cache is *always potentially dirty*. It lazily self-heals whenever it touches data.
 
 ### 1. Filesystem Layout (The Truth)
--   **Location**: [`padz::store::fs`](file:///src/padz/store/fs.rs)
--   **Format**: `pad-{UUID}.txt` (or configured ext).
--   **Philosophy**: If a user manually deletes a file, the pad is gone. If they manually create a file, the pad exists.
+-   **Location**: `src/padz/store/fs.rs`
+-   **Format**: `pad-{UUID}.txt` (or configured extension via `file-ext` config).
+-   **Philosophy**: If a user manually deletes a file, the pad is gone. If they manually create a file with the correct naming, the pad is adopted.
 
 ### 2. Metadata Database (The Cache)
 -   **Location**: `data.json` in the store root.
--   **Struct**: `HashMap<Uuid, Metadata>` (see [`padz::model::Metadata`](file:///src/padz/model.rs))
--   **Role**: Stores O(1) access stats: Title, Created Date, Pinned Status, Delete Protection.
+-   **Structure**: `HashMap<Uuid, Metadata>` (see `src/padz/model.rs`)
+-   **Stored Fields**:
+    - `id`: UUID
+    - `created_at`, `updated_at`: Timestamps
+    - `is_pinned`, `pinned_at`: Pin state
+    - `is_deleted`, `deleted_at`: Soft-delete state
+    - `delete_protected`: Protection flag
+    - `title`: Cached title (for fast listing without reading content files)
 
 ### 3. Synchronization (Self-Healing)
 
-The magic happens in `padz::store::fs::FileStore::sync`. This function is lightweight enough to run often.
+The sync logic runs automatically before listing pads. It is lightweight enough to run often.
 
--   **Code**: `FileStore::sync`
+-   **Code**: `FileStore::sync` in `src/padz/store/fs.rs`
 -   **Logic**:
-    1.  **Orphan Adoption**: Scans directory. If `pad-X.txt` exists but `X` is not in DB -> Parse file and Add to DB.
-    2.  **Zombie Cleanup**: If `X` is in DB but `pad-X.txt` is missing -> Remove from DB.
-    3.  **Staleness Check**: If file `mtime` > DB `updated_at` -> Re-parse file content to update cached Title.
-    4.  **Garbage Collection**: If a file is 0 bytes or whitespace only -> Delete it.
+    1.  **Orphan Adoption**: Scans directory. If `pad-X.txt` exists but `X` is not in DB → Parse file and add to DB.
+    2.  **Zombie Cleanup**: If `X` is in DB but `pad-X.txt` is missing → Remove from DB.
+    3.  **Staleness Check**: If file `mtime` > DB `updated_at` → Re-parse file content to update cached title.
+    4.  **Garbage Collection**: If a file is empty or whitespace only → Delete the file and remove from DB.
 
 ### Lifecycle: Deletion
 
--   **Soft Delete**: `is_deleted = true` in Metadata. File is touched but remains.
-    -   *Why*: Instant undo.
+-   **Soft Delete**: Sets `is_deleted = true` in Metadata. The file remains on disk.
+    -   *Why*: Enables instant undo via `restore`.
 -   **Purge**: `commands::purge` calls `store.delete_pad`.
-    -   *Action*: Removes File physicaly AND removes Metadata entry.
-    -   *Why*: Permanent removal.
+    -   *Action*: Removes the file physically AND removes the Metadata entry.
+    -   *Why*: Permanent, irreversible removal.
+
+### File Extension Handling
+
+The store supports mixed file extensions gracefully:
+- New pads use the configured `file-ext` (default `.txt`)
+- When reading, it first tries the configured extension, then falls back to `.txt`
+- Changing the extension doesn't rename existing files

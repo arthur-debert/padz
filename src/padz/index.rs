@@ -1,3 +1,49 @@
+//! # Pad Identifiers: UUID vs Display Index
+//!
+//! Pads need to be referenced by ID. Since padz is a CLI tool, the primary interface is text.
+//! While UUIDs are the correct technical choice for unique identification, they are cumbersome to type.
+//!
+//! Sequential IDs are the logical user-facing choice. However, naive sequential indexing
+//! (numbering the current output list 1..N) creates ambiguity and "index drift".
+//!
+//! ## The Dual-Identifier Solution
+//!
+//! Padz uses a dual-identifier system:
+//!
+//! 1. **UUID (Internal)**: Immutable, canonical, globally unique.
+//! 2. **Display Index (External)**: A stable integer generated from a canonical ordering.
+//!
+//! ## Canonical Ordering
+//!
+//! Even when filtering or searching, the ID assigned to a pad remains consistent with its
+//! position in the full, unfiltered list. This ensures `padz delete 2` always targets the
+//! same pad regardless of the current view.
+//!
+//! **Ordering Logic**:
+//! - All pads sorted by `created_at` descending (Newest = 1)
+//! - Pinned pads get an additional `p1`, `p2`... index (appear in both pinned and regular lists)
+//! - Deleted pads: Separate bucket `d1`, `d2`...
+//!
+//! ## Pinned Pads Have Two Indexes
+//!
+//! A pinned pad appears **twice** in the indexed list:
+//! - Once with a `Pinned` index (`p1`, `p2`, etc.)
+//! - Once with its canonical `Regular` index (`1`, `2`, etc.)
+//!
+//! This ensures stability when a pad is unpinned—the regular index remains the same.
+//!
+//! ## Implementation
+//!
+//! - [`index_pads`]: Assigns canonical display indexes to a list of pads
+//! - [`DisplayIndex`]: The user-facing index enum (`Regular`, `Pinned`, `Deleted`)
+//! - [`DisplayPad`]: Connects a `Pad` with its `DisplayIndex`
+//! - [`parse_index_or_range`]: Parses user input like `"1-3"` into `Vec<DisplayIndex>`
+//!
+//! **Developer Note**: When implementing list/view commands, always use [`index_pads`].
+//! Never manually enumerate a list of pads, as you will break the canonical ID association.
+//!
+//! For input resolution (mapping indexes to UUIDs), see the [`crate::api`] module.
+
 use crate::model::Pad;
 use std::str::FromStr;
 

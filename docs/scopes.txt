@@ -13,27 +13,37 @@ For a developer-focused note tool, neither is sufficient. You want context-aware
 Padz implements a git-aware scope detection algorithm to robustly identify the "Project Root".
 
 ### 1. The Scopes
--   **Project**: Bound to a specific code repository. Data lives in `<repo_root>/.padz`.
--   **Global**: Bound to the user. Data lives in `~/.local/share/padz`.
+-   **Project**: Bound to a specific code repository. Data lives in `<repo_root>/.padz/`.
+-   **Global**: Bound to the user. Data lives in the OS-appropriate data directory (via `directories` crate).
 
 ### 2. Detection Logic
 
--   **Location**: [`padz::init::find_project_root`](file:///src/padz/init.rs)
+-   **Location**: `src/padz/init.rs` — function `find_project_root`
 -   **Algorithm**:
     1.  Start at `CWD` (Current Working Directory).
-    2.  Check for **Evidence**: Does this directory have `.git` AND `.padz`?
+    2.  Check for **Evidence**: Does this directory have BOTH `.git` AND `.padz`?
     3.  **Match**: If yes, this is the Project Root.
     4.  **No Match**: Move to parent directory.
-    5.  **Stop**: If we hit `HOME` or filesystem root, fail (default to Global or Error depending on strictness).
+    5.  **Stop**: If we reach `HOME` or filesystem root, return `None`.
 
-**Why checks for `.git` AND `.padz`?**
-This dual-check is the strictness filter.
--   If we just checked `.git`: We might accidentally pollute a parent repo (e.g., checking out a sub-repo inside a larger one).
--   If we just checked `.padz`: We lose the semantic binding to the "Project".
+**Why require both `.git` AND `.padz`?**
+This dual-check is the strictness filter:
+-   If we only checked `.git`: We might accidentally use a parent repo (e.g., when working in a sub-repo inside a monorepo).
+-   If we only checked `.padz`: We lose the semantic binding to the "Project" concept.
 
-### Implementation Note
-The scope is resolved during `padz::init::initialize`.
--   If `-g` flag is present -> Force `Scope::Global`.
--   Else -> Run `find_project_root`.
-    -   Found -> `Scope::Project(path)`.
-    -   Not Found -> `Scope::Project(CWD)` (but will likely trigger init prompt or error if writing).
+The result is that you must explicitly `padz init` in a repo to opt-in to project scope. This prevents accidental pollution of parent directories.
+
+### 3. Scope Resolution Flow
+
+The scope is resolved during `padz::init::initialize`:
+1.  If `-g` flag is present → Force `Scope::Global`.
+2.  Otherwise → Run `find_project_root(cwd)`.
+    -   Found → `Scope::Project`.
+    -   Not Found → `Scope::Project` with `cwd/.padz` as path (may need `init`).
+
+### 4. Nested Repositories
+
+When working in nested repos (e.g., `parent-repo/child-repo`):
+- If only `parent-repo` has `.padz`, starting from `child-repo` will find and use `parent-repo`
+- If both have `.padz`, the innermost one (closest to cwd) wins
+- If neither has `.padz`, scope resolution returns `None` and uses `cwd/.padz` as default

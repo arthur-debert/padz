@@ -1,3 +1,43 @@
+//! # Configuration
+//!
+//! Padz exposes configuration as a first-class command, backed by a hierarchical lookup.
+//!
+//! ## Storage Hierarchy
+//!
+//! Configuration is resolved in priority order:
+//! 1. **Project Config**: `.padz/config.json` — Overrides everything for this repo.
+//! 2. **Global Config**: OS-appropriate config directory (via `directories` crate).
+//! 3. **Hardcoded Defaults**: Built-in fallbacks.
+//!
+//! ## Available Settings
+//!
+//! | Key | Default | Description |
+//! |-----|---------|-------------|
+//! | `file-ext` | `.txt` | Extension for new pad files (e.g., `.md`, `.txt`) |
+//! | `import-extensions` | `.md, .txt, .text, .lex` | Extensions for `padz import` |
+//!
+//! ## Extension Behavior
+//!
+//! **`file-ext`**:
+//! - Controls the extension for *newly created* files only.
+//! - Changing this does **not** rename existing files.
+//! - When reading, the store tries the configured extension first, then falls back to `.txt`.
+//!
+//! **`import-extensions`**:
+//! - Comma-separated list of extensions.
+//! - Used by `padz import <directory>` to filter which files to import.
+//!
+//! ## CLI Usage
+//!
+//! - `padz config` — Show all configuration values.
+//! - `padz config <key>` — Get a specific value.
+//! - `padz config <key> <value>` — Set a value.
+//!
+//! ## Developer Note
+//!
+//! [`PadzConfig`] uses `serde` with `#[serde(default)]` for all fields.
+//! This ensures older config files missing new fields use defaults without errors.
+
 use crate::error::{PadzError, Result};
 use serde::{Deserialize, Serialize};
 use std::fs;

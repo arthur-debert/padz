@@ -2,7 +2,7 @@
 
 ## The Problem
 
-Standard CLIs are "dumb". They do exactly what they are told, often requiring verbose flags for common actions.
+Standard CLIs are "dumb". They do exactly what they are told, often requiring verbose flags for common actions:
 -   Creating a note from clipboard requires `pbpaste | padz create`.
 -   Creating a quick note requires `padz create -m "Title"`.
 -   Just running `padz` shows help instead of the useful list.
@@ -12,31 +12,43 @@ Standard CLIs are "dumb". They do exactly what they are told, often requiring ve
 Padz infers intent from the context of execution (Arguments, Stdin, Clipboard).
 
 ### 1. Naked Execution (`padz`)
--   **Behavior**: Running `padz` (no args) defaults to `padz list`.
--   **Location**: [`padz::cli::commands::run`](file:///src/padz/cli/commands.rs)
--   **Logic**: If `cli.command` is `None`, dispatch `handle_list`.
+-   **Behavior**: Running `padz` with no arguments defaults to `padz list`.
+-   **Location**: `src/padz/cli/commands.rs` — function `run`
+-   **Logic**: If `cli.command` is `None`, dispatch to `handle_list`.
 -   **Why**: The "Read" operation is 90% of usage. It should be the path of least resistance.
 
 ### 2. Smart Create (`padz create`)
--   **Location**: [`padz::cli::commands::handle_create`](file:///src/padz/cli/commands.rs)
+-   **Location**: `src/padz/cli/commands.rs` — function `handle_create`
 
-**Scenario A: Piped Input**
--   `echo "foo" | padz create`
--   **Logic**: Detects stdin is not TTY. Reads content.
--   **Action**: Creates note with content "foo". **Skips Editor**.
--   **Why**: Scripting/Automation.
+**Priority order for content source:**
 
-**Scenario B: Clipboard (Magic)**
--   `padz create` (no input, empty stdin)
--   **Logic**: Checks system clipboard via `padz::clipboard`.
--   **Action**: Pre-fills editor with clipboard content. **Opens Editor**.
--   **Why**: "I just copied this snippet, I want to save it." - Removes the `pbpaste` friction but allows review.
+1. **Piped Input** (highest priority)
+   -   Detected via `!std::io::stdin().is_terminal()`
+   -   `echo "foo" | padz create`
+   -   Action: Creates pad with piped content. **Skips editor**.
+   -   Why: Scripting/automation use case.
 
-**Scenario C: Quick Title**
--   `padz create "Meeting Notes"`
--   **Action**: Uses argument as title. Opens editor for body.
+2. **Clipboard** (fallback when no pipe and no title arg)
+   -   `padz create` (with something in clipboard)
+   -   Action: Pre-fills editor with clipboard content. **Opens editor** (unless `--no-editor`).
+   -   Why: "I just copied this snippet, I want to save it." Removes `pbpaste` friction but allows review.
 
-### 3. Search Fallback
--   `padz foo` (where `foo` is not a command)
--   **Note**: Currently Padz uses explicit subcommands. The "Search" fallback is commonly implemented in `handle_list` argument parsing or a catch-all, but Padz favors explicit `search` or `list --search`.
--   **Design Choice**: Explicit over implicit for commands to avoid "creating a note named list".
+3. **Title Argument**
+   -   `padz create "Meeting Notes"`
+   -   Action: Uses argument as title. Opens editor for body.
+
+**Editor behavior:**
+-   After saving from editor, the pad content is automatically copied to clipboard.
+-   Use `--no-editor` flag to skip opening the editor.
+
+### 3. View Copies to Clipboard
+-   `padz view 1` displays the pad AND copies its content to clipboard.
+-   When viewing multiple pads, they are joined with `---` separators.
+-   This enables quick "view and paste" workflows.
+
+### 4. Explicit Search
+-   `padz search <term>` — Explicit search command.
+-   `padz list --search <term>` — Search within list.
+-   `padz view <term>` — If term isn't a valid index, treated as title search.
+
+**Design Choice**: Padz favors explicit commands over magic. This prevents confusion like "did I just create a note named 'list'?"
