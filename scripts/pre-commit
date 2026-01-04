@@ -48,7 +48,4 @@ cargo check --all-targets
 echo "🧪 Running cargo test..."
 cargo test --all
 
-echo "📘 Running outstanding doctests..."
-cargo test -p outstanding --doc
-
 echo "✅ All pre-commit checks passed!"

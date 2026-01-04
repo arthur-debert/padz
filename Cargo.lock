@@ -1134,14 +1134,15 @@ dependencies = [
 
 [[package]]
 name = "outstanding"
-version = "0.2.1"
+version = "0.2.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "c20f8b19d290c039ca0d47ca2a97be7500f46dbec9847b2824a32c517ca1fa98"
 dependencies = [
  "console",
  "dark-light",
  "minijinja",
  "once_cell",
  "serde",
- "serde_json",
  "unicode-width",
 ]
 
