@@ -551,6 +551,51 @@ pub fn rgb_to_truecolor(rgb: (u8, u8, u8)) -> (u8, u8, u8) {
     rgb
 }
 
+/// Truncates a string to fit within a maximum display width, adding ellipsis if needed.
+///
+/// Uses Unicode width calculations for proper handling of CJK and other wide characters.
+/// If the string fits within `max_width`, it is returned unchanged. If truncation is
+/// needed, characters are removed from the end and replaced with `…` (ellipsis).
+///
+/// # Arguments
+///
+/// * `s` - The string to truncate
+/// * `max_width` - Maximum display width (in terminal columns)
+///
+/// # Example
+///
+/// ```rust
+/// use outstanding::truncate_to_width;
+///
+/// assert_eq!(truncate_to_width("Hello", 10), "Hello");
+/// assert_eq!(truncate_to_width("Hello World", 6), "Hello…");
+/// ```
+pub fn truncate_to_width(s: &str, max_width: usize) -> String {
+    use unicode_width::{UnicodeWidthChar, UnicodeWidthStr};
+
+    // If the string fits, return it unchanged
+    if s.width() <= max_width {
+        return s.to_string();
+    }
+
+    let mut result = String::new();
+    let mut current_width = 0;
+    // Reserve 1 char for ellipsis
+    let limit = max_width.saturating_sub(1);
+
+    for c in s.chars() {
+        let char_width = c.width().unwrap_or(0);
+        if current_width + char_width > limit {
+            result.push('…');
+            return result;
+        }
+        result.push(c);
+        current_width += char_width;
+    }
+
+    result
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -953,5 +998,42 @@ mod tests {
 
         // Reset to default for other tests
         set_theme_detector(|| ColorMode::Light);
+    }
+
+    #[test]
+    fn test_truncate_to_width_no_truncation() {
+        assert_eq!(truncate_to_width("Hello", 10), "Hello");
+        assert_eq!(truncate_to_width("Hello", 5), "Hello");
+    }
+
+    #[test]
+    fn test_truncate_to_width_with_truncation() {
+        assert_eq!(truncate_to_width("Hello World", 6), "Hello…");
+        assert_eq!(truncate_to_width("Hello World", 7), "Hello …");
+    }
+
+    #[test]
+    fn test_truncate_to_width_empty() {
+        assert_eq!(truncate_to_width("", 5), "");
+    }
+
+    #[test]
+    fn test_truncate_to_width_exact_fit() {
+        assert_eq!(truncate_to_width("12345", 5), "12345");
+    }
+
+    #[test]
+    fn test_truncate_to_width_one_over() {
+        assert_eq!(truncate_to_width("123456", 5), "1234…");
+    }
+
+    #[test]
+    fn test_truncate_to_width_zero_width() {
+        assert_eq!(truncate_to_width("Hello", 0), "…");
+    }
+
+    #[test]
+    fn test_truncate_to_width_one_width() {
+        assert_eq!(truncate_to_width("Hello", 1), "…");
     }
 }

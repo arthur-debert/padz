@@ -15,7 +15,7 @@ use super::setup::get_grouped_help;
 use super::styles::{names, PADZ_THEME};
 use super::templates::{FULL_PAD_TEMPLATE, LIST_TEMPLATE, MESSAGES_TEMPLATE, TEXT_LIST_TEMPLATE};
 use chrono::{DateTime, Utc};
-use outstanding::{render, render_with_color, ThemeChoice};
+use outstanding::{render, render_with_color, truncate_to_width, ThemeChoice};
 use padz::api::{CmdMessage, MessageLevel};
 use padz::index::{DisplayIndex, DisplayPad};
 use padz::peek::{format_as_peek, PeekResult};
@@ -435,63 +435,6 @@ pub fn print_messages(messages: &[CmdMessage]) {
     if !output.is_empty() {
         print!("{}", output);
     }
-}
-
-fn truncate_to_width(s: &str, max_width: usize) -> String {
-    use unicode_width::UnicodeWidthChar;
-
-    let mut result = String::new();
-    let mut current_width = 0;
-    // We only reserve space for ellipsis if we actually truncate.
-    // simpler to just build and check.
-    // Existing logic used `limit = max_width.saturating_sub(1)`.
-    // But if s fits in max_width, we don't need ellipsis space.
-
-    // Let's reuse existing logic but handle full fit case?
-    // The existing function:
-    // let limit = max_width.saturating_sub(1);
-    // for c in s.chars() { ... current + char > limit ... }
-    // This implies it ALWAYS reserves 1 char if it gets close?
-    // If s.width() == max_width, current+char > limit might trigger early?
-    // Example: max=5, limit=4. s="12345".
-    // i=0, w=1, cur=1. 1 > 4 false.
-    // ...
-    // i=4, w=1, cur=5. 5 > 4 true. Returns "1234…" (len 5). Correct.
-    // But what if s="1234"?
-    // i=3, w=1, cur=4. 4 > 4 false.
-    // Returns "1234". Correct.
-
-    // So existing logic is correct for "if overflow, replace last char with …".
-
-    let limit = max_width.saturating_sub(1);
-
-    for c in s.chars() {
-        let char_width = c.width().unwrap_or(0);
-        if current_width + char_width > limit {
-            // Check if this IS the last char and it fits exactly?
-            // "12345", max=5. limit=4.
-            // At '5', cur=4. 4+1 > 4. Triggers. Returns "1234…".
-            // Wait, "12345" fits in 5. So it shouldn't be truncated.
-            // The existing logic seems to force ellipsis if it *hits* the limit?
-            // "1234" fits in 4. "12345" fits in 5.
-            // If max=5, s="12345".
-            // i=4 ('5'), current=4. 4+1=5. 5 > 4 is true.
-            // So it returns "1234…".
-            // This suggests `truncate_to_width` aggressively truncates even if exact fit?
-
-            // Let's check `s.width()`.
-            if s.width() <= max_width {
-                return s.to_string();
-            }
-
-            result.push('…');
-            return result;
-        }
-        result.push(c);
-        current_width += char_width;
-    }
-
-    result
 }
 
 fn format_time_ago(timestamp: DateTime<Utc>) -> String {
