@@ -45,6 +45,12 @@ pub mod names {
     pub const LIST_TITLE: &str = "list-title";
     pub const DELETED_INDEX: &str = "deleted-index";
     pub const DELETED_TITLE: &str = "deleted-title";
+    // Help styles
+    pub const HELP_HEADER: &str = "help-header";
+    pub const HELP_SECTION: &str = "help-section";
+    pub const HELP_COMMAND: &str = "help-command";
+    pub const HELP_DESC: &str = "help-desc";
+    pub const HELP_USAGE: &str = "help-usage";
 }
 
 pub static PADZ_THEME: Lazy<AdaptiveTheme> =
@@ -70,6 +76,12 @@ fn build_light_theme() -> Theme {
     let list_title = regular.clone(); // Normal text for list titles (not bold)
     let deleted_index = Style::new().color256(rgb_to_ansi256((186, 33, 45))); // Red for deleted indexes
     let deleted_title = muted.clone(); // Muted gray for deleted titles
+                                       // Help styles
+    let help_header = regular.clone().bold();
+    let help_section = Style::new().color256(rgb_to_ansi256((196, 140, 0))).bold();
+    let help_command = Style::new().color256(rgb_to_ansi256((0, 128, 0)));
+    let help_desc = muted.clone();
+    let help_usage = Style::new().cyan();
 
     Theme::new()
         .add(names::REGULAR, regular)
@@ -88,6 +100,11 @@ fn build_light_theme() -> Theme {
         .add(names::LIST_TITLE, list_title)
         .add(names::DELETED_INDEX, deleted_index)
         .add(names::DELETED_TITLE, deleted_title)
+        .add(names::HELP_HEADER, help_header)
+        .add(names::HELP_SECTION, help_section)
+        .add(names::HELP_COMMAND, help_command)
+        .add(names::HELP_DESC, help_desc)
+        .add(names::HELP_USAGE, help_usage)
 }
 
 fn build_dark_theme() -> Theme {
@@ -110,6 +127,12 @@ fn build_dark_theme() -> Theme {
     let list_title = regular.clone(); // Normal text for list titles (not bold)
     let deleted_index = Style::new().color256(rgb_to_ansi256((255, 138, 128))); // Red for deleted indexes
     let deleted_title = muted.clone(); // Muted gray for deleted titles
+                                       // Help styles
+    let help_header = regular.clone().bold();
+    let help_section = Style::new().color256(rgb_to_ansi256((255, 214, 10))).bold();
+    let help_command = Style::new().color256(rgb_to_ansi256((144, 238, 144)));
+    let help_desc = muted.clone();
+    let help_usage = Style::new().cyan();
 
     Theme::new()
         .add(names::REGULAR, regular)
@@ -128,4 +151,9 @@ fn build_dark_theme() -> Theme {
         .add(names::LIST_TITLE, list_title)
         .add(names::DELETED_INDEX, deleted_index)
         .add(names::DELETED_TITLE, deleted_title)
+        .add(names::HELP_HEADER, help_header)
+        .add(names::HELP_SECTION, help_section)
+        .add(names::HELP_COMMAND, help_command)
+        .add(names::HELP_DESC, help_desc)
+        .add(names::HELP_USAGE, help_usage)
 }

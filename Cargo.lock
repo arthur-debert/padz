@@ -528,6 +528,12 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "21d8ad60dd5b13a4ee6bd8fa2d5d88965c597c67bce32b5fc49c94f55cb50810"
 
 [[package]]
+name = "deunicode"
+version = "1.6.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "abd57806937c9cc163efc8ea3910e00a62e2aeb0b8119f1793a978088f8f6b04"
+
+[[package]]
 name = "difflib"
 version = "0.4.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1134,16 +1140,29 @@ dependencies = [
 
 [[package]]
 name = "outstanding"
-version = "0.2.2"
+version = "0.3.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c20f8b19d290c039ca0d47ca2a97be7500f46dbec9847b2824a32c517ca1fa98"
+checksum = "0ad7975648e687cad845e637a6ce46144bf7803b41a35f73ace24bffaafcdc76"
 dependencies = [
  "console",
  "dark-light",
+ "deunicode",
  "minijinja",
  "once_cell",
  "serde",
  "unicode-width",
+]
+
+[[package]]
+name = "outstanding-clap"
+version = "0.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "27aa54c11f4227c6fe5514d67d2ba254b269547ee39e39faa501ecfad872494a"
+dependencies = [
+ "clap",
+ "console",
+ "outstanding",
+ "serde",
 ]
 
 [[package]]
@@ -1159,6 +1178,7 @@ dependencies = [
  "flate2",
  "once_cell",
  "outstanding",
+ "outstanding-clap",
  "predicates",
  "pulldown-cmark",
  "pulldown-cmark-to-cmark",
