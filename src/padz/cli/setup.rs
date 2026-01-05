@@ -1,7 +1,9 @@
 use crate::cli::styles::PADZ_THEME;
 use clap::{CommandFactory, Parser, Subcommand, ValueEnum};
+use once_cell::sync::Lazy;
+use outstanding::topics::TopicRegistry;
 use outstanding::{render, ThemeChoice};
-use outstanding_clap::{render_help as render_subcommand_help, Config as HelpConfig};
+use outstanding_clap::{render_help as render_subcommand_help, render_topic, Config as HelpConfig};
 use serde::Serialize;
 
 #[derive(Copy, Clone, Debug, ValueEnum)]
@@ -105,6 +107,49 @@ impl CommandGroup {
 const HELP_TEMPLATE: &str = include_str!("templates/help.tmp");
 // Subcommand help template (fixes "Usage: Usage:" duplication)
 const SUBCOMMAND_HELP_TEMPLATE: &str = include_str!("templates/subcommand_help.tmp");
+
+// Help topics registry - loaded from topics directory
+static HELP_TOPICS: Lazy<TopicRegistry> = Lazy::new(|| {
+    let mut registry = TopicRegistry::new();
+    // Topics are embedded at compile time from the topics directory
+    // We manually add them since include_str! requires compile-time paths
+    let topic_content = include_str!("topics/project-vs-global.txt");
+    if let Some(topic) = parse_topic_file("project-vs-global", topic_content) {
+        registry.add_topic(topic);
+    }
+    registry
+});
+
+/// Parse a topic file content into a Topic struct
+fn parse_topic_file(name: &str, content: &str) -> Option<outstanding::topics::Topic> {
+    let lines: Vec<&str> = content.lines().collect();
+    if lines.len() < 2 {
+        return None;
+    }
+
+    // First non-blank line is title
+    let title_idx = lines.iter().position(|l| !l.trim().is_empty())?;
+    let title = lines[title_idx].trim().to_string();
+
+    // Rest is content (skip blank lines after title)
+    let content_lines = &lines[title_idx + 1..];
+    let content_start = content_lines
+        .iter()
+        .position(|l| !l.trim().is_empty())
+        .unwrap_or(content_lines.len());
+
+    let body = content_lines[content_start..].join("\n");
+    if body.trim().is_empty() {
+        return None;
+    }
+
+    Some(outstanding::topics::Topic::new(
+        title,
+        body,
+        outstanding::topics::TopicType::Text,
+        Some(name.to_string()),
+    ))
+}
 
 /// Data structure for grouped help rendering
 #[derive(Serialize)]
@@ -280,7 +325,7 @@ pub fn print_subcommand_help(command: &Option<Commands>) {
 pub fn print_help_for_command(name: &str) {
     let cmd = Cli::command();
 
-    // Find and print help for the subcommand
+    // First, check if it's a subcommand
     for subcmd in cmd.get_subcommands() {
         if subcmd.get_name() == name {
             // Use outstanding-clap with custom template (fixes "Usage: Usage:" issue)
@@ -304,8 +349,23 @@ pub fn print_help_for_command(name: &str) {
         }
     }
 
-    // Fallback to grouped help if subcommand not found
-    eprintln!("Unknown command: {}", name);
+    // Second, check if it's a help topic
+    if let Some(topic) = HELP_TOPICS.get_topic(name) {
+        match render_topic(topic, None) {
+            Ok(help) => {
+                print!("{}", help);
+                return;
+            }
+            Err(_) => {
+                // Fallback: print topic content directly
+                println!("{}\n\n{}", topic.title, topic.content);
+                return;
+            }
+        }
+    }
+
+    // Fallback to grouped help if neither subcommand nor topic found
+    eprintln!("Unknown command or topic: {}", name);
     eprintln!();
     print_grouped_help();
 }
