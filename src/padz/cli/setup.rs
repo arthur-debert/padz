@@ -1,4 +1,8 @@
+use crate::cli::styles::PADZ_THEME;
 use clap::{CommandFactory, Parser, Subcommand, ValueEnum};
+use outstanding::{render, ThemeChoice};
+use outstanding_clap::{render_help as render_subcommand_help, Config as HelpConfig};
+use serde::Serialize;
 
 #[derive(Copy, Clone, Debug, ValueEnum)]
 pub enum CompletionShell {
@@ -97,23 +101,43 @@ impl CommandGroup {
     }
 }
 
-/// Returns the short help output for -h flag
+// Help template for grouped help output
+const HELP_TEMPLATE: &str = include_str!("templates/help.tmp");
+// Subcommand help template (fixes "Usage: Usage:" duplication)
+const SUBCOMMAND_HELP_TEMPLATE: &str = include_str!("templates/subcommand_help.tmp");
+
+/// Data structure for grouped help rendering
+#[derive(Serialize)]
+struct GroupedHelpData {
+    about: String,
+    usage: String,
+    groups: Vec<HelpGroup>,
+    options: Vec<HelpOption>,
+}
+
+#[derive(Serialize)]
+struct HelpGroup {
+    title: String,
+    commands: Vec<HelpCommand>,
+}
+
+#[derive(Serialize)]
+struct HelpCommand {
+    name: String,
+    about: String,
+    padding: String,
+}
+
+#[derive(Serialize)]
+struct HelpOption {
+    name: String,
+    help: String,
+    padding: String,
+}
+
+/// Returns the short help output for -h flag (styled version)
 pub fn get_short_help() -> String {
-    r#"Padz: notes for shell.
-
-padz create (c, new) <title> : creates note in $EDITOR (aliases: new, c)
-
-padz list (ls)               : shows notes (alias: ls, or no args)
-padz search                  : search your notes
-
-padz {view (v), edit (e), delete (d)}: do what they say. (aliases v, e, d)
-padz pin (p) / unpin (u)     : keep your favs on top (aliases p, u)
-
-Deletes are soft deletes, use purge (hard delete) or restore to bring it back.
-
-More: padz help
-"#
-    .to_string()
+    get_grouped_help()
 }
 
 /// Prints the short help output
@@ -121,20 +145,26 @@ pub fn print_short_help() {
     print!("{}", get_short_help());
 }
 
-/// Returns the custom grouped help output as a string
+/// Returns the custom grouped help output as a styled string using outstanding
 pub fn get_grouped_help() -> String {
     let cmd = Cli::command();
     let version = cmd.get_version().unwrap_or("unknown");
 
-    let mut output = String::new();
-    output.push_str(&format!("padz {version}\n"));
-    output.push_str("Context-aware command-line note-taking tool\n");
-    output.push('\n');
-    output.push_str("Usage: padz [OPTIONS] [COMMAND]\n");
-
     // Collect subcommands into groups
     let subcommands: Vec<_> = cmd.get_subcommands().collect();
+    let mut max_cmd_width = 0;
 
+    // First pass: find max command name width
+    for sc in &subcommands {
+        if !sc.is_hide_set() {
+            let name_len = sc.get_name().len();
+            if name_len > max_cmd_width {
+                max_cmd_width = name_len;
+            }
+        }
+    }
+
+    let mut groups = Vec::new();
     for group in CommandGroup::all() {
         let group_cmds: Vec<_> = subcommands
             .iter()
@@ -144,24 +174,61 @@ pub fn get_grouped_help() -> String {
             .collect();
 
         if !group_cmds.is_empty() {
-            output.push('\n');
-            output.push_str(&format!("{}\n", group.heading()));
-            for sc in group_cmds {
-                let name = sc.get_name();
-                let about = sc.get_about().map(|s| s.to_string()).unwrap_or_default();
-                output.push_str(&format!("  {:<12} {}\n", name, about));
-            }
+            let commands: Vec<HelpCommand> = group_cmds
+                .iter()
+                .map(|sc| {
+                    let name = sc.get_name().to_string();
+                    let pad = max_cmd_width.saturating_sub(name.len()) + 2;
+                    HelpCommand {
+                        name,
+                        about: sc.get_about().map(|s| s.to_string()).unwrap_or_default(),
+                        padding: " ".repeat(pad),
+                    }
+                })
+                .collect();
+
+            groups.push(HelpGroup {
+                title: group.heading().to_string(),
+                commands,
+            });
         }
     }
 
-    output.push('\n');
-    output.push_str("Options:\n");
-    output.push_str("  -g, --global     Operate on global pads\n");
-    output.push_str("  -v, --verbose    Verbose output\n");
-    output.push_str("  -h, --help       Print help\n");
-    output.push_str("  -V, --version    Print version\n");
+    // Options with padding
+    let options = vec![
+        HelpOption {
+            name: "-g, --global".to_string(),
+            help: "Operate on global pads".to_string(),
+            padding: "   ".to_string(),
+        },
+        HelpOption {
+            name: "-v, --verbose".to_string(),
+            help: "Verbose output".to_string(),
+            padding: "  ".to_string(),
+        },
+        HelpOption {
+            name: "-h, --help".to_string(),
+            help: "Print help".to_string(),
+            padding: "     ".to_string(),
+        },
+        HelpOption {
+            name: "-V, --version".to_string(),
+            help: "Print version".to_string(),
+            padding: "  ".to_string(),
+        },
+    ];
 
-    output
+    let data = GroupedHelpData {
+        about: format!("padz {version}\nContext-aware command-line note-taking tool"),
+        usage: "padz [OPTIONS] [COMMAND]".to_string(),
+        groups,
+        options,
+    };
+
+    render(HELP_TEMPLATE, &data, ThemeChoice::from(&*PADZ_THEME)).unwrap_or_else(|_| {
+        // Fallback to plain text if rendering fails
+        format!("padz {version}\nContext-aware command-line note-taking tool\n\nUsage: padz [OPTIONS] [COMMAND]\n")
+    })
 }
 
 /// Generates the custom grouped help output
@@ -209,16 +276,31 @@ pub fn print_subcommand_help(command: &Option<Commands>) {
     print_help_for_command(subcommand_name);
 }
 
-/// Prints help for a command by name
+/// Prints help for a command by name using outstanding-clap styled rendering
 pub fn print_help_for_command(name: &str) {
-    let mut cmd = Cli::command();
+    let cmd = Cli::command();
 
     // Find and print help for the subcommand
-    for subcmd in cmd.get_subcommands_mut() {
+    for subcmd in cmd.get_subcommands() {
         if subcmd.get_name() == name {
-            let help = subcmd.render_help();
-            print!("{}", help);
-            return;
+            // Use outstanding-clap with custom template (fixes "Usage: Usage:" issue)
+            let config = HelpConfig {
+                template: Some(SUBCOMMAND_HELP_TEMPLATE.to_string()),
+                ..Default::default()
+            };
+            match render_subcommand_help(subcmd, Some(config)) {
+                Ok(help) => {
+                    print!("{}", help);
+                    return;
+                }
+                Err(_) => {
+                    // Fallback to clap's default rendering if outstanding fails
+                    let mut subcmd_clone = subcmd.clone();
+                    let help = subcmd_clone.render_help();
+                    print!("{}", help);
+                    return;
+                }
+            }
         }
     }
 

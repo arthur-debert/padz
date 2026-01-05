@@ -1,0 +1,18 @@
+{{ about | style("about") | nl }}
+{{ usage | style("usage") | nl }}
+{% if subcommands -%}
+{{ "Commands:" | style("header") }}
+{% for group in subcommands -%}
+{% for cmd in group.commands -%}
+  {{ cmd.name | style("item") }}{{ cmd.padding }}{{ cmd.about | style("desc") }}
+{% endfor -%}
+{% endfor -%}
+{% endif -%}
+{% if options -%}
+{{ "Options:" | style("header") }}
+{% for group in options -%}
+{% for opt in group.options -%}
+  {{ opt.name | style("item") }}{{ opt.padding }}{{ opt.help | style("desc") }}
+{% endfor -%}
+{% endfor -%}
+{% endif -%}
