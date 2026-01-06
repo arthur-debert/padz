@@ -43,10 +43,9 @@ use super::render::{
     print_messages, render_full_pads, render_pad_list, render_pad_list_deleted, render_text_list,
 };
 use super::setup::{
-    print_grouped_help, print_help_for_command, print_short_help, print_subcommand_help, Cli,
-    Commands, CompletionShell, CoreCommands, DataCommands, MiscCommands, PadCommands,
+    parse_cli, Cli, Commands, CompletionShell, CoreCommands, DataCommands, MiscCommands,
+    PadCommands,
 };
-use clap::Parser;
 use padz::api::{ConfigAction, PadFilter, PadStatusFilter, PadzApi};
 use padz::clipboard::{copy_to_clipboard, format_for_clipboard, get_from_clipboard};
 use padz::editor::open_in_editor;
@@ -76,17 +75,9 @@ struct AppContext {
 }
 
 pub fn run() -> Result<()> {
-    let cli = Cli::parse();
-
-    // Handle help flag - at top level use short help, for subcommands use clap's default
-    if cli.help {
-        if cli.command.is_none() {
-            print_short_help();
-        } else {
-            print_subcommand_help(&cli.command);
-        }
-        return Ok(());
-    }
+    // parse_cli() uses outstanding-clap's TopicHelper which handles
+    // help display (including topics) and errors automatically
+    let cli = parse_cli();
 
     // Handle completions before context init (they don't need API)
     if let Some(Commands::Misc(MiscCommands::Completions { shell })) = &cli.command {
@@ -135,7 +126,6 @@ pub fn run() -> Result<()> {
             MiscCommands::Doctor => handle_doctor(&mut ctx),
             MiscCommands::Config { key, value } => handle_config(&mut ctx, key, value),
             MiscCommands::Init => handle_init(&ctx),
-            MiscCommands::Help { command } => handle_help(command),
             MiscCommands::Completions { shell } => handle_completions(shell),
             MiscCommands::CompletePads { deleted } => handle_complete_pads(&mut ctx, deleted),
         },
@@ -419,14 +409,6 @@ fn handle_config(ctx: &mut AppContext, key: Option<String>, value: Option<String
 fn handle_init(ctx: &AppContext) -> Result<()> {
     let result = ctx.api.init(ctx.scope)?;
     print_messages(&result.messages);
-    Ok(())
-}
-
-fn handle_help(command: Option<String>) -> Result<()> {
-    match command {
-        Some(cmd) => print_help_for_command(&cmd),
-        None => print_grouped_help(),
-    }
     Ok(())
 }
 

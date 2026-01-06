@@ -1,8 +1,7 @@
-use crate::cli::styles::PADZ_THEME;
-use clap::{CommandFactory, Parser, Subcommand, ValueEnum};
-use outstanding::{render, ThemeChoice};
-use outstanding_clap::{render_help as render_subcommand_help, Config as HelpConfig};
-use serde::Serialize;
+use clap::{CommandFactory, FromArgMatches, Parser, Subcommand, ValueEnum};
+use once_cell::sync::Lazy;
+use outstanding::topics::TopicRegistry;
+use outstanding_clap::{render_help_with_topics, TopicHelper};
 
 #[derive(Copy, Clone, Debug, ValueEnum)]
 pub enum CompletionShell {
@@ -37,7 +36,6 @@ fn get_version() -> &'static str {
     name = "padz",
     bin_name = "padz",
     version = get_version(),
-    disable_help_flag = true,
     disable_help_subcommand = true
 )]
 #[command(about = "Context-aware command-line note-taking tool", long_about = None)]
@@ -52,262 +50,66 @@ pub struct Cli {
     /// Verbose output
     #[arg(short, long, global = true, help_heading = "Options")]
     pub verbose: bool,
-
-    /// Print help
-    #[arg(short, long, global = true)]
-    pub help: bool,
 }
 
-/// Command group definitions for help output
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum CommandGroup {
-    Core,
-    Pad,
-    Data,
-    Misc,
-}
+// Help topics registry - loaded from topics directory
+static HELP_TOPICS: Lazy<TopicRegistry> = Lazy::new(|| {
+    let mut registry = TopicRegistry::new();
+    // Topics are embedded at compile time from the topics directory
+    // We manually add them since include_str! requires compile-time paths
+    let topic_content = include_str!("topics/scopes.txt");
+    if let Some(topic) = parse_topic_file("scopes", topic_content) {
+        registry.add_topic(topic);
+    }
+    registry
+});
 
-impl CommandGroup {
-    pub fn heading(&self) -> &'static str {
-        match self {
-            CommandGroup::Core => "Core Commands:",
-            CommandGroup::Pad => "Per-Pad Commands:",
-            CommandGroup::Data => "Data Commands:",
-            CommandGroup::Misc => "Miscellaneous:",
-        }
+/// Parse a topic file content into a Topic struct
+fn parse_topic_file(name: &str, content: &str) -> Option<outstanding::topics::Topic> {
+    let lines: Vec<&str> = content.lines().collect();
+    if lines.len() < 2 {
+        return None;
     }
 
-    /// Returns the group for a given command name
-    pub fn for_command(name: &str) -> Option<Self> {
-        match name {
-            "create" | "list" | "search" => Some(CommandGroup::Core),
-            "view" | "edit" | "open" | "delete" | "restore" | "pin" | "unpin" | "path" => {
-                Some(CommandGroup::Pad)
-            }
-            "purge" | "export" | "import" => Some(CommandGroup::Data),
-            "doctor" | "config" | "init" | "help" => Some(CommandGroup::Misc),
-            _ => None,
-        }
+    // First non-blank line is title
+    let title_idx = lines.iter().position(|l| !l.trim().is_empty())?;
+    let title = lines[title_idx].trim().to_string();
+
+    // Rest is content (skip blank lines after title)
+    let content_lines = &lines[title_idx + 1..];
+    let content_start = content_lines
+        .iter()
+        .position(|l| !l.trim().is_empty())
+        .unwrap_or(content_lines.len());
+
+    let body = content_lines[content_start..].join("\n");
+    if body.trim().is_empty() {
+        return None;
     }
 
-    /// Returns all groups in display order
-    pub fn all() -> &'static [CommandGroup] {
-        &[
-            CommandGroup::Core,
-            CommandGroup::Pad,
-            CommandGroup::Data,
-            CommandGroup::Misc,
-        ]
-    }
+    Some(outstanding::topics::Topic::new(
+        title,
+        body,
+        outstanding::topics::TopicType::Text,
+        Some(name.to_string()),
+    ))
 }
 
-// Help template for grouped help output
-const HELP_TEMPLATE: &str = include_str!("templates/help.tmp");
-// Subcommand help template (fixes "Usage: Usage:" duplication)
-const SUBCOMMAND_HELP_TEMPLATE: &str = include_str!("templates/subcommand_help.tmp");
-
-/// Data structure for grouped help rendering
-#[derive(Serialize)]
-struct GroupedHelpData {
-    about: String,
-    usage: String,
-    groups: Vec<HelpGroup>,
-    options: Vec<HelpOption>,
+/// Parses command-line arguments using outstanding-clap's TopicHelper.
+/// This handles help display (including topics) and errors automatically.
+pub fn parse_cli() -> Cli {
+    let helper = TopicHelper::new(HELP_TOPICS.clone());
+    let matches = helper.run(Cli::command());
+    Cli::from_arg_matches(&matches).expect("Failed to parse CLI arguments")
 }
 
-#[derive(Serialize)]
-struct HelpGroup {
-    title: String,
-    commands: Vec<HelpCommand>,
-}
-
-#[derive(Serialize)]
-struct HelpCommand {
-    name: String,
-    about: String,
-    padding: String,
-}
-
-#[derive(Serialize)]
-struct HelpOption {
-    name: String,
-    help: String,
-    padding: String,
-}
-
-/// Returns the short help output for -h flag (styled version)
-pub fn get_short_help() -> String {
-    get_grouped_help()
-}
-
-/// Prints the short help output
-pub fn print_short_help() {
-    print!("{}", get_short_help());
-}
-
-/// Returns the custom grouped help output as a styled string using outstanding
+/// Returns the help output as a styled string (used for empty list display).
 pub fn get_grouped_help() -> String {
     let cmd = Cli::command();
-    let version = cmd.get_version().unwrap_or("unknown");
-
-    // Collect subcommands into groups
-    let subcommands: Vec<_> = cmd.get_subcommands().collect();
-    let mut max_cmd_width = 0;
-
-    // First pass: find max command name width
-    for sc in &subcommands {
-        if !sc.is_hide_set() {
-            let name_len = sc.get_name().len();
-            if name_len > max_cmd_width {
-                max_cmd_width = name_len;
-            }
-        }
-    }
-
-    let mut groups = Vec::new();
-    for group in CommandGroup::all() {
-        let group_cmds: Vec<_> = subcommands
-            .iter()
-            .filter(|sc| {
-                !sc.is_hide_set() && CommandGroup::for_command(sc.get_name()) == Some(*group)
-            })
-            .collect();
-
-        if !group_cmds.is_empty() {
-            let commands: Vec<HelpCommand> = group_cmds
-                .iter()
-                .map(|sc| {
-                    let name = sc.get_name().to_string();
-                    let pad = max_cmd_width.saturating_sub(name.len()) + 2;
-                    HelpCommand {
-                        name,
-                        about: sc.get_about().map(|s| s.to_string()).unwrap_or_default(),
-                        padding: " ".repeat(pad),
-                    }
-                })
-                .collect();
-
-            groups.push(HelpGroup {
-                title: group.heading().to_string(),
-                commands,
-            });
-        }
-    }
-
-    // Options with padding
-    let options = vec![
-        HelpOption {
-            name: "-g, --global".to_string(),
-            help: "Operate on global pads".to_string(),
-            padding: "   ".to_string(),
-        },
-        HelpOption {
-            name: "-v, --verbose".to_string(),
-            help: "Verbose output".to_string(),
-            padding: "  ".to_string(),
-        },
-        HelpOption {
-            name: "-h, --help".to_string(),
-            help: "Print help".to_string(),
-            padding: "     ".to_string(),
-        },
-        HelpOption {
-            name: "-V, --version".to_string(),
-            help: "Print version".to_string(),
-            padding: "  ".to_string(),
-        },
-    ];
-
-    let data = GroupedHelpData {
-        about: format!("padz {version}\nContext-aware command-line note-taking tool"),
-        usage: "padz [OPTIONS] [COMMAND]".to_string(),
-        groups,
-        options,
-    };
-
-    render(HELP_TEMPLATE, &data, ThemeChoice::from(&*PADZ_THEME)).unwrap_or_else(|_| {
-        // Fallback to plain text if rendering fails
+    render_help_with_topics(&cmd, &HELP_TOPICS, None).unwrap_or_else(|_| {
+        let version = cmd.get_version().unwrap_or("unknown");
         format!("padz {version}\nContext-aware command-line note-taking tool\n\nUsage: padz [OPTIONS] [COMMAND]\n")
     })
-}
-
-/// Generates the custom grouped help output
-pub fn print_grouped_help() {
-    print!("{}", get_grouped_help());
-}
-
-/// Prints help for a specific subcommand using clap's built-in rendering
-pub fn print_subcommand_help(command: &Option<Commands>) {
-    let subcommand_name = match command {
-        Some(Commands::Core(c)) => match c {
-            CoreCommands::Create { .. } => "create",
-            CoreCommands::List { .. } => "list",
-            CoreCommands::Search { .. } => "search",
-        },
-        Some(Commands::Pad(c)) => match c {
-            PadCommands::View { .. } => "view",
-            PadCommands::Edit { .. } => "edit",
-            PadCommands::Open { .. } => "open",
-            PadCommands::Delete { .. } => "delete",
-            PadCommands::Restore { .. } => "restore",
-            PadCommands::Pin { .. } => "pin",
-            PadCommands::Unpin { .. } => "unpin",
-            PadCommands::Path { .. } => "path",
-        },
-        Some(Commands::Data(c)) => match c {
-            DataCommands::Purge { .. } => "purge",
-            DataCommands::Export { .. } => "export",
-            DataCommands::Import { .. } => "import",
-        },
-        Some(Commands::Misc(c)) => match c {
-            MiscCommands::Doctor => "doctor",
-            MiscCommands::Config { .. } => "config",
-            MiscCommands::Init => "init",
-            MiscCommands::Help { .. } => "help",
-            MiscCommands::Completions { .. } => "completions",
-            MiscCommands::CompletePads { .. } => "__complete-pads",
-        },
-        None => {
-            print_grouped_help();
-            return;
-        }
-    };
-
-    print_help_for_command(subcommand_name);
-}
-
-/// Prints help for a command by name using outstanding-clap styled rendering
-pub fn print_help_for_command(name: &str) {
-    let cmd = Cli::command();
-
-    // Find and print help for the subcommand
-    for subcmd in cmd.get_subcommands() {
-        if subcmd.get_name() == name {
-            // Use outstanding-clap with custom template (fixes "Usage: Usage:" issue)
-            let config = HelpConfig {
-                template: Some(SUBCOMMAND_HELP_TEMPLATE.to_string()),
-                ..Default::default()
-            };
-            match render_subcommand_help(subcmd, Some(config)) {
-                Ok(help) => {
-                    print!("{}", help);
-                    return;
-                }
-                Err(_) => {
-                    // Fallback to clap's default rendering if outstanding fails
-                    let mut subcmd_clone = subcmd.clone();
-                    let help = subcmd_clone.render_help();
-                    print!("{}", help);
-                    return;
-                }
-            }
-        }
-    }
-
-    // Fallback to grouped help if subcommand not found
-    eprintln!("Unknown command: {}", name);
-    eprintln!();
-    print_grouped_help();
 }
 
 #[derive(Subcommand, Debug)]
@@ -485,13 +287,6 @@ pub enum MiscCommands {
     /// Initialize the store (optional utility)
     #[command(display_order = 32)]
     Init,
-
-    /// Print help for padz or a subcommand
-    #[command(display_order = 33)]
-    Help {
-        /// Subcommand to get help for
-        command: Option<String>,
-    },
 
     /// Generate shell completions
     #[command(hide = true, display_order = 34)]

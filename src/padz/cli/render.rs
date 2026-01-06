@@ -492,7 +492,6 @@ mod tests {
         let output = render_pad_list_internal(&[], Some(false), false, false);
         // Should show the "no pads yet" message with help text
         assert!(output.contains("No pads yet, create one with `padz create`"));
-        assert!(output.contains("Usage: padz [OPTIONS] [COMMAND]"));
     }
 
     #[test]

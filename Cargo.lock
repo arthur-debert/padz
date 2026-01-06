@@ -1140,9 +1140,9 @@ dependencies = [
 
 [[package]]
 name = "outstanding"
-version = "0.3.2"
+version = "0.3.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0ad7975648e687cad845e637a6ce46144bf7803b41a35f73ace24bffaafcdc76"
+checksum = "7112920e41e37858ce05ae827a6a703982d17fd4b1e19f1be2a337035f04713d"
 dependencies = [
  "console",
  "dark-light",
@@ -1155,9 +1155,9 @@ dependencies = [
 
 [[package]]
 name = "outstanding-clap"
-version = "0.1.0"
+version = "0.3.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "27aa54c11f4227c6fe5514d67d2ba254b269547ee39e39faa501ecfad872494a"
+checksum = "4c728d5dbd6a0c3a4c35f03de171ff6dd2e93ad36353ce8283504f31c0d47dfe"
 dependencies = [
  "clap",
  "console",

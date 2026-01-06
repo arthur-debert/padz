@@ -1,0 +1,88 @@
+Projects and Global Notes
+
+Padz stores notes in two scopes: Project (local to a repo) or Global (user-wide).
+
+THE TWO SCOPES
+--------------
+
+Project Scope (default):
+  Data stored in: <repo_root>/.padz/
+  Use case: Project-specific notes, TODOs, code snippets
+
+Global Scope (-g flag):
+  Data stored in: OS data directory
+    - macOS:   ~/Library/Application Support/com.padz.padz/
+    - Linux:   ~/.local/share/padz/
+    - Windows: C:\Users\<user>\AppData\Roaming\padz\padz\
+  Use case: Cross-project notes, personal reminders, grocery lists
+
+
+HOW PADZ FINDS YOUR PROJECT
+---------------------------
+
+When you run padz (without -g), it searches for your project root:
+
+1. Start at your current directory
+2. Look for a directory with BOTH .git AND .padz
+3. If found: use that as project root
+4. If not found: check parent directory
+5. Stop at home directory or filesystem root
+
+Why require BOTH .git AND .padz?
+  - .git alone isn't enough: avoids accidentally using parent repos in monorepos
+  - .padz alone isn't enough: maintains semantic binding to "project" concept
+
+This means you must run `padz init` in a repo to opt-in to project scope.
+
+
+NESTED REPOSITORIES
+-------------------
+
+In monorepos or nested git structures:
+
+  parent-repo/        (.git + .padz)
+    child-repo/       (.git only)
+      your-code/
+
+Running padz from child-repo/ will use parent-repo/.padz/ (walks up until
+it finds both .git and .padz together).
+
+To give child-repo its own notes: run `padz init` inside child-repo.
+
+
+USING THE GLOBAL FLAG
+---------------------
+
+Add -g to any command to use global scope:
+
+  padz -g list          # List global notes
+  padz -g create        # Create global note
+  padz -g view 1        # View global note #1
+
+The -g flag must come BEFORE the subcommand.
+
+
+SWITCHING BETWEEN SCOPES
+------------------------
+
+Project and global notes are completely separate. Use -g to access global
+notes from any directory. Without -g, you're always in project scope.
+
+Example workflow:
+  cd ~/projects/myapp
+  padz create "Fix auth bug"      # Saved to myapp/.padz/
+  padz -g create "Buy groceries"  # Saved to global data dir
+  padz list                       # Shows only myapp notes
+  padz -g list                    # Shows only global notes
+
+
+INITIALIZING PROJECT SCOPE
+--------------------------
+
+To enable project-scope notes in a git repository:
+
+  cd /path/to/your/repo
+  padz init
+
+This creates the .padz/ directory. You may want to add .padz/ to your
+.gitignore if you don't want to share notes with collaborators.
