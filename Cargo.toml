@@ -3,7 +3,7 @@ resolver = "2"
 members = ["crates/padz", "crates/padz-cli"]
 
 [workspace.package]
-version = "0.9.3"
+version = "0.9.4"
 edition = "2021"
 license = "MIT"
 repository = "https://github.com/arthur-debert/padz"
