@@ -113,8 +113,8 @@ static HELP_TOPICS: Lazy<TopicRegistry> = Lazy::new(|| {
     let mut registry = TopicRegistry::new();
     // Topics are embedded at compile time from the topics directory
     // We manually add them since include_str! requires compile-time paths
-    let topic_content = include_str!("topics/project-vs-global.txt");
-    if let Some(topic) = parse_topic_file("project-vs-global", topic_content) {
+    let topic_content = include_str!("topics/scopes.txt");
+    if let Some(topic) = parse_topic_file("scopes", topic_content) {
         registry.add_topic(topic);
     }
     registry
