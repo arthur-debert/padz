@@ -177,23 +177,23 @@ fn render_pad_list_internal(
         // Format index string
         let idx_str = match &dp.index {
             DisplayIndex::Pinned(n) => format!("p{}. ", n),
-            DisplayIndex::Regular(n) => format!("{}. ", n),
+            DisplayIndex::Regular(n) => format!("{:02}. ", n),
             DisplayIndex::Deleted(n) => format!("d{}. ", n),
         };
 
         // Calculate left padding (accounts for pin marker space)
         let left_pad = if is_pinned_section {
-            "  ".to_string() // Space for "⚲ " prefix
+            String::new() // No padding for pinned (pin marker provides alignment)
         } else {
-            "    ".to_string() // 4 spaces to align with pinned entries
+            "  ".to_string() // 2 spaces to align with pinned entries' "⚲ " prefix
         };
 
         // Calculate available width for title
         let pin_width = PIN_MARKER.width();
         let left_prefix_width = if is_pinned_section {
-            2 + pin_width + 1 // "  " + pin + " "
+            pin_width + 1 // pin + " "
         } else {
-            4 // "    "
+            2 // "  "
         };
         let right_suffix_width = if show_right_pin {
             pin_width + 1 // pin + " "
@@ -501,11 +501,11 @@ mod tests {
 
         let output = render_pad_list_internal(&[dp], Some(false), false, false);
 
-        // Should contain the index and title
-        assert!(output.contains("1."));
+        // Should contain zero-padded index and title
+        assert!(output.contains("01."));
         assert!(output.contains("Test Note"));
-        // Should have the left padding (4 spaces for regular)
-        assert!(output.contains("    1."));
+        // Should have 2-space left padding for regular entries (aligns with pinned "⚲ " prefix)
+        assert!(output.contains("  01."));
     }
 
     #[test]
