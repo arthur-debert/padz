@@ -96,7 +96,6 @@
 //! - [`editor`]: External editor integration
 //! - [`clipboard`]: Cross-platform clipboard support
 //! - [`error`]: Error types
-//! - `cli`: CLI behavior, argument parsing, and output formatting (not part of lib API)
 
 pub mod api;
 pub mod clipboard;
