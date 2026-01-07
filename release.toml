@@ -28,5 +28,5 @@ publish = true
 # Verify before release
 verify = true
 
-# Allow releasing from main branch (or feature branch during testing)
-allow-branch = ["main", "chore/workspace-refac"]
+# Allow releasing from main branch only
+allow-branch = ["main"]
