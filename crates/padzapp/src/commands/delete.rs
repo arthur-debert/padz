@@ -1,11 +1,12 @@
 use crate::commands::{CmdMessage, CmdResult};
 use crate::error::Result;
-use crate::index::PadSelector;
+use crate::index::{DisplayPad, PadSelector};
 use crate::model::Scope;
 use crate::store::DataStore;
 use chrono::Utc;
+use uuid::Uuid;
 
-use super::helpers::resolve_selectors;
+use super::helpers::{indexed_pads, resolve_selectors};
 
 pub fn run<S: DataStore>(
     store: &mut S,
@@ -15,6 +16,8 @@ pub fn run<S: DataStore>(
     let resolved = resolve_selectors(store, scope, selectors, true)?;
     let mut result = CmdResult::default();
 
+    // Collect UUIDs and perform deletions
+    let mut deleted_uuids: Vec<Uuid> = Vec::new();
     for (display_index, uuid) in resolved {
         let mut pad = store.get_pad(&uuid, scope)?;
         pad.metadata.is_deleted = true;
@@ -24,7 +27,19 @@ pub fn run<S: DataStore>(
             "Pad deleted ({}): {}",
             display_index, pad.metadata.title
         )));
-        result.affected_pads.push(pad);
+        deleted_uuids.push(uuid);
+    }
+
+    // Re-index to get the new deleted indexes
+    let indexed = indexed_pads(store, scope)?;
+    for uuid in deleted_uuids {
+        if let Some(dp) = indexed.iter().find(|dp| dp.pad.metadata.id == uuid) {
+            result.affected_pads.push(DisplayPad {
+                pad: dp.pad.clone(),
+                index: dp.index.clone(),
+                matches: None,
+            });
+        }
     }
 
     Ok(result)
