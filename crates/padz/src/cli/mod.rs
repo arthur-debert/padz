@@ -55,6 +55,7 @@
 //! - `templates`: Output templates
 
 mod commands;
+mod complete;
 mod render;
 pub mod setup;
 mod styles;

@@ -72,6 +72,10 @@
 mod cli;
 
 fn main() {
+    // Handle shell completions before normal CLI processing.
+    // When COMPLETE=<shell> is set, this intercepts the request and exits.
+    clap_complete::CompleteEnv::with_factory(cli::setup::build_command).complete();
+
     if let Err(e) = cli::run() {
         eprintln!("Error: {}", e);
         std::process::exit(1);

@@ -17,6 +17,7 @@ path = "src/main.rs"
 padzapp = { version = "0.9.7", path = "../padzapp" }
 chrono = { version = "0.4.42", features = ["serde"] }
 clap = { version = "4.5.53", features = ["derive"] }
+clap_complete = { version = "4.5", features = ["unstable-dynamic"] }
 console = "0.15"
 once_cell = "1.19"
 outstanding = "0.3.5"
