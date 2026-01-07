@@ -3,6 +3,12 @@
 //! Padz is a **UI-agnostic note-taking library**. This is not a CLI application that happens
 //! to have some library code—it's a library that happens to have a CLI client.
 //!
+//! ## Workspace Structure
+//!
+//! Padz is organized as a Cargo workspace with two crates:
+//! - `crates/padz/` — This core library (UI-agnostic business logic)
+//! - `crates/padz-cli/` — The CLI tool (depends on this library)
+//!
 //! ## The Problem
 //!
 //! Shell programs tend to conflate interface and logic. Before you know it, logic is outputting
@@ -13,7 +19,7 @@
 //!
 //! ```text
 //! ┌─────────────────────────────────────────────────────────────┐
-//! │  CLI Layer (cli/)                                           │
+//! │  CLI Layer (crates/padz-cli/)                               │
 //! │  - Parses arguments, formats output, handles terminal I/O   │
 //! │  - The ONLY place that knows about stdout/stderr/exit codes │
 //! └─────────────────────────────────────────────────────────────┘
@@ -82,7 +88,7 @@
 //!
 //! 1. **Logic**: Implement and fully test in `commands/<cmd>.rs`
 //! 2. **API**: Add facade method in `api.rs`, test dispatch
-//! 3. **CLI**: Add handler in `cli/commands.rs`, test arg parsing and output
+//! 3. **CLI**: Add handler in CLI crate's `commands.rs`, test arg parsing and output
 //!
 //! ## Module Overview
 //!
