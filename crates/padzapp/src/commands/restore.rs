@@ -1,10 +1,11 @@
 use crate::commands::{CmdMessage, CmdResult};
 use crate::error::Result;
-use crate::index::PadSelector;
+use crate::index::{DisplayIndex, DisplayPad, PadSelector};
 use crate::model::Scope;
 use crate::store::DataStore;
+use uuid::Uuid;
 
-use super::helpers::resolve_selectors;
+use super::helpers::{indexed_pads, resolve_selectors};
 
 pub fn run<S: DataStore>(
     store: &mut S,
@@ -14,6 +15,8 @@ pub fn run<S: DataStore>(
     let resolved = resolve_selectors(store, scope, selectors, false)?;
     let mut result = CmdResult::default();
 
+    // Collect UUIDs and perform restores
+    let mut restored_uuids: Vec<Uuid> = Vec::new();
     for (display_index, uuid) in resolved {
         let mut pad = store.get_pad(&uuid, scope)?;
         pad.metadata.is_deleted = false;
@@ -24,7 +27,25 @@ pub fn run<S: DataStore>(
             "Pad restored ({}): {}",
             display_index, pad.metadata.title
         )));
-        result.affected_pads.push(pad);
+        restored_uuids.push(uuid);
+    }
+
+    // Re-index to get the new regular indexes
+    let indexed = indexed_pads(store, scope)?;
+    for uuid in restored_uuids {
+        // Restored pads get Regular index
+        let dp = indexed
+            .iter()
+            .filter(|dp| dp.pad.metadata.id == uuid)
+            .find(|dp| matches!(dp.index, DisplayIndex::Regular(_)));
+
+        if let Some(dp) = dp {
+            result.affected_pads.push(DisplayPad {
+                pad: dp.pad.clone(),
+                index: dp.index.clone(),
+                matches: None,
+            });
+        }
     }
 
     Ok(result)

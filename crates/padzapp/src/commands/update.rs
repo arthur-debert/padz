@@ -1,6 +1,6 @@
 use crate::commands::{CmdMessage, CmdResult, PadUpdate};
 use crate::error::Result;
-use crate::index::PadSelector;
+use crate::index::{DisplayPad, PadSelector};
 use crate::model::Scope;
 use crate::store::DataStore;
 use chrono::Utc;
@@ -35,7 +35,12 @@ pub fn run<S: DataStore>(store: &mut S, scope: Scope, updates: &[PadUpdate]) -> 
             "Pad updated ({}): {}",
             display_index, pad.metadata.title
         )));
-        result.affected_pads.push(pad);
+        // Index doesn't change after update
+        result.affected_pads.push(DisplayPad {
+            pad,
+            index: display_index,
+            matches: None,
+        });
     }
 
     Ok(result)
