@@ -14,5 +14,31 @@ jobs:
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
 
-      - name: Publish to crates.io
-        run: cargo publish --token ${{ secrets.CRATES_IO_KEY }} --allow-dirty
+      - name: Publish padz (lib) to crates.io
+        run: |
+          VERSION=$(cargo metadata --no-deps --format-version 1 | jq -r '.packages[] | select(.name == "padz") | .version')
+          cargo publish --token ${{ secrets.CRATES_IO_KEY }} --package padz 2>&1 || {
+            # Check if failure is because it already exists
+            if cargo search padz --limit 1 2>/dev/null | grep -q "padz.*$VERSION"; then
+              echo "padz@$VERSION already published, skipping"
+            else
+              echo "Failed to publish padz"
+              exit 1
+            fi
+          }
+
+      - name: Wait for crates.io index update
+        run: sleep 30
+
+      - name: Publish padz-cli to crates.io
+        run: |
+          VERSION=$(cargo metadata --no-deps --format-version 1 | jq -r '.packages[] | select(.name == "padz-cli") | .version')
+          cargo publish --token ${{ secrets.CRATES_IO_KEY }} --package padz-cli 2>&1 || {
+            # Check if failure is because it already exists
+            if cargo search padz-cli --limit 1 2>/dev/null | grep -q "padz-cli.*$VERSION"; then
+              echo "padz-cli@$VERSION already published, skipping"
+            else
+              echo "Failed to publish padz-cli"
+              exit 1
+            fi
+          }

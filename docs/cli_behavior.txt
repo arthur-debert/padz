@@ -13,12 +13,12 @@ Padz infers intent from the context of execution (Arguments, Stdin, Clipboard).
 
 ### 1. Naked Execution (`padz`)
 -   **Behavior**: Running `padz` with no arguments defaults to `padz list`.
--   **Location**: `src/padz/cli/commands.rs` — function `run`
+-   **Location**: `crates/padz-cli/src/cli/commands.rs` — function `run`
 -   **Logic**: If `cli.command` is `None`, dispatch to `handle_list`.
 -   **Why**: The "Read" operation is 90% of usage. It should be the path of least resistance.
 
 ### 2. Smart Create (`padz create`)
--   **Location**: `src/padz/cli/commands.rs` — function `handle_create`
+-   **Location**: `crates/padz-cli/src/cli/commands.rs` — function `handle_create`
 
 **Priority order for content source:**
 

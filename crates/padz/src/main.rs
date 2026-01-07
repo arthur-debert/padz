@@ -1,9 +1,15 @@
 //! # Padz CLI Architecture
 //!
 //! Padz ships with a fully fledged CLI client, but the binary is intentionally thin:
-//! the CLI lives in `src/padz/cli`, while this file only invokes `cli::run()` and
+//! the CLI lives in `src/cli/`, while this file only invokes `cli::run()` and
 //! handles process termination. The CLI itself is organized to keep the
 //! UI-specific concerns **entirely separate** from the application logic.
+//!
+//! ## Workspace Structure
+//!
+//! Padz is organized as a Cargo workspace with two crates:
+//! - `crates/padz/` — Core library with UI-agnostic business logic
+//! - `crates/padz-cli/` — This CLI tool, depends on the `padz` library
 //!
 //! ## Layering
 //!
@@ -11,7 +17,7 @@
 //!
 //! ```text
 //! ┌─────────────────────────────────────────────────────────────┐
-//! │  CLI Layer (src/padz/cli)                                   │
+//! │  CLI Layer (crates/padz-cli/src/cli/)                       │
 //! │  - clap argument parsing (setup.rs)                         │
 //! │  - Command selection + context wiring (commands.rs)         │
 //! │  - Terminal rendering via Outstanding templates (render.rs) │
@@ -20,7 +26,7 @@
 //!                              │
 //!                              ▼
 //! ┌─────────────────────────────────────────────────────────────┐
-//! │  API Layer (src/padz/api.rs)                                │
+//! │  API Layer (crates/padz/src/api.rs)                         │
 //! │  - Normalizes user-facing IDs → UUIDs                       │
 //! │  - Dispatches to command modules                            │
 //! │  - Returns structured `CmdResult` values                    │
@@ -28,7 +34,7 @@
 //!                              │
 //!                              ▼
 //! ┌─────────────────────────────────────────────────────────────┐
-//! │  Command Layer (src/padz/commands/*)                        │
+//! │  Command Layer (crates/padz/src/commands/*)                 │
 //! │  - Pure business logic + data access                        │
 //! │  - No knowledge of stdout/stderr or process exits           │
 //! └─────────────────────────────────────────────────────────────┘
@@ -42,7 +48,7 @@
 //! ## Rendering with Outstanding
 //!
 //! Terminal output is produced through the `outstanding` crate. Templates live in
-//! `src/padz/cli/templates/` (e.g., `list.tmp`, `full_pad.tmp`) and are embedded at
+//! `src/cli/templates/` (e.g., `list.tmp`, `full_pad.tmp`) and are embedded at
 //! compile time via `include_str!()`. `render.rs` feeds data structures into those
 //! templates and the CLI commands simply print the rendered strings. This keeps CLI
 //! layout changes isolated to template files while still producing self-contained
@@ -50,12 +56,12 @@
 //!
 //! ## Testing Approach
 //!
-//! - **Commands layer (`src/padz/commands`)**: heavy unit testing of the business
-//!   logic.
-//! - **API layer (`src/padz/api.rs`)**: mock-focused tests to ensure the correct
-//!   command functions are invoked with the right arguments and that results are
-//!   normalized properly.
-//! - **CLI layer (`src/padz/cli`)**: tests build `clap` argument strings, mock the
+//! - **Commands layer (`crates/padz/src/commands/`)**: heavy unit testing of the
+//!   business logic.
+//! - **API layer (`crates/padz/src/api.rs`)**: mock-focused tests to ensure the
+//!   correct command functions are invoked with the right arguments and that
+//!   results are normalized properly.
+//! - **CLI layer (`src/cli/`)**: tests build `clap` argument strings, mock the
 //!   API facade, and verify the CLI invokes API methods correctly. Rendering is
 //!   verified by supplying canned `CmdResult` structs and comparing the template
 //!   output.

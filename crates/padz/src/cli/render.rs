@@ -16,9 +16,9 @@ use super::styles::{names, PADZ_THEME};
 use super::templates::{FULL_PAD_TEMPLATE, LIST_TEMPLATE, MESSAGES_TEMPLATE, TEXT_LIST_TEMPLATE};
 use chrono::{DateTime, Utc};
 use outstanding::{render, render_with_color, truncate_to_width, ThemeChoice};
-use padz::api::{CmdMessage, MessageLevel};
-use padz::index::{DisplayIndex, DisplayPad};
-use padz::peek::{format_as_peek, PeekResult};
+use padzapp::api::{CmdMessage, MessageLevel};
+use padzapp::index::{DisplayIndex, DisplayPad};
+use padzapp::peek::{format_as_peek, PeekResult};
 use serde::Serialize;
 use unicode_width::UnicodeWidthStr;
 
@@ -224,11 +224,11 @@ fn render_pad_list_internal(
                     .segments
                     .iter()
                     .map(|s| match s {
-                        padz::index::MatchSegment::Plain(t) => MatchSegmentData {
+                        padzapp::index::MatchSegment::Plain(t) => MatchSegmentData {
                             text: t.clone(),
                             style: names::MUTED.to_string(),
                         },
-                        padz::index::MatchSegment::Match(t) => MatchSegmentData {
+                        padzapp::index::MatchSegment::Match(t) => MatchSegmentData {
                             text: t.clone(),
                             style: names::HIGHLIGHT.to_string(),
                         },
@@ -470,7 +470,7 @@ fn format_time_ago(timestamp: DateTime<Utc>) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use padz::model::Pad;
+    use padzapp::model::Pad;
 
     fn make_pad(title: &str, pinned: bool, deleted: bool) -> Pad {
         let mut p = Pad::new(title.to_string(), "some content".to_string());
@@ -585,7 +585,7 @@ mod tests {
 
     #[test]
     fn test_render_search_results() {
-        use padz::index::{MatchSegment, SearchMatch};
+        use padzapp::index::{MatchSegment, SearchMatch};
 
         let pad = make_pad("Search Result", false, false);
         let mut dp = make_display_pad(pad, DisplayIndex::Regular(1));

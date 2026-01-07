@@ -10,18 +10,22 @@ This makes the program unwieldy and notoriously hard to test. So you forgo unit 
 
 Padz enforces a strict separation of the User Interface (CLI) from the Application Logic (API/Commands).
 
+The project is structured as a Cargo workspace with two crates:
+- `crates/padz/` — The core library (UI-agnostic business logic)
+- `crates/padz-cli/` — The CLI tool (depends on `padz` library)
+
 ### 1. The CLI Layer (The "Skin")
--   **Location**: `src/padz/cli/`
--   **Entry Point**: `src/padz/cli/commands.rs` — function `run`
+-   **Location**: `crates/padz-cli/src/cli/`
+-   **Entry Point**: `crates/padz-cli/src/cli/commands.rs` — function `run`
 -   **Responsibility**:
     -   Translates `argv` into Rust types (via `clap`).
     -   Initializes the `AppContext` (API, scope, config).
     -   Calls the API.
-    -   Renders the `CmdResult` to stdout using `src/padz/cli/render.rs`.
+    -   Renders the `CmdResult` to stdout using `crates/padz-cli/src/cli/render.rs`.
 -   **Constraint**: *Never* makes decisions about business state. It only asks the API to do things.
 
 ### 2. The API Layer (The "Facade")
--   **Location**: `src/padz/api.rs`
+-   **Location**: `crates/padz/src/api.rs`
 -   **Key Struct**: `PadzApi<S: DataStore>`
 -   **Responsibility**:
     -   **The Boundary**: Where the edges meet the core.
@@ -31,7 +35,7 @@ Padz enforces a strict separation of the User Interface (CLI) from the Applicati
 -   **Generic Over Storage**: `PadzApi<FileStore>` in production, `PadzApi<InMemoryStore>` in tests.
 
 ### 3. The Command Layer (The "Brain")
--   **Location**: `src/padz/commands/*.rs`
+-   **Location**: `crates/padz/src/commands/*.rs`
 -   **Responsibility**:
     -   Pure business logic.
     -   Validates state (e.g., "Does this pad exist?", "Is it pinned?").
@@ -39,8 +43,8 @@ Padz enforces a strict separation of the User Interface (CLI) from the Applicati
 -   **Testing**: Unit tested heavily with in-memory stores. No I/O dependencies.
 
 ### 4. The Store Layer (The "Memory")
--   **Location**: `src/padz/store/`
--   **Trait**: `DataStore` (defined in `src/padz/store/mod.rs`)
+-   **Location**: `crates/padz/src/store/`
+-   **Trait**: `DataStore` (defined in `crates/padz/src/store/mod.rs`)
 -   **Implementations**:
     -   `FileStore`: Production filesystem storage
     -   `InMemoryStore`: Test-only in-memory storage
