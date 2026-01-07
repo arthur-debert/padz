@@ -1,7 +1,7 @@
-use padz::api::PadzApi;
-use padz::commands::PadzPaths;
-use padz::model::Scope;
-use padz::store::memory::InMemoryStore;
+use padzapp::api::PadzApi;
+use padzapp::commands::PadzPaths;
+use padzapp::model::Scope;
+use padzapp::store::memory::InMemoryStore;
 
 fn setup() -> PadzApi<InMemoryStore> {
     let store = InMemoryStore::new();

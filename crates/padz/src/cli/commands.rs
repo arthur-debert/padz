@@ -46,14 +46,14 @@ use super::setup::{
     parse_cli, Cli, Commands, CompletionShell, CoreCommands, DataCommands, MiscCommands,
     PadCommands,
 };
-use padz::api::{ConfigAction, PadFilter, PadStatusFilter, PadzApi};
-use padz::clipboard::{copy_to_clipboard, format_for_clipboard, get_from_clipboard};
-use padz::editor::open_in_editor;
-use padz::error::Result;
-use padz::init::initialize;
-use padz::model::Scope;
-use padz::model::{extract_title_and_body, parse_pad_content};
-use padz::store::fs::FileStore;
+use padzapp::api::{ConfigAction, PadFilter, PadStatusFilter, PadzApi};
+use padzapp::clipboard::{copy_to_clipboard, format_for_clipboard, get_from_clipboard};
+use padzapp::editor::open_in_editor;
+use padzapp::error::Result;
+use padzapp::init::initialize;
+use padzapp::model::Scope;
+use padzapp::model::{extract_title_and_body, parse_pad_content};
+use padzapp::store::fs::FileStore;
 use std::io::{IsTerminal, Read};
 use std::path::{Path, PathBuf};
 

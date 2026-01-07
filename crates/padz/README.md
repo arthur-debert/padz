@@ -1,30 +1,42 @@
-# padz (library)
+# padz-cli
 
-Core library for padz - a fast, project-aware scratch pad.
+Command-line interface for padz - a fast, project-aware scratch pad.
 
-This crate provides the UI-agnostic business logic for padz. It includes:
-
-- **API Layer** (`api.rs`): Thin facade over commands with input normalization
-- **Command Layer** (`commands/`): Pure business logic for all operations
-- **Store Layer** (`store/`): Storage abstraction with FileStore and InMemoryStore implementations
-- **Model** (`model.rs`): Core data types (Pad, Metadata, Scope)
-
-## Architecture
-
-Everything in this crate is UI-agnostic:
-- Functions take normal Rust arguments and return normal Rust types
-- No stdout/stderr writes
-- No `std::process::exit` calls
-- No terminal assumptions
-
-This enables the same core to serve CLI, web API, or any other UI.
-
-## Usage
-
-See the main [padz repository](https://github.com/arthur-debert/padz) for full documentation.
-
-For the CLI tool, install `padz-cli` instead:
+## Installation
 
 ```bash
 cargo install padz-cli
 ```
+
+The binary is installed as `padz`.
+
+## Usage
+
+```bash
+# Create a new pad
+padz create "Meeting Notes"
+
+# List all pads
+padz
+
+# View a pad
+padz view 1
+
+# Search pads
+padz search "keyword"
+```
+
+## Architecture
+
+This crate is a thin CLI wrapper around the `padz` library. It handles:
+
+- Argument parsing (clap)
+- Terminal I/O (stdout/stderr)
+- Output formatting and styling
+- Shell completion scripts
+
+All business logic lives in the `padz` library crate.
+
+## Documentation
+
+See the main [padz repository](https://github.com/arthur-debert/padz) for full documentation.

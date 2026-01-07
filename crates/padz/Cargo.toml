@@ -4,29 +4,27 @@ version.workspace = true
 edition.workspace = true
 license.workspace = true
 repository.workspace = true
-description = "A fast, project-aware scratch pad library"
-keywords = ["notes", "scratchpad", "productivity"]
-categories = ["development-tools"]
+description = "A fast, project-aware scratch pad for the command line"
+keywords = ["cli", "notes", "scratchpad", "productivity"]
+categories = ["command-line-utilities"]
 readme = "README.md"
 
+[[bin]]
+name = "padz"
+path = "src/main.rs"
+
 [dependencies]
+padzapp = { version = "0.9.6", path = "../padzapp" }
 chrono = { version = "0.4.42", features = ["serde"] }
-directories = "6.0.0"
-flate2 = "1.1.5"
+clap = { version = "4.5.53", features = ["derive"] }
+console = "0.15"
 once_cell = "1.19"
-pulldown-cmark = "0.12"
-pulldown-cmark-to-cmark = "17"
+outstanding = "0.3.5"
+outstanding-clap = "0.3.5"
 serde = { version = "1.0.228", features = ["derive"] }
-serde_json = "1.0.145"
-tar = "0.4.44"
-thiserror = "2.0.17"
 timeago = "0.4"
 unicode-width = "0.2.2"
-uuid = { version = "1.19.0", features = ["v4", "serde"] }
 
 [dev-dependencies]
-tempfile = "3.10.1"
-
-[features]
-default = []
-test_utils = []
+assert_cmd = "2.0.16"
+predicates = "3.1.2"

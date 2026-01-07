@@ -1160,6 +1160,24 @@ dependencies = [
 name = "padz"
 version = "0.9.6"
 dependencies = [
+ "assert_cmd",
+ "chrono",
+ "clap",
+ "console",
+ "once_cell",
+ "outstanding",
+ "outstanding-clap",
+ "padzapp",
+ "predicates",
+ "serde",
+ "timeago",
+ "unicode-width",
+]
+
+[[package]]
+name = "padzapp"
+version = "0.9.6"
+dependencies = [
  "chrono",
  "directories",
  "flate2",
@@ -1174,24 +1192,6 @@ dependencies = [
  "timeago",
  "unicode-width",
  "uuid",
-]
-
-[[package]]
-name = "padz-cli"
-version = "0.9.6"
-dependencies = [
- "assert_cmd",
- "chrono",
- "clap",
- "console",
- "once_cell",
- "outstanding",
- "outstanding-clap",
- "padz",
- "predicates",
- "serde",
- "timeago",
- "unicode-width",
 ]
 
 [[package]]

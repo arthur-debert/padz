@@ -1,6 +1,6 @@
 [workspace]
 resolver = "2"
-members = ["crates/padz", "crates/padz-cli"]
+members = ["crates/padzapp", "crates/padz"]
 
 [workspace.package]
 version = "0.9.6"

@@ -29,4 +29,4 @@ publish = true
 verify = true
 
 # Allow releasing from main branch only
-allow-branch = ["main"]
+allow-branch = ["main", "chore/workspace-refac"]
