@@ -15,10 +15,24 @@ jobs:
         uses: dtolnay/rust-toolchain@stable
 
       - name: Publish padz (lib) to crates.io
-        run: cargo publish --token ${{ secrets.CRATES_IO_KEY }} --package padz
+        run: |
+          cargo publish --token ${{ secrets.CRATES_IO_KEY }} --package padz 2>&1 || {
+            if cargo search padz --limit 1 | grep -q "^padz = \"$(cargo metadata --no-deps --format-version 1 | jq -r '.packages[] | select(.name == "padz") | .version')\""; then
+              echo "padz already published, skipping"
+            else
+              exit 1
+            fi
+          }
 
       - name: Wait for crates.io index update
         run: sleep 30
 
       - name: Publish padz-cli to crates.io
-        run: cargo publish --token ${{ secrets.CRATES_IO_KEY }} --package padz-cli
+        run: |
+          cargo publish --token ${{ secrets.CRATES_IO_KEY }} --package padz-cli 2>&1 || {
+            if cargo search padz-cli --limit 1 | grep -q "^padz-cli = \"$(cargo metadata --no-deps --format-version 1 | jq -r '.packages[] | select(.name == "padz-cli") | .version')\""; then
+              echo "padz-cli already published, skipping"
+            else
+              exit 1
+            fi
+          }
