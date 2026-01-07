@@ -144,6 +144,10 @@ pub enum CoreCommands {
         #[arg(long)]
         no_editor: bool,
 
+        /// Create inside another pad (parent selector, e.g. 1 or p1)
+        #[arg(long, short = 'i')]
+        inside: Option<String>,
+
         /// Title words (joined with spaces, optional - opens empty editor if not provided)
         #[arg(trailing_var_arg = true)]
         title: Vec<String>,

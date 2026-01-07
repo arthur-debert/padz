@@ -149,12 +149,156 @@ fn render_pad_list_internal(
     let mut pad_lines = Vec::new();
     let mut last_was_pinned = false;
 
-    for dp in pads {
-        let is_pinned_section = matches!(dp.index, DisplayIndex::Pinned(_));
+    // Use a recursive helper to flatten the tree with depth/indentation
+    fn process_pad(
+        dp: &DisplayPad,
+        pad_lines: &mut Vec<PadLineData>,
+        prefix: &str, // e.g. "" for root or "1." for child
+        depth: usize,
+        is_pinned_section: bool,
+        is_deleted_root: bool,
+        peek: bool,
+    ) {
         let is_deleted = matches!(dp.index, DisplayIndex::Deleted(_));
         let show_right_pin = dp.pad.metadata.is_pinned && !is_pinned_section;
 
-        // Add separator line between pinned and regular sections
+        // Format index string
+        let local_idx_str = match &dp.index {
+            DisplayIndex::Pinned(n) => format!("p{}", n),
+            DisplayIndex::Regular(n) => format!("{:02}", n), // No dot yet
+            DisplayIndex::Deleted(n) => format!("d{}", n),
+        };
+
+        // Full index string: prefix + local + "."
+        // e.g. Root "01." -> prefix="" + "01" + "."
+        // Child "01.02." -> prefix="01." + "02" + "."
+        // But for display we might want "01." then "  01.02."
+        // Tree text spec: "1. Parent" then "  1.1. Child".
+        // My DisplayIndex::Regular(1) -> "01".
+        // So root is "01."
+        // Child is "01.01." (if local is 1)
+        // Let's build full string.
+        let full_idx_str = if prefix.is_empty() {
+            format!("{}.", local_idx_str)
+        } else {
+            format!("{}{}.", prefix, local_idx_str)
+        };
+
+        // Calculate left padding
+        // Base padding for root items:
+        // Pinned section: 0
+        // Regular section: 2 spaces (alignment with "⚲ ")
+        // Deleted section: 2 spaces (alignment)?
+        // Indentation for depth: depth * 2 spaces.
+        // TOTAL padding = base + depth*2.
+
+        let base_pad = if is_pinned_section { "" } else { "  " };
+
+        let depth_pad = "  ".repeat(depth);
+        let left_pad = format!("{}{}", base_pad, depth_pad);
+
+        // Calculate available width for title
+        let pin_width = PIN_MARKER.width();
+        let left_prefix_width = if is_pinned_section && depth == 0 {
+            pin_width + 1 // pin + " "
+        } else {
+            left_pad.width()
+        };
+
+        let right_suffix_width = if show_right_pin { pin_width + 1 } else { 2 };
+
+        let idx_width = full_idx_str.width();
+        let fixed_width = left_prefix_width + idx_width + right_suffix_width + TIME_WIDTH;
+        let available = LINE_WIDTH.saturating_sub(fixed_width);
+
+        let title_display = truncate_to_width(dp.pad.metadata.title.as_str(), available);
+        let title_width = title_display.width();
+        let padding = " ".repeat(available.saturating_sub(title_width));
+
+        // Process matches (simplified for recursion, assume linear search logic handled matches correctly?)
+        // Matches logic seems OK.
+        let mut match_lines = Vec::new();
+        if let Some(matches) = &dp.matches {
+            for m in matches {
+                if m.line_number == 0 {
+                    continue;
+                }
+                let segments: Vec<MatchSegmentData> = m
+                    .segments
+                    .iter()
+                    .map(|s| match s {
+                        padzapp::index::MatchSegment::Plain(t) => MatchSegmentData {
+                            text: t.clone(),
+                            style: names::MUTED.to_string(),
+                        },
+                        padzapp::index::MatchSegment::Match(t) => MatchSegmentData {
+                            text: t.clone(),
+                            style: names::HIGHLIGHT.to_string(),
+                        },
+                    })
+                    .collect();
+
+                let indent_width = left_prefix_width + idx_width + 1; // Approx alignment
+                let match_available = LINE_WIDTH
+                    .saturating_sub(TIME_WIDTH)
+                    .saturating_sub(indent_width);
+                let truncated = truncate_match_segments(segments, match_available);
+                match_lines.push(MatchLineData {
+                    line_number: format!("{:02}", m.line_number),
+                    segments: truncated,
+                });
+            }
+        }
+
+        let peek_data = if peek {
+            let body_lines: Vec<&str> = dp.pad.content.lines().skip(1).collect();
+            let body = body_lines.join("\n");
+            let result = format_as_peek(&body, 3);
+            if result.opening_lines.is_empty() {
+                None
+            } else {
+                Some(result)
+            }
+        } else {
+            None
+        };
+
+        pad_lines.push(PadLineData {
+            left_pad,
+            index: full_idx_str.clone(),
+            title: title_display,
+            padding,
+            time_ago: format_time_ago(dp.pad.metadata.created_at),
+            is_pinned_section: is_pinned_section && depth == 0, // Only root items get the pin section marker flow
+            is_deleted: is_deleted || is_deleted_root, // Inherit usage for color style? Or just per item? Usually per item.
+            show_left_pin: is_pinned_section && depth == 0,
+            show_right_pin,
+            is_separator: false,
+            matches: match_lines,
+            more_matches_count: 0,
+            peek: peek_data,
+        });
+
+        // RECURSE CHILDREN
+        for child in &dp.children {
+            // New prefix is "full_idx_str" e.g. "01."
+            process_pad(
+                child,
+                pad_lines,
+                &full_idx_str,
+                depth + 1,
+                is_pinned_section,
+                is_deleted_root,
+                peek,
+            );
+        }
+    }
+
+    for dp in pads {
+        let is_pinned_section = matches!(dp.index, DisplayIndex::Pinned(_));
+        let is_deleted_section = matches!(dp.index, DisplayIndex::Deleted(_));
+
+        // Separator between pinned and regular ROOTS
         if last_was_pinned && !is_pinned_section {
             pad_lines.push(PadLineData {
                 left_pad: String::new(),
@@ -174,120 +318,15 @@ fn render_pad_list_internal(
         }
         last_was_pinned = is_pinned_section;
 
-        // Format index string
-        let idx_str = match &dp.index {
-            DisplayIndex::Pinned(n) => format!("p{}. ", n),
-            DisplayIndex::Regular(n) => format!("{:02}. ", n),
-            DisplayIndex::Deleted(n) => format!("d{}. ", n),
-        };
-
-        // Calculate left padding (accounts for pin marker space)
-        let left_pad = if is_pinned_section {
-            String::new() // No padding for pinned (pin marker provides alignment)
-        } else {
-            "  ".to_string() // 2 spaces to align with pinned entries' "⚲ " prefix
-        };
-
-        // Calculate available width for title
-        let pin_width = PIN_MARKER.width();
-        let left_prefix_width = if is_pinned_section {
-            pin_width + 1 // pin + " "
-        } else {
-            2 // "  "
-        };
-        let right_suffix_width = if show_right_pin {
-            pin_width + 1 // pin + " "
-        } else {
-            2 // "  "
-        };
-
-        let idx_width = idx_str.width();
-        let fixed_width = left_prefix_width + idx_width + right_suffix_width + TIME_WIDTH;
-        let available = LINE_WIDTH.saturating_sub(fixed_width);
-
-        // Truncate title and calculate padding
-        let title_display = truncate_to_width(dp.pad.metadata.title.as_str(), available);
-        let title_width = title_display.width();
-        let padding = " ".repeat(available.saturating_sub(title_width));
-
-        // Process matches
-        let mut match_lines = Vec::new();
-        let more_matches = 0;
-
-        if let Some(matches) = &dp.matches {
-            for m in matches {
-                if m.line_number == 0 {
-                    continue;
-                }
-
-                let segments: Vec<MatchSegmentData> = m
-                    .segments
-                    .iter()
-                    .map(|s| match s {
-                        padzapp::index::MatchSegment::Plain(t) => MatchSegmentData {
-                            text: t.clone(),
-                            style: names::MUTED.to_string(),
-                        },
-                        padzapp::index::MatchSegment::Match(t) => MatchSegmentData {
-                            text: t.clone(),
-                            style: names::HIGHLIGHT.to_string(),
-                        },
-                    })
-                    .collect();
-
-                // Calculate indentation width for matches
-                // Template: "{{ pad.left_pad }}    {{ match.line_number }} "
-                // left_pad + 4 spaces + 2 digits + 1 space
-                // left_pad string is "  " (2 chars) or "    " (4 chars).
-                // Let's use left_pad.width() directly.
-                let indent_width = left_pad.width() + 4 + 2 + 1;
-
-                // Available width for match content
-                // User wants to avoid time column.
-                // LINE_WIDTH - TIME_WIDTH - indent
-                let match_available = LINE_WIDTH
-                    .saturating_sub(TIME_WIDTH)
-                    .saturating_sub(indent_width);
-
-                let truncated_segments = truncate_match_segments(segments, match_available);
-
-                match_lines.push(MatchLineData {
-                    line_number: format!("{:02}", m.line_number),
-                    segments: truncated_segments,
-                });
-            }
-        }
-
-        let peek_data = if peek {
-            // Strip the first line (title) to avoid duplication
-            let body_lines: Vec<&str> = dp.pad.content.lines().skip(1).collect();
-            let body = body_lines.join("\n");
-
-            let result = format_as_peek(&body, 3);
-            if result.opening_lines.is_empty() {
-                None
-            } else {
-                Some(result)
-            }
-        } else {
-            None
-        };
-
-        pad_lines.push(PadLineData {
-            left_pad,
-            index: idx_str,
-            title: title_display,
-            padding,
-            time_ago: format_time_ago(dp.pad.metadata.created_at),
+        process_pad(
+            dp,
+            &mut pad_lines,
+            "",
+            0,
             is_pinned_section,
-            is_deleted,
-            show_left_pin: is_pinned_section,
-            show_right_pin,
-            is_separator: false,
-            matches: match_lines,
-            more_matches_count: more_matches,
-            peek: peek_data,
-        });
+            is_deleted_section,
+            peek,
+        );
     }
 
     let data = ListData {
@@ -484,6 +523,7 @@ mod tests {
             pad,
             index,
             matches: None,
+            children: vec![],
         }
     }
 

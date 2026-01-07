@@ -14,7 +14,7 @@ pub fn run<S: DataStore>(store: &mut S, scope: Scope, updates: &[PadUpdate]) -> 
 
     let selectors: Vec<_> = updates
         .iter()
-        .map(|u| PadSelector::Index(u.index.clone()))
+        .map(|u| PadSelector::Path(vec![u.index.clone()]))
         .collect();
     let resolved = resolve_selectors(store, scope, &selectors, false)?;
     let mut result = CmdResult::default();
@@ -31,9 +31,11 @@ pub fn run<S: DataStore>(store: &mut S, scope: Scope, updates: &[PadUpdate]) -> 
         pad.content = normalized_content;
         store.save_pad(&pad, scope)?;
 
+        // Fix: Use display_index directly as it's already formatted for display
         result.add_message(CmdMessage::success(format!(
             "Pad updated ({}): {}",
-            display_index, pad.metadata.title
+            super::helpers::fmt_path(&display_index),
+            pad.metadata.title
         )));
         result.affected_pads.push(pad);
     }
@@ -52,14 +54,21 @@ mod tests {
     #[test]
     fn updates_pad_content() {
         let mut store = InMemoryStore::new();
-        create::run(&mut store, Scope::Project, "Title".into(), "Old".into()).unwrap();
+        create::run(
+            &mut store,
+            Scope::Project,
+            "Title".into(),
+            "Old".into(),
+            None,
+        )
+        .unwrap();
         let update = PadUpdate::new(DisplayIndex::Regular(1), "Title".into(), "New".into());
         run(&mut store, Scope::Project, &[update]).unwrap();
 
         let pads = view::run(
             &store,
             Scope::Project,
-            &[PadSelector::Index(DisplayIndex::Regular(1))],
+            &[PadSelector::Path(vec![DisplayIndex::Regular(1)])],
         )
         .unwrap()
         .listed_pads;

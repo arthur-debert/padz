@@ -256,14 +256,21 @@ mod tests {
     #[test]
     fn test_filters() {
         let mut store = InMemoryStore::new();
-        create::run(&mut store, Scope::Project, "Active".into(), "".into()).unwrap();
-        create::run(&mut store, Scope::Project, "Deleted".into(), "".into()).unwrap();
+        create::run(&mut store, Scope::Project, "Active".into(), "".into(), None).unwrap();
+        create::run(
+            &mut store,
+            Scope::Project,
+            "Deleted".into(),
+            "".into(),
+            None,
+        )
+        .unwrap();
 
         // Delete the second one
         delete::run(
             &mut store,
             Scope::Project,
-            &[PadSelector::Index(DisplayIndex::Regular(1))],
+            &[PadSelector::Path(vec![DisplayIndex::Regular(1)])],
         )
         .unwrap();
 
@@ -309,12 +316,13 @@ mod tests {
     #[test]
     fn test_search() {
         let mut store = InMemoryStore::new();
-        create::run(&mut store, Scope::Project, "Foo".into(), "".into()).unwrap();
+        create::run(&mut store, Scope::Project, "Foo".into(), "".into(), None).unwrap();
         create::run(
             &mut store,
             Scope::Project,
             "Bar".into(),
             "contains foo".into(),
+            None,
         )
         .unwrap();
 

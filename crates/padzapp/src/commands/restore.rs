@@ -11,7 +11,7 @@ pub fn run<S: DataStore>(
     scope: Scope,
     selectors: &[PadSelector],
 ) -> Result<CmdResult> {
-    let resolved = resolve_selectors(store, scope, selectors, false)?;
+    let resolved = resolve_selectors(store, scope, selectors, true)?;
     let mut result = CmdResult::default();
 
     for (display_index, uuid) in resolved {
@@ -22,7 +22,8 @@ pub fn run<S: DataStore>(
         store.save_pad(&pad, scope)?;
         result.add_message(CmdMessage::success(format!(
             "Pad restored ({}): {}",
-            display_index, pad.metadata.title
+            super::helpers::fmt_path(&display_index),
+            pad.metadata.title
         )));
         result.affected_pads.push(pad);
     }
@@ -41,13 +42,13 @@ mod tests {
     #[test]
     fn restores_deleted_pad() {
         let mut store = InMemoryStore::new();
-        create::run(&mut store, Scope::Project, "Title".into(), "".into()).unwrap();
+        create::run(&mut store, Scope::Project, "Title".into(), "".into(), None).unwrap();
 
         // Delete it
         delete::run(
             &mut store,
             Scope::Project,
-            &[PadSelector::Index(DisplayIndex::Regular(1))],
+            &[PadSelector::Path(vec![DisplayIndex::Regular(1)])],
         )
         .unwrap();
 
@@ -71,7 +72,7 @@ mod tests {
         let result = run(
             &mut store,
             Scope::Project,
-            &[PadSelector::Index(DisplayIndex::Deleted(1))],
+            &[PadSelector::Path(vec![DisplayIndex::Deleted(1)])],
         )
         .unwrap();
 
@@ -103,18 +104,18 @@ mod tests {
     #[test]
     fn restores_multiple_pads() {
         let mut store = InMemoryStore::new();
-        create::run(&mut store, Scope::Project, "A".into(), "".into()).unwrap();
-        create::run(&mut store, Scope::Project, "B".into(), "".into()).unwrap();
-        create::run(&mut store, Scope::Project, "C".into(), "".into()).unwrap();
+        create::run(&mut store, Scope::Project, "A".into(), "".into(), None).unwrap();
+        create::run(&mut store, Scope::Project, "B".into(), "".into(), None).unwrap();
+        create::run(&mut store, Scope::Project, "C".into(), "".into(), None).unwrap();
 
         // Delete all three
         delete::run(
             &mut store,
             Scope::Project,
             &[
-                PadSelector::Index(DisplayIndex::Regular(1)),
-                PadSelector::Index(DisplayIndex::Regular(2)),
-                PadSelector::Index(DisplayIndex::Regular(3)),
+                PadSelector::Path(vec![DisplayIndex::Regular(1)]),
+                PadSelector::Path(vec![DisplayIndex::Regular(2)]),
+                PadSelector::Path(vec![DisplayIndex::Regular(3)]),
             ],
         )
         .unwrap();
@@ -124,8 +125,8 @@ mod tests {
             &mut store,
             Scope::Project,
             &[
-                PadSelector::Index(DisplayIndex::Deleted(1)),
-                PadSelector::Index(DisplayIndex::Deleted(3)),
+                PadSelector::Path(vec![DisplayIndex::Deleted(1)]),
+                PadSelector::Path(vec![DisplayIndex::Deleted(3)]),
             ],
         )
         .unwrap();
@@ -153,8 +154,8 @@ mod tests {
         let mut store = InMemoryStore::new();
 
         // Create two pads with a small delay between them
-        create::run(&mut store, Scope::Project, "Older".into(), "".into()).unwrap();
-        create::run(&mut store, Scope::Project, "Newer".into(), "".into()).unwrap();
+        create::run(&mut store, Scope::Project, "Older".into(), "".into(), None).unwrap();
+        create::run(&mut store, Scope::Project, "Newer".into(), "".into(), None).unwrap();
 
         // Get original created_at of the older pad (which is now index 2 since newest first)
         let original = get::run(&store, Scope::Project, get::PadFilter::default()).unwrap();
@@ -169,14 +170,14 @@ mod tests {
         delete::run(
             &mut store,
             Scope::Project,
-            &[PadSelector::Index(DisplayIndex::Regular(2))],
+            &[PadSelector::Path(vec![DisplayIndex::Regular(2)])],
         )
         .unwrap();
 
         run(
             &mut store,
             Scope::Project,
-            &[PadSelector::Index(DisplayIndex::Deleted(1))],
+            &[PadSelector::Path(vec![DisplayIndex::Deleted(1)])],
         )
         .unwrap();
 

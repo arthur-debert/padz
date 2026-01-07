@@ -34,16 +34,37 @@ fn pin_state<S: DataStore>(
 
     for (display_index, uuid) in resolved {
         let mut pad = store.get_pad(&uuid, scope)?;
+        let was_already_pinned = pad.metadata.is_pinned; // Capture original state
+
         pad.metadata.is_pinned = is_pinned;
         pad.metadata.pinned_at = if is_pinned { Some(Utc::now()) } else { None };
         pad.metadata.delete_protected = is_pinned;
         store.save_pad(&pad, scope)?;
 
-        let verb = if is_pinned { "pinned" } else { "unpinned" };
-        result.add_message(CmdMessage::success(format!(
-            "Pad {} ({}): {}",
-            verb, display_index, pad.metadata.title
-        )));
+        if is_pinned && !was_already_pinned {
+            // Check if it was actually pinned
+            result.add_message(CmdMessage::success(format!(
+                "Pinned pad {}",
+                super::helpers::fmt_path(&display_index)
+            )));
+        } else if !is_pinned && was_already_pinned {
+            // Check if it was actually unpinned
+            result.add_message(CmdMessage::success(format!(
+                "Unpinned pad {}",
+                super::helpers::fmt_path(&display_index)
+            )));
+        } else if is_pinned && was_already_pinned {
+            result.add_message(CmdMessage::info(format!(
+                "Pad {} is already pinned",
+                super::helpers::fmt_path(&display_index)
+            )));
+        } else {
+            // !is_pinned && !was_already_pinned
+            result.add_message(CmdMessage::info(format!(
+                "Pad {} is already unpinned",
+                super::helpers::fmt_path(&display_index)
+            )));
+        }
         result.affected_pads.push(pad);
     }
 
@@ -62,10 +83,10 @@ mod tests {
     #[test]
     fn pinning_assigns_p_index() {
         let mut store = InMemoryStore::new();
-        create::run(&mut store, Scope::Project, "A".into(), "".into()).unwrap();
-        create::run(&mut store, Scope::Project, "B".into(), "".into()).unwrap();
+        create::run(&mut store, Scope::Project, "A".into(), "".into(), None).unwrap();
+        create::run(&mut store, Scope::Project, "B".into(), "".into(), None).unwrap();
 
-        let sel = PadSelector::Index(DisplayIndex::Regular(1));
+        let sel = PadSelector::Path(vec![DisplayIndex::Regular(1)]);
         pin(&mut store, Scope::Project, slice::from_ref(&sel)).unwrap();
 
         let result = get::run(&store, Scope::Project, get::PadFilter::default()).unwrap();
@@ -78,8 +99,8 @@ mod tests {
     #[test]
     fn unpinning_removes_pinned_flag() {
         let mut store = InMemoryStore::new();
-        create::run(&mut store, Scope::Project, "A".into(), "".into()).unwrap();
-        let sel = PadSelector::Index(DisplayIndex::Regular(1));
+        create::run(&mut store, Scope::Project, "A".into(), "".into(), None).unwrap();
+        let sel = PadSelector::Path(vec![DisplayIndex::Regular(1)]);
         pin(&mut store, Scope::Project, slice::from_ref(&sel)).unwrap();
         unpin(&mut store, Scope::Project, slice::from_ref(&sel)).unwrap();
 
@@ -93,13 +114,13 @@ mod tests {
     #[test]
     fn pinning_enables_delete_protection() {
         let mut store = InMemoryStore::new();
-        create::run(&mut store, Scope::Project, "A".into(), "".into()).unwrap();
+        create::run(&mut store, Scope::Project, "A".into(), "".into(), None).unwrap();
 
         // Pin it
         pin(
             &mut store,
             Scope::Project,
-            &[PadSelector::Index(DisplayIndex::Regular(1))],
+            &[PadSelector::Path(vec![DisplayIndex::Regular(1)])],
         )
         .unwrap();
 
@@ -112,7 +133,7 @@ mod tests {
         let err = delete::run(
             &mut store,
             Scope::Project,
-            &[PadSelector::Index(DisplayIndex::Pinned(1))],
+            &[PadSelector::Path(vec![DisplayIndex::Pinned(1)])],
         );
         assert!(err.is_err());
 
@@ -120,7 +141,7 @@ mod tests {
         unpin(
             &mut store,
             Scope::Project,
-            &[PadSelector::Index(DisplayIndex::Pinned(1))],
+            &[PadSelector::Path(vec![DisplayIndex::Pinned(1)])],
         )
         .unwrap();
 
@@ -132,7 +153,7 @@ mod tests {
         let success = delete::run(
             &mut store,
             Scope::Project,
-            &[PadSelector::Index(DisplayIndex::Regular(1))],
+            &[PadSelector::Path(vec![DisplayIndex::Regular(1)])],
         );
         assert!(success.is_ok());
     }

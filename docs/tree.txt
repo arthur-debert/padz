@@ -1,0 +1,81 @@
+# Padz Tree Support Specification
+
+## 1. Hierarchy Model
+
+Padz is moving from a flat list to a nested hierarchy.
+- **Structure**: Core entity is still a `Pad`. A Pad can have an optional `parent_id`.
+- **Depth**: Arbitrary depth is supported.
+- **Ordering**: 
+  - Sibling pads are ordered by Creation Date (Newest first).
+  - Pinned pads appear first in their respective child list (sharded per parent).
+
+## 2. Display Identifiers (DI) & Addressing
+
+### Format
+DIs use **Dot Notation** to represent the path from the root.
+- `X.Y.Z` refers to the Z-th child of the Y-th child of the X-th root pad.
+- **Root**: `1`, `2`... (e.g. `4` is root pad #4)
+- **Nested**: `3.7` (7th child of root #3)
+- **Pinned**: `p1`, `3.p1` (1st pinned pad inside root #3)
+
+### Sharding
+Indexes are bucketed per parent.
+- If Parent A has 3 children, they are `A.1`, `A.2`, `A.3`.
+- If Parent B has 2 children, they are `B.1`, `B.2`.
+- Indexes are NOT globally unique; they are path-dependent. `1` means different things inside A vs B.
+
+## 3. Ranges & Selection
+
+Ranges allow selecting multiple pads via a linearized traversal order.
+
+### Linearization Rule (Pre-Order)
+The "selectable list" is formed by checking the tree depth-first (Parent, then Children).
+Example Tree:
+1. Root A
+   1.1 Child A1
+   1.2 Child A2
+2. Root B
+   2.1 Child B1
+   2.2 Child B2
+3. Root C
+
+Linear Order: `1`, `1.1`, `1.2`, `2`, `2.1`, `2.2`, `3`
+
+### Range Logic
+Format: `Start-End`
+- **Inclusive**: Selects everything from `Start` node up to and including `End` node in the linear order.
+- **Children**: 
+  - Implicitly selects children of *intermediate* nodes (because they appear between start and end in linearization).
+  - Does NOT automatically limit or expand children of the start/end nodes beyond the exact match.
+
+### Examples
+- `1.1-1.2`: Selects `1.1`, `1.2`.
+- `1.1-3`: Selects `1.1`, `1.2`, `2`, `2.1`, `2.2`, `3`. 
+  - Note: `3` is selected, but `3.1` (if it existed) is NOT, because it comes after `3`.
+- `1.2-2.1`: Selects `1.2`, `2`, `2.1`.
+
+## 4. Deletion & State
+
+### Soft Delete (Default)
+`padz delete <selector>`
+- Sets `is_deleted = true` on the target pad(s).
+- **Non-Recursive**: Children are NOT marked deleted. They remain in the database but are effectively hidden because their parent is deleted (unless looking at deleted items).
+- **Rationale**: Restoring a parent allows recovering the exact state of children.
+
+### Hard Delete (Purge)
+`padz purge <selector>`
+- **Recursive**: Permanently removes the target pad AND all its children (safety check required).
+- **Safety Valve**: Purging a parent with existing children requires a `--recursive` flag (or similar confirmation).
+
+## 5. Creation
+
+New CLI Flag: `--inside <selector>` (or `--parent`).
+- `padz create "Note"` -> Creates root pad.
+- `padz create "Child Note" --inside 1` -> Creates child of Pad 1.
+- `padz create "Deep Note" --inside 1.2` -> Creates child of Pad 1.2.
+
+## 6. API Output
+
+The internal `DisplayPad` structure generally reflects the tree.
+API responses should include children vectors.
+Commands like `list` or `search` will return hierarchically structured data where applicable.
