@@ -26,16 +26,28 @@ padz view 1
 padz search "keyword"
 ```
 
+## Shell Completions
+
+Enable tab completion for commands, options, and pad titles:
+
+```bash
+# Bash - add to ~/.bashrc
+eval "$(padz completions bash)"
+
+# Zsh - add to ~/.zshrc
+eval "$(padz completions zsh)"
+```
+
 ## Architecture
 
-This crate is a thin CLI wrapper around the `padz` library. It handles:
+This crate is a thin CLI wrapper around the `padzapp` library. It handles:
 
 - Argument parsing (clap)
 - Terminal I/O (stdout/stderr)
 - Output formatting and styling
-- Shell completion scripts
+- Dynamic shell completions (clap_complete)
 
-All business logic lives in the `padz` library crate.
+All business logic lives in the `padzapp` library crate.
 
 ## Documentation
 

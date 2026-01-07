@@ -45,15 +45,21 @@ padz --global create "Global note"
 
 ## Shell Completions
 
-Generate shell completions:
+Enable tab completion for commands, options, and pad titles:
 
 ```bash
-# Bash
-padz completions bash >> ~/.bashrc
+# Bash - add to ~/.bashrc
+eval "$(padz completions bash)"
 
-# Zsh
-padz completions zsh >> ~/.zshrc
+# Zsh - add to ~/.zshrc
+eval "$(padz completions zsh)"
 ```
+
+Completions include:
+- All commands and their aliases (`view`/`v`, `edit`/`e`, etc.)
+- Command options (`--global`, `--deleted`, `--peek`, etc.)
+- Pad indexes (`1`, `2`, `p1`, `d1`, etc.)
+- Pad titles for quick lookup
 
 ## Features
 

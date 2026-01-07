@@ -1,3 +1,4 @@
+use super::complete::{active_pads_completer, all_pads_completer, deleted_pads_completer};
 use clap::{CommandFactory, FromArgMatches, Parser, Subcommand, ValueEnum};
 use once_cell::sync::Lazy;
 use outstanding::topics::TopicRegistry;
@@ -36,7 +37,8 @@ fn get_version() -> &'static str {
     name = "padz",
     bin_name = "padz",
     version = get_version(),
-    disable_help_subcommand = true
+    disable_help_subcommand = true,
+    after_help = "Enable shell completions:\n  eval \"$(padz completions bash)\"  # add to ~/.bashrc\n  eval \"$(padz completions zsh)\"   # add to ~/.zshrc"
 )]
 #[command(about = "Context-aware command-line note-taking tool", long_about = None)]
 pub struct Cli {
@@ -93,6 +95,12 @@ fn parse_topic_file(name: &str, content: &str) -> Option<outstanding::topics::To
         outstanding::topics::TopicType::Text,
         Some(name.to_string()),
     ))
+}
+
+/// Builds the clap Command for use with CompleteEnv.
+/// This is called by the completion system before normal parsing.
+pub fn build_command() -> clap::Command {
+    Cli::command()
 }
 
 /// Parses command-line arguments using outstanding-clap's TopicHelper.
@@ -168,7 +176,7 @@ pub enum PadCommands {
     #[command(alias = "v", display_order = 10)]
     View {
         /// Indexes of the pads (e.g. 1 p1 d1)
-        #[arg(required = true, num_args = 1..)]
+        #[arg(required = true, num_args = 1.., add = all_pads_completer())]
         indexes: Vec<String>,
 
         /// Peek at pad content
@@ -180,7 +188,7 @@ pub enum PadCommands {
     #[command(alias = "e", display_order = 11)]
     Edit {
         /// Indexes of the pads (e.g. 1 p1 d1)
-        #[arg(required = true, num_args = 1..)]
+        #[arg(required = true, num_args = 1.., add = active_pads_completer())]
         indexes: Vec<String>,
     },
 
@@ -188,7 +196,7 @@ pub enum PadCommands {
     #[command(alias = "o", display_order = 12)]
     Open {
         /// Indexes of the pads (e.g. 1 p1 d1)
-        #[arg(required = true, num_args = 1..)]
+        #[arg(required = true, num_args = 1.., add = all_pads_completer())]
         indexes: Vec<String>,
     },
 
@@ -196,7 +204,7 @@ pub enum PadCommands {
     #[command(alias = "rm", display_order = 13)]
     Delete {
         /// Indexes of the pads (e.g. 1 3 5)
-        #[arg(required = true, num_args = 1..)]
+        #[arg(required = true, num_args = 1.., add = active_pads_completer())]
         indexes: Vec<String>,
     },
 
@@ -204,7 +212,7 @@ pub enum PadCommands {
     #[command(display_order = 14)]
     Restore {
         /// Indexes of deleted pads (e.g. d1 d2 or just 1 2)
-        #[arg(required = true, num_args = 1..)]
+        #[arg(required = true, num_args = 1.., add = deleted_pads_completer())]
         indexes: Vec<String>,
     },
 
@@ -212,7 +220,7 @@ pub enum PadCommands {
     #[command(alias = "p", display_order = 15)]
     Pin {
         /// Indexes of the pads (e.g. 1 3 5)
-        #[arg(required = true, num_args = 1..)]
+        #[arg(required = true, num_args = 1.., add = active_pads_completer())]
         indexes: Vec<String>,
     },
 
@@ -220,7 +228,7 @@ pub enum PadCommands {
     #[command(alias = "u", display_order = 16)]
     Unpin {
         /// Indexes of the pads (e.g. p1 p2 p3)
-        #[arg(required = true, num_args = 1..)]
+        #[arg(required = true, num_args = 1.., add = active_pads_completer())]
         indexes: Vec<String>,
     },
 
@@ -228,7 +236,7 @@ pub enum PadCommands {
     #[command(display_order = 17)]
     Path {
         /// Indexes of the pads (e.g. 1 p1 d1)
-        #[arg(required = true, num_args = 1..)]
+        #[arg(required = true, num_args = 1.., add = all_pads_completer())]
         indexes: Vec<String>,
     },
 }
@@ -239,7 +247,7 @@ pub enum DataCommands {
     #[command(display_order = 20)]
     Purge {
         /// Indexes of the pads (e.g. d1 d2) - if omitted, purges all deleted pads
-        #[arg(required = false, num_args = 0..)]
+        #[arg(required = false, num_args = 0.., add = deleted_pads_completer())]
         indexes: Vec<String>,
 
         /// Skip confirmation
@@ -255,7 +263,7 @@ pub enum DataCommands {
         single_file: Option<String>,
 
         /// Indexes of the pads (e.g. 1 2) - if omitted, exports all active pads
-        #[arg(required = false, num_args = 0..)]
+        #[arg(required = false, num_args = 0.., add = active_pads_completer())]
         indexes: Vec<String>,
     },
 
@@ -289,18 +297,10 @@ pub enum MiscCommands {
     Init,
 
     /// Generate shell completions
-    #[command(hide = true, display_order = 34)]
+    #[command(display_order = 34)]
     Completions {
         /// Shell to generate completions for
         #[arg(value_enum)]
         shell: CompletionShell,
-    },
-
-    /// Output pad indexes for shell completion (hidden)
-    #[command(hide = true, name = "__complete-pads", display_order = 35)]
-    CompletePads {
-        /// Shell to generate completions for
-        #[arg(long)]
-        deleted: bool,
     },
 }
