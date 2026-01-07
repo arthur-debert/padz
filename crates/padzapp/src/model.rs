@@ -69,6 +69,7 @@ pub struct Metadata {
     pub is_deleted: bool,
     pub deleted_at: Option<DateTime<Utc>>,
     pub delete_protected: bool,
+    pub parent_id: Option<Uuid>,
     // We store the title in metadata to list without reading content files
     pub title: String,
 }
@@ -80,20 +81,6 @@ impl<'de> Deserialize<'de> for Metadata {
     where
         D: serde::Deserializer<'de>,
     {
-        #[derive(Deserialize)]
-        struct MetadataHelper {
-            id: Uuid,
-            created_at: DateTime<Utc>,
-            updated_at: DateTime<Utc>,
-            is_pinned: bool,
-            pinned_at: Option<DateTime<Utc>>,
-            is_deleted: bool,
-            deleted_at: Option<DateTime<Utc>>,
-            #[serde(default)]
-            delete_protected: Option<bool>,
-            title: String,
-        }
-
         let helper = MetadataHelper::deserialize(deserializer)?;
 
         Ok(Metadata {
@@ -107,9 +94,26 @@ impl<'de> Deserialize<'de> for Metadata {
             // If delete_protected is missing (None), default to is_pinned.
             // This ensures legacy pinned pads are protected.
             delete_protected: helper.delete_protected.unwrap_or(helper.is_pinned),
+            parent_id: helper.parent_id,
             title: helper.title,
         })
     }
+}
+
+#[derive(Deserialize)]
+struct MetadataHelper {
+    id: Uuid,
+    created_at: DateTime<Utc>,
+    updated_at: DateTime<Utc>,
+    is_pinned: bool,
+    pinned_at: Option<DateTime<Utc>>,
+    is_deleted: bool,
+    deleted_at: Option<DateTime<Utc>>,
+    #[serde(default)]
+    delete_protected: Option<bool>,
+    #[serde(default)]
+    parent_id: Option<Uuid>,
+    title: String,
 }
 
 impl Metadata {
@@ -124,6 +128,7 @@ impl Metadata {
             is_deleted: false,
             deleted_at: None,
             delete_protected: false,
+            parent_id: None,
             title,
         }
     }
@@ -296,5 +301,48 @@ mod tests {
         let (title, content) = parse_pad_content("OneLine").unwrap();
         assert_eq!(title, "OneLine");
         assert_eq!(content, "OneLine");
+    }
+
+    #[test]
+    fn test_metadata_serialization_roundtrip() {
+        let parent_id = Uuid::new_v4();
+        let mut meta = Metadata::new("Child Pad".to_string());
+        meta.parent_id = Some(parent_id);
+
+        // Serialize
+        let json = serde_json::to_string(&meta).unwrap();
+
+        // Deserialize
+        let loaded: Metadata = serde_json::from_str(&json).unwrap();
+
+        assert_eq!(loaded.id, meta.id);
+        assert_eq!(loaded.parent_id, Some(parent_id));
+        assert_eq!(loaded.title, "Child Pad");
+    }
+
+    #[test]
+    fn test_legacy_metadata_deserialization() {
+        let id = Uuid::new_v4();
+        // JSON without parent_id (legacy format)
+        let json = format!(
+            r#"{{
+            "id": "{}",
+            "created_at": "2023-01-01T00:00:00Z",
+            "updated_at": "2023-01-01T00:00:00Z",
+            "is_pinned": false,
+            "pinned_at": null,
+            "is_deleted": false,
+            "deleted_at": null,
+            "delete_protected": false,
+            "title": "Legacy Pad"
+        }}"#,
+            id
+        );
+
+        let loaded: Metadata = serde_json::from_str(&json).unwrap();
+
+        assert_eq!(loaded.id, id);
+        assert_eq!(loaded.parent_id, None);
+        assert_eq!(loaded.title, "Legacy Pad");
     }
 }
