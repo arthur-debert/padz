@@ -188,4 +188,68 @@ mod tests {
 
         assert!(res.messages[0].content.contains("Path not found"));
     }
+
+    #[test]
+    fn test_import_empty_content_returns_zero() {
+        let mut store = InMemoryStore::new();
+        // Empty content (whitespace only) should not create a pad
+        let result = import_content(&mut store, Scope::Project, "   \n\n  ").unwrap();
+        assert_eq!(result, 0);
+
+        let pads = store.list_pads(Scope::Project).unwrap();
+        assert_eq!(pads.len(), 0);
+    }
+
+    #[test]
+    fn test_import_file_with_non_utf8_fails() {
+        let mut store = InMemoryStore::new();
+        let temp_dir = tempfile::tempdir().unwrap();
+        let file_path = temp_dir.path().join("binary.md");
+
+        // Write invalid UTF-8 bytes
+        std::fs::write(&file_path, [0xFF, 0xFE, 0x00, 0x01]).unwrap();
+
+        let res = run(
+            &mut store,
+            Scope::Project,
+            vec![file_path],
+            &[".md".to_string()],
+        )
+        .unwrap();
+
+        // Should report failure
+        assert!(res.messages[0].content.contains("Failed to import"));
+        // Total should be 0
+        assert!(res
+            .messages
+            .iter()
+            .any(|m| m.content.contains("Total imported: 0")));
+    }
+
+    #[test]
+    fn test_import_directory_skips_non_matching_extensions() {
+        let mut store = InMemoryStore::new();
+        let temp_dir = tempfile::tempdir().unwrap();
+
+        // Create file with non-matching extension
+        std::fs::write(temp_dir.path().join("note.json"), r#"{"title": "Test"}"#).unwrap();
+        // Create file without extension
+        std::fs::write(temp_dir.path().join("README"), "No Extension").unwrap();
+
+        let res = run(
+            &mut store,
+            Scope::Project,
+            vec![temp_dir.path().to_path_buf()],
+            &[".md".to_string()],
+        )
+        .unwrap();
+
+        // Nothing imported
+        assert!(res
+            .messages
+            .iter()
+            .any(|m| m.content.contains("Total imported: 0")));
+        let pads = store.list_pads(Scope::Project).unwrap();
+        assert_eq!(pads.len(), 0);
+    }
 }
