@@ -458,4 +458,204 @@ mod tests {
         let pad = store.get_pad(&result[0].1, Scope::Project).unwrap();
         assert_eq!(pad.metadata.title, "Child");
     }
+
+    #[test]
+    fn test_title_search_no_match_returns_error() {
+        let mut store = InMemoryStore::new();
+        create::run(&mut store, Scope::Project, "Alpha".into(), "".into(), None).unwrap();
+        create::run(&mut store, Scope::Project, "Beta".into(), "".into(), None).unwrap();
+
+        let result = resolve_selectors(
+            &store,
+            Scope::Project,
+            &[PadSelector::Title("Gamma".to_string())],
+            false,
+        );
+
+        assert!(result.is_err());
+        let err = result.unwrap_err();
+        assert!(err.to_string().contains("No pad found matching"));
+        assert!(err.to_string().contains("Gamma"));
+    }
+
+    #[test]
+    fn test_title_search_multiple_matches_returns_error() {
+        let mut store = InMemoryStore::new();
+        create::run(
+            &mut store,
+            Scope::Project,
+            "Meeting Monday".into(),
+            "".into(),
+            None,
+        )
+        .unwrap();
+        create::run(
+            &mut store,
+            Scope::Project,
+            "Meeting Tuesday".into(),
+            "".into(),
+            None,
+        )
+        .unwrap();
+        create::run(
+            &mut store,
+            Scope::Project,
+            "Meeting Wednesday".into(),
+            "".into(),
+            None,
+        )
+        .unwrap();
+
+        let result = resolve_selectors(
+            &store,
+            Scope::Project,
+            &[PadSelector::Title("Meeting".to_string())],
+            false,
+        );
+
+        assert!(result.is_err());
+        let err = result.unwrap_err();
+        assert!(err.to_string().contains("multiple"));
+        assert!(err.to_string().contains("3")); // matched 3 pads
+    }
+
+    #[test]
+    fn test_title_search_single_match_succeeds() {
+        let mut store = InMemoryStore::new();
+        create::run(&mut store, Scope::Project, "Alpha".into(), "".into(), None).unwrap();
+        create::run(&mut store, Scope::Project, "Beta".into(), "".into(), None).unwrap();
+        create::run(&mut store, Scope::Project, "Gamma".into(), "".into(), None).unwrap();
+
+        let result = resolve_selectors(
+            &store,
+            Scope::Project,
+            &[PadSelector::Title("Beta".to_string())],
+            false,
+        )
+        .unwrap();
+
+        assert_eq!(result.len(), 1);
+        let pad = store.get_pad(&result[0].1, Scope::Project).unwrap();
+        assert_eq!(pad.metadata.title, "Beta");
+    }
+
+    #[test]
+    fn test_title_search_matches_content_not_just_title() {
+        let mut store = InMemoryStore::new();
+        create::run(
+            &mut store,
+            Scope::Project,
+            "Shopping List".into(),
+            "Buy apples and oranges".into(),
+            None,
+        )
+        .unwrap();
+        create::run(
+            &mut store,
+            Scope::Project,
+            "Todo List".into(),
+            "Call dentist".into(),
+            None,
+        )
+        .unwrap();
+
+        // Search for content that's in body, not title
+        let result = resolve_selectors(
+            &store,
+            Scope::Project,
+            &[PadSelector::Title("apples".to_string())],
+            false,
+        )
+        .unwrap();
+
+        assert_eq!(result.len(), 1);
+        let pad = store.get_pad(&result[0].1, Scope::Project).unwrap();
+        assert_eq!(pad.metadata.title, "Shopping List");
+    }
+
+    #[test]
+    fn test_title_search_is_case_insensitive() {
+        let mut store = InMemoryStore::new();
+        create::run(
+            &mut store,
+            Scope::Project,
+            "UPPERCASE TITLE".into(),
+            "".into(),
+            None,
+        )
+        .unwrap();
+
+        let result = resolve_selectors(
+            &store,
+            Scope::Project,
+            &[PadSelector::Title("uppercase".to_string())],
+            false,
+        )
+        .unwrap();
+
+        assert_eq!(result.len(), 1);
+        let pad = store.get_pad(&result[0].1, Scope::Project).unwrap();
+        assert_eq!(pad.metadata.title, "UPPERCASE TITLE");
+    }
+
+    #[test]
+    fn test_title_search_delete_protection_check() {
+        let mut store = InMemoryStore::new();
+        create::run(
+            &mut store,
+            Scope::Project,
+            "ProtectedPad".into(),
+            "".into(),
+            None,
+        )
+        .unwrap();
+
+        // Manually set delete_protected without pinning (to avoid dual-index)
+        let pads = store.list_pads(Scope::Project).unwrap();
+        let mut pad = pads[0].clone();
+        pad.metadata.delete_protected = true;
+        store.save_pad(&pad, Scope::Project).unwrap();
+
+        // Try to resolve with delete protection check enabled
+        let result = resolve_selectors(
+            &store,
+            Scope::Project,
+            &[PadSelector::Title("ProtectedPad".to_string())],
+            true, // check_delete_protection = true
+        );
+
+        assert!(result.is_err());
+        let err = result.unwrap_err();
+        assert!(err.to_string().contains("delete protected"));
+    }
+
+    #[test]
+    fn test_title_search_delete_protection_disabled() {
+        let mut store = InMemoryStore::new();
+        create::run(
+            &mut store,
+            Scope::Project,
+            "ProtectedPad".into(),
+            "".into(),
+            None,
+        )
+        .unwrap();
+
+        // Manually set delete_protected without pinning (to avoid dual-index)
+        let pads = store.list_pads(Scope::Project).unwrap();
+        let mut pad = pads[0].clone();
+        pad.metadata.delete_protected = true;
+        store.save_pad(&pad, Scope::Project).unwrap();
+
+        // Resolve with delete protection check disabled
+        let result = resolve_selectors(
+            &store,
+            Scope::Project,
+            &[PadSelector::Title("ProtectedPad".to_string())],
+            false, // check_delete_protection = false
+        )
+        .unwrap();
+
+        assert_eq!(result.len(), 1);
+    }
 }
