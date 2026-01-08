@@ -45,7 +45,9 @@
 //! For input resolution (mapping indexes to UUIDs), see the [`crate::api`] module.
 
 use crate::model::Pad;
+use std::collections::HashMap;
 use std::str::FromStr;
+use uuid::Uuid;
 
 /// A segment of text in a search match, either plain text or a matched term.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -82,14 +84,23 @@ impl std::fmt::Display for DisplayIndex {
 /// A user input to select a pad, either by its index or a search term for its title.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum PadSelector {
-    Index(DisplayIndex),
+    Path(Vec<DisplayIndex>),
+    Range(Vec<DisplayIndex>, Vec<DisplayIndex>), // Start Path, End Path
     Title(String),
 }
 
 impl std::fmt::Display for PadSelector {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            PadSelector::Index(idx) => write!(f, "{}", idx),
+            PadSelector::Path(path) => {
+                let s: Vec<String> = path.iter().map(|idx| idx.to_string()).collect();
+                write!(f, "{}", s.join("."))
+            }
+            PadSelector::Range(start, end) => {
+                let s_start: Vec<String> = start.iter().map(|idx| idx.to_string()).collect();
+                let s_end: Vec<String> = end.iter().map(|idx| idx.to_string()).collect();
+                write!(f, "{}-{}", s_start.join("."), s_end.join("."))
+            }
             PadSelector::Title(t) => write!(f, "\"{}\"", t),
         }
     }
@@ -100,57 +111,96 @@ pub struct DisplayPad {
     pub pad: Pad,
     pub index: DisplayIndex,
     pub matches: Option<Vec<SearchMatch>>,
+    pub children: Vec<DisplayPad>,
 }
 
-/// Assigns canonical display indexes to a list of pads.
+/// Assigns canonical display indexes to a list of pads, building a tree structure.
 ///
-/// Returns a flat list of [`DisplayPad`] entries. Note that pinned pads will
-/// appear **twice**: once with a `Pinned` index and once with a `Regular` index.
-/// This is intentional—see module documentation for rationale.
+/// **Per-parent bucketing**: The same pinned/regular/deleted indexing logic is applied
+/// recursively at each nesting level. Each parent maintains its own index namespace:
+/// - Root level: `p1`, `1`, `2`, `d1`
+/// - Children of pad 1: `1.p1`, `1.1`, `1.2`, `1.d1`
+/// - Children of pad 1.2: `1.2.p1`, `1.2.1`, etc.
+///
+/// **Dual indexing**: Pinned pads appear **twice** at each level—once with a `Pinned`
+/// index and once with a `Regular` index. This ensures stability when unpinning.
 ///
 /// The returned list is ordered: pinned entries first, then regular, then deleted.
-pub fn index_pads(mut pads: Vec<Pad>) -> Vec<DisplayPad> {
-    // Sort by created_at descending (newest first) for stable ordering
+/// Each entry's `children` vector follows the same ordering recursively.
+pub fn index_pads(pads: Vec<Pad>) -> Vec<DisplayPad> {
+    // Group pads by parent_id
+    let mut parent_map: HashMap<Option<Uuid>, Vec<Pad>> = HashMap::new();
+    for pad in pads {
+        parent_map
+            .entry(pad.metadata.parent_id)
+            .or_default()
+            .push(pad);
+    }
+
+    // Process roots (parent_id = None), recursively indexing their children
+    let root_pads = parent_map.remove(&None).unwrap_or_default();
+    index_level(root_pads, &parent_map)
+}
+
+/// Indexes a single level of the tree (siblings with the same parent).
+///
+/// Applies the standard three-pass indexing at this level:
+/// 1. **Pinned pass**: Assigns `Pinned(1)`, `Pinned(2)`, etc. to pinned non-deleted pads
+/// 2. **Regular pass**: Assigns `Regular(1)`, `Regular(2)`, etc. to ALL non-deleted pads
+/// 3. **Deleted pass**: Assigns `Deleted(1)`, `Deleted(2)`, etc. to deleted pads
+///
+/// Note: Pinned pads get entries in BOTH the pinned and regular passes (dual indexing).
+/// This is recursive—each pad's children are indexed the same way.
+fn index_level(
+    mut pads: Vec<Pad>,
+    parent_map: &HashMap<Option<Uuid>, Vec<Pad>>,
+) -> Vec<DisplayPad> {
+    // Sort by created_at descending (newest first) within this level
     pads.sort_by(|a, b| b.metadata.created_at.cmp(&a.metadata.created_at));
 
     let mut results = Vec::new();
 
-    // First pass: assign pinned indexes (p1, p2, ...)
+    // Helper closure to build DisplayPad and recurse
+    let mut add_pad = |pad: Pad, index: DisplayIndex| {
+        let children = parent_map
+            .get(&Some(pad.metadata.id))
+            .cloned()
+            .unwrap_or_default();
+
+        // Recurse for children
+        let indexed_children = index_level(children, parent_map);
+
+        results.push(DisplayPad {
+            pad,
+            index,
+            matches: None,
+            children: indexed_children,
+        });
+    };
+
+    // First pass: Pinned
     let mut pinned_idx = 1;
     for pad in &pads {
         if pad.metadata.is_pinned && !pad.metadata.is_deleted {
-            results.push(DisplayPad {
-                pad: pad.clone(),
-                index: DisplayIndex::Pinned(pinned_idx),
-                matches: None,
-            });
+            add_pad(pad.clone(), DisplayIndex::Pinned(pinned_idx));
             pinned_idx += 1;
         }
     }
 
-    // Second pass: assign regular indexes (1, 2, ...) to ALL non-deleted pads
-    // including pinned ones - this ensures canonical indexes are stable
+    // Second pass: Regular (all non-deleted)
     let mut regular_idx = 1;
     for pad in &pads {
         if !pad.metadata.is_deleted {
-            results.push(DisplayPad {
-                pad: pad.clone(),
-                index: DisplayIndex::Regular(regular_idx),
-                matches: None,
-            });
+            add_pad(pad.clone(), DisplayIndex::Regular(regular_idx));
             regular_idx += 1;
         }
     }
 
-    // Third pass: assign deleted indexes (d1, d2, ...)
+    // Third pass: Deleted
     let mut deleted_idx = 1;
     for pad in &pads {
         if pad.metadata.is_deleted {
-            results.push(DisplayPad {
-                pad: pad.clone(),
-                index: DisplayIndex::Deleted(deleted_idx),
-                matches: None,
-            });
+            add_pad(pad.clone(), DisplayIndex::Deleted(deleted_idx));
             deleted_idx += 1;
         }
     }
@@ -179,75 +229,37 @@ impl std::str::FromStr for DisplayIndex {
     }
 }
 
-/// Parses a single input string that may be either a single index or a range.
+/// Parses a single input string that may be either a path or a range of paths.
 ///
 /// Supports formats:
-/// - Single index: "3", "p1", "d2"
-/// - Range: "3-5" (expands to 3, 4, 5), "p1-p3" (expands to p1, p2, p3)
-///
-/// Range rules:
-/// - Both endpoints must be the same type (Regular, Pinned, or Deleted)
-/// - Start must be <= end (e.g., "3-3" is valid, "3-2" is an error)
-/// - Validation that the indexes actually exist happens later during resolution
-pub fn parse_index_or_range(s: &str) -> Result<Vec<DisplayIndex>, String> {
+/// - Path: "3", "3.1", "p1", "d2.1"
+/// - Range: "1-3", "1.1-1.3", "1.2-2.1"
+pub fn parse_index_or_range(s: &str) -> Result<PadSelector, String> {
     // Check if it's a range (contains '-' but not at the start for negative numbers)
     // We need to be careful: "p1-p3" has '-' in the middle
     if let Some(dash_pos) = s.find('-') {
-        // Don't treat leading '-' as a range separator (though we don't support negative indexes)
+        // Don't treat leading '-' as a range separator
         if dash_pos > 0 {
             let start_str = &s[..dash_pos];
             let end_str = &s[dash_pos + 1..];
 
-            // Try to parse both as DisplayIndex
-            let start = DisplayIndex::from_str(start_str)?;
-            let end = DisplayIndex::from_str(end_str)?;
+            // Parse endpoints as paths
+            let start_path = parse_path(start_str)?;
+            let end_path = parse_path(end_str)?;
 
-            return expand_range(start, end);
+            return Ok(PadSelector::Range(start_path, end_path));
         }
     }
 
-    // Not a range, parse as single index
-    DisplayIndex::from_str(s).map(|idx| vec![idx])
+    // Not a range
+    parse_path(s).map(PadSelector::Path)
 }
 
-/// Expands a range of DisplayIndex values.
-///
-/// Both endpoints must be the same variant (Regular, Pinned, or Deleted).
-/// Start must be <= end.
-fn expand_range(start: DisplayIndex, end: DisplayIndex) -> Result<Vec<DisplayIndex>, String> {
-    match (&start, &end) {
-        (DisplayIndex::Regular(s), DisplayIndex::Regular(e)) => {
-            if s > e {
-                return Err(format!(
-                    "Invalid range: start ({}) must be <= end ({})",
-                    s, e
-                ));
-            }
-            Ok((*s..=*e).map(DisplayIndex::Regular).collect())
-        }
-        (DisplayIndex::Pinned(s), DisplayIndex::Pinned(e)) => {
-            if s > e {
-                return Err(format!(
-                    "Invalid range: start (p{}) must be <= end (p{})",
-                    s, e
-                ));
-            }
-            Ok((*s..=*e).map(DisplayIndex::Pinned).collect())
-        }
-        (DisplayIndex::Deleted(s), DisplayIndex::Deleted(e)) => {
-            if s > e {
-                return Err(format!(
-                    "Invalid range: start (d{}) must be <= end (d{})",
-                    s, e
-                ));
-            }
-            Ok((*s..=*e).map(DisplayIndex::Deleted).collect())
-        }
-        _ => Err(format!(
-            "Invalid range: cannot mix index types ({} and {})",
-            start, end
-        )),
-    }
+/// Parses a dot-separated path string into a vector of DisplayIndex.
+/// e.g. "1.2" -> [Regular(1), Regular(2)]
+/// "p1" -> [Pinned(1)]
+fn parse_path(s: &str) -> Result<Vec<DisplayIndex>, String> {
+    s.split('.').map(DisplayIndex::from_str).collect()
 }
 
 #[cfg(test)]
@@ -363,15 +375,15 @@ mod tests {
         // Single indexes should return a vec with one element
         assert_eq!(
             parse_index_or_range("3"),
-            Ok(vec![DisplayIndex::Regular(3)])
+            Ok(PadSelector::Path(vec![DisplayIndex::Regular(3)]))
         );
         assert_eq!(
             parse_index_or_range("p2"),
-            Ok(vec![DisplayIndex::Pinned(2)])
+            Ok(PadSelector::Path(vec![DisplayIndex::Pinned(2)]))
         );
         assert_eq!(
             parse_index_or_range("d1"),
-            Ok(vec![DisplayIndex::Deleted(1)])
+            Ok(PadSelector::Path(vec![DisplayIndex::Deleted(1)]))
         );
     }
 
@@ -379,17 +391,19 @@ mod tests {
     fn test_parse_regular_range() {
         assert_eq!(
             parse_index_or_range("3-5"),
-            Ok(vec![
-                DisplayIndex::Regular(3),
-                DisplayIndex::Regular(4),
-                DisplayIndex::Regular(5)
-            ])
+            Ok(PadSelector::Range(
+                vec![DisplayIndex::Regular(3)],
+                vec![DisplayIndex::Regular(5)]
+            ))
         );
 
         // Single element range (start == end)
         assert_eq!(
             parse_index_or_range("3-3"),
-            Ok(vec![DisplayIndex::Regular(3)])
+            Ok(PadSelector::Range(
+                vec![DisplayIndex::Regular(3)],
+                vec![DisplayIndex::Regular(3)]
+            ))
         );
     }
 
@@ -397,11 +411,10 @@ mod tests {
     fn test_parse_pinned_range() {
         assert_eq!(
             parse_index_or_range("p1-p3"),
-            Ok(vec![
-                DisplayIndex::Pinned(1),
-                DisplayIndex::Pinned(2),
-                DisplayIndex::Pinned(3)
-            ])
+            Ok(PadSelector::Range(
+                vec![DisplayIndex::Pinned(1)],
+                vec![DisplayIndex::Pinned(3)]
+            ))
         );
     }
 
@@ -409,37 +422,11 @@ mod tests {
     fn test_parse_deleted_range() {
         assert_eq!(
             parse_index_or_range("d2-d4"),
-            Ok(vec![
-                DisplayIndex::Deleted(2),
-                DisplayIndex::Deleted(3),
-                DisplayIndex::Deleted(4)
-            ])
+            Ok(PadSelector::Range(
+                vec![DisplayIndex::Deleted(2)],
+                vec![DisplayIndex::Deleted(4)]
+            ))
         );
-    }
-
-    #[test]
-    fn test_parse_range_invalid_order() {
-        // Start > end should error
-        let result = parse_index_or_range("5-3");
-        assert!(result.is_err());
-        assert!(result.unwrap_err().contains("must be <= end"));
-
-        let result = parse_index_or_range("p3-p1");
-        assert!(result.is_err());
-        assert!(result.unwrap_err().contains("must be <= end"));
-    }
-
-    #[test]
-    fn test_parse_range_mixed_types() {
-        // Cannot mix Regular and Pinned
-        let result = parse_index_or_range("1-p3");
-        assert!(result.is_err());
-        assert!(result.unwrap_err().contains("cannot mix index types"));
-
-        // Cannot mix Pinned and Deleted
-        let result = parse_index_or_range("p1-d3");
-        assert!(result.is_err());
-        assert!(result.unwrap_err().contains("cannot mix index types"));
     }
 
     #[test]
@@ -458,5 +445,178 @@ mod tests {
 
         let result = parse_index_or_range("3-");
         assert!(result.is_err());
+    }
+
+    // ==================== Tree-specific tests ====================
+
+    #[test]
+    fn test_parse_nested_path() {
+        // Path notation: 1.2.3 means child 3 of child 2 of root 1
+        assert_eq!(
+            parse_index_or_range("1.2"),
+            Ok(PadSelector::Path(vec![
+                DisplayIndex::Regular(1),
+                DisplayIndex::Regular(2)
+            ]))
+        );
+        assert_eq!(
+            parse_index_or_range("1.2.3"),
+            Ok(PadSelector::Path(vec![
+                DisplayIndex::Regular(1),
+                DisplayIndex::Regular(2),
+                DisplayIndex::Regular(3)
+            ]))
+        );
+    }
+
+    #[test]
+    fn test_parse_nested_pinned_path() {
+        // Pinned child of root 1: 1.p1
+        assert_eq!(
+            parse_index_or_range("1.p1"),
+            Ok(PadSelector::Path(vec![
+                DisplayIndex::Regular(1),
+                DisplayIndex::Pinned(1)
+            ]))
+        );
+        // Deeply nested pinned: 1.2.p1
+        assert_eq!(
+            parse_index_or_range("1.2.p1"),
+            Ok(PadSelector::Path(vec![
+                DisplayIndex::Regular(1),
+                DisplayIndex::Regular(2),
+                DisplayIndex::Pinned(1)
+            ]))
+        );
+    }
+
+    #[test]
+    fn test_parse_nested_range() {
+        // Range within a tree: 1.1-1.3
+        assert_eq!(
+            parse_index_or_range("1.1-1.3"),
+            Ok(PadSelector::Range(
+                vec![DisplayIndex::Regular(1), DisplayIndex::Regular(1)],
+                vec![DisplayIndex::Regular(1), DisplayIndex::Regular(3)]
+            ))
+        );
+        // Cross-parent range: 1.2-2.1
+        assert_eq!(
+            parse_index_or_range("1.2-2.1"),
+            Ok(PadSelector::Range(
+                vec![DisplayIndex::Regular(1), DisplayIndex::Regular(2)],
+                vec![DisplayIndex::Regular(2), DisplayIndex::Regular(1)]
+            ))
+        );
+    }
+
+    #[test]
+    fn test_tree_with_nested_children() {
+        // Build a tree: Root -> Child -> Grandchild
+        let mut grandchild = make_pad("Grandchild", false, false);
+        let mut child = make_pad("Child", false, false);
+        let root = make_pad("Root", false, false);
+
+        // Set up parent relationships
+        child.metadata.parent_id = Some(root.metadata.id);
+        grandchild.metadata.parent_id = Some(child.metadata.id);
+
+        let pads = vec![root, child, grandchild];
+        let indexed = index_pads(pads);
+
+        // Should have 1 root
+        assert_eq!(indexed.len(), 1);
+        assert_eq!(indexed[0].pad.metadata.title, "Root");
+        assert_eq!(indexed[0].index, DisplayIndex::Regular(1));
+
+        // Root should have 1 child
+        assert_eq!(indexed[0].children.len(), 1);
+        assert_eq!(indexed[0].children[0].pad.metadata.title, "Child");
+        assert_eq!(indexed[0].children[0].index, DisplayIndex::Regular(1));
+
+        // Child should have 1 grandchild
+        assert_eq!(indexed[0].children[0].children.len(), 1);
+        assert_eq!(
+            indexed[0].children[0].children[0].pad.metadata.title,
+            "Grandchild"
+        );
+        assert_eq!(
+            indexed[0].children[0].children[0].index,
+            DisplayIndex::Regular(1)
+        );
+    }
+
+    #[test]
+    fn test_tree_pinned_child_has_dual_index() {
+        // Root with a pinned child - child should appear twice in children
+        let mut child = make_pad("Pinned Child", true, false);
+        let root = make_pad("Root", false, false);
+
+        child.metadata.parent_id = Some(root.metadata.id);
+
+        let pads = vec![root, child];
+        let indexed = index_pads(pads);
+
+        // Root's children should have 2 entries for the pinned child
+        assert_eq!(indexed[0].children.len(), 2);
+
+        // One as Pinned(1)
+        let pinned_child = indexed[0]
+            .children
+            .iter()
+            .find(|c| matches!(c.index, DisplayIndex::Pinned(_)));
+        assert!(pinned_child.is_some());
+        assert_eq!(pinned_child.unwrap().index, DisplayIndex::Pinned(1));
+
+        // One as Regular(1)
+        let regular_child = indexed[0]
+            .children
+            .iter()
+            .find(|c| matches!(c.index, DisplayIndex::Regular(_)));
+        assert!(regular_child.is_some());
+        assert_eq!(regular_child.unwrap().index, DisplayIndex::Regular(1));
+    }
+
+    #[test]
+    fn test_tree_deep_nesting_four_levels() {
+        // Create 4-level deep tree: L1 -> L2 -> L3 -> L4
+        let mut l4 = make_pad("Level 4", false, false);
+        let mut l3 = make_pad("Level 3", false, false);
+        let mut l2 = make_pad("Level 2", false, false);
+        let l1 = make_pad("Level 1", false, false);
+
+        l2.metadata.parent_id = Some(l1.metadata.id);
+        l3.metadata.parent_id = Some(l2.metadata.id);
+        l4.metadata.parent_id = Some(l3.metadata.id);
+
+        let pads = vec![l1, l2, l3, l4];
+        let indexed = index_pads(pads);
+
+        // Navigate to L4: indexed[0].children[0].children[0].children[0]
+        assert_eq!(indexed[0].pad.metadata.title, "Level 1");
+        assert_eq!(indexed[0].children[0].pad.metadata.title, "Level 2");
+        assert_eq!(
+            indexed[0].children[0].children[0].pad.metadata.title,
+            "Level 3"
+        );
+        assert_eq!(
+            indexed[0].children[0].children[0].children[0]
+                .pad
+                .metadata
+                .title,
+            "Level 4"
+        );
+
+        // Each level should have index Regular(1) within its parent
+        assert_eq!(indexed[0].index, DisplayIndex::Regular(1));
+        assert_eq!(indexed[0].children[0].index, DisplayIndex::Regular(1));
+        assert_eq!(
+            indexed[0].children[0].children[0].index,
+            DisplayIndex::Regular(1)
+        );
+        assert_eq!(
+            indexed[0].children[0].children[0].children[0].index,
+            DisplayIndex::Regular(1)
+        );
     }
 }

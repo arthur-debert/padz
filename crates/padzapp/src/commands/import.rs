@@ -69,7 +69,7 @@ fn import_file<S: DataStore>(store: &mut S, scope: Scope, path: &Path) -> Result
 
 fn import_content<S: DataStore>(store: &mut S, scope: Scope, content_raw: &str) -> Result<usize> {
     if let Some((title, body)) = crate::model::extract_title_and_body(content_raw) {
-        crate::commands::create::run(store, scope, title, body)?;
+        crate::commands::create::run(store, scope, title, body, None)?;
         Ok(1)
     } else {
         // Empty content, treated as ignore

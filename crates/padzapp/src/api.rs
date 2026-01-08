@@ -75,10 +75,9 @@
 
 use crate::commands;
 use crate::error::{PadzError, Result};
-use crate::index::{parse_index_or_range, DisplayIndex, PadSelector};
+use crate::index::{parse_index_or_range, PadSelector};
 use crate::model::Scope;
 use crate::store::DataStore;
-use std::collections::HashSet;
 
 /// The main API facade for padz operations.
 ///
@@ -99,8 +98,14 @@ impl<S: DataStore> PadzApi<S> {
         scope: Scope,
         title: String,
         content: String,
+        parent: Option<&str>,
     ) -> Result<commands::CmdResult> {
-        commands::create::run(&mut self.store, scope, title, content)
+        let parent_selector = if let Some(p) = parent {
+            Some(parse_index_or_range(p).map_err(PadzError::Api)?)
+        } else {
+            None
+        };
+        commands::create::run(&mut self.store, scope, title, content, parent_selector)
     }
 
     pub fn get_pads(&self, scope: Scope, filter: PadFilter) -> Result<commands::CmdResult> {
@@ -151,14 +156,27 @@ impl<S: DataStore> PadzApi<S> {
         commands::update::run(&mut self.store, scope, updates)
     }
 
+    /// Returns a preview of what would be purged without actually deleting.
+    /// Use this to show a confirmation prompt before calling `purge_pads`.
+    pub fn preview_purge<I: AsRef<str>>(
+        &self,
+        scope: Scope,
+        indexes: &[I],
+        recursive: bool,
+    ) -> Result<commands::purge::PurgePreview> {
+        let selectors = parse_selectors(indexes)?;
+        commands::purge::preview(&self.store, scope, &selectors, recursive)
+    }
+
+    /// Permanently deletes pads. Call `preview_purge` first to show confirmation.
     pub fn purge_pads<I: AsRef<str>>(
         &mut self,
         scope: Scope,
         indexes: &[I],
-        skip_confirm: bool,
+        recursive: bool,
     ) -> Result<commands::CmdResult> {
         let selectors = parse_selectors(indexes)?;
-        commands::purge::run(&mut self.store, scope, &selectors, skip_confirm)
+        commands::purge::run(&mut self.store, scope, &selectors, recursive)
     }
 
     pub fn restore_pads<I: AsRef<str>>(
@@ -231,17 +249,14 @@ impl<S: DataStore> PadzApi<S> {
 
 fn parse_selectors<I: AsRef<str>>(inputs: &[I]) -> Result<Vec<PadSelector>> {
     // 1. Try to parse ALL inputs as DisplayIndex (including ranges like "3-5")
-    let mut all_indexes: Vec<DisplayIndex> = Vec::new();
+    let mut all_selectors = Vec::new();
     let mut parse_failed = false;
 
     for input in inputs {
         match parse_index_or_range(input.as_ref()) {
-            Ok(indexes) => all_indexes.extend(indexes),
-            Err(e) => {
-                // Check if it's a range error (explicit error message) vs just not an index
-                if e.contains("Invalid range") || e.contains("cannot mix") {
-                    return Err(PadzError::Api(e));
-                }
+            Ok(selector) => all_selectors.push(selector),
+            Err(_) => {
+                // Non-index input - treat entire input as title search
                 parse_failed = true;
                 break;
             }
@@ -250,13 +265,13 @@ fn parse_selectors<I: AsRef<str>>(inputs: &[I]) -> Result<Vec<PadSelector>> {
 
     if !parse_failed {
         // Deduplicate while preserving order
-        let mut seen = HashSet::new();
-        let unique_indexes: Vec<DisplayIndex> = all_indexes
-            .into_iter()
-            .filter(|idx| seen.insert(idx.clone()))
-            .collect();
-
-        return Ok(unique_indexes.into_iter().map(PadSelector::Index).collect());
+        let mut unique_selectors = Vec::new();
+        for s in all_selectors {
+            if !unique_selectors.contains(&s) {
+                unique_selectors.push(s);
+            }
+        }
+        return Ok(unique_selectors);
     }
 
     // 2. If any failed (meaning there are non-index strings), treat as ONE search query
@@ -284,17 +299,30 @@ fn parse_selectors_for_deleted<I: AsRef<str>>(inputs: &[I]) -> Result<Vec<PadSel
 /// Normalizes an index string to a deleted index if it's a bare number.
 /// "3" -> "d3", "d3" -> "d3", "p1" -> "p1", "3-5" -> "d3-d5"
 fn normalize_to_deleted_index(s: &str) -> String {
-    // Handle ranges: if it contains a dash (not at start), normalize both parts
     if let Some(dash_pos) = s.find('-') {
         if dash_pos > 0 {
-            let start = &s[..dash_pos];
-            let end = &s[dash_pos + 1..];
-            let norm_start = normalize_single_to_deleted(start);
-            let norm_end = normalize_single_to_deleted(end);
-            return format!("{}-{}", norm_start, norm_end);
+            let start_str = &s[..dash_pos];
+            let end_str = &s[dash_pos + 1..];
+            let normalized_start = normalize_path_for_deleted(start_str);
+            let normalized_end = normalize_path_for_deleted(end_str);
+            return format!("{}-{}", normalized_start, normalized_end);
         }
     }
-    normalize_single_to_deleted(s)
+    normalize_path_for_deleted(s)
+}
+
+/// Normalizes a path string (e.g., "1", "1.2", "p1") for deleted operations.
+/// This means the *last* segment of a path, if it's a bare number, gets prefixed with 'd'.
+/// "3" -> "d3"
+/// "1.2" -> "1.d2"
+/// "p1.2" -> "p1.d2"
+/// "d1.2" -> "d1.d2"
+fn normalize_path_for_deleted(s: &str) -> String {
+    let mut parts: Vec<String> = s.split('.').map(|s| s.to_string()).collect();
+    if let Some(last) = parts.last_mut() {
+        *last = normalize_single_to_deleted(last);
+    }
+    parts.join(".")
 }
 
 /// Normalizes a single index (not a range) to deleted format.
@@ -308,6 +336,8 @@ fn normalize_single_to_deleted(s: &str) -> String {
     }
 }
 
+// parse_index_or_range and parse_path removed (imported from index.rs)
+
 pub use crate::commands::config::ConfigAction;
 pub use commands::get::{PadFilter, PadStatusFilter};
 pub use commands::{CmdMessage, CmdResult, MessageLevel, PadUpdate, PadzPaths};
@@ -315,7 +345,7 @@ pub use commands::{CmdMessage, CmdResult, MessageLevel, PadUpdate, PadzPaths};
 #[cfg(test)]
 mod tests {
     use super::*;
-
+    use crate::index::{DisplayIndex, PadSelector};
     #[test]
     fn test_normalize_single_to_deleted() {
         // Bare numbers get 'd' prefix
@@ -355,6 +385,15 @@ mod tests {
         // Single indexes (no range)
         assert_eq!(normalize_to_deleted_index("3"), "d3");
         assert_eq!(normalize_to_deleted_index("d3"), "d3");
+
+        // Hierarchical paths
+        assert_eq!(normalize_to_deleted_index("1.2"), "1.d2");
+        assert_eq!(normalize_to_deleted_index("p1.2"), "p1.d2");
+        assert_eq!(normalize_to_deleted_index("d1.2"), "d1.d2");
+        assert_eq!(normalize_to_deleted_index("1.p2"), "1.p2");
+        assert_eq!(normalize_to_deleted_index("1.d2"), "1.d2");
+        assert_eq!(normalize_to_deleted_index("1.2-1.4"), "1.d2-1.d4");
+        assert_eq!(normalize_to_deleted_index("d1.2-d1.4"), "d1.d2-d1.d4");
     }
 
     #[test]
@@ -364,9 +403,20 @@ mod tests {
         let selectors = parse_selectors_for_deleted(&inputs).unwrap();
 
         assert_eq!(selectors.len(), 3);
-        assert_eq!(selectors[0], PadSelector::Index(DisplayIndex::Deleted(1)));
-        assert_eq!(selectors[1], PadSelector::Index(DisplayIndex::Deleted(3)));
-        assert_eq!(selectors[2], PadSelector::Index(DisplayIndex::Deleted(5)));
+        // They are Paths now
+        assert!(matches!(selectors[0], PadSelector::Path(_)));
+        if let PadSelector::Path(path) = &selectors[0] {
+            assert_eq!(path.len(), 1);
+            assert!(matches!(path[0], DisplayIndex::Deleted(1)));
+        }
+        if let PadSelector::Path(path) = &selectors[1] {
+            assert_eq!(path.len(), 1);
+            assert!(matches!(path[0], DisplayIndex::Deleted(3)));
+        }
+        if let PadSelector::Path(path) = &selectors[2] {
+            assert_eq!(path.len(), 1);
+            assert!(matches!(path[0], DisplayIndex::Deleted(5)));
+        }
     }
 
     #[test]
@@ -375,9 +425,35 @@ mod tests {
         let inputs = vec!["1-3"];
         let selectors = parse_selectors_for_deleted(&inputs).unwrap();
 
-        assert_eq!(selectors.len(), 3);
-        assert_eq!(selectors[0], PadSelector::Index(DisplayIndex::Deleted(1)));
-        assert_eq!(selectors[1], PadSelector::Index(DisplayIndex::Deleted(2)));
-        assert_eq!(selectors[2], PadSelector::Index(DisplayIndex::Deleted(3)));
+        assert_eq!(selectors.len(), 1);
+        match &selectors[0] {
+            PadSelector::Range(start, end) => {
+                assert_eq!(start.len(), 1);
+                assert!(matches!(start[0], DisplayIndex::Deleted(1)));
+                assert_eq!(end.len(), 1);
+                assert!(matches!(end[0], DisplayIndex::Deleted(3)));
+            }
+            _ => panic!("Expected Range"),
+        }
+    }
+
+    #[test]
+    fn test_parse_selectors_for_deleted_with_hierarchical_range() {
+        let inputs = vec!["1.2-1.4"];
+        let selectors = parse_selectors_for_deleted(&inputs).unwrap();
+
+        assert_eq!(selectors.len(), 1);
+        match &selectors[0] {
+            PadSelector::Range(start_path, end_path) => {
+                assert_eq!(start_path.len(), 2);
+                assert!(matches!(start_path[0], DisplayIndex::Regular(1)));
+                assert!(matches!(start_path[1], DisplayIndex::Deleted(2)));
+
+                assert_eq!(end_path.len(), 2);
+                assert!(matches!(end_path[0], DisplayIndex::Regular(1)));
+                assert!(matches!(end_path[1], DisplayIndex::Deleted(4)));
+            }
+            _ => panic!("Expected PadSelector::Range"),
+        }
     }
 }

@@ -27,23 +27,76 @@ impl Default for PadFilter {
     }
 }
 
+/// Recursively filters the tree based on status.
+///
+/// Filtering rules:
+/// - **Active**: Show non-deleted pads. Children are recursively filtered (only non-deleted).
+/// - **Deleted**: Show deleted pads with ALL their children (children aren't marked deleted
+///   but are visible under their deleted parent per spec: "unless looking at deleted items").
+/// - **Pinned**: Show pinned pads. Children are recursively filtered for pinned only.
+/// - **All**: Show everything, no filtering.
+fn filter_tree(pads: Vec<DisplayPad>, status: PadStatusFilter) -> Vec<DisplayPad> {
+    pads.into_iter()
+        .filter_map(|dp| filter_pad_recursive(dp, status))
+        .collect()
+}
+
+fn filter_pad_recursive(mut dp: DisplayPad, status: PadStatusFilter) -> Option<DisplayPad> {
+    let dominated = matches_status(&dp.index, status);
+
+    if !dominated {
+        return None;
+    }
+
+    // For Deleted status, show ALL children (they inherit visibility from deleted parent)
+    // For other statuses, recursively filter children
+    if status == PadStatusFilter::Deleted {
+        // Children of a deleted pad are shown as-is (no further filtering)
+        // But we still need to recurse to filter THEIR children if any are deleted
+        dp.children = dp
+            .children
+            .into_iter()
+            .map(filter_children_under_deleted)
+            .collect();
+    } else {
+        dp.children = dp
+            .children
+            .into_iter()
+            .filter_map(|child| filter_pad_recursive(child, status))
+            .collect();
+    }
+
+    Some(dp)
+}
+
+/// When viewing deleted pads, children of a deleted parent are shown.
+/// Those children might have their own children that need filtering.
+fn filter_children_under_deleted(mut dp: DisplayPad) -> DisplayPad {
+    // Show this child (regardless of its own deleted status since parent is deleted)
+    // But recursively process its children
+    dp.children = dp
+        .children
+        .into_iter()
+        .map(filter_children_under_deleted)
+        .collect();
+    dp
+}
+
+fn matches_status(index: &DisplayIndex, status: PadStatusFilter) -> bool {
+    match status {
+        PadStatusFilter::All => true,
+        PadStatusFilter::Active => !matches!(index, DisplayIndex::Deleted(_)),
+        PadStatusFilter::Deleted => matches!(index, DisplayIndex::Deleted(_)),
+        PadStatusFilter::Pinned => matches!(index, DisplayIndex::Pinned(_)),
+    }
+}
+
 pub fn run<S: DataStore>(store: &S, scope: Scope, filter: PadFilter) -> Result<CmdResult> {
-    // 1. Fetch relevant pads based on status to minimize processing
-    // Currently store only has list_pads returning all.
-    // If we want to optimize store access we would need store changes.
-    // For now we fetch all and filter in memory as current implementation does.
     let pads = store.list_pads(scope)?;
     let indexed = index_pads(pads);
 
-    let mut filtered: Vec<DisplayPad> = indexed
-        .into_iter()
-        .filter(|dp| match filter.status {
-            PadStatusFilter::All => true,
-            PadStatusFilter::Active => !matches!(dp.index, DisplayIndex::Deleted(_)),
-            PadStatusFilter::Deleted => matches!(dp.index, DisplayIndex::Deleted(_)),
-            PadStatusFilter::Pinned => matches!(dp.index, DisplayIndex::Pinned(_)),
-        })
-        .collect();
+    // Recursively filter the tree based on status
+    let mut filtered: Vec<DisplayPad> = filter_tree(indexed, filter.status);
 
     // 2. Apply search if needed
     if let Some(term) = &filter.search_term {
@@ -256,14 +309,21 @@ mod tests {
     #[test]
     fn test_filters() {
         let mut store = InMemoryStore::new();
-        create::run(&mut store, Scope::Project, "Active".into(), "".into()).unwrap();
-        create::run(&mut store, Scope::Project, "Deleted".into(), "".into()).unwrap();
+        create::run(&mut store, Scope::Project, "Active".into(), "".into(), None).unwrap();
+        create::run(
+            &mut store,
+            Scope::Project,
+            "Deleted".into(),
+            "".into(),
+            None,
+        )
+        .unwrap();
 
         // Delete the second one
         delete::run(
             &mut store,
             Scope::Project,
-            &[PadSelector::Index(DisplayIndex::Regular(1))],
+            &[PadSelector::Path(vec![DisplayIndex::Regular(1)])],
         )
         .unwrap();
 
@@ -309,12 +369,13 @@ mod tests {
     #[test]
     fn test_search() {
         let mut store = InMemoryStore::new();
-        create::run(&mut store, Scope::Project, "Foo".into(), "".into()).unwrap();
+        create::run(&mut store, Scope::Project, "Foo".into(), "".into(), None).unwrap();
         create::run(
             &mut store,
             Scope::Project,
             "Bar".into(),
             "contains foo".into(),
+            None,
         )
         .unwrap();
 
@@ -376,5 +437,144 @@ mod tests {
         assert!(joined.contains("five six seven"));
         assert!(!joined.contains("One")); // Should be truncated
         assert!(!joined.contains("eight")); // Should be truncated
+    }
+
+    // Tree-specific filtering tests
+
+    #[test]
+    fn test_active_filter_shows_nested_children() {
+        let mut store = InMemoryStore::new();
+        // Create parent
+        create::run(&mut store, Scope::Project, "Parent".into(), "".into(), None).unwrap();
+        // Create child inside parent
+        create::run(
+            &mut store,
+            Scope::Project,
+            "Child".into(),
+            "".into(),
+            Some(PadSelector::Path(vec![DisplayIndex::Regular(1)])),
+        )
+        .unwrap();
+
+        let res = run(&store, Scope::Project, PadFilter::default()).unwrap();
+
+        // Should have 1 root pad (Parent)
+        assert_eq!(res.listed_pads.len(), 1);
+        assert_eq!(res.listed_pads[0].pad.metadata.title, "Parent");
+        // Parent should have 1 child
+        assert_eq!(res.listed_pads[0].children.len(), 1);
+        assert_eq!(res.listed_pads[0].children[0].pad.metadata.title, "Child");
+    }
+
+    #[test]
+    fn test_active_filter_hides_deleted_child() {
+        let mut store = InMemoryStore::new();
+        // Create parent
+        create::run(&mut store, Scope::Project, "Parent".into(), "".into(), None).unwrap();
+        // Create two children
+        create::run(
+            &mut store,
+            Scope::Project,
+            "Child1".into(),
+            "".into(),
+            Some(PadSelector::Path(vec![DisplayIndex::Regular(1)])),
+        )
+        .unwrap();
+        create::run(
+            &mut store,
+            Scope::Project,
+            "Child2".into(),
+            "".into(),
+            Some(PadSelector::Path(vec![DisplayIndex::Regular(1)])),
+        )
+        .unwrap();
+
+        // Delete Child1 (newest child = 1.1)
+        delete::run(
+            &mut store,
+            Scope::Project,
+            &[PadSelector::Path(vec![
+                DisplayIndex::Regular(1),
+                DisplayIndex::Regular(1),
+            ])],
+        )
+        .unwrap();
+
+        let res = run(&store, Scope::Project, PadFilter::default()).unwrap();
+
+        // Parent should have only 1 visible child (Child1 deleted)
+        assert_eq!(res.listed_pads.len(), 1);
+        assert_eq!(res.listed_pads[0].children.len(), 1);
+        assert_eq!(res.listed_pads[0].children[0].pad.metadata.title, "Child1");
+    }
+
+    #[test]
+    fn test_deleted_filter_shows_parent_with_children() {
+        let mut store = InMemoryStore::new();
+        // Create parent with child
+        create::run(&mut store, Scope::Project, "Parent".into(), "".into(), None).unwrap();
+        create::run(
+            &mut store,
+            Scope::Project,
+            "Child".into(),
+            "".into(),
+            Some(PadSelector::Path(vec![DisplayIndex::Regular(1)])),
+        )
+        .unwrap();
+
+        // Delete the parent (not the child)
+        delete::run(
+            &mut store,
+            Scope::Project,
+            &[PadSelector::Path(vec![DisplayIndex::Regular(1)])],
+        )
+        .unwrap();
+
+        // View deleted pads
+        let res = run(
+            &store,
+            Scope::Project,
+            PadFilter {
+                status: PadStatusFilter::Deleted,
+                search_term: None,
+            },
+        )
+        .unwrap();
+
+        // Should show deleted parent with its non-deleted child
+        assert_eq!(res.listed_pads.len(), 1);
+        assert_eq!(res.listed_pads[0].pad.metadata.title, "Parent");
+        // Child should be visible under deleted parent (per spec)
+        assert_eq!(res.listed_pads[0].children.len(), 1);
+        assert_eq!(res.listed_pads[0].children[0].pad.metadata.title, "Child");
+    }
+
+    #[test]
+    fn test_active_filter_hides_children_of_deleted_parent() {
+        let mut store = InMemoryStore::new();
+        // Create parent with child
+        create::run(&mut store, Scope::Project, "Parent".into(), "".into(), None).unwrap();
+        create::run(
+            &mut store,
+            Scope::Project,
+            "Child".into(),
+            "".into(),
+            Some(PadSelector::Path(vec![DisplayIndex::Regular(1)])),
+        )
+        .unwrap();
+
+        // Delete the parent
+        delete::run(
+            &mut store,
+            Scope::Project,
+            &[PadSelector::Path(vec![DisplayIndex::Regular(1)])],
+        )
+        .unwrap();
+
+        // View active pads
+        let res = run(&store, Scope::Project, PadFilter::default()).unwrap();
+
+        // Should have no active roots (parent is deleted, child is hidden)
+        assert_eq!(res.listed_pads.len(), 0);
     }
 }

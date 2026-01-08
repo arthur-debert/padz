@@ -12,7 +12,7 @@ pub fn run<S: DataStore>(
     scope: Scope,
     selectors: &[PadSelector],
 ) -> Result<CmdResult> {
-    let resolved = resolve_selectors(store, scope, selectors, false)?;
+    let resolved = resolve_selectors(store, scope, selectors, true)?;
     let mut result = CmdResult::default();
 
     // Collect UUIDs and perform restores
@@ -25,7 +25,8 @@ pub fn run<S: DataStore>(
         store.save_pad(&pad, scope)?;
         result.add_message(CmdMessage::success(format!(
             "Pad restored ({}): {}",
-            display_index, pad.metadata.title
+            super::helpers::fmt_path(&display_index),
+            pad.metadata.title
         )));
         restored_uuids.push(uuid);
     }
@@ -34,16 +35,14 @@ pub fn run<S: DataStore>(
     let indexed = indexed_pads(store, scope)?;
     for uuid in restored_uuids {
         // Restored pads get Regular index
-        let dp = indexed
-            .iter()
-            .filter(|dp| dp.pad.metadata.id == uuid)
-            .find(|dp| matches!(dp.index, DisplayIndex::Regular(_)));
-
-        if let Some(dp) = dp {
+        if let Some(dp) = super::helpers::find_pad_by_uuid(&indexed, uuid, |idx| {
+            matches!(idx, DisplayIndex::Regular(_))
+        }) {
             result.affected_pads.push(DisplayPad {
                 pad: dp.pad.clone(),
                 index: dp.index.clone(),
                 matches: None,
+                children: Vec::new(),
             });
         }
     }
@@ -62,13 +61,13 @@ mod tests {
     #[test]
     fn restores_deleted_pad() {
         let mut store = InMemoryStore::new();
-        create::run(&mut store, Scope::Project, "Title".into(), "".into()).unwrap();
+        create::run(&mut store, Scope::Project, "Title".into(), "".into(), None).unwrap();
 
         // Delete it
         delete::run(
             &mut store,
             Scope::Project,
-            &[PadSelector::Index(DisplayIndex::Regular(1))],
+            &[PadSelector::Path(vec![DisplayIndex::Regular(1)])],
         )
         .unwrap();
 
@@ -92,7 +91,7 @@ mod tests {
         let result = run(
             &mut store,
             Scope::Project,
-            &[PadSelector::Index(DisplayIndex::Deleted(1))],
+            &[PadSelector::Path(vec![DisplayIndex::Deleted(1)])],
         )
         .unwrap();
 
@@ -124,18 +123,18 @@ mod tests {
     #[test]
     fn restores_multiple_pads() {
         let mut store = InMemoryStore::new();
-        create::run(&mut store, Scope::Project, "A".into(), "".into()).unwrap();
-        create::run(&mut store, Scope::Project, "B".into(), "".into()).unwrap();
-        create::run(&mut store, Scope::Project, "C".into(), "".into()).unwrap();
+        create::run(&mut store, Scope::Project, "A".into(), "".into(), None).unwrap();
+        create::run(&mut store, Scope::Project, "B".into(), "".into(), None).unwrap();
+        create::run(&mut store, Scope::Project, "C".into(), "".into(), None).unwrap();
 
         // Delete all three
         delete::run(
             &mut store,
             Scope::Project,
             &[
-                PadSelector::Index(DisplayIndex::Regular(1)),
-                PadSelector::Index(DisplayIndex::Regular(2)),
-                PadSelector::Index(DisplayIndex::Regular(3)),
+                PadSelector::Path(vec![DisplayIndex::Regular(1)]),
+                PadSelector::Path(vec![DisplayIndex::Regular(2)]),
+                PadSelector::Path(vec![DisplayIndex::Regular(3)]),
             ],
         )
         .unwrap();
@@ -145,8 +144,8 @@ mod tests {
             &mut store,
             Scope::Project,
             &[
-                PadSelector::Index(DisplayIndex::Deleted(1)),
-                PadSelector::Index(DisplayIndex::Deleted(3)),
+                PadSelector::Path(vec![DisplayIndex::Deleted(1)]),
+                PadSelector::Path(vec![DisplayIndex::Deleted(3)]),
             ],
         )
         .unwrap();
@@ -174,8 +173,8 @@ mod tests {
         let mut store = InMemoryStore::new();
 
         // Create two pads with a small delay between them
-        create::run(&mut store, Scope::Project, "Older".into(), "".into()).unwrap();
-        create::run(&mut store, Scope::Project, "Newer".into(), "".into()).unwrap();
+        create::run(&mut store, Scope::Project, "Older".into(), "".into(), None).unwrap();
+        create::run(&mut store, Scope::Project, "Newer".into(), "".into(), None).unwrap();
 
         // Get original created_at of the older pad (which is now index 2 since newest first)
         let original = get::run(&store, Scope::Project, get::PadFilter::default()).unwrap();
@@ -190,14 +189,14 @@ mod tests {
         delete::run(
             &mut store,
             Scope::Project,
-            &[PadSelector::Index(DisplayIndex::Regular(2))],
+            &[PadSelector::Path(vec![DisplayIndex::Regular(2)])],
         )
         .unwrap();
 
         run(
             &mut store,
             Scope::Project,
-            &[PadSelector::Index(DisplayIndex::Deleted(1))],
+            &[PadSelector::Path(vec![DisplayIndex::Deleted(1)])],
         )
         .unwrap();
 
@@ -212,5 +211,103 @@ mod tests {
         assert_eq!(restored_pad.pad.metadata.created_at, original_created_at);
         assert!(!restored_pad.pad.metadata.is_deleted);
         assert!(restored_pad.pad.metadata.deleted_at.is_none());
+    }
+
+    #[test]
+    fn restore_deleted_parent_makes_children_visible() {
+        let mut store = InMemoryStore::new();
+
+        // Create parent with child
+        create::run(&mut store, Scope::Project, "Parent".into(), "".into(), None).unwrap();
+        create::run(
+            &mut store,
+            Scope::Project,
+            "Child".into(),
+            "".into(),
+            Some(PadSelector::Path(vec![DisplayIndex::Regular(1)])),
+        )
+        .unwrap();
+
+        // Delete parent (child is NOT marked deleted per spec)
+        delete::run(
+            &mut store,
+            Scope::Project,
+            &[PadSelector::Path(vec![DisplayIndex::Regular(1)])],
+        )
+        .unwrap();
+
+        // Verify parent and child are hidden from active view
+        let active = get::run(&store, Scope::Project, get::PadFilter::default()).unwrap();
+        assert_eq!(active.listed_pads.len(), 0);
+
+        // Restore parent
+        run(
+            &mut store,
+            Scope::Project,
+            &[PadSelector::Path(vec![DisplayIndex::Deleted(1)])],
+        )
+        .unwrap();
+
+        // Verify parent is active and child is visible again
+        let active_after = get::run(&store, Scope::Project, get::PadFilter::default()).unwrap();
+        assert_eq!(active_after.listed_pads.len(), 1);
+        assert_eq!(active_after.listed_pads[0].pad.metadata.title, "Parent");
+        assert_eq!(active_after.listed_pads[0].children.len(), 1);
+        assert_eq!(
+            active_after.listed_pads[0].children[0].pad.metadata.title,
+            "Child"
+        );
+    }
+
+    #[test]
+    fn restore_child_while_parent_deleted() {
+        // When a child is explicitly deleted (not just hidden), restoring it
+        // should work, but it will still be hidden if parent remains deleted.
+        let mut store = InMemoryStore::new();
+
+        // Create parent with child
+        create::run(&mut store, Scope::Project, "Parent".into(), "".into(), None).unwrap();
+        create::run(
+            &mut store,
+            Scope::Project,
+            "Child".into(),
+            "".into(),
+            Some(PadSelector::Path(vec![DisplayIndex::Regular(1)])),
+        )
+        .unwrap();
+
+        // Delete child explicitly
+        delete::run(
+            &mut store,
+            Scope::Project,
+            &[PadSelector::Path(vec![
+                DisplayIndex::Regular(1),
+                DisplayIndex::Regular(1),
+            ])],
+        )
+        .unwrap();
+
+        // Now delete parent too
+        delete::run(
+            &mut store,
+            Scope::Project,
+            &[PadSelector::Path(vec![DisplayIndex::Regular(1)])],
+        )
+        .unwrap();
+
+        // View deleted - should show parent (which shows child under it)
+        let deleted = get::run(
+            &store,
+            Scope::Project,
+            get::PadFilter {
+                status: get::PadStatusFilter::Deleted,
+                ..Default::default()
+            },
+        )
+        .unwrap();
+        assert_eq!(deleted.listed_pads.len(), 1);
+        assert_eq!(deleted.listed_pads[0].pad.metadata.title, "Parent");
+        // Child appears under deleted parent
+        assert_eq!(deleted.listed_pads[0].children.len(), 1);
     }
 }

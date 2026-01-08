@@ -29,12 +29,12 @@ mod tests {
     #[test]
     fn test_get_path() {
         let mut store = InMemoryStore::new();
-        create::run(&mut store, Scope::Project, "Pad A".into(), "".into()).unwrap();
+        create::run(&mut store, Scope::Project, "Pad A".into(), "".into(), None).unwrap();
 
         let res = run(
             &store,
             Scope::Project,
-            &[PadSelector::Index(DisplayIndex::Regular(1))],
+            &[PadSelector::Path(vec![DisplayIndex::Regular(1)])],
         )
         .unwrap();
         assert_eq!(res.pad_paths.len(), 1);
@@ -50,16 +50,16 @@ mod tests {
     #[test]
     fn test_get_multiple_paths() {
         let mut store = InMemoryStore::new();
-        create::run(&mut store, Scope::Project, "Pad A".into(), "".into()).unwrap();
-        create::run(&mut store, Scope::Project, "Pad B".into(), "".into()).unwrap();
+        create::run(&mut store, Scope::Project, "Pad A".into(), "".into(), None).unwrap();
+        create::run(&mut store, Scope::Project, "Pad B".into(), "".into(), None).unwrap();
 
         // 1 is B, 2 is A
         let res = run(
             &store,
             Scope::Project,
             &[
-                PadSelector::Index(DisplayIndex::Regular(1)),
-                PadSelector::Index(DisplayIndex::Regular(2)),
+                PadSelector::Path(vec![DisplayIndex::Regular(1)]),
+                PadSelector::Path(vec![DisplayIndex::Regular(2)]),
             ],
         )
         .unwrap();

@@ -170,6 +170,7 @@ impl FileStore {
                                             is_deleted: false,
                                             deleted_at: None,
                                             delete_protected: false,
+                                            parent_id: None,
                                             title,
                                         };
                                         meta_map.insert(id, new_meta);
@@ -236,15 +237,9 @@ impl DataStore for FileStore {
     }
 
     fn list_pads(&self, scope: Scope) -> Result<Vec<Pad>> {
-        // Sync before listing to ensure we have the latest state from disk
-        let _ = self.sync(scope); // Ignore errors? Sync failure shouldn't block listing?
-                                  // Better to propagate sync error potentially, but list_pads is generic.
-                                  // Let's log if it fails? or unwrap?
-                                  // Since sync is IO, it can fail.
-                                  // For robustness, maybe just proceed?
-                                  // But if sync fails, the list might be wrong.
-                                  // However, self.get_store_path will fail inside sync anyway if root invalid.
-                                  // And calling sync before getting path here is safer.
+        // Sync before listing to ensure we have the latest state from disk.
+        // Errors are ignored to allow listing even if sync partially fails.
+        let _ = self.sync(scope);
 
         let root = self.get_store_path(scope)?;
         if !root.exists() {
@@ -297,13 +292,8 @@ impl DataStore for FileStore {
     }
 
     fn doctor(&mut self, scope: Scope) -> Result<DoctorReport> {
-        // Reuse sync for the heavy lifting?
-        // Doctor reports stats. Sync is silent.
-        // Let's keep doctor mostly as is but maybe call sync first?
-        // Or implement doctor *as* sync + reporting.
-        // For now, let's leave doctor independent to avoid breaking it during refactor.
-        // Just fixing imports/deps.
-
+        // Doctor performs similar work to sync but returns a detailed report.
+        // Kept separate from sync to provide explicit diagnostics.
         let root = self.get_store_path(scope)?;
         if !root.exists() {
             return Ok(DoctorReport::default());
@@ -371,6 +361,7 @@ impl DataStore for FileStore {
                                         is_deleted: false,
                                         deleted_at: None,
                                         delete_protected: false,
+                                        parent_id: None,
                                         title,
                                     };
 

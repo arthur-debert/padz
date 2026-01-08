@@ -322,7 +322,7 @@ mod tests {
     #[test]
     fn test_resolve_pads_exports_active_by_default() {
         let mut store = InMemoryStore::new();
-        create::run(&mut store, Scope::Project, "Active".into(), "".into()).unwrap();
+        create::run(&mut store, Scope::Project, "Active".into(), "".into(), None).unwrap();
 
         let mut del_pad = crate::model::Pad::new("Deleted".into(), "".into());
         del_pad.metadata.is_deleted = true;
@@ -336,7 +336,14 @@ mod tests {
     #[test]
     fn test_write_archive_produces_content() {
         let mut store = InMemoryStore::new();
-        create::run(&mut store, Scope::Project, "Test".into(), "Content".into()).unwrap();
+        create::run(
+            &mut store,
+            Scope::Project,
+            "Test".into(),
+            "Content".into(),
+            None,
+        )
+        .unwrap();
         let pads = resolve_pads(&store, Scope::Project, &[]).unwrap();
 
         let mut buf = Vec::new();
@@ -422,11 +429,13 @@ mod tests {
             pad: crate::model::Pad::new("First Pad".into(), "Content one".into()),
             index: DisplayIndex::Regular(1),
             matches: None,
+            children: vec![],
         };
         let pad2 = DisplayPad {
             pad: crate::model::Pad::new("Second Pad".into(), "Content two".into()),
             index: DisplayIndex::Regular(2),
             matches: None,
+            children: vec![],
         };
 
         let output = merge_as_text(&[pad1, pad2]);
@@ -449,11 +458,13 @@ mod tests {
             pad: crate::model::Pad::new("First Pad".into(), "# Internal H1\n\nBody text".into()),
             index: DisplayIndex::Regular(1),
             matches: None,
+            children: vec![],
         };
         let pad2 = DisplayPad {
             pad: crate::model::Pad::new("Second Pad".into(), "## Internal H2\n\nMore body".into()),
             index: DisplayIndex::Regular(2),
             matches: None,
+            children: vec![],
         };
 
         let output = merge_as_markdown(&[pad1, pad2], "My Export");

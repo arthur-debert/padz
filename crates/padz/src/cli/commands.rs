@@ -88,14 +88,18 @@ pub fn run() -> Result<()> {
 
     match cli.command {
         Some(Commands::Core(cmd)) => match cmd {
-            CoreCommands::Create { title, no_editor } => {
+            CoreCommands::Create {
+                title,
+                no_editor,
+                inside,
+            } => {
                 // Join all title words with spaces
                 let title = if title.is_empty() {
                     None
                 } else {
                     Some(title.join(" "))
                 };
-                handle_create(&mut ctx, title, no_editor)
+                handle_create(&mut ctx, title, no_editor, inside)
             }
             CoreCommands::List {
                 search,
@@ -115,7 +119,11 @@ pub fn run() -> Result<()> {
             PadCommands::Path { indexes } => handle_paths(&mut ctx, indexes),
         },
         Some(Commands::Data(cmd)) => match cmd {
-            DataCommands::Purge { indexes, yes } => handle_purge(&mut ctx, indexes, yes),
+            DataCommands::Purge {
+                indexes,
+                yes,
+                recursive,
+            } => handle_purge(&mut ctx, indexes, yes, recursive),
             DataCommands::Export {
                 single_file,
                 indexes,
@@ -144,7 +152,12 @@ fn init_context(cli: &Cli) -> Result<AppContext> {
     })
 }
 
-fn handle_create(ctx: &mut AppContext, title: Option<String>, no_editor: bool) -> Result<()> {
+fn handle_create(
+    ctx: &mut AppContext,
+    title: Option<String>,
+    no_editor: bool,
+    inside: Option<String>,
+) -> Result<()> {
     let mut final_title = title;
     let mut initial_content = String::new();
     let mut should_open_editor = !no_editor;
@@ -184,10 +197,12 @@ fn handle_create(ctx: &mut AppContext, title: Option<String>, no_editor: bool) -
 
     // Use provided/parsed title or "Untitled" as placeholder
     let title_to_use = final_title.unwrap_or_else(|| "Untitled".to_string());
+    // Convert Option<String> to Option<&str> for API
+    let parent = inside.as_deref();
 
     let result = ctx
         .api
-        .create_pad(ctx.scope, title_to_use, initial_content)?;
+        .create_pad(ctx.scope, title_to_use, initial_content, parent)?;
     print_messages(&result.messages);
 
     // Open editor if requested/appropriate
@@ -340,8 +355,46 @@ fn handle_paths(ctx: &mut AppContext, indexes: Vec<String>) -> Result<()> {
     Ok(())
 }
 
-fn handle_purge(ctx: &mut AppContext, indexes: Vec<String>, yes: bool) -> Result<()> {
-    let result = ctx.api.purge_pads(ctx.scope, &indexes, yes)?;
+fn handle_purge(
+    ctx: &mut AppContext,
+    indexes: Vec<String>,
+    yes: bool,
+    recursive: bool,
+) -> Result<()> {
+    use std::io::{self, Write};
+
+    // Get preview of what would be purged
+    let preview = ctx.api.preview_purge(ctx.scope, &indexes, recursive)?;
+
+    if preview.targets.is_empty() {
+        println!("No pads to purge.");
+        return Ok(());
+    }
+
+    // Show confirmation unless --yes is provided
+    if !yes {
+        println!("This will permanently remove the following pads:");
+        for dp in &preview.targets {
+            println!("  {} {}", dp.index, dp.pad.metadata.title);
+        }
+        if preview.descendant_count > 0 {
+            println!("  ... and {} descendant(s)", preview.descendant_count);
+        }
+
+        print!("[Y] To delete: ");
+        io::stdout().flush()?;
+
+        let mut input = String::new();
+        io::stdin().read_line(&mut input)?;
+
+        if input.trim() != "Y" {
+            println!("Operation cancelled.");
+            return Ok(());
+        }
+    }
+
+    // Execute the purge
+    let result = ctx.api.purge_pads(ctx.scope, &indexes, recursive)?;
     print_messages(&result.messages);
     Ok(())
 }
