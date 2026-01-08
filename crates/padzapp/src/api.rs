@@ -255,9 +255,8 @@ fn parse_selectors<I: AsRef<str>>(inputs: &[I]) -> Result<Vec<PadSelector>> {
     for input in inputs {
         match parse_index_or_range(input.as_ref()) {
             Ok(selector) => all_selectors.push(selector),
-            Err(_e) => {
-                // Check if it's a specific error (though index.rs now only parses syntax)
-                // If it fails syntax, we assume it's a title search
+            Err(_) => {
+                // Non-index input - treat entire input as title search
                 parse_failed = true;
                 break;
             }
@@ -265,27 +264,13 @@ fn parse_selectors<I: AsRef<str>>(inputs: &[I]) -> Result<Vec<PadSelector>> {
     }
 
     if !parse_failed {
-        // Deduplicate? Paths might be dupe.
-        // We can't easily dedup PadSelector without Hash/Eq, which it should derive.
-        // But PadSelector::Range/Path contains Vec which are Hash/Eq.
-        // But for now let's just return all of them.
-        // To be safe against dupes, we can convert to string and dedup?
-        // Or implement Hash for PadSelector in index.rs (it derived PartialEq, Eq).
-        // Let's assume index.rs added Hash.
-
-        // Wait, PadSelector needs Hash for HashSet.
-        // I'll add Hash to PadSelector derive in index.rs?
-        // It has Vec<DisplayIndex>. DisplayIndex is Hash.
-        // So yes, I should add Hash to PadSelector.
-
+        // Deduplicate while preserving order
         let mut unique_selectors = Vec::new();
-        // Simple dedup
         for s in all_selectors {
             if !unique_selectors.contains(&s) {
                 unique_selectors.push(s);
             }
         }
-
         return Ok(unique_selectors);
     }
 

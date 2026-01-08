@@ -142,6 +142,13 @@ pub fn fmt_path(path: &[DisplayIndex]) -> String {
     s.join(".")
 }
 
+/// Resolves selectors and returns a flat list of DisplayPads.
+///
+/// **Important**: This returns a *flattened* view—each pad has `children: Vec::new()`.
+/// The `index` field contains only the *local* index (last path segment), not the full path.
+/// Use this for operations that act on individual pads (delete, pin, etc.).
+///
+/// For hierarchical data, use `indexed_pads()` instead.
 pub fn pads_by_selectors<S: DataStore>(
     store: &S,
     scope: Scope,
@@ -152,22 +159,13 @@ pub fn pads_by_selectors<S: DataStore>(
     let mut pads = Vec::with_capacity(resolved.len());
     for (path, id) in resolved {
         let pad = store.get_pad(&id, scope)?;
-        // We need search matches logic for DisplayPad if we want it?
-        // But we are constructing it from scratch here without children.
-        // It's flattened.
-        // And the index is just the last segment (local), but typically DisplayPad stores local index.
-        // If we want FULL path info in DisplayPad... index.rs struct has local index.
-        // We can reconstruct tree or just return simple items.
-        // The callers of this usually operate on items.
-        // However, DisplayPad requires children field now.
-
-        let local_index = path.last().cloned().unwrap_or(DisplayIndex::Regular(0)); // Should not be empty
+        let local_index = path.last().cloned().unwrap_or(DisplayIndex::Regular(0));
 
         pads.push(DisplayPad {
             pad,
             index: local_index,
             matches: None,
-            children: Vec::new(), // Flattened view
+            children: Vec::new(),
         });
     }
     Ok(pads)
@@ -216,11 +214,7 @@ fn collect_subtree_ids(dp: &DisplayPad, ids: &mut Vec<Uuid>) {
 /// - `|_| true` - find any pad with matching UUID
 /// - `|idx| matches!(idx, DisplayIndex::Regular(_))` - find restored pad
 /// - `|idx| matches!(idx, DisplayIndex::Pinned(_))` - find pinned pad
-pub fn find_pad_by_uuid<F>(
-    pads: &[DisplayPad],
-    uuid: Uuid,
-    index_filter: F,
-) -> Option<&DisplayPad>
+pub fn find_pad_by_uuid<F>(pads: &[DisplayPad], uuid: Uuid, index_filter: F) -> Option<&DisplayPad>
 where
     F: Fn(&DisplayIndex) -> bool + Copy,
 {
