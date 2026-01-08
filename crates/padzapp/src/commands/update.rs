@@ -56,7 +56,7 @@ pub fn run<S: DataStore>(store: &mut S, scope: Scope, updates: &[PadUpdate]) -> 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::commands::{create, view};
+    use crate::commands::{create, get, view};
     use crate::index::{DisplayIndex, PadSelector};
     use crate::model::Scope;
     use crate::store::memory::InMemoryStore;
@@ -83,5 +83,86 @@ mod tests {
         .unwrap()
         .listed_pads;
         assert_eq!(pads[0].pad.content, "Title\n\nNew");
+    }
+    #[test]
+    fn update_empty_batch_does_nothing() {
+        let mut store = InMemoryStore::new();
+        let result = run(&mut store, Scope::Project, &[]).unwrap();
+        assert!(result.messages.is_empty());
+        assert!(result.affected_pads.is_empty());
+    }
+
+    #[test]
+    fn update_renames_title() {
+        let mut store = InMemoryStore::new();
+        create::run(
+            &mut store,
+            Scope::Project,
+            "Old Title".into(),
+            "Content".into(),
+            None,
+        )
+        .unwrap();
+
+        let update = PadUpdate::new(
+            DisplayIndex::Regular(1),
+            "New Title".into(),
+            "Content".into(),
+        );
+        run(&mut store, Scope::Project, &[update]).unwrap();
+
+        let pads = view::run(
+            &store,
+            Scope::Project,
+            &[PadSelector::Path(vec![DisplayIndex::Regular(1)])],
+        )
+        .unwrap()
+        .listed_pads;
+
+        assert_eq!(pads[0].pad.metadata.title, "New Title");
+        assert_eq!(pads[0].pad.content, "New Title\n\nContent");
+    }
+
+    #[test]
+    fn update_batch_multiple_pads() {
+        let mut store = InMemoryStore::new();
+        create::run(&mut store, Scope::Project, "A".into(), "".into(), None).unwrap();
+        create::run(&mut store, Scope::Project, "B".into(), "".into(), None).unwrap();
+
+        let updates = vec![
+            PadUpdate::new(
+                DisplayIndex::Regular(1),
+                "A Updated".into(),
+                "Content A".into(),
+            ),
+            PadUpdate::new(
+                DisplayIndex::Regular(2),
+                "B Updated".into(),
+                "Content B".into(),
+            ),
+        ];
+
+        let res = run(&mut store, Scope::Project, &updates).unwrap();
+
+        // Check results
+        assert_eq!(res.messages.len(), 2);
+        assert!(res.messages.iter().any(|m| m.content.contains("A Updated")));
+        assert!(res.messages.iter().any(|m| m.content.contains("B Updated")));
+
+        // Check store state
+        let pads = get::run(&store, Scope::Project, get::PadFilter::default())
+            .unwrap()
+            .listed_pads;
+        let pad_a = pads
+            .iter()
+            .find(|p| p.pad.metadata.title == "A Updated")
+            .unwrap();
+        let pad_b = pads
+            .iter()
+            .find(|p| p.pad.metadata.title == "B Updated")
+            .unwrap();
+
+        assert_eq!(pad_a.pad.content, "A Updated\n\nContent A");
+        assert_eq!(pad_b.pad.content, "B Updated\n\nContent B");
     }
 }
