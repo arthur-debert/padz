@@ -1,0 +1,168 @@
+  Current Architecture Analysis
+
+    We are going over the store/(fs|memory).rs implementations for the padz app.
+    Given that the app is not design for concurent access, we feel there are 
+    significant opportunities to design a simpler, safer and more thorough store
+  What exists:
+  - DataStore trait with 6 operations
+  - FileStore: Production impl with hybrid split-brain (files = truth, data.json = cache)
+  - InMemoryStore: Test impl with HashMap, but doctor/sync are no-ops
+
+  Key pain points:
+  1. Sync/doctor logic is FileStore-specific - can't test reconciliation without filesystem
+  2. InMemoryStore is incomplete - doctor() is no-op, get_pad_path() returns placeholder
+  3. Code duplication - sync() and doctor() have ~50% similar logic
+  4. Mixed concerns - FileStore mixes I/O with business logic
+
+  ---
+  Proposed Design: Backend + Store Split
+
+  The key insight is to separate:
+  - Backend (I/O): Raw read/write operations
+  - Store (Logic): Business operations, sync, reconciliation
+
+                      ┌──────────────────────────────────────┐
+                      │     PadStore<B: StorageBackend>      │
+                      │  (implements DataStore trait)        │
+                      │  - sync logic                        │
+                      │  - doctor logic                      │
+                      │  - CRUD operations                   │
+                      └─────────────────┬────────────────────┘
+                                        │ uses
+                      ┌─────────────────┴─────────────────┐
+                      │         StorageBackend trait      │
+                      │   (pure I/O, no business logic)   │
+                      └─────────────────┬─────────────────┘
+                                        │
+                 ┌──────────────────────┼──────────────────────┐
+                 │                                             │
+          ┌──────▼───────┐                           ┌─────────▼────────┐
+          │  FsBackend   │                           │   MemBackend     │
+          │  (filesystem)│                           │   (HashMaps)     │
+          └──────────────┘                           └──────────────────┘
+
+  StorageBackend trait (minimal I/O primitives)
+
+  pub trait StorageBackend {
+      // Index operations
+      fn load_index(&self, scope: Scope) -> Result<HashMap<Uuid, Metadata>>;
+      fn save_index(&mut self, scope: Scope, index: &HashMap<Uuid, Metadata>) -> Result<()>;
+
+      // Content operations
+      // Returns Ok(None) if file not found, Err on I/O error
+      fn read_content(&self, id: &Uuid, scope: Scope) -> Result<Option<String>>;
+      
+      // MUST be atomic (write to tmp -> rename) to avoid partial writes
+      fn write_content(&mut self, id: &Uuid, scope: Scope, content: &str) -> Result<()>;
+      
+      fn delete_content(&mut self, id: &Uuid, scope: Scope) -> Result<()>;
+
+      // Discovery (for sync/reconciliation)
+      fn list_content_ids(&self, scope: Scope) -> Result<Vec<Uuid>>;
+      fn content_mtime(&self, id: &Uuid, scope: Scope) -> Result<Option<DateTime<Utc>>>;
+      // fn content_ctime(&self, id: &Uuid, scope: Scope) -> Result<Option<DateTime<Utc>>>;
+
+      // Paths
+      fn content_path(&self, id: &Uuid, scope: Scope) -> PathBuf;
+      fn scope_available(&self, scope: Scope) -> bool;
+  }
+
+  MemBackend implementation
+
+  pub struct MemBackend {
+      index: HashMap<Scope, HashMap<Uuid, Metadata>>,
+      content: HashMap<(Scope, Uuid), ContentEntry>,
+      // For failure simulation
+      pub simulate_write_error: bool, 
+  }
+
+  struct ContentEntry {
+      text: String,
+      ctime: DateTime<Utc>,
+      mtime: DateTime<Utc>,
+  }
+
+  MemBackend fully simulates filesystem behavior:
+  - list_content_ids() returns keys from content HashMap
+  - content_mtime() returns tracked mtime (updatable for tests)
+  - content_ctime() returns tracked ctime
+  - Orphan simulation: insert content without index entry
+  - Staleness simulation: update content mtime to be > index updated_at
+  - Error simulation: can flag to return errors on write
+
+  PadStore (shared business logic)
+
+  pub struct PadStore<B: StorageBackend> {
+      backend: B,
+  }
+
+  impl<B: StorageBackend> DataStore for PadStore<B> {
+      fn save_pad(&mut self, pad: &Pad, scope: Scope) -> Result<()> {
+          // 1. Write content FIRST (Atomic)
+          // Ideally we would want a transaction here, but lacking that, 
+          // writing content first favors "Orphans" (self-healing) over "Zombies" (broken pointers).
+          self.backend.write_content(&pad.metadata.id, scope, &pad.content)?;
+
+          // 2. Update Index
+          let mut index = self.backend.load_index(scope)?;
+          index.insert(pad.metadata.id, pad.metadata.clone());
+          self.backend.save_index(scope, &index)?;
+          
+          Ok(())
+      }
+
+      fn list_pads(&self, scope: Scope) -> Result<Vec<Pad>> {
+          self.sync(scope)?;  // Same sync logic for both backends!
+          // ...
+      }
+
+      fn doctor(&mut self, scope: Scope) -> Result<DoctorReport> {
+          // Same doctor logic for both backends!
+          // Uses backend.list_content_ids(), content_mtime(), etc.
+      }
+  }
+
+  Benefits
+  ┌────────────────────────────┬───────────────────┬───────────────────────┐
+  │           Aspect           │      Current      │       Proposed        │
+  ├────────────────────────────┼───────────────────┼───────────────────────┤
+  │ Sync/doctor tests          │ Filesystem only   │ Works with MemBackend │
+  ├────────────────────────────┼───────────────────┼───────────────────────┤
+  │ Code duplication           │ sync() ≈ doctor() │ Shared implementation │
+  ├────────────────────────────┼───────────────────┼───────────────────────┤
+  │ InMemoryStore completeness │ Partial           │ Full simulation       │
+  ├────────────────────────────┼───────────────────┼───────────────────────┤
+  │ Reliability                │ Basic fs::write   │ Atomic writes         │
+  ├────────────────────────────┼───────────────────┼───────────────────────┤
+  │ Failure Mode               │ Risk of Zombies   │ Bias towards Orphans  │
+  └────────────────────────────┴───────────────────┴───────────────────────┘
+  Migration Path
+
+  1. Create StorageBackend trait with primitives
+  2. Create FsBackend by extracting I/O from current FileStore (with atomic writes)
+  3. Create MemBackend with full simulation
+  4. Create PadStore<B> with refactored sync/doctor logic
+  5. Type aliases: type FileStore = PadStore<FsBackend>, type InMemoryStore = PadStore<MemBackend>
+  6. Commands unchanged - still generic over DataStore
+
+  Example: Testing Orphan Recovery
+
+  #[test]
+  fn test_orphan_recovery() {
+      let mut backend = MemBackend::new();
+
+      // Simulate orphan: content exists, no index entry
+      let orphan_id = Uuid::new_v4();
+      backend.write_content(&orphan_id, Scope::Project, "Orphan Title\n\nBody").unwrap();
+
+      let mut store = PadStore::new(backend);
+      let report = store.doctor(Scope::Project).unwrap();
+
+      assert_eq!(report.recovered_files, 1);
+
+      // Verify it's now in the store
+      let pad = store.get_pad(&orphan_id, Scope::Project).unwrap();
+      assert_eq!(pad.metadata.title, "Orphan Title");
+  }
+
+  This test currently requires a tempdir. With the proposed design, it runs in-memory.

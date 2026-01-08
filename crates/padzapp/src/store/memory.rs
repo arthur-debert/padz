@@ -1,59 +1,17 @@
-use super::{DataStore, DoctorReport};
-use crate::error::{PadzError, Result};
-use crate::model::{Pad, Scope};
-use std::collections::HashMap;
-use std::path::PathBuf;
-use uuid::Uuid;
+use super::mem_backend::MemBackend;
+use super::pad_store::PadStore;
 
-/// In-memory storage for testing and development.
-/// Does NOT persist data.
-#[derive(Default)]
-pub struct InMemoryStore {
-    pads: HashMap<(Scope, Uuid), Pad>,
+pub type InMemoryStore = PadStore<MemBackend>;
+
+impl Default for InMemoryStore {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl InMemoryStore {
     pub fn new() -> Self {
-        Self::default()
-    }
-}
-
-impl DataStore for InMemoryStore {
-    fn save_pad(&mut self, pad: &Pad, scope: Scope) -> Result<()> {
-        self.pads.insert((scope, pad.metadata.id), pad.clone());
-        Ok(())
-    }
-
-    fn get_pad(&self, id: &Uuid, scope: Scope) -> Result<Pad> {
-        self.pads
-            .get(&(scope, *id))
-            .cloned()
-            .ok_or(PadzError::PadNotFound(*id))
-    }
-
-    fn list_pads(&self, scope: Scope) -> Result<Vec<Pad>> {
-        Ok(self
-            .pads
-            .iter()
-            .filter(|((s, _), _)| *s == scope)
-            .map(|(_, p)| p.clone())
-            .collect())
-    }
-
-    fn delete_pad(&mut self, id: &Uuid, scope: Scope) -> Result<()> {
-        if self.pads.remove(&(scope, *id)).is_none() {
-            return Err(PadzError::PadNotFound(*id));
-        }
-        Ok(())
-    }
-
-    fn get_pad_path(&self, id: &Uuid, _scope: Scope) -> Result<PathBuf> {
-        // In-memory store has no file path, return a placeholder
-        Ok(PathBuf::from(format!("memory://pad-{}", id)))
-    }
-
-    fn doctor(&mut self, _scope: Scope) -> Result<DoctorReport> {
-        Ok(DoctorReport::default())
+        PadStore::with_backend(MemBackend::new())
     }
 }
 
@@ -62,6 +20,8 @@ impl DataStore for InMemoryStore {
 #[cfg(any(test, feature = "test_utils"))]
 pub mod fixtures {
     use super::*;
+    use crate::model::{Pad, Scope};
+    use crate::store::DataStore;
 
     pub struct StoreFixture {
         pub store: InMemoryStore,
@@ -118,6 +78,10 @@ pub mod fixtures {
 mod tests {
     use super::fixtures::StoreFixture;
     use super::*;
+    use crate::error::PadzError;
+    use crate::model::Scope;
+    use crate::store::DataStore;
+    use uuid::Uuid;
 
     #[test]
     fn test_delete_not_found() {
