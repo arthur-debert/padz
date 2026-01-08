@@ -22,11 +22,15 @@
 //! ## Structured Returns
 //!
 //! Commands return [`CmdResult`], not strings. This struct carries:
-//! - `affected_pads`: Pads that were modified
-//! - `listed_pads`: Pads to display (with display indexes)
+//! - `affected_pads`: Pads that were modified (as `DisplayPad` with post-operation index)
+//! - `listed_pads`: Pads to display (as `DisplayPad` with current index)
 //! - `messages`: Structured messages with levels (info, success, warning, error)
 //! - `pad_paths`: File paths (for `path` command)
 //! - `config`: Configuration data (for `config` command)
+//!
+//! Both `affected_pads` and `listed_pads` use [`DisplayPad`], which pairs a [`Pad`]
+//! with its canonical [`DisplayIndex`]. This ensures consistent representation
+//! throughout the API—clients always receive pads with their resolved indexes.
 //!
 //! The UI layer (CLI, web, etc.) then decides how to render this data.
 //!
@@ -61,7 +65,7 @@
 use crate::config::PadzConfig;
 use crate::error::{PadzError, Result};
 use crate::index::DisplayPad;
-use crate::model::{Pad, Scope};
+use crate::model::Scope;
 use std::path::PathBuf;
 
 pub mod config;
@@ -146,7 +150,7 @@ impl CmdMessage {
 
 #[derive(Debug, Default)]
 pub struct CmdResult {
-    pub affected_pads: Vec<Pad>,
+    pub affected_pads: Vec<DisplayPad>,
     pub listed_pads: Vec<DisplayPad>,
     pub pad_paths: Vec<PathBuf>,
     pub config: Option<PadzConfig>,
@@ -158,7 +162,7 @@ impl CmdResult {
         self.messages.push(message);
     }
 
-    pub fn with_affected_pads(mut self, pads: Vec<Pad>) -> Self {
+    pub fn with_affected_pads(mut self, pads: Vec<DisplayPad>) -> Self {
         self.affected_pads = pads;
         self
     }

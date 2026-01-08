@@ -203,8 +203,10 @@ fn handle_create(
 
     // Open editor if requested/appropriate
     if should_open_editor && !result.affected_pads.is_empty() {
-        let pad = &result.affected_pads[0];
-        let path = ctx.api.get_path_by_id(ctx.scope, pad.metadata.id)?;
+        let display_pad = &result.affected_pads[0];
+        let path = ctx
+            .api
+            .get_path_by_id(ctx.scope, display_pad.pad.metadata.id)?;
         open_in_editor(&path)?;
 
         // Re-read the pad after editing and copy to clipboard

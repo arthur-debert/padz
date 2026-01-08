@@ -1,11 +1,12 @@
 use crate::commands::{CmdMessage, CmdResult};
 use crate::error::Result;
-use crate::index::PadSelector;
+use crate::index::{DisplayIndex, DisplayPad, PadSelector};
 use crate::model::Scope;
 use crate::store::DataStore;
 use chrono::Utc;
+use uuid::Uuid;
 
-use super::helpers::resolve_selectors;
+use super::helpers::{indexed_pads, resolve_selectors};
 
 pub fn pin<S: DataStore>(
     store: &mut S,
@@ -32,6 +33,8 @@ fn pin_state<S: DataStore>(
     let resolved = resolve_selectors(store, scope, selectors, false)?;
     let mut result = CmdResult::default();
 
+    // Collect UUIDs and perform pin/unpin
+    let mut affected_uuids: Vec<Uuid> = Vec::new();
     for (display_index, uuid) in resolved {
         let mut pad = store.get_pad(&uuid, scope)?;
         let was_already_pinned = pad.metadata.is_pinned; // Capture original state
@@ -42,13 +45,11 @@ fn pin_state<S: DataStore>(
         store.save_pad(&pad, scope)?;
 
         if is_pinned && !was_already_pinned {
-            // Check if it was actually pinned
             result.add_message(CmdMessage::success(format!(
                 "Pinned pad {}",
                 super::helpers::fmt_path(&display_index)
             )));
         } else if !is_pinned && was_already_pinned {
-            // Check if it was actually unpinned
             result.add_message(CmdMessage::success(format!(
                 "Unpinned pad {}",
                 super::helpers::fmt_path(&display_index)
@@ -59,16 +60,50 @@ fn pin_state<S: DataStore>(
                 super::helpers::fmt_path(&display_index)
             )));
         } else {
-            // !is_pinned && !was_already_pinned
             result.add_message(CmdMessage::info(format!(
                 "Pad {} is already unpinned",
                 super::helpers::fmt_path(&display_index)
             )));
         }
-        result.affected_pads.push(pad);
+        affected_uuids.push(uuid);
+    }
+
+    // Re-index to get the new indexes (pinned pads get pN index)
+    let indexed = indexed_pads(store, scope)?;
+    for uuid in affected_uuids {
+        // Search tree recursively for the pad with matching UUID
+        if let Some(dp) = find_pad_in_tree(&indexed, uuid, is_pinned) {
+            result.affected_pads.push(DisplayPad {
+                pad: dp.pad.clone(),
+                index: dp.index.clone(),
+                matches: None,
+                children: Vec::new(),
+            });
+        }
     }
 
     Ok(result)
+}
+
+fn find_pad_in_tree(pads: &[DisplayPad], uuid: Uuid, is_pinned: bool) -> Option<&DisplayPad> {
+    for dp in pads {
+        if dp.pad.metadata.id == uuid {
+            // For pinned pads, prefer Pinned index; for unpinned, prefer Regular
+            let matches_expected = if is_pinned {
+                matches!(dp.index, DisplayIndex::Pinned(_))
+            } else {
+                matches!(dp.index, DisplayIndex::Regular(_))
+            };
+            if matches_expected {
+                return Some(dp);
+            }
+        }
+        // Recurse into children
+        if let Some(found) = find_pad_in_tree(&dp.children, uuid, is_pinned) {
+            return Some(found);
+        }
+    }
+    None
 }
 
 #[cfg(test)]

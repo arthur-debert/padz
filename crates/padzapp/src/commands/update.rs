@@ -1,6 +1,6 @@
 use crate::commands::{CmdMessage, CmdResult, PadUpdate};
 use crate::error::Result;
-use crate::index::PadSelector;
+use crate::index::{DisplayPad, PadSelector};
 use crate::model::Scope;
 use crate::store::DataStore;
 use chrono::Utc;
@@ -37,7 +37,17 @@ pub fn run<S: DataStore>(store: &mut S, scope: Scope, updates: &[PadUpdate]) -> 
             super::helpers::fmt_path(&display_index),
             pad.metadata.title
         )));
-        result.affected_pads.push(pad);
+        // Index doesn't change after update (use the last segment of the path)
+        let local_index = display_index
+            .last()
+            .cloned()
+            .unwrap_or(update.index.clone());
+        result.affected_pads.push(DisplayPad {
+            pad,
+            index: local_index,
+            matches: None,
+            children: Vec::new(),
+        });
     }
 
     Ok(result)

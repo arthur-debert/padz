@@ -1,11 +1,12 @@
 use crate::commands::{CmdMessage, CmdResult};
 use crate::error::Result;
-use crate::index::PadSelector;
+use crate::index::{DisplayPad, PadSelector};
 use crate::model::Scope;
 use crate::store::DataStore;
 use chrono::Utc;
+use uuid::Uuid;
 
-use super::helpers::resolve_selectors;
+use super::helpers::{indexed_pads, resolve_selectors};
 
 pub fn run<S: DataStore>(
     store: &mut S,
@@ -14,67 +15,48 @@ pub fn run<S: DataStore>(
 ) -> Result<CmdResult> {
     let resolved = resolve_selectors(store, scope, selectors, true)?;
     let mut result = CmdResult::default();
-    // Resetting loop logic entirely
-    // The first `success_count` was unused due to shadowing. Removed it.
 
-    use uuid::Uuid;
-
-    // Check compliance: If any descendant is pinned/protected, we abort.
-    let target_ids: Vec<Uuid> = resolved.iter().map(|(_, id)| *id).collect();
-    let descendants = super::helpers::get_descendant_ids(store, scope, &target_ids)?;
-
-    // Check descendants for protection
-    for descendant_id in descendants {
-        let p = store.get_pad(&descendant_id, scope)?;
-        if p.metadata.delete_protected {
-            // Find pretty name for error? "pX.X" isn't easy to construct without index.
-            // Just use Title.
-            return Err(crate::error::PadzError::Api(format!(
-                "Cannot delete because descendant '{}' is pinned/protected",
-                p.metadata.title
-            )));
-        }
+    // Collect UUIDs and perform deletions
+    let mut deleted_uuids: Vec<Uuid> = Vec::new();
+    for (display_index, uuid) in resolved {
+        let mut pad = store.get_pad(&uuid, scope)?;
+        pad.metadata.is_deleted = true;
+        pad.metadata.deleted_at = Some(Utc::now());
+        store.save_pad(&pad, scope)?;
+        result.add_message(CmdMessage::success(format!(
+            "Pad deleted ({}): {}",
+            super::helpers::fmt_path(&display_index),
+            pad.metadata.title
+        )));
+        deleted_uuids.push(uuid);
     }
 
-    for (path, id) in resolved {
-        let s: Vec<String> = path.iter().map(|idx| idx.to_string()).collect();
-        let display = s.join(".");
-
-        // Fetch pad first to return it
-        let pad = match store.get_pad(&id, scope) {
-            Ok(pad) => pad,
-            Err(e) => {
-                result.add_message(CmdMessage::error(format!(
-                    "Failed to find pad {}: {}",
-                    display, e
-                )));
-                continue;
-            }
-        };
-
-        // Soft delete
-        let mut pad_to_update = pad.clone();
-        pad_to_update.metadata.is_deleted = true;
-        pad_to_update.metadata.deleted_at = Some(Utc::now());
-
-        match store.save_pad(&pad_to_update, scope) {
-            Ok(_) => {
-                result.add_message(CmdMessage::success(format!(
-                    "Deleted pad {}: {}",
-                    display, pad.metadata.title
-                )));
-                result.affected_pads.push(pad);
-            }
-            Err(e) => {
-                result.add_message(CmdMessage::error(format!(
-                    "Failed to delete pad {}: {}",
-                    display, e
-                )));
-            }
+    // Re-index to get the new deleted indexes
+    let indexed = indexed_pads(store, scope)?;
+    for uuid in deleted_uuids {
+        if let Some(dp) = find_deleted_pad(&indexed, uuid) {
+            result.affected_pads.push(DisplayPad {
+                pad: dp.pad.clone(),
+                index: dp.index.clone(),
+                matches: None,
+                children: Vec::new(),
+            });
         }
     }
 
     Ok(result)
+}
+
+fn find_deleted_pad(pads: &[DisplayPad], uuid: Uuid) -> Option<&DisplayPad> {
+    for dp in pads {
+        if dp.pad.metadata.id == uuid {
+            return Some(dp);
+        }
+        if let Some(found) = find_deleted_pad(&dp.children, uuid) {
+            return Some(found);
+        }
+    }
+    None
 }
 
 #[cfg(test)]

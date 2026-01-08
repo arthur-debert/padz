@@ -17,6 +17,15 @@
 //! - **I/O operations**: No stdout, stderr, or file formatting
 //! - **Presentation concerns**: Returns data structures, not strings
 //!
+//! ## Consistent Output Representation
+//!
+//! All pad data in [`CmdResult`] uses [`DisplayPad`], which pairs a [`Pad`] with its
+//! canonical [`DisplayIndex`]. This applies to both:
+//! - `affected_pads`: Pads modified by the operation (with post-operation index)
+//! - `listed_pads`: Pads returned for display (with current index)
+//!
+//! Clients receive a uniform representation regardless of the operation type.
+//!
 //! ## Selectors: Multi-IDs and Ranges
 //!
 //! Users often need to act on batches of items (`padz delete 1-3`).
