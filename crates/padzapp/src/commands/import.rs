@@ -106,4 +106,86 @@ mod tests {
         assert_eq!(pads[0].metadata.title, "Title");
         assert_eq!(pads[0].content, "Title\n\nReal Content");
     }
+
+    #[test]
+    fn test_import_from_directory() {
+        let mut store = InMemoryStore::new();
+        let temp_dir = tempfile::tempdir().unwrap();
+
+        // Create valid files
+        std::fs::write(temp_dir.path().join("note1.md"), "# Note 1\nContent 1").unwrap();
+        std::fs::write(temp_dir.path().join("note2.txt"), "Note 2\n\nContent 2").unwrap();
+        // Create ignored file
+        std::fs::write(temp_dir.path().join("ignored.foo"), "Ignored").unwrap();
+
+        // Run import on dir
+        let res = run(
+            &mut store,
+            Scope::Project,
+            vec![temp_dir.path().to_path_buf()],
+            &[".md".to_string(), ".txt".to_string()],
+        )
+        .unwrap();
+
+        assert_eq!(
+            res.messages
+                .iter()
+                .filter(|m| m.content.contains("Imported:"))
+                .count(),
+            2
+        );
+        assert!(res
+            .messages
+            .iter()
+            .any(|m| m.content.contains("Total imported: 2")));
+
+        let pads = store.list_pads(Scope::Project).unwrap();
+        assert_eq!(pads.len(), 2);
+        // Title extraction preserves markdown headers from first line
+        assert!(pads.iter().any(|p| p.metadata.title == "# Note 1"));
+        assert!(pads.iter().any(|p| p.metadata.title == "Note 2"));
+    }
+
+    #[test]
+    fn test_import_file_directly() {
+        let mut store = InMemoryStore::new();
+        let temp_dir = tempfile::tempdir().unwrap();
+        let file_path = temp_dir.path().join("single.md");
+        std::fs::write(&file_path, "# Single\nContent").unwrap();
+
+        let res = run(
+            &mut store,
+            Scope::Project,
+            vec![file_path],
+            &[".md".to_string()],
+        )
+        .unwrap();
+
+        assert!(res.messages[0].content.contains("Imported:"));
+        assert!(res
+            .messages
+            .iter()
+            .any(|m| m.content.contains("Total imported: 1")));
+
+        let pads = store.list_pads(Scope::Project).unwrap();
+        assert_eq!(pads.len(), 1);
+        assert_eq!(pads[0].metadata.title, "# Single");
+    }
+
+    #[test]
+    fn test_import_invalid_path() {
+        let mut store = InMemoryStore::new();
+        let temp_dir = tempfile::tempdir().unwrap();
+        let invalid_path = temp_dir.path().join("missing.md");
+
+        let res = run(
+            &mut store,
+            Scope::Project,
+            vec![invalid_path],
+            &[".md".to_string()],
+        )
+        .unwrap();
+
+        assert!(res.messages[0].content.contains("Path not found"));
+    }
 }
