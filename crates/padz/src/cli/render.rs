@@ -28,9 +28,9 @@ pub const TIME_WIDTH: usize = 14;
 pub const PIN_MARKER: &str = "⚲";
 
 /// Status indicators for todo status
-pub const STATUS_PLANNED: &str = "◯";
-pub const STATUS_IN_PROGRESS: &str = "◐";
-pub const STATUS_DONE: &str = "◉";
+pub const STATUS_PLANNED: &str = "○";
+pub const STATUS_IN_PROGRESS: &str = "⊙";
+pub const STATUS_DONE: &str = "●";
 
 #[derive(Serialize)]
 struct MatchSegmentData {
@@ -159,7 +159,7 @@ fn render_pad_list_internal(
     fn process_pad(
         dp: &DisplayPad,
         pad_lines: &mut Vec<PadLineData>,
-        prefix: &str, // e.g. "" for root or "1." for child
+        _prefix: &str, // Previously used for hierarchical indexes, now unused
         depth: usize,
         is_pinned_section: bool,
         is_deleted_root: bool,
@@ -168,27 +168,15 @@ fn render_pad_list_internal(
         let is_deleted = matches!(dp.index, DisplayIndex::Deleted(_));
         let show_right_pin = dp.pad.metadata.is_pinned && !is_pinned_section;
 
-        // Format index string
+        // Format index string - space-padded, local only (no hierarchical prefix)
         let local_idx_str = match &dp.index {
             DisplayIndex::Pinned(n) => format!("p{}", n),
-            DisplayIndex::Regular(n) => format!("{:02}", n), // No dot yet
+            DisplayIndex::Regular(n) => format!("{:2}", n), // Space-padded
             DisplayIndex::Deleted(n) => format!("d{}", n),
         };
 
-        // Full index string: prefix + local + "."
-        // e.g. Root "01." -> prefix="" + "01" + "."
-        // Child "01.02." -> prefix="01." + "02" + "."
-        // But for display we might want "01." then "  01.02."
-        // Tree text spec: "1. Parent" then "  1.1. Child".
-        // My DisplayIndex::Regular(1) -> "01".
-        // So root is "01."
-        // Child is "01.01." (if local is 1)
-        // Let's build full string.
-        let full_idx_str = if prefix.is_empty() {
-            format!("{}.", local_idx_str)
-        } else {
-            format!("{}{}.", prefix, local_idx_str)
-        };
+        // Display index: just local index with dot (no hierarchical prefix)
+        let full_idx_str = format!("{}.", local_idx_str);
 
         // Calculate left padding
         // Base padding for root items:
@@ -559,12 +547,12 @@ mod tests {
 
         let output = render_pad_list_internal(&[dp], Some(false), false, false);
 
-        // Should contain status icon, zero-padded index and title
+        // Should contain status icon, space-padded index and title
         assert!(output.contains(STATUS_PLANNED)); // Default status is Planned
-        assert!(output.contains("01."));
+        assert!(output.contains(" 1."));
         assert!(output.contains("Test Note"));
-        // Should have status icon before index
-        assert!(output.contains(&format!("{} 01.", STATUS_PLANNED)));
+        // Should have status icon at start, then base padding, then index
+        assert!(output.contains(&format!("{}    1.", STATUS_PLANNED)));
     }
 
     #[test]

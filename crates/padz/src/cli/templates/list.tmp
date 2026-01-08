@@ -6,7 +6,7 @@
 {%- if pad.is_separator -%}
 {{- "" | nl -}}
 {%- else -%}
-{{- pad.left_pad }}{% if pad.show_left_pin %}{{ pin_marker | style("pinned") }} {% endif %}{{ pad.status_icon | style("time") }} {% if pad.is_pinned_section %}{{ pad.index | style("pinned") }}{% elif pad.is_deleted %}{{ pad.index | style("deleted-index") }}{% else %}{{ pad.index | style("list-index") }}{% endif %}{% if pad.is_deleted %}{{ pad.title | style("deleted-title") }}{% elif peek %}{{ pad.title | style("title") }}{% else %}{{ pad.title | style("list-title") }}{% endif %}{{ pad.padding }}{% if pad.show_right_pin %}{{ pin_marker | style("pinned") }} {% else %}  {% endif %}{{ pad.time_ago | style("time") | nl -}}
+{{- pad.status_icon | style("time") }} {{ pad.left_pad }}{% if pad.show_left_pin %}{{ pin_marker | style("pinned") }} {% endif %}{% if pad.is_pinned_section %}{{ pad.index | style("pinned") }}{% elif pad.is_deleted %}{{ pad.index | style("deleted-index") }}{% else %}{{ pad.index | style("list-index") }}{% endif %}{% if pad.is_deleted %}{{ pad.title | style("deleted-title") }}{% elif peek %}{{ pad.title | style("title") }}{% else %}{{ pad.title | style("list-title") }}{% endif %}{{ pad.padding }}{% if pad.show_right_pin %}{{ pin_marker | style("pinned") }} {% else %}  {% endif %}{{ pad.time_ago | style("time") | nl -}}
 {%- for match in pad.matches -%}
 {{- "    " }}{{ pad.left_pad }}    {{ match.line_number | style("muted") }} {% for seg in match.segments %}{{ seg.text | style(seg.style) }}{% endfor %}{{ "" | nl -}}
 {%- endfor -%}
