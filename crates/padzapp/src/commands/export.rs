@@ -413,6 +413,15 @@ mod tests {
     }
 
     #[test]
+    fn test_bump_markdown_headers_h3_h4() {
+        let input = "### H3 Header\n\nText\n\n#### H4 Header\n\nMore text";
+        let output = bump_markdown_headers(input);
+        // H3 -> H5, H4 -> H6
+        assert!(output.contains("##### H3 Header"), "H3 should become H5");
+        assert!(output.contains("###### H4 Header"), "H4 should become H6");
+    }
+
+    #[test]
     fn test_bump_markdown_headers_preserves_non_headers() {
         let input = "Regular paragraph\n\n- List item\n- Another item\n\n```rust\ncode\n```";
         let output = bump_markdown_headers(input);
@@ -505,6 +514,11 @@ mod tests {
         assert_eq!(
             sanitize_output_filename("my/notes", SingleFileFormat::Markdown),
             "my_notes.md"
+        );
+        // Test .markdown extension handling
+        assert_eq!(
+            sanitize_output_filename("notes.markdown", SingleFileFormat::Markdown),
+            "notes.md"
         );
     }
     #[test]
