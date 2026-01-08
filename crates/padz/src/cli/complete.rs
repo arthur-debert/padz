@@ -32,6 +32,7 @@ fn get_pad_candidates(include_deleted: bool) -> Vec<CompletionCandidate> {
             PadStatusFilter::Active
         },
         search_term: None,
+        todo_status: None,
     };
 
     let Ok(result) = api.get_pads(ctx.scope, filter) else {
@@ -88,6 +89,7 @@ pub fn deleted_pads_completer() -> ArgValueCandidates {
         let filter = PadFilter {
             status: PadStatusFilter::Deleted,
             search_term: None,
+            todo_status: None,
         };
 
         let Ok(result) = api.get_pads(ctx.scope, filter) else {

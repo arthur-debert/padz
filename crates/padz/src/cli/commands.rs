@@ -234,6 +234,7 @@ fn handle_list(
                 PadStatusFilter::Active
             },
             search_term: Some(term),
+            todo_status: None,
         }
     } else {
         PadFilter {
@@ -243,6 +244,7 @@ fn handle_list(
                 PadStatusFilter::Active
             },
             search_term: None,
+            todo_status: None,
         }
     };
 
@@ -334,6 +336,7 @@ fn handle_search(ctx: &mut AppContext, term: String) -> Result<()> {
     let filter = PadFilter {
         status: PadStatusFilter::Active,
         search_term: Some(term),
+        todo_status: None,
     };
     let result = ctx.api.get_pads(ctx.scope, filter)?;
     let output = render_pad_list(&result.listed_pads, false);

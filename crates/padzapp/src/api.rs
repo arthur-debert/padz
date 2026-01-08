@@ -571,6 +571,7 @@ mod tests {
                 PadFilter {
                     status: PadStatusFilter::All,
                     search_term: None,
+                    todo_status: None,
                 },
             )
             .unwrap();
