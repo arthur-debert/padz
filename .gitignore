@@ -6,3 +6,6 @@ Cargo.lock
 tmp/
 .history/
 .padz/
+tarpaulin-report.json
+Export_*.md
+Export_*.txt
