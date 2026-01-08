@@ -64,8 +64,12 @@ use crate::model::{Pad, Scope};
 use std::path::PathBuf;
 use uuid::Uuid;
 
+pub mod backend;
 pub mod fs;
+pub mod fs_backend;
+pub mod mem_backend;
 pub mod memory;
+pub mod pad_store;
 
 /// Report from the `doctor` operation.
 #[derive(Debug, Default)]
