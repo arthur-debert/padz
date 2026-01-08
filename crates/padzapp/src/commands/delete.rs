@@ -23,6 +23,10 @@ pub fn run<S: DataStore>(
         pad.metadata.is_deleted = true;
         pad.metadata.deleted_at = Some(Utc::now());
         store.save_pad(&pad, scope)?;
+
+        // Propagate status change to parent (deleted child no longer affects status)
+        crate::todos::propagate_status_change(store, scope, pad.metadata.parent_id)?;
+
         result.add_message(CmdMessage::success(format!(
             "Pad deleted ({}): {}",
             super::helpers::fmt_path(&display_index),

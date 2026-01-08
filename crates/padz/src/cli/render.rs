@@ -16,7 +16,7 @@ use super::styles::{names, PADZ_THEME};
 use super::templates::{FULL_PAD_TEMPLATE, LIST_TEMPLATE, MESSAGES_TEMPLATE, TEXT_LIST_TEMPLATE};
 use chrono::{DateTime, Utc};
 use outstanding::{render, render_with_color, truncate_to_width, ThemeChoice};
-use padzapp::api::{CmdMessage, MessageLevel};
+use padzapp::api::{CmdMessage, MessageLevel, TodoStatus};
 use padzapp::index::{DisplayIndex, DisplayPad};
 use padzapp::peek::{format_as_peek, PeekResult};
 use serde::Serialize;
@@ -26,6 +26,11 @@ use unicode_width::UnicodeWidthStr;
 pub const LINE_WIDTH: usize = 100;
 pub const TIME_WIDTH: usize = 14;
 pub const PIN_MARKER: &str = "⚲";
+
+/// Status indicators for todo status
+pub const STATUS_PLANNED: &str = "◯";
+pub const STATUS_IN_PROGRESS: &str = "◐";
+pub const STATUS_DONE: &str = "◉";
 
 #[derive(Serialize)]
 struct MatchSegmentData {
@@ -48,6 +53,7 @@ struct MatchLineData {
 struct PadLineData {
     // Pre-computed layout components (Rust handles width calculations)
     left_pad: String,
+    status_icon: String, // Todo status indicator (◯, ◐, ⬤)
     index: String,
     title: String,
     padding: String,
@@ -197,6 +203,15 @@ fn render_pad_list_internal(
         let depth_pad = "  ".repeat(depth);
         let left_pad = format!("{}{}", base_pad, depth_pad);
 
+        // Get status icon based on pad's todo status
+        let status_icon = match dp.pad.metadata.status {
+            TodoStatus::Planned => STATUS_PLANNED,
+            TodoStatus::InProgress => STATUS_IN_PROGRESS,
+            TodoStatus::Done => STATUS_DONE,
+        }
+        .to_string();
+        let status_icon_width = status_icon.width() + 1; // icon + space
+
         // Calculate available width for title
         let pin_width = PIN_MARKER.width();
         let left_prefix_width = if is_pinned_section && depth == 0 {
@@ -208,7 +223,8 @@ fn render_pad_list_internal(
         let right_suffix_width = if show_right_pin { pin_width + 1 } else { 2 };
 
         let idx_width = full_idx_str.width();
-        let fixed_width = left_prefix_width + idx_width + right_suffix_width + TIME_WIDTH;
+        let fixed_width =
+            left_prefix_width + status_icon_width + idx_width + right_suffix_width + TIME_WIDTH;
         let available = LINE_WIDTH.saturating_sub(fixed_width);
 
         let title_display = truncate_to_width(dp.pad.metadata.title.as_str(), available);
@@ -265,6 +281,7 @@ fn render_pad_list_internal(
 
         pad_lines.push(PadLineData {
             left_pad,
+            status_icon,
             index: full_idx_str.clone(),
             title: title_display,
             padding,
@@ -302,6 +319,7 @@ fn render_pad_list_internal(
         if last_was_pinned && !is_pinned_section {
             pad_lines.push(PadLineData {
                 left_pad: String::new(),
+                status_icon: String::new(),
                 index: String::new(),
                 title: String::new(),
                 padding: String::new(),
@@ -541,11 +559,12 @@ mod tests {
 
         let output = render_pad_list_internal(&[dp], Some(false), false, false);
 
-        // Should contain zero-padded index and title
+        // Should contain status icon, zero-padded index and title
+        assert!(output.contains(STATUS_PLANNED)); // Default status is Planned
         assert!(output.contains("01."));
         assert!(output.contains("Test Note"));
-        // Should have 2-space left padding for regular entries (aligns with pinned "⚲ " prefix)
-        assert!(output.contains("  01."));
+        // Should have status icon before index
+        assert!(output.contains(&format!("{} 01.", STATUS_PLANNED)));
     }
 
     #[test]

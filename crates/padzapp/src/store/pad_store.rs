@@ -93,6 +93,7 @@ impl<B: StorageBackend> PadStore<B> {
                             delete_protected: false,
                             parent_id: None,
                             title,
+                            status: crate::model::TodoStatus::Planned,
                         };
                         meta_map.insert(*id, new_meta);
                         report.recovered_files += 1;
@@ -281,6 +282,7 @@ mod tests {
                 delete_protected: false,
                 parent_id: None,
                 title: "Zombie".to_string(),
+                status: crate::model::TodoStatus::Planned,
             },
         );
         backend.save_index(Scope::Project, &index).unwrap();

@@ -1,7 +1,7 @@
 use crate::commands::CmdResult;
 use crate::error::Result;
 use crate::index::{index_pads, DisplayIndex, DisplayPad, MatchSegment, SearchMatch};
-use crate::model::Scope;
+use crate::model::{Scope, TodoStatus};
 use crate::store::DataStore;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -16,6 +16,8 @@ pub enum PadStatusFilter {
 pub struct PadFilter {
     pub status: PadStatusFilter,
     pub search_term: Option<String>,
+    /// Filter by todo status. None means show all (no filtering by todo status).
+    pub todo_status: Option<TodoStatus>,
 }
 
 impl Default for PadFilter {
@@ -23,6 +25,7 @@ impl Default for PadFilter {
         Self {
             status: PadStatusFilter::Active,
             search_term: None,
+            todo_status: None, // Show all todo statuses by default
         }
     }
 }
@@ -82,6 +85,30 @@ fn filter_children_under_deleted(mut dp: DisplayPad) -> DisplayPad {
     dp
 }
 
+/// Recursively filters the tree based on todo status.
+/// Returns pads that match the specified todo status, preserving hierarchy.
+fn filter_by_todo_status(pads: Vec<DisplayPad>, todo_status: TodoStatus) -> Vec<DisplayPad> {
+    pads.into_iter()
+        .filter_map(|dp| filter_pad_by_todo_status(dp, todo_status))
+        .collect()
+}
+
+fn filter_pad_by_todo_status(mut dp: DisplayPad, todo_status: TodoStatus) -> Option<DisplayPad> {
+    // First, recursively filter children
+    dp.children = dp
+        .children
+        .into_iter()
+        .filter_map(|child| filter_pad_by_todo_status(child, todo_status))
+        .collect();
+
+    // Include this pad if it matches the todo status
+    if dp.pad.metadata.status == todo_status {
+        Some(dp)
+    } else {
+        None
+    }
+}
+
 fn matches_status(index: &DisplayIndex, status: PadStatusFilter) -> bool {
     match status {
         PadStatusFilter::All => true,
@@ -95,10 +122,15 @@ pub fn run<S: DataStore>(store: &S, scope: Scope, filter: PadFilter) -> Result<C
     let pads = store.list_pads(scope)?;
     let indexed = index_pads(pads);
 
-    // Recursively filter the tree based on status
+    // 1. Filter by deletion status (Active/Deleted/Pinned)
     let mut filtered: Vec<DisplayPad> = filter_tree(indexed, filter.status);
 
-    // 2. Apply search if needed
+    // 2. Filter by todo status if specified
+    if let Some(todo_status) = filter.todo_status {
+        filtered = filter_by_todo_status(filtered, todo_status);
+    }
+
+    // 3. Apply search if needed
     if let Some(term) = &filter.search_term {
         let term_lower = term.to_lowercase();
         let mut matches: Vec<(DisplayPad, u8)> = filtered
@@ -334,6 +366,7 @@ mod tests {
             PadFilter {
                 status: PadStatusFilter::Active,
                 search_term: None,
+                todo_status: None,
             },
         )
         .unwrap();
@@ -347,6 +380,7 @@ mod tests {
             PadFilter {
                 status: PadStatusFilter::Deleted,
                 search_term: None,
+                todo_status: None,
             },
         )
         .unwrap();
@@ -360,6 +394,7 @@ mod tests {
             PadFilter {
                 status: PadStatusFilter::All,
                 search_term: None,
+                todo_status: None,
             },
         )
         .unwrap();
@@ -385,6 +420,7 @@ mod tests {
             PadFilter {
                 status: PadStatusFilter::Active,
                 search_term: Some("foo".into()),
+                todo_status: None,
             },
         )
         .unwrap();
@@ -537,6 +573,7 @@ mod tests {
             PadFilter {
                 status: PadStatusFilter::Deleted,
                 search_term: None,
+                todo_status: None,
             },
         )
         .unwrap();
@@ -576,5 +613,293 @@ mod tests {
 
         // Should have no active roots (parent is deleted, child is hidden)
         assert_eq!(res.listed_pads.len(), 0);
+    }
+
+    // --- TodoStatus filtering tests ---
+
+    #[test]
+    fn test_todo_status_filter_planned() {
+        let mut store = InMemoryStore::new();
+        // Create pads with different statuses
+        create::run(
+            &mut store,
+            Scope::Project,
+            "Planned1".into(),
+            "".into(),
+            None,
+        )
+        .unwrap();
+        create::run(
+            &mut store,
+            Scope::Project,
+            "Planned2".into(),
+            "".into(),
+            None,
+        )
+        .unwrap();
+
+        // Mark first pad as Done via direct store manipulation
+        let pads = store.list_pads(Scope::Project).unwrap();
+        let mut pad = pads
+            .iter()
+            .find(|p| p.metadata.title == "Planned1")
+            .unwrap()
+            .clone();
+        pad.metadata.status = TodoStatus::Done;
+        store.save_pad(&pad, Scope::Project).unwrap();
+
+        // Filter for Planned only
+        let res = run(
+            &store,
+            Scope::Project,
+            PadFilter {
+                status: PadStatusFilter::Active,
+                search_term: None,
+                todo_status: Some(TodoStatus::Planned),
+            },
+        )
+        .unwrap();
+
+        assert_eq!(res.listed_pads.len(), 1);
+        assert_eq!(res.listed_pads[0].pad.metadata.title, "Planned2");
+    }
+
+    #[test]
+    fn test_todo_status_filter_done() {
+        let mut store = InMemoryStore::new();
+        create::run(&mut store, Scope::Project, "Todo1".into(), "".into(), None).unwrap();
+        create::run(&mut store, Scope::Project, "Todo2".into(), "".into(), None).unwrap();
+        create::run(&mut store, Scope::Project, "Todo3".into(), "".into(), None).unwrap();
+
+        // Mark first two as Done
+        let pads = store.list_pads(Scope::Project).unwrap();
+        for title in ["Todo1", "Todo2"] {
+            let mut pad = pads
+                .iter()
+                .find(|p| p.metadata.title == title)
+                .unwrap()
+                .clone();
+            pad.metadata.status = TodoStatus::Done;
+            store.save_pad(&pad, Scope::Project).unwrap();
+        }
+
+        // Filter for Done only
+        let res = run(
+            &store,
+            Scope::Project,
+            PadFilter {
+                status: PadStatusFilter::Active,
+                search_term: None,
+                todo_status: Some(TodoStatus::Done),
+            },
+        )
+        .unwrap();
+
+        assert_eq!(res.listed_pads.len(), 2);
+        let titles: Vec<_> = res
+            .listed_pads
+            .iter()
+            .map(|dp| dp.pad.metadata.title.as_str())
+            .collect();
+        assert!(titles.contains(&"Todo1"));
+        assert!(titles.contains(&"Todo2"));
+    }
+
+    #[test]
+    fn test_todo_status_filter_in_progress() {
+        let mut store = InMemoryStore::new();
+        create::run(&mut store, Scope::Project, "Task1".into(), "".into(), None).unwrap();
+        create::run(&mut store, Scope::Project, "Task2".into(), "".into(), None).unwrap();
+
+        // Mark Task1 as InProgress
+        let pads = store.list_pads(Scope::Project).unwrap();
+        let mut pad = pads
+            .iter()
+            .find(|p| p.metadata.title == "Task1")
+            .unwrap()
+            .clone();
+        pad.metadata.status = TodoStatus::InProgress;
+        store.save_pad(&pad, Scope::Project).unwrap();
+
+        // Filter for InProgress only
+        let res = run(
+            &store,
+            Scope::Project,
+            PadFilter {
+                status: PadStatusFilter::Active,
+                search_term: None,
+                todo_status: Some(TodoStatus::InProgress),
+            },
+        )
+        .unwrap();
+
+        assert_eq!(res.listed_pads.len(), 1);
+        assert_eq!(res.listed_pads[0].pad.metadata.title, "Task1");
+    }
+
+    #[test]
+    fn test_todo_status_filter_none_shows_all() {
+        let mut store = InMemoryStore::new();
+        create::run(
+            &mut store,
+            Scope::Project,
+            "Planned".into(),
+            "".into(),
+            None,
+        )
+        .unwrap();
+        create::run(&mut store, Scope::Project, "Done".into(), "".into(), None).unwrap();
+        create::run(
+            &mut store,
+            Scope::Project,
+            "InProgress".into(),
+            "".into(),
+            None,
+        )
+        .unwrap();
+
+        // Set statuses
+        let pads = store.list_pads(Scope::Project).unwrap();
+
+        let mut done_pad = pads
+            .iter()
+            .find(|p| p.metadata.title == "Done")
+            .unwrap()
+            .clone();
+        done_pad.metadata.status = TodoStatus::Done;
+        store.save_pad(&done_pad, Scope::Project).unwrap();
+
+        let mut ip_pad = pads
+            .iter()
+            .find(|p| p.metadata.title == "InProgress")
+            .unwrap()
+            .clone();
+        ip_pad.metadata.status = TodoStatus::InProgress;
+        store.save_pad(&ip_pad, Scope::Project).unwrap();
+
+        // Filter with None (show all)
+        let res = run(
+            &store,
+            Scope::Project,
+            PadFilter {
+                status: PadStatusFilter::Active,
+                search_term: None,
+                todo_status: None,
+            },
+        )
+        .unwrap();
+
+        assert_eq!(res.listed_pads.len(), 3);
+    }
+
+    #[test]
+    fn test_todo_status_filter_preserves_index() {
+        // Per spec: "Statuses do not alter the canonical display index"
+        let mut store = InMemoryStore::new();
+        create::run(&mut store, Scope::Project, "First".into(), "".into(), None).unwrap();
+        create::run(&mut store, Scope::Project, "Second".into(), "".into(), None).unwrap();
+        create::run(&mut store, Scope::Project, "Third".into(), "".into(), None).unwrap();
+
+        // Pads are sorted newest first, so:
+        // Third (newest) = index 1
+        // Second = index 2
+        // First (oldest) = index 3
+
+        // Mark Second (index 2) as Done, others stay Planned
+        let pads = store.list_pads(Scope::Project).unwrap();
+        let mut pad = pads
+            .iter()
+            .find(|p| p.metadata.title == "Second")
+            .unwrap()
+            .clone();
+        pad.metadata.status = TodoStatus::Done;
+        store.save_pad(&pad, Scope::Project).unwrap();
+
+        // Filter for Planned only
+        let res = run(
+            &store,
+            Scope::Project,
+            PadFilter {
+                status: PadStatusFilter::Active,
+                search_term: None,
+                todo_status: Some(TodoStatus::Planned),
+            },
+        )
+        .unwrap();
+
+        // Should show Third (1) and First (3), but Second (2) is filtered out
+        // Indexes should remain 1 and 3, not renumbered to 1 and 2
+        assert_eq!(res.listed_pads.len(), 2);
+
+        // Third (newest) should still have index 1
+        let third = res
+            .listed_pads
+            .iter()
+            .find(|dp| dp.pad.metadata.title == "Third")
+            .unwrap();
+        assert!(matches!(third.index, DisplayIndex::Regular(1)));
+
+        // First (oldest) should still have index 3
+        let first = res
+            .listed_pads
+            .iter()
+            .find(|dp| dp.pad.metadata.title == "First")
+            .unwrap();
+        assert!(matches!(first.index, DisplayIndex::Regular(3)));
+    }
+
+    #[test]
+    fn test_todo_status_filter_with_nested_pads() {
+        let mut store = InMemoryStore::new();
+
+        // Create parent with children
+        create::run(&mut store, Scope::Project, "Parent".into(), "".into(), None).unwrap();
+        create::run(
+            &mut store,
+            Scope::Project,
+            "Child1".into(),
+            "".into(),
+            Some(PadSelector::Path(vec![DisplayIndex::Regular(1)])),
+        )
+        .unwrap();
+        create::run(
+            &mut store,
+            Scope::Project,
+            "Child2".into(),
+            "".into(),
+            Some(PadSelector::Path(vec![DisplayIndex::Regular(1)])),
+        )
+        .unwrap();
+
+        // Mark Child1 as Done, Parent and Child2 stay Planned
+        let pads = store.list_pads(Scope::Project).unwrap();
+        let mut child1 = pads
+            .iter()
+            .find(|p| p.metadata.title == "Child1")
+            .unwrap()
+            .clone();
+        child1.metadata.status = TodoStatus::Done;
+        store.save_pad(&child1, Scope::Project).unwrap();
+
+        // Filter for Planned only
+        let res = run(
+            &store,
+            Scope::Project,
+            PadFilter {
+                status: PadStatusFilter::Active,
+                search_term: None,
+                todo_status: Some(TodoStatus::Planned),
+            },
+        )
+        .unwrap();
+
+        // Parent is Planned, so it shows
+        assert_eq!(res.listed_pads.len(), 1);
+        assert_eq!(res.listed_pads[0].pad.metadata.title, "Parent");
+
+        // Child2 is Planned, so it shows under parent
+        // Child1 is Done, so it's filtered out
+        assert_eq!(res.listed_pads[0].children.len(), 1);
+        assert_eq!(res.listed_pads[0].children[0].pad.metadata.title, "Child2");
     }
 }

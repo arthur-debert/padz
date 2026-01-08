@@ -59,6 +59,19 @@ pub enum Scope {
     Global,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub enum TodoStatus {
+    Planned,
+    InProgress,
+    Done,
+}
+
+impl Default for TodoStatus {
+    fn default() -> Self {
+        Self::Planned
+    }
+}
+
 #[derive(Debug, Clone, Serialize)]
 pub struct Metadata {
     pub id: Uuid,
@@ -72,6 +85,8 @@ pub struct Metadata {
     pub parent_id: Option<Uuid>,
     // We store the title in metadata to list without reading content files
     pub title: String,
+    #[serde(default)]
+    pub status: TodoStatus,
 }
 
 // Custom deserializer to handle legacy data where `delete_protected` is missing.
@@ -96,6 +111,7 @@ impl<'de> Deserialize<'de> for Metadata {
             delete_protected: helper.delete_protected.unwrap_or(helper.is_pinned),
             parent_id: helper.parent_id,
             title: helper.title,
+            status: helper.status.unwrap_or(TodoStatus::Planned),
         })
     }
 }
@@ -114,6 +130,8 @@ struct MetadataHelper {
     #[serde(default)]
     parent_id: Option<Uuid>,
     title: String,
+    #[serde(default)]
+    status: Option<TodoStatus>,
 }
 
 impl Metadata {
@@ -130,6 +148,7 @@ impl Metadata {
             delete_protected: false,
             parent_id: None,
             title,
+            status: TodoStatus::Planned,
         }
     }
 }

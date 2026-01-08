@@ -82,6 +82,7 @@ pub mod paths;
 pub mod pinning;
 pub mod purge;
 pub mod restore;
+pub mod status;
 
 pub mod update;
 pub mod view;
@@ -188,6 +189,8 @@ pub struct PadUpdate {
     pub index: crate::index::DisplayIndex,
     pub title: String,
     pub content: String,
+    pub status: Option<crate::model::TodoStatus>,
+    pub path: Option<Vec<crate::index::DisplayIndex>>,
 }
 
 impl PadUpdate {
@@ -196,6 +199,18 @@ impl PadUpdate {
             index,
             title,
             content,
+            status: None,
+            path: None,
         }
+    }
+
+    pub fn with_status(mut self, status: crate::model::TodoStatus) -> Self {
+        self.status = Some(status);
+        self
+    }
+
+    pub fn with_path(mut self, path: Vec<crate::index::DisplayIndex>) -> Self {
+        self.path = Some(path);
+        self
     }
 }

@@ -148,6 +148,26 @@ impl<S: DataStore> PadzApi<S> {
         commands::pinning::unpin(&mut self.store, scope, &selectors)
     }
 
+    /// Marks pads as Done (completed).
+    pub fn complete_pads<I: AsRef<str>>(
+        &mut self,
+        scope: Scope,
+        indexes: &[I],
+    ) -> Result<commands::CmdResult> {
+        let selectors = parse_selectors(indexes)?;
+        commands::status::complete(&mut self.store, scope, &selectors)
+    }
+
+    /// Reopens pads (sets them back to Planned).
+    pub fn reopen_pads<I: AsRef<str>>(
+        &mut self,
+        scope: Scope,
+        indexes: &[I],
+    ) -> Result<commands::CmdResult> {
+        let selectors = parse_selectors(indexes)?;
+        commands::status::reopen(&mut self.store, scope, &selectors)
+    }
+
     pub fn update_pads(
         &mut self,
         scope: Scope,
@@ -339,6 +359,7 @@ fn normalize_single_to_deleted(s: &str) -> String {
 // parse_index_or_range and parse_path removed (imported from index.rs)
 
 pub use crate::commands::config::ConfigAction;
+pub use crate::model::TodoStatus;
 pub use commands::get::{PadFilter, PadStatusFilter};
 pub use commands::{CmdMessage, CmdResult, MessageLevel, PadUpdate, PadzPaths};
 
@@ -571,6 +592,7 @@ mod tests {
                 PadFilter {
                     status: PadStatusFilter::All,
                     search_term: None,
+                    todo_status: None,
                 },
             )
             .unwrap();

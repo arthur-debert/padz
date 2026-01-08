@@ -14,7 +14,13 @@ pub fn run<S: DataStore>(store: &mut S, scope: Scope, updates: &[PadUpdate]) -> 
 
     let selectors: Vec<_> = updates
         .iter()
-        .map(|u| PadSelector::Path(vec![u.index.clone()]))
+        .map(|u| {
+            if let Some(path) = &u.path {
+                PadSelector::Path(path.clone())
+            } else {
+                PadSelector::Path(vec![u.index.clone()])
+            }
+        })
         .collect();
     let resolved = resolve_selectors(store, scope, &selectors, false)?;
     let mut result = CmdResult::default();
@@ -26,10 +32,19 @@ pub fn run<S: DataStore>(store: &mut S, scope: Scope, updates: &[PadUpdate]) -> 
         let (_, normalized_content) =
             crate::model::normalize_pad_content(&update.title, &update.content);
 
+        if let Some(status) = update.status {
+            pad.metadata.status = status;
+        }
+
         pad.metadata.title = update.title.clone();
         pad.metadata.updated_at = Utc::now();
         pad.content = normalized_content;
+
+        let parent_id = pad.metadata.parent_id;
         store.save_pad(&pad, scope)?;
+
+        // Propagate status change to parent
+        crate::todos::propagate_status_change(store, scope, parent_id)?;
 
         // Fix: Use display_index directly as it's already formatted for display
         result.add_message(CmdMessage::success(format!(
@@ -288,5 +303,54 @@ mod tests {
         assert_eq!(pads_after[0].metadata.created_at, original_created_at);
         // ID should NOT change
         assert_eq!(pads_after[0].metadata.id, original_id);
+    }
+
+    #[test]
+    fn test_status_propagation_via_update() {
+        let mut store = InMemoryStore::new();
+
+        // 1. Create a parent (initially Planned)
+        create::run(&mut store, Scope::Project, "Parent".into(), "".into(), None).unwrap();
+
+        // 2. Create a child (initially Planned)
+        create::run(
+            &mut store,
+            Scope::Project,
+            "Child".into(),
+            "".into(),
+            Some(PadSelector::Path(vec![DisplayIndex::Regular(1)])),
+        )
+        .unwrap();
+
+        // Parent should still be Planned
+        let pads = store.list_pads(Scope::Project).unwrap();
+        let parent = pads.iter().find(|p| p.metadata.title == "Parent").unwrap();
+        assert_eq!(parent.metadata.status, crate::model::TodoStatus::Planned);
+
+        // 3. Update Child (1.1) to Done via PadUpdate using path
+        let update = PadUpdate::new(
+            DisplayIndex::Regular(1), // Ignored when path is present
+            "Child".into(),
+            "".into(),
+        )
+        .with_path(vec![DisplayIndex::Regular(1), DisplayIndex::Regular(1)])
+        .with_status(crate::model::TodoStatus::Done);
+
+        run(&mut store, Scope::Project, &[update]).unwrap();
+
+        // Verify Child is Done
+        let pads_after = store.list_pads(Scope::Project).unwrap();
+        let child = pads_after
+            .iter()
+            .find(|p| p.metadata.title == "Child")
+            .unwrap();
+        assert_eq!(child.metadata.status, crate::model::TodoStatus::Done);
+
+        // Verify Parent propagated to Done (All children done -> parent done)
+        let parent_after = pads_after
+            .iter()
+            .find(|p| p.metadata.title == "Parent")
+            .unwrap();
+        assert_eq!(parent_after.metadata.status, crate::model::TodoStatus::Done);
     }
 }
