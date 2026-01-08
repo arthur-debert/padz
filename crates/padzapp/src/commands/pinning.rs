@@ -71,8 +71,13 @@ fn pin_state<S: DataStore>(
     // Re-index to get the new indexes (pinned pads get pN index)
     let indexed = indexed_pads(store, scope)?;
     for uuid in affected_uuids {
-        // Search tree recursively for the pad with matching UUID
-        if let Some(dp) = find_pad_in_tree(&indexed, uuid, is_pinned) {
+        // For pinned pads, prefer Pinned index; for unpinned, prefer Regular
+        let index_filter = if is_pinned {
+            |idx: &DisplayIndex| matches!(idx, DisplayIndex::Pinned(_))
+        } else {
+            |idx: &DisplayIndex| matches!(idx, DisplayIndex::Regular(_))
+        };
+        if let Some(dp) = super::helpers::find_pad_by_uuid(&indexed, uuid, index_filter) {
             result.affected_pads.push(DisplayPad {
                 pad: dp.pad.clone(),
                 index: dp.index.clone(),
@@ -83,27 +88,6 @@ fn pin_state<S: DataStore>(
     }
 
     Ok(result)
-}
-
-fn find_pad_in_tree(pads: &[DisplayPad], uuid: Uuid, is_pinned: bool) -> Option<&DisplayPad> {
-    for dp in pads {
-        if dp.pad.metadata.id == uuid {
-            // For pinned pads, prefer Pinned index; for unpinned, prefer Regular
-            let matches_expected = if is_pinned {
-                matches!(dp.index, DisplayIndex::Pinned(_))
-            } else {
-                matches!(dp.index, DisplayIndex::Regular(_))
-            };
-            if matches_expected {
-                return Some(dp);
-            }
-        }
-        // Recurse into children
-        if let Some(found) = find_pad_in_tree(&dp.children, uuid, is_pinned) {
-            return Some(found);
-        }
-    }
-    None
 }
 
 #[cfg(test)]

@@ -34,8 +34,10 @@ pub fn run<S: DataStore>(
     // Re-index to get the new regular indexes
     let indexed = indexed_pads(store, scope)?;
     for uuid in restored_uuids {
-        // Search tree recursively for restored pad with Regular index
-        if let Some(dp) = find_restored_pad(&indexed, uuid) {
+        // Restored pads get Regular index
+        if let Some(dp) = super::helpers::find_pad_by_uuid(&indexed, uuid, |idx| {
+            matches!(idx, DisplayIndex::Regular(_))
+        }) {
             result.affected_pads.push(DisplayPad {
                 pad: dp.pad.clone(),
                 index: dp.index.clone(),
@@ -46,18 +48,6 @@ pub fn run<S: DataStore>(
     }
 
     Ok(result)
-}
-
-fn find_restored_pad(pads: &[DisplayPad], uuid: Uuid) -> Option<&DisplayPad> {
-    for dp in pads {
-        if dp.pad.metadata.id == uuid && matches!(dp.index, DisplayIndex::Regular(_)) {
-            return Some(dp);
-        }
-        if let Some(found) = find_restored_pad(&dp.children, uuid) {
-            return Some(found);
-        }
-    }
-    None
 }
 
 #[cfg(test)]

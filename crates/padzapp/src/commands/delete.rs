@@ -34,7 +34,8 @@ pub fn run<S: DataStore>(
     // Re-index to get the new deleted indexes
     let indexed = indexed_pads(store, scope)?;
     for uuid in deleted_uuids {
-        if let Some(dp) = find_deleted_pad(&indexed, uuid) {
+        // Find the pad with any index type (deleted pads may have Deleted index)
+        if let Some(dp) = super::helpers::find_pad_by_uuid(&indexed, uuid, |_| true) {
             result.affected_pads.push(DisplayPad {
                 pad: dp.pad.clone(),
                 index: dp.index.clone(),
@@ -45,18 +46,6 @@ pub fn run<S: DataStore>(
     }
 
     Ok(result)
-}
-
-fn find_deleted_pad(pads: &[DisplayPad], uuid: Uuid) -> Option<&DisplayPad> {
-    for dp in pads {
-        if dp.pad.metadata.id == uuid {
-            return Some(dp);
-        }
-        if let Some(found) = find_deleted_pad(&dp.children, uuid) {
-            return Some(found);
-        }
-    }
-    None
 }
 
 #[cfg(test)]

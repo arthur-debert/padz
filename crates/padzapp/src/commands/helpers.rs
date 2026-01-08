@@ -208,3 +208,29 @@ fn collect_subtree_ids(dp: &DisplayPad, ids: &mut Vec<Uuid>) {
         collect_subtree_ids(child, ids);
     }
 }
+
+/// Finds a pad in the tree by UUID, optionally filtering by index type.
+///
+/// The `index_filter` predicate determines which index types are acceptable.
+/// Common patterns:
+/// - `|_| true` - find any pad with matching UUID
+/// - `|idx| matches!(idx, DisplayIndex::Regular(_))` - find restored pad
+/// - `|idx| matches!(idx, DisplayIndex::Pinned(_))` - find pinned pad
+pub fn find_pad_by_uuid<F>(
+    pads: &[DisplayPad],
+    uuid: Uuid,
+    index_filter: F,
+) -> Option<&DisplayPad>
+where
+    F: Fn(&DisplayIndex) -> bool + Copy,
+{
+    for dp in pads {
+        if dp.pad.metadata.id == uuid && index_filter(&dp.index) {
+            return Some(dp);
+        }
+        if let Some(found) = find_pad_by_uuid(&dp.children, uuid, index_filter) {
+            return Some(found);
+        }
+    }
+    None
+}
