@@ -93,6 +93,7 @@ mod tests {
                 delete_protected: false,
                 parent_id: None,
                 title: "Zombie".to_string(),
+                status: crate::model::TodoStatus::Planned,
             },
         );
         backend.save_index(Scope::Project, &index).unwrap();
@@ -136,6 +137,7 @@ mod tests {
                 delete_protected: false,
                 parent_id: None,
                 title: "Zombie".to_string(),
+                status: crate::model::TodoStatus::Planned,
             },
         );
         backend.save_index(Scope::Project, &index).unwrap();

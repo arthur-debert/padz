@@ -23,6 +23,9 @@ pub fn run<S: DataStore>(
         pad.metadata.deleted_at = None;
         // Keep original created_at so the pad appears in its original position
         store.save_pad(&pad, scope)?;
+
+        // Propagate status change to parent (restored child affects status again)
+        crate::todos::propagate_status_change(store, scope, pad.metadata.parent_id)?;
         result.add_message(CmdMessage::success(format!(
             "Pad restored ({}): {}",
             super::helpers::fmt_path(&display_index),

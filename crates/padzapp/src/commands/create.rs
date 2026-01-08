@@ -37,6 +37,9 @@ pub fn run<S: DataStore>(
 
     store.save_pad(&pad, scope)?;
 
+    // Propagate status change to parent (e.g. adding a "Planned" child might revert parent from "Done")
+    crate::todos::propagate_status_change(store, scope, pad.metadata.parent_id)?;
+
     let mut result = CmdResult::default();
     // New pad is always the newest, so it gets index 1
     let display_pad = DisplayPad {
