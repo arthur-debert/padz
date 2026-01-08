@@ -658,4 +658,151 @@ mod tests {
 
         assert_eq!(result.len(), 1);
     }
+
+    #[test]
+    fn test_range_invalid_order_returns_error() {
+        let mut store = InMemoryStore::new();
+
+        // Create pads: newest first, so order is 1, 2, 3
+        create::run(&mut store, Scope::Project, "Pad A".into(), "".into(), None).unwrap();
+        create::run(&mut store, Scope::Project, "Pad B".into(), "".into(), None).unwrap();
+        create::run(&mut store, Scope::Project, "Pad C".into(), "".into(), None).unwrap();
+
+        // Try to select range 3-1 (reversed order)
+        let result = resolve_selectors(
+            &store,
+            Scope::Project,
+            &[PadSelector::Range(
+                vec![DisplayIndex::Regular(3)],
+                vec![DisplayIndex::Regular(1)],
+            )],
+            false,
+        );
+
+        assert!(result.is_err());
+        let err = result.unwrap_err();
+        assert!(err.to_string().contains("appears after"));
+    }
+
+    #[test]
+    fn test_range_start_not_found_returns_error() {
+        let mut store = InMemoryStore::new();
+
+        create::run(&mut store, Scope::Project, "Pad A".into(), "".into(), None).unwrap();
+
+        // Try to select range starting from nonexistent index
+        let result = resolve_selectors(
+            &store,
+            Scope::Project,
+            &[PadSelector::Range(
+                vec![DisplayIndex::Regular(99)],
+                vec![DisplayIndex::Regular(1)],
+            )],
+            false,
+        );
+
+        assert!(result.is_err());
+        let err = result.unwrap_err();
+        assert!(err.to_string().contains("Range start"));
+        assert!(err.to_string().contains("not found"));
+    }
+
+    #[test]
+    fn test_range_end_not_found_returns_error() {
+        let mut store = InMemoryStore::new();
+
+        create::run(&mut store, Scope::Project, "Pad A".into(), "".into(), None).unwrap();
+
+        // Try to select range ending at nonexistent index
+        let result = resolve_selectors(
+            &store,
+            Scope::Project,
+            &[PadSelector::Range(
+                vec![DisplayIndex::Regular(1)],
+                vec![DisplayIndex::Regular(99)],
+            )],
+            false,
+        );
+
+        assert!(result.is_err());
+        let err = result.unwrap_err();
+        assert!(err.to_string().contains("Range end"));
+        assert!(err.to_string().contains("not found"));
+    }
+
+    #[test]
+    fn test_range_delete_protection_check() {
+        let mut store = InMemoryStore::new();
+
+        create::run(&mut store, Scope::Project, "Pad A".into(), "".into(), None).unwrap();
+        create::run(&mut store, Scope::Project, "Pad B".into(), "".into(), None).unwrap();
+        create::run(&mut store, Scope::Project, "Pad C".into(), "".into(), None).unwrap();
+
+        // Protect the middle pad (index 2)
+        let pads = store.list_pads(Scope::Project).unwrap();
+        let mut pad_b = pads
+            .iter()
+            .find(|p| p.metadata.title == "Pad B")
+            .unwrap()
+            .clone();
+        pad_b.metadata.delete_protected = true;
+        store.save_pad(&pad_b, Scope::Project).unwrap();
+
+        // Try to select range 1-3 with delete protection check
+        let result = resolve_selectors(
+            &store,
+            Scope::Project,
+            &[PadSelector::Range(
+                vec![DisplayIndex::Regular(1)],
+                vec![DisplayIndex::Regular(3)],
+            )],
+            true, // check_delete_protection = true
+        );
+
+        assert!(result.is_err());
+        let err = result.unwrap_err();
+        assert!(err.to_string().contains("delete protected"));
+    }
+
+    #[test]
+    fn test_path_selector_not_found_returns_error() {
+        let mut store = InMemoryStore::new();
+
+        create::run(&mut store, Scope::Project, "Pad A".into(), "".into(), None).unwrap();
+
+        let result = resolve_selectors(
+            &store,
+            Scope::Project,
+            &[PadSelector::Path(vec![DisplayIndex::Regular(99)])],
+            false,
+        );
+
+        assert!(result.is_err());
+        let err = result.unwrap_err();
+        assert!(err.to_string().contains("not found"));
+    }
+
+    #[test]
+    fn test_path_selector_delete_protection_check() {
+        let mut store = InMemoryStore::new();
+
+        create::run(&mut store, Scope::Project, "Pad A".into(), "".into(), None).unwrap();
+
+        // Protect the pad
+        let pads = store.list_pads(Scope::Project).unwrap();
+        let mut pad = pads[0].clone();
+        pad.metadata.delete_protected = true;
+        store.save_pad(&pad, Scope::Project).unwrap();
+
+        let result = resolve_selectors(
+            &store,
+            Scope::Project,
+            &[PadSelector::Path(vec![DisplayIndex::Regular(1)])],
+            true, // check_delete_protection = true
+        );
+
+        assert!(result.is_err());
+        let err = result.unwrap_err();
+        assert!(err.to_string().contains("delete protected"));
+    }
 }
