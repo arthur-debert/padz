@@ -30,7 +30,7 @@ pub const PIN_MARKER: &str = "⚲";
 /// Status indicators for todo status
 pub const STATUS_PLANNED: &str = "◯";
 pub const STATUS_IN_PROGRESS: &str = "◐";
-pub const STATUS_DONE: &str = "⬤";
+pub const STATUS_DONE: &str = "◉";
 
 #[derive(Serialize)]
 struct MatchSegmentData {
