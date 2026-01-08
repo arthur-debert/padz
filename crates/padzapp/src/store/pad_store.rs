@@ -8,7 +8,9 @@ use uuid::Uuid;
 use std::time::SystemTime;
 
 pub struct PadStore<B: StorageBackend> {
-    pub backend: B,
+    /// The underlying storage backend.
+    /// Exposed as pub(crate) for testing and internal access only.
+    pub(crate) backend: B,
 }
 
 impl<B: StorageBackend> PadStore<B> {
