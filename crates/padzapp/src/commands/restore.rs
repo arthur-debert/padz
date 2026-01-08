@@ -99,6 +99,14 @@ mod tests {
         assert!(result.messages[0].content.contains("Pad restored"));
         assert!(result.messages[0].content.contains("Title"));
 
+        // Verify affected_pads contains the restored pad
+        assert_eq!(result.affected_pads.len(), 1);
+        assert_eq!(result.affected_pads[0].pad.metadata.title, "Title");
+        assert!(matches!(
+            result.affected_pads[0].index,
+            DisplayIndex::Regular(1)
+        ));
+
         // Verify it's active again
         let active = get::run(&store, Scope::Project, get::PadFilter::default()).unwrap();
         assert_eq!(active.listed_pads.len(), 1);

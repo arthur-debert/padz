@@ -78,6 +78,10 @@ pub mod fixtures {
 mod tests {
     use super::fixtures::StoreFixture;
     use super::*;
+    use crate::error::PadzError;
+    use crate::model::Scope;
+    use crate::store::DataStore;
+    use uuid::Uuid;
 
     #[test]
     fn test_delete_not_found() {
