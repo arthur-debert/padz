@@ -345,4 +345,57 @@ mod tests {
         assert_eq!(loaded.parent_id, None);
         assert_eq!(loaded.title, "Legacy Pad");
     }
+
+    #[test]
+    fn test_metadata_deserialization_with_explicit_delete_protected() {
+        let id = Uuid::new_v4();
+        // JSON with explicit delete_protected = true, but is_pinned = false
+        // This verifies we don't blindly copy is_pinned
+        let json = format!(
+            r#"{{
+            "id": "{}",
+            "created_at": "2023-01-01T00:00:00Z",
+            "updated_at": "2023-01-01T00:00:00Z",
+            "is_pinned": false,
+            "pinned_at": null,
+            "is_deleted": false,
+            "deleted_at": null,
+            "delete_protected": true,
+            "title": "Protected Pad"
+        }}"#,
+            id
+        );
+
+        let loaded: Metadata = serde_json::from_str(&json).unwrap();
+        assert_eq!(loaded.id, id);
+        assert!(loaded.delete_protected);
+        assert!(!loaded.is_pinned);
+    }
+
+    #[test]
+    fn test_update_from_raw() {
+        let mut pad = Pad::new("Old Title".to_string(), "Old Content".to_string());
+        let old_updated_at = pad.metadata.updated_at;
+
+        // Sleep briefly to ensure timestamp difference
+        std::thread::sleep(std::time::Duration::from_millis(10));
+
+        pad.update_from_raw("New Title\n\nNew Content");
+
+        assert_eq!(pad.metadata.title, "New Title");
+        assert_eq!(pad.content, "New Title\n\nNew Content");
+        assert!(pad.metadata.updated_at > old_updated_at);
+    }
+
+    #[test]
+    fn test_update_from_raw_ignores_empty() {
+        let mut pad = Pad::new("Old Title".to_string(), "Old Content".to_string());
+        let old_updated_at = pad.metadata.updated_at;
+        let old_content = pad.content.clone();
+
+        pad.update_from_raw("   ");
+
+        assert_eq!(pad.content, old_content);
+        assert_eq!(pad.metadata.updated_at, old_updated_at);
+    }
 }
