@@ -167,6 +167,18 @@ pub enum CoreCommands {
         /// Peek at pad content
         #[arg(long)]
         peek: bool,
+
+        /// Show only planned pads
+        #[arg(long, conflicts_with_all = ["done", "in_progress"])]
+        planned: bool,
+
+        /// Show only done pads
+        #[arg(long, conflicts_with_all = ["planned", "in_progress"])]
+        done: bool,
+
+        /// Show only in-progress pads
+        #[arg(long, conflicts_with_all = ["planned", "done"])]
+        in_progress: bool,
     },
 
     /// Search pads (dedicated command)
@@ -208,8 +220,12 @@ pub enum PadCommands {
     #[command(alias = "rm", display_order = 13)]
     Delete {
         /// Indexes of the pads (e.g. 1 3 5)
-        #[arg(required = true, num_args = 1.., add = active_pads_completer())]
+        #[arg(num_args = 1.., add = active_pads_completer(), required_unless_present = "done_status")]
         indexes: Vec<String>,
+
+        /// Delete all pads marked as done
+        #[arg(long = "done", conflicts_with = "indexes")]
+        done_status: bool,
     },
 
     /// Restore deleted pads
@@ -241,6 +257,22 @@ pub enum PadCommands {
     Path {
         /// Indexes of the pads (e.g. 1 p1 d1)
         #[arg(required = true, num_args = 1.., add = all_pads_completer())]
+        indexes: Vec<String>,
+    },
+
+    /// Mark pads as done (completed)
+    #[command(alias = "done", display_order = 18)]
+    Complete {
+        /// Indexes of the pads (e.g. 1 3 5 or 1-5)
+        #[arg(required = true, num_args = 1.., add = active_pads_completer())]
+        indexes: Vec<String>,
+    },
+
+    /// Reopen pads (set back to planned)
+    #[command(display_order = 19)]
+    Reopen {
+        /// Indexes of the pads (e.g. 1 3 5 or 1-5)
+        #[arg(required = true, num_args = 1.., add = active_pads_completer())]
         indexes: Vec<String>,
     },
 }

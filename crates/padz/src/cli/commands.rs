@@ -46,7 +46,7 @@ use super::setup::{
     parse_cli, Cli, Commands, CompletionShell, CoreCommands, DataCommands, MiscCommands,
     PadCommands,
 };
-use padzapp::api::{ConfigAction, PadFilter, PadStatusFilter, PadzApi};
+use padzapp::api::{ConfigAction, PadFilter, PadStatusFilter, PadzApi, TodoStatus};
 use padzapp::clipboard::{copy_to_clipboard, format_for_clipboard, get_from_clipboard};
 use padzapp::editor::open_in_editor;
 use padzapp::error::Result;
@@ -105,18 +105,26 @@ pub fn run() -> Result<()> {
                 search,
                 deleted,
                 peek,
-            } => handle_list(&mut ctx, search, deleted, peek),
+                planned,
+                done,
+                in_progress,
+            } => handle_list(&mut ctx, search, deleted, peek, planned, done, in_progress),
             CoreCommands::Search { term } => handle_search(&mut ctx, term),
         },
         Some(Commands::Pad(cmd)) => match cmd {
             PadCommands::View { indexes, peek } => handle_view(&mut ctx, indexes, peek),
             PadCommands::Edit { indexes } => handle_edit(&mut ctx, indexes),
             PadCommands::Open { indexes } => handle_open(&mut ctx, indexes),
-            PadCommands::Delete { indexes } => handle_delete(&mut ctx, indexes),
+            PadCommands::Delete {
+                indexes,
+                done_status,
+            } => handle_delete(&mut ctx, indexes, done_status),
             PadCommands::Restore { indexes } => handle_restore(&mut ctx, indexes),
             PadCommands::Pin { indexes } => handle_pin(&mut ctx, indexes),
             PadCommands::Unpin { indexes } => handle_unpin(&mut ctx, indexes),
             PadCommands::Path { indexes } => handle_paths(&mut ctx, indexes),
+            PadCommands::Complete { indexes } => handle_complete(&mut ctx, indexes),
+            PadCommands::Reopen { indexes } => handle_reopen(&mut ctx, indexes),
         },
         Some(Commands::Data(cmd)) => match cmd {
             DataCommands::Purge {
@@ -136,7 +144,7 @@ pub fn run() -> Result<()> {
             MiscCommands::Init => handle_init(&ctx),
             MiscCommands::Completions { shell } => handle_completions(shell),
         },
-        None => handle_list(&mut ctx, None, false, false),
+        None => handle_list(&mut ctx, None, false, false, false, false, false),
     }
 }
 
@@ -225,27 +233,29 @@ fn handle_list(
     search: Option<String>,
     deleted: bool,
     peek: bool,
+    planned: bool,
+    done: bool,
+    in_progress: bool,
 ) -> Result<()> {
-    let filter = if let Some(term) = search {
-        PadFilter {
-            status: if deleted {
-                PadStatusFilter::Deleted
-            } else {
-                PadStatusFilter::Active
-            },
-            search_term: Some(term),
-            todo_status: None,
-        }
+    // Determine todo status filter
+    let todo_status = if planned {
+        Some(TodoStatus::Planned)
+    } else if done {
+        Some(TodoStatus::Done)
+    } else if in_progress {
+        Some(TodoStatus::InProgress)
     } else {
-        PadFilter {
-            status: if deleted {
-                PadStatusFilter::Deleted
-            } else {
-                PadStatusFilter::Active
-            },
-            search_term: None,
-            todo_status: None,
-        }
+        None // No filter = show all
+    };
+
+    let filter = PadFilter {
+        status: if deleted {
+            PadStatusFilter::Deleted
+        } else {
+            PadStatusFilter::Active
+        },
+        search_term: search,
+        todo_status,
     };
 
     let result = ctx.api.get_pads(ctx.scope, filter)?;
@@ -308,9 +318,34 @@ fn handle_open(ctx: &mut AppContext, indexes: Vec<String>) -> Result<()> {
     handle_edit(ctx, indexes)
 }
 
-fn handle_delete(ctx: &mut AppContext, indexes: Vec<String>) -> Result<()> {
-    let result = ctx.api.delete_pads(ctx.scope, &indexes)?;
-    print_messages(&result.messages);
+fn handle_delete(ctx: &mut AppContext, indexes: Vec<String>, done_status: bool) -> Result<()> {
+    if done_status {
+        // Delete all pads with Done status
+        let filter = PadFilter {
+            status: PadStatusFilter::Active,
+            search_term: None,
+            todo_status: Some(TodoStatus::Done),
+        };
+        let pads = ctx.api.get_pads(ctx.scope, filter)?;
+
+        if pads.listed_pads.is_empty() {
+            println!("No done pads to delete.");
+            return Ok(());
+        }
+
+        // Collect indexes of done pads
+        let done_indexes: Vec<String> = pads
+            .listed_pads
+            .iter()
+            .map(|dp| dp.index.to_string())
+            .collect();
+
+        let result = ctx.api.delete_pads(ctx.scope, &done_indexes)?;
+        print_messages(&result.messages);
+    } else {
+        let result = ctx.api.delete_pads(ctx.scope, &indexes)?;
+        print_messages(&result.messages);
+    }
     Ok(())
 }
 
@@ -328,6 +363,18 @@ fn handle_pin(ctx: &mut AppContext, indexes: Vec<String>) -> Result<()> {
 
 fn handle_unpin(ctx: &mut AppContext, indexes: Vec<String>) -> Result<()> {
     let result = ctx.api.unpin_pads(ctx.scope, &indexes)?;
+    print_messages(&result.messages);
+    Ok(())
+}
+
+fn handle_complete(ctx: &mut AppContext, indexes: Vec<String>) -> Result<()> {
+    let result = ctx.api.complete_pads(ctx.scope, &indexes)?;
+    print_messages(&result.messages);
+    Ok(())
+}
+
+fn handle_reopen(ctx: &mut AppContext, indexes: Vec<String>) -> Result<()> {
+    let result = ctx.api.reopen_pads(ctx.scope, &indexes)?;
     print_messages(&result.messages);
     Ok(())
 }
