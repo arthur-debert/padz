@@ -194,3 +194,139 @@ fn test_fs_backend_mtime() {
     let diff = Utc::now().signed_duration_since(mtime.unwrap());
     assert!(diff.num_seconds().abs() < 5);
 }
+
+#[test]
+fn test_fs_backend_project_scope_unavailable() {
+    let global_dir = TempDir::new().unwrap();
+    // Create backend with NO project root
+    let backend = FsBackend::new(None, global_dir.path().to_path_buf());
+
+    let id = Uuid::new_v4();
+
+    // Trying to write to Project scope should fail
+    let result = backend.write_content(&id, Scope::Project, "Content");
+    assert!(result.is_err());
+
+    // Trying to read from Project scope should fail
+    let result = backend.read_content(&id, Scope::Project);
+    assert!(result.is_err());
+
+    // Trying to load index from Project scope should fail
+    let result = backend.load_index(Scope::Project);
+    assert!(result.is_err());
+
+    // Global scope should still work
+    backend
+        .write_content(&id, Scope::Global, "Global Content")
+        .unwrap();
+    let content = backend.read_content(&id, Scope::Global).unwrap();
+    assert_eq!(content, Some("Global Content".to_string()));
+}
+
+#[test]
+fn test_fs_backend_scope_available() {
+    let global_dir = TempDir::new().unwrap();
+    let project_dir = TempDir::new().unwrap();
+
+    // Backend with both scopes
+    let backend_both = FsBackend::new(
+        Some(project_dir.path().to_path_buf()),
+        global_dir.path().to_path_buf(),
+    );
+    assert!(backend_both.scope_available(Scope::Project));
+    assert!(backend_both.scope_available(Scope::Global));
+
+    // Backend with only global scope
+    let backend_global_only = FsBackend::new(None, global_dir.path().to_path_buf());
+    assert!(!backend_global_only.scope_available(Scope::Project));
+    assert!(backend_global_only.scope_available(Scope::Global));
+}
+
+#[test]
+fn test_fs_backend_extension_without_dot() {
+    let (proj, _glob, backend) = setup();
+    // Use extension WITHOUT leading dot
+    let backend = backend.with_file_ext("md");
+
+    // Verify it normalizes to have dot
+    assert_eq!(backend.file_ext(), ".md");
+
+    let id = Uuid::new_v4();
+    let scope = Scope::Project;
+
+    backend.write_content(&id, scope, "Markdown").unwrap();
+
+    // File should be created with .md extension
+    let expected_path = proj.path().join(format!("pad-{}.md", id));
+    assert!(expected_path.exists());
+}
+
+#[test]
+fn test_fs_backend_read_nonexistent_file() {
+    let (_proj, _glob, backend) = setup();
+    let id = Uuid::new_v4();
+
+    // Reading a file that doesn't exist should return None, not error
+    let content = backend.read_content(&id, Scope::Project).unwrap();
+    assert_eq!(content, None);
+}
+
+#[test]
+fn test_fs_backend_delete_nonexistent_file() {
+    let (_proj, _glob, backend) = setup();
+    let id = Uuid::new_v4();
+
+    // Deleting a file that doesn't exist should succeed silently
+    let result = backend.delete_content(&id, Scope::Project);
+    assert!(result.is_ok());
+}
+
+#[test]
+fn test_fs_backend_mtime_nonexistent_file() {
+    let (_proj, _glob, backend) = setup();
+    let id = Uuid::new_v4();
+
+    // mtime for nonexistent file should return None
+    let mtime = backend.content_mtime(&id, Scope::Project).unwrap();
+    assert!(mtime.is_none());
+}
+
+#[test]
+fn test_fs_backend_content_path_nonexistent_returns_expected_path() {
+    let (proj, _glob, backend) = setup();
+    let id = Uuid::new_v4();
+
+    // content_path for nonexistent file should return the expected path
+    let path = backend.content_path(&id, Scope::Project).unwrap();
+    assert_eq!(path, proj.path().join(format!("pad-{}.txt", id)));
+}
+
+#[test]
+fn test_fs_backend_list_content_ids_empty_dir() {
+    let (_proj, _glob, backend) = setup();
+
+    // Listing an empty directory should return empty vec, not error
+    let ids = backend.list_content_ids(Scope::Project).unwrap();
+    assert!(ids.is_empty());
+}
+
+#[test]
+fn test_fs_backend_list_content_ids_nonexistent_dir() {
+    let global_dir = TempDir::new().unwrap();
+    let nonexistent = global_dir.path().join("does_not_exist");
+
+    let backend = FsBackend::new(Some(nonexistent), global_dir.path().to_path_buf());
+
+    // Listing a nonexistent directory should return empty vec
+    let ids = backend.list_content_ids(Scope::Project).unwrap();
+    assert!(ids.is_empty());
+}
+
+#[test]
+fn test_fs_backend_load_index_empty_dir() {
+    let (_proj, _glob, backend) = setup();
+
+    // Loading index from dir without data.json should return empty HashMap
+    let index = backend.load_index(Scope::Project).unwrap();
+    assert!(index.is_empty());
+}
