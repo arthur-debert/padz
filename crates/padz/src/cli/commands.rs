@@ -119,7 +119,11 @@ pub fn run() -> Result<()> {
             PadCommands::Path { indexes } => handle_paths(&mut ctx, indexes),
         },
         Some(Commands::Data(cmd)) => match cmd {
-            DataCommands::Purge { indexes, yes } => handle_purge(&mut ctx, indexes, yes),
+            DataCommands::Purge {
+                indexes,
+                yes,
+                recursive,
+            } => handle_purge(&mut ctx, indexes, yes, recursive),
             DataCommands::Export {
                 single_file,
                 indexes,
@@ -351,8 +355,13 @@ fn handle_paths(ctx: &mut AppContext, indexes: Vec<String>) -> Result<()> {
     Ok(())
 }
 
-fn handle_purge(ctx: &mut AppContext, indexes: Vec<String>, yes: bool) -> Result<()> {
-    let result = ctx.api.purge_pads(ctx.scope, &indexes, yes)?;
+fn handle_purge(
+    ctx: &mut AppContext,
+    indexes: Vec<String>,
+    yes: bool,
+    recursive: bool,
+) -> Result<()> {
+    let result = ctx.api.purge_pads(ctx.scope, &indexes, yes, recursive)?;
     print_messages(&result.messages);
     Ok(())
 }

@@ -9,11 +9,20 @@ use uuid::Uuid;
 
 use super::helpers::{indexed_pads, pads_by_selectors};
 
+/// Permanently removes pads from the store.
+///
+/// **Safety valve**: When purging pads that have children, the `recursive` flag must be set.
+/// This prevents accidental deletion of entire subtrees.
+///
+/// - If `selectors` is empty, targets all deleted pads (no children check needed for deleted pads)
+/// - If `recursive` is false and any target has children, returns an error
+/// - If `skip_confirm` is false, the caller should handle confirmation (this is a command layer concern)
 pub fn run<S: DataStore>(
     store: &mut S,
     scope: Scope,
     selectors: &[PadSelector],
     skip_confirm: bool,
+    recursive: bool,
 ) -> Result<CmdResult> {
     // 1. Resolve targets
     let pads_to_purge = if selectors.is_empty() {
@@ -28,14 +37,30 @@ pub fn run<S: DataStore>(
         pads_by_selectors(store, scope, selectors, true)?
     };
 
-    // 2a. Expand with descendants
+    // 2. Find descendants
     let target_ids: Vec<Uuid> = pads_to_purge.iter().map(|dp| dp.pad.metadata.id).collect();
     let descendants = super::helpers::get_descendant_ids(store, scope, &target_ids)?;
+
+    // 3. Safety valve: require --recursive if there are children
+    if !descendants.is_empty() && !recursive {
+        return Err(PadzError::Api(format!(
+            "Cannot purge: {} pad(s) have children. Use --recursive (-r) to purge entire subtrees.",
+            pads_to_purge
+                .iter()
+                .filter(|dp| {
+                    // Check if this pad has any descendants
+                    let id = dp.pad.metadata.id;
+                    super::helpers::get_descendant_ids(store, scope, &[id])
+                        .map(|d| !d.is_empty())
+                        .unwrap_or(false)
+                })
+                .count()
+        )));
+    }
 
     // Combine unique IDs
     let mut all_ids = target_ids.clone();
     all_ids.extend(descendants.clone());
-    // remove duplicates if any (though get_descendant_ids checks children)
     all_ids.sort();
     all_ids.dedup();
 
@@ -45,7 +70,7 @@ pub fn run<S: DataStore>(
         return Ok(res);
     }
 
-    // 2. Confirm
+    // 4. Confirm (I/O - should be moved to CLI layer, but keeping for now)
     if !skip_confirm {
         println!("This will permanently remove the following pads:");
         for dp in &pads_to_purge {
@@ -68,21 +93,14 @@ pub fn run<S: DataStore>(
         }
     }
 
-    // 3. Delete ALL
+    // 5. Delete ALL
     let mut result = CmdResult::default();
     for id in all_ids {
-        // Fetch title for message logic? pad might be in pads_to_purge or fetched now.
-        // We only reported main targets.
-        // Just delete.
-        // Check if it exists before trying to delete (might be double deleted if loop logic was loose, but we deduped)
         if store.get_pad(&id, scope).is_ok() {
             store.delete_pad(&id, scope)?;
         }
     }
 
-    // Add success messages for main targets only?
-    // Or just summary?
-    // User expects feedback.
     for dp in pads_to_purge {
         result.add_message(CmdMessage::success(format!(
             "Purged: {} {}",
@@ -132,12 +150,13 @@ mod tests {
         .unwrap();
         assert_eq!(deleted.listed_pads.len(), 1);
 
-        // Purge
+        // Purge (no recursive needed - pad has no children)
         let res = run(
             &mut store,
             Scope::Project,
             &[],
-            true, // skip_confirm
+            true,  // skip_confirm
+            false, // recursive not needed
         )
         .unwrap();
 
@@ -162,12 +181,13 @@ mod tests {
         let mut store = InMemoryStore::new();
         create::run(&mut store, Scope::Project, "A".into(), "".into(), None).unwrap();
 
-        // Purge active pad 1
+        // Purge active pad 1 (no children, so recursive not needed)
         let res = run(
             &mut store,
             Scope::Project,
             &[PadSelector::Path(vec![DisplayIndex::Regular(1)])],
             true,
+            false,
         )
         .unwrap();
 
@@ -185,7 +205,7 @@ mod tests {
         create::run(&mut store, Scope::Project, "A".into(), "".into(), None).unwrap();
 
         // Purge deleted (none)
-        let res = run(&mut store, Scope::Project, &[], true).unwrap();
+        let res = run(&mut store, Scope::Project, &[], true, false).unwrap();
 
         assert_eq!(res.messages.len(), 1);
         assert!(res.messages[0].content.contains("No pads to purge"));
@@ -196,7 +216,7 @@ mod tests {
     }
 
     #[test]
-    fn purges_recursively() {
+    fn purges_recursively_with_flag() {
         let mut store = InMemoryStore::new();
         // Create Parent
         create::run(&mut store, Scope::Project, "Parent".into(), "".into(), None).unwrap();
@@ -218,30 +238,13 @@ mod tests {
         )
         .unwrap();
 
-        // Verify Child is also effectively hidden/deleted?
-        // Wait, DELETE command logic is soft-delete PARENT only.
-        // Child is implicitly hidden from Active views.
-        // It should appear in Deleted view if parent is indexable.
-
-        let _deleted = get::run(
-            &store,
-            Scope::Project,
-            get::PadFilter {
-                status: get::PadStatusFilter::Deleted,
-                ..Default::default()
-            },
-        )
-        .unwrap();
-        // Should show Parent (d1).
-        // Since get command output is recursive, we don't know if child is counted in "listed_pads" (only roots).
-        // But purge uses logic to find descendants.
-
-        // Purge Parent
+        // Purge Parent WITH recursive flag
         let res = run(
             &mut store,
             Scope::Project,
             &[PadSelector::Path(vec![DisplayIndex::Deleted(1)])],
             true,
+            true, // recursive = true
         )
         .unwrap();
 
@@ -256,5 +259,39 @@ mod tests {
         // Verify Store is empty
         let all_pads = store.list_pads(Scope::Project).unwrap();
         assert_eq!(all_pads.len(), 0);
+    }
+
+    #[test]
+    fn purge_without_recursive_fails_when_has_children() {
+        let mut store = InMemoryStore::new();
+        // Create Parent
+        create::run(&mut store, Scope::Project, "Parent".into(), "".into(), None).unwrap();
+        // Create Child inside Parent
+        create::run(
+            &mut store,
+            Scope::Project,
+            "Child".into(),
+            "".into(),
+            Some(PadSelector::Path(vec![DisplayIndex::Regular(1)])),
+        )
+        .unwrap();
+
+        // Try to purge Parent WITHOUT recursive flag - should fail
+        let result = run(
+            &mut store,
+            Scope::Project,
+            &[PadSelector::Path(vec![DisplayIndex::Regular(1)])],
+            true,
+            false, // recursive = false
+        );
+
+        assert!(result.is_err());
+        let err = result.unwrap_err();
+        assert!(err.to_string().contains("have children"));
+        assert!(err.to_string().contains("--recursive"));
+
+        // Verify nothing was deleted
+        let all_pads = store.list_pads(Scope::Project).unwrap();
+        assert_eq!(all_pads.len(), 2);
     }
 }

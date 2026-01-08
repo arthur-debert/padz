@@ -83,8 +83,10 @@ Format: `Start-End`
 
 ### Hard Delete (Purge)
 `padz purge <selector>`
-- **Recursive**: Permanently removes the target pad AND all its children (safety check required).
-- **Safety Valve**: Purging a parent with existing children requires a `--recursive` flag (or similar confirmation).
+- **Recursive**: Permanently removes the target pad AND all its children.
+- **Safety Valve**: Purging a pad that has children requires the `--recursive` (`-r`) flag.
+  Without this flag, the command fails with an error message.
+- Example: `padz purge 1 -r` to purge pad 1 and all its descendants.
 
 ## 5. Creation
 

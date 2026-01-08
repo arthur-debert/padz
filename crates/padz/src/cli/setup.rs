@@ -257,6 +257,10 @@ pub enum DataCommands {
         /// Skip confirmation
         #[arg(long, short = 'y')]
         yes: bool,
+
+        /// Required when purging pads that have children (will purge entire subtree)
+        #[arg(long, short = 'r')]
+        recursive: bool,
     },
 
     /// Export pads to a tar.gz archive (or single file with --single-file)

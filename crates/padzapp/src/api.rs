@@ -161,9 +161,10 @@ impl<S: DataStore> PadzApi<S> {
         scope: Scope,
         indexes: &[I],
         skip_confirm: bool,
+        recursive: bool,
     ) -> Result<commands::CmdResult> {
         let selectors = parse_selectors(indexes)?;
-        commands::purge::run(&mut self.store, scope, &selectors, skip_confirm)
+        commands::purge::run(&mut self.store, scope, &selectors, skip_confirm, recursive)
     }
 
     pub fn restore_pads<I: AsRef<str>>(
