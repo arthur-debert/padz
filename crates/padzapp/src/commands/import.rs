@@ -252,4 +252,145 @@ mod tests {
         let pads = store.list_pads(Scope::Project).unwrap();
         assert_eq!(pads.len(), 0);
     }
+
+    #[test]
+    fn test_import_empty_paths_list() {
+        let mut store = InMemoryStore::new();
+
+        let res = run(&mut store, Scope::Project, vec![], &[".md".to_string()]).unwrap();
+
+        // Should just report total of 0
+        assert!(res
+            .messages
+            .iter()
+            .any(|m| m.content.contains("Total imported: 0")));
+        let pads = store.list_pads(Scope::Project).unwrap();
+        assert_eq!(pads.len(), 0);
+    }
+
+    #[test]
+    fn test_import_multiple_paths_mixed_validity() {
+        let mut store = InMemoryStore::new();
+        let temp_dir = tempfile::tempdir().unwrap();
+
+        let valid_file = temp_dir.path().join("valid.md");
+        std::fs::write(&valid_file, "Valid Note\n\nContent").unwrap();
+
+        let invalid_file = temp_dir.path().join("nonexistent.md");
+
+        let res = run(
+            &mut store,
+            Scope::Project,
+            vec![valid_file, invalid_file],
+            &[".md".to_string()],
+        )
+        .unwrap();
+
+        // Should have imported one
+        assert!(res
+            .messages
+            .iter()
+            .any(|m| m.content.contains("Total imported: 1")));
+        // Should have warning for invalid
+        assert!(res
+            .messages
+            .iter()
+            .any(|m| m.content.contains("Path not found")));
+        // Should have success for valid
+        assert!(res.messages.iter().any(|m| m.content.contains("Imported:")));
+
+        let pads = store.list_pads(Scope::Project).unwrap();
+        assert_eq!(pads.len(), 1);
+    }
+
+    #[test]
+    fn test_import_directory_with_subdirs() {
+        let mut store = InMemoryStore::new();
+        let temp_dir = tempfile::tempdir().unwrap();
+
+        // Create a subdirectory (should be ignored, not recursively imported)
+        let sub_dir = temp_dir.path().join("subdir");
+        std::fs::create_dir(&sub_dir).unwrap();
+        std::fs::write(sub_dir.join("nested.md"), "Nested\n\nContent").unwrap();
+
+        // Create file at root level
+        std::fs::write(temp_dir.path().join("root.md"), "Root\n\nContent").unwrap();
+
+        let res = run(
+            &mut store,
+            Scope::Project,
+            vec![temp_dir.path().to_path_buf()],
+            &[".md".to_string()],
+        )
+        .unwrap();
+
+        // Should only import root file, not nested one
+        assert!(res
+            .messages
+            .iter()
+            .any(|m| m.content.contains("Total imported: 1")));
+
+        let pads = store.list_pads(Scope::Project).unwrap();
+        assert_eq!(pads.len(), 1);
+        assert_eq!(pads[0].metadata.title, "Root");
+    }
+
+    #[test]
+    fn test_import_directory_file_with_empty_content() {
+        let mut store = InMemoryStore::new();
+        let temp_dir = tempfile::tempdir().unwrap();
+
+        // Create a file with empty content
+        std::fs::write(temp_dir.path().join("empty.md"), "").unwrap();
+        // Create a file with only whitespace
+        std::fs::write(temp_dir.path().join("whitespace.md"), "   \n\n   ").unwrap();
+        // Create a valid file
+        std::fs::write(temp_dir.path().join("valid.md"), "Valid Title\n\nContent").unwrap();
+
+        let res = run(
+            &mut store,
+            Scope::Project,
+            vec![temp_dir.path().to_path_buf()],
+            &[".md".to_string()],
+        )
+        .unwrap();
+
+        // Should only import the valid file
+        assert!(res
+            .messages
+            .iter()
+            .any(|m| m.content.contains("Total imported: 1")));
+
+        let pads = store.list_pads(Scope::Project).unwrap();
+        assert_eq!(pads.len(), 1);
+        assert_eq!(pads[0].metadata.title, "Valid Title");
+    }
+
+    #[test]
+    fn test_import_file_with_no_extension() {
+        let mut store = InMemoryStore::new();
+        let temp_dir = tempfile::tempdir().unwrap();
+
+        // Direct file import ignores extension list, tries to import any file
+        let file_path = temp_dir.path().join("NO_EXT");
+        std::fs::write(&file_path, "Title Without Ext\n\nContent").unwrap();
+
+        let res = run(
+            &mut store,
+            Scope::Project,
+            vec![file_path],
+            &[".md".to_string()],
+        )
+        .unwrap();
+
+        // Should still import direct file regardless of extension
+        assert!(res.messages.iter().any(|m| m.content.contains("Imported:")));
+        assert!(res
+            .messages
+            .iter()
+            .any(|m| m.content.contains("Total imported: 1")));
+
+        let pads = store.list_pads(Scope::Project).unwrap();
+        assert_eq!(pads.len(), 1);
+    }
 }
