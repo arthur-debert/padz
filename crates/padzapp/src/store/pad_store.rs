@@ -197,3 +197,282 @@ impl<B: StorageBackend> DataStore for PadStore<B> {
         Ok(report)
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::store::mem_backend::MemBackend;
+    use chrono::{Duration, Utc};
+
+    fn make_store() -> PadStore<MemBackend> {
+        PadStore::with_backend(MemBackend::new())
+    }
+
+    // --- Orphan Recovery Tests ---
+
+    #[test]
+    fn test_doctor_recovers_orphan_content() {
+        let backend = MemBackend::new();
+        let orphan_id = Uuid::new_v4();
+
+        // Create orphan: content exists but no index entry
+        backend
+            .write_content(&orphan_id, Scope::Project, "Orphan Title\n\nOrphan body")
+            .unwrap();
+
+        let mut store = PadStore::with_backend(backend);
+        let report = store.doctor(Scope::Project).unwrap();
+
+        assert_eq!(report.recovered_files, 1);
+        assert_eq!(report.fixed_missing_files, 0);
+
+        // Verify it's now in the store
+        let pad = store.get_pad(&orphan_id, Scope::Project).unwrap();
+        assert_eq!(pad.metadata.title, "Orphan Title");
+        assert_eq!(pad.metadata.id, orphan_id);
+    }
+
+    #[test]
+    fn test_doctor_normalizes_orphan_content() {
+        let backend = MemBackend::new();
+        let orphan_id = Uuid::new_v4();
+
+        // Create orphan with non-normalized content (extra blank lines)
+        backend
+            .write_content(&orphan_id, Scope::Project, "\n\nTitle\n\n\n\nBody\n\n")
+            .unwrap();
+
+        let mut store = PadStore::with_backend(backend);
+        let report = store.doctor(Scope::Project).unwrap();
+
+        assert_eq!(report.recovered_files, 1);
+        assert_eq!(report.fixed_content_files, 1);
+
+        // Verify content was normalized
+        let content = store
+            .backend
+            .read_content(&orphan_id, Scope::Project)
+            .unwrap()
+            .unwrap();
+        assert_eq!(content, "Title\n\nBody");
+    }
+
+    // --- Zombie Cleanup Tests ---
+
+    #[test]
+    fn test_doctor_removes_zombie_entries() {
+        let backend = MemBackend::new();
+        let zombie_id = Uuid::new_v4();
+
+        // Create zombie: index entry exists but no content
+        let mut index = std::collections::HashMap::new();
+        index.insert(
+            zombie_id,
+            Metadata {
+                id: zombie_id,
+                created_at: Utc::now(),
+                updated_at: Utc::now(),
+                is_pinned: false,
+                pinned_at: None,
+                is_deleted: false,
+                deleted_at: None,
+                delete_protected: false,
+                parent_id: None,
+                title: "Zombie".to_string(),
+            },
+        );
+        backend.save_index(Scope::Project, &index).unwrap();
+
+        let mut store = PadStore::with_backend(backend);
+        let report = store.doctor(Scope::Project).unwrap();
+
+        assert_eq!(report.fixed_missing_files, 1);
+        assert_eq!(report.recovered_files, 0);
+
+        // Verify it's no longer in the store
+        let result = store.get_pad(&zombie_id, Scope::Project);
+        assert!(result.is_err());
+    }
+
+    // --- Staleness Detection Tests ---
+
+    #[test]
+    fn test_sync_updates_stale_metadata() {
+        let mut store = make_store();
+
+        // Create a pad normally
+        let pad = Pad::new("Original Title".to_string(), "Content".to_string());
+        let pad_id = pad.metadata.id;
+        store.save_pad(&pad, Scope::Project).unwrap();
+
+        // Simulate external edit: update content and set mtime to future
+        store
+            .backend
+            .write_content(&pad_id, Scope::Project, "New Title\n\nNew content")
+            .unwrap();
+
+        // Set mtime to be newer than the index's updated_at
+        let future_time = Utc::now() + Duration::hours(1);
+        store
+            .backend
+            .set_content_mtime(&pad_id, Scope::Project, future_time);
+
+        // Sync should detect staleness and update
+        store.sync(Scope::Project).unwrap();
+
+        let updated = store.get_pad(&pad_id, Scope::Project).unwrap();
+        assert_eq!(updated.metadata.title, "New Title");
+    }
+
+    #[test]
+    fn test_sync_ignores_fresh_metadata() {
+        let mut store = make_store();
+
+        // Create a pad normally
+        let pad = Pad::new("Original Title".to_string(), "Content".to_string());
+        let pad_id = pad.metadata.id;
+        store.save_pad(&pad, Scope::Project).unwrap();
+
+        // Set mtime to be older (in the past)
+        let past_time = Utc::now() - Duration::hours(1);
+        store
+            .backend
+            .set_content_mtime(&pad_id, Scope::Project, past_time);
+
+        // Sync should NOT read the content since mtime <= updated_at
+        store.sync(Scope::Project).unwrap();
+
+        let fetched = store.get_pad(&pad_id, Scope::Project).unwrap();
+        assert_eq!(fetched.metadata.title, "Original Title");
+    }
+
+    // --- Garbage Collection Tests ---
+
+    #[test]
+    fn test_doctor_removes_empty_content() {
+        let backend = MemBackend::new();
+        let empty_id = Uuid::new_v4();
+
+        // Create content with only whitespace
+        backend
+            .write_content(&empty_id, Scope::Project, "   \n\n   ")
+            .unwrap();
+
+        let mut store = PadStore::with_backend(backend);
+        store.doctor(Scope::Project).unwrap();
+
+        // Content should be deleted
+        let content = store
+            .backend
+            .read_content(&empty_id, Scope::Project)
+            .unwrap();
+        assert!(content.is_none());
+
+        // No pad should exist
+        let pads = store.list_pads(Scope::Project).unwrap();
+        assert!(pads.is_empty());
+    }
+
+    // --- Scope Isolation Tests ---
+
+    #[test]
+    fn test_scopes_are_isolated() {
+        let mut store = make_store();
+
+        let pad = Pad::new("Project Pad".to_string(), "".to_string());
+        store.save_pad(&pad, Scope::Project).unwrap();
+
+        let global_pad = Pad::new("Global Pad".to_string(), "".to_string());
+        store.save_pad(&global_pad, Scope::Global).unwrap();
+
+        let project_pads = store.list_pads(Scope::Project).unwrap();
+        let global_pads = store.list_pads(Scope::Global).unwrap();
+
+        assert_eq!(project_pads.len(), 1);
+        assert_eq!(project_pads[0].metadata.title, "Project Pad");
+
+        assert_eq!(global_pads.len(), 1);
+        assert_eq!(global_pads[0].metadata.title, "Global Pad");
+    }
+
+    // --- Error Handling Tests ---
+
+    #[test]
+    fn test_save_fails_on_write_error() {
+        let backend = MemBackend::new();
+        backend.set_simulate_write_error(true);
+
+        let mut store = PadStore::with_backend(backend);
+        let pad = Pad::new("Test".to_string(), "Content".to_string());
+
+        let result = store.save_pad(&pad, Scope::Project);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_get_nonexistent_pad_returns_error() {
+        let store = make_store();
+        let result = store.get_pad(&Uuid::new_v4(), Scope::Project);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_delete_nonexistent_pad_returns_error() {
+        let mut store = make_store();
+        let result = store.delete_pad(&Uuid::new_v4(), Scope::Project);
+        assert!(result.is_err());
+    }
+
+    // --- Basic CRUD Tests ---
+
+    #[test]
+    fn test_save_and_get_pad() {
+        let mut store = make_store();
+
+        let pad = Pad::new("My Title".to_string(), "My content".to_string());
+        let pad_id = pad.metadata.id;
+
+        store.save_pad(&pad, Scope::Project).unwrap();
+
+        let retrieved = store.get_pad(&pad_id, Scope::Project).unwrap();
+        assert_eq!(retrieved.metadata.title, "My Title");
+        assert_eq!(retrieved.content, "My Title\n\nMy content");
+    }
+
+    #[test]
+    fn test_delete_removes_pad() {
+        let mut store = make_store();
+
+        let pad = Pad::new("To Delete".to_string(), "".to_string());
+        let pad_id = pad.metadata.id;
+
+        store.save_pad(&pad, Scope::Project).unwrap();
+        store.delete_pad(&pad_id, Scope::Project).unwrap();
+
+        // Should be gone from index
+        let result = store.get_pad(&pad_id, Scope::Project);
+        assert!(result.is_err());
+
+        // Should be gone from content
+        let content = store.backend.read_content(&pad_id, Scope::Project).unwrap();
+        assert!(content.is_none());
+    }
+
+    #[test]
+    fn test_list_pads_triggers_sync() {
+        let backend = MemBackend::new();
+        let orphan_id = Uuid::new_v4();
+
+        // Create orphan
+        backend
+            .write_content(&orphan_id, Scope::Project, "Orphan")
+            .unwrap();
+
+        let store = PadStore::with_backend(backend);
+
+        // list_pads should trigger sync and find the orphan
+        let pads = store.list_pads(Scope::Project).unwrap();
+        assert_eq!(pads.len(), 1);
+        assert_eq!(pads[0].metadata.title, "Orphan");
+    }
+}
