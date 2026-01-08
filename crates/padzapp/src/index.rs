@@ -446,4 +446,177 @@ mod tests {
         let result = parse_index_or_range("3-");
         assert!(result.is_err());
     }
+
+    // ==================== Tree-specific tests ====================
+
+    #[test]
+    fn test_parse_nested_path() {
+        // Path notation: 1.2.3 means child 3 of child 2 of root 1
+        assert_eq!(
+            parse_index_or_range("1.2"),
+            Ok(PadSelector::Path(vec![
+                DisplayIndex::Regular(1),
+                DisplayIndex::Regular(2)
+            ]))
+        );
+        assert_eq!(
+            parse_index_or_range("1.2.3"),
+            Ok(PadSelector::Path(vec![
+                DisplayIndex::Regular(1),
+                DisplayIndex::Regular(2),
+                DisplayIndex::Regular(3)
+            ]))
+        );
+    }
+
+    #[test]
+    fn test_parse_nested_pinned_path() {
+        // Pinned child of root 1: 1.p1
+        assert_eq!(
+            parse_index_or_range("1.p1"),
+            Ok(PadSelector::Path(vec![
+                DisplayIndex::Regular(1),
+                DisplayIndex::Pinned(1)
+            ]))
+        );
+        // Deeply nested pinned: 1.2.p1
+        assert_eq!(
+            parse_index_or_range("1.2.p1"),
+            Ok(PadSelector::Path(vec![
+                DisplayIndex::Regular(1),
+                DisplayIndex::Regular(2),
+                DisplayIndex::Pinned(1)
+            ]))
+        );
+    }
+
+    #[test]
+    fn test_parse_nested_range() {
+        // Range within a tree: 1.1-1.3
+        assert_eq!(
+            parse_index_or_range("1.1-1.3"),
+            Ok(PadSelector::Range(
+                vec![DisplayIndex::Regular(1), DisplayIndex::Regular(1)],
+                vec![DisplayIndex::Regular(1), DisplayIndex::Regular(3)]
+            ))
+        );
+        // Cross-parent range: 1.2-2.1
+        assert_eq!(
+            parse_index_or_range("1.2-2.1"),
+            Ok(PadSelector::Range(
+                vec![DisplayIndex::Regular(1), DisplayIndex::Regular(2)],
+                vec![DisplayIndex::Regular(2), DisplayIndex::Regular(1)]
+            ))
+        );
+    }
+
+    #[test]
+    fn test_tree_with_nested_children() {
+        // Build a tree: Root -> Child -> Grandchild
+        let mut grandchild = make_pad("Grandchild", false, false);
+        let mut child = make_pad("Child", false, false);
+        let root = make_pad("Root", false, false);
+
+        // Set up parent relationships
+        child.metadata.parent_id = Some(root.metadata.id);
+        grandchild.metadata.parent_id = Some(child.metadata.id);
+
+        let pads = vec![root, child, grandchild];
+        let indexed = index_pads(pads);
+
+        // Should have 1 root
+        assert_eq!(indexed.len(), 1);
+        assert_eq!(indexed[0].pad.metadata.title, "Root");
+        assert_eq!(indexed[0].index, DisplayIndex::Regular(1));
+
+        // Root should have 1 child
+        assert_eq!(indexed[0].children.len(), 1);
+        assert_eq!(indexed[0].children[0].pad.metadata.title, "Child");
+        assert_eq!(indexed[0].children[0].index, DisplayIndex::Regular(1));
+
+        // Child should have 1 grandchild
+        assert_eq!(indexed[0].children[0].children.len(), 1);
+        assert_eq!(
+            indexed[0].children[0].children[0].pad.metadata.title,
+            "Grandchild"
+        );
+        assert_eq!(
+            indexed[0].children[0].children[0].index,
+            DisplayIndex::Regular(1)
+        );
+    }
+
+    #[test]
+    fn test_tree_pinned_child_has_dual_index() {
+        // Root with a pinned child - child should appear twice in children
+        let mut child = make_pad("Pinned Child", true, false);
+        let root = make_pad("Root", false, false);
+
+        child.metadata.parent_id = Some(root.metadata.id);
+
+        let pads = vec![root, child];
+        let indexed = index_pads(pads);
+
+        // Root's children should have 2 entries for the pinned child
+        assert_eq!(indexed[0].children.len(), 2);
+
+        // One as Pinned(1)
+        let pinned_child = indexed[0]
+            .children
+            .iter()
+            .find(|c| matches!(c.index, DisplayIndex::Pinned(_)));
+        assert!(pinned_child.is_some());
+        assert_eq!(pinned_child.unwrap().index, DisplayIndex::Pinned(1));
+
+        // One as Regular(1)
+        let regular_child = indexed[0]
+            .children
+            .iter()
+            .find(|c| matches!(c.index, DisplayIndex::Regular(_)));
+        assert!(regular_child.is_some());
+        assert_eq!(regular_child.unwrap().index, DisplayIndex::Regular(1));
+    }
+
+    #[test]
+    fn test_tree_deep_nesting_four_levels() {
+        // Create 4-level deep tree: L1 -> L2 -> L3 -> L4
+        let mut l4 = make_pad("Level 4", false, false);
+        let mut l3 = make_pad("Level 3", false, false);
+        let mut l2 = make_pad("Level 2", false, false);
+        let l1 = make_pad("Level 1", false, false);
+
+        l2.metadata.parent_id = Some(l1.metadata.id);
+        l3.metadata.parent_id = Some(l2.metadata.id);
+        l4.metadata.parent_id = Some(l3.metadata.id);
+
+        let pads = vec![l1, l2, l3, l4];
+        let indexed = index_pads(pads);
+
+        // Navigate to L4: indexed[0].children[0].children[0].children[0]
+        assert_eq!(indexed[0].pad.metadata.title, "Level 1");
+        assert_eq!(indexed[0].children[0].pad.metadata.title, "Level 2");
+        assert_eq!(
+            indexed[0].children[0].children[0].pad.metadata.title,
+            "Level 3"
+        );
+        assert_eq!(
+            indexed[0].children[0].children[0].children[0]
+                .pad
+                .metadata
+                .title,
+            "Level 4"
+        );
+
+        // Each level should have index Regular(1) within its parent
+        assert_eq!(indexed[0].index, DisplayIndex::Regular(1));
+        assert_eq!(indexed[0].children[0].index, DisplayIndex::Regular(1));
+        assert_eq!(
+            indexed[0].children[0].children[0].index,
+            DisplayIndex::Regular(1)
+        );
+        assert_eq!(
+            indexed[0].children[0].children[0].children[0].index,
+            DisplayIndex::Regular(1)
+        );
+    }
 }

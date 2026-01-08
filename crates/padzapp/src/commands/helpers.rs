@@ -228,3 +228,234 @@ where
     }
     None
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::commands::create;
+    use crate::index::DisplayIndex;
+    use crate::model::Scope;
+    use crate::store::memory::InMemoryStore;
+
+    #[test]
+    fn test_range_selection_within_siblings() {
+        // Create parent with 3 children, test range 1.1-1.3
+        let mut store = InMemoryStore::new();
+
+        create::run(&mut store, Scope::Project, "Parent".into(), "".into(), None).unwrap();
+        create::run(
+            &mut store,
+            Scope::Project,
+            "Child A".into(),
+            "".into(),
+            Some(PadSelector::Path(vec![DisplayIndex::Regular(1)])),
+        )
+        .unwrap();
+        create::run(
+            &mut store,
+            Scope::Project,
+            "Child B".into(),
+            "".into(),
+            Some(PadSelector::Path(vec![DisplayIndex::Regular(1)])),
+        )
+        .unwrap();
+        create::run(
+            &mut store,
+            Scope::Project,
+            "Child C".into(),
+            "".into(),
+            Some(PadSelector::Path(vec![DisplayIndex::Regular(1)])),
+        )
+        .unwrap();
+
+        // Select range 1.1-1.3 (all children)
+        let result = resolve_selectors(
+            &store,
+            Scope::Project,
+            &[PadSelector::Range(
+                vec![DisplayIndex::Regular(1), DisplayIndex::Regular(1)],
+                vec![DisplayIndex::Regular(1), DisplayIndex::Regular(3)],
+            )],
+            false,
+        )
+        .unwrap();
+
+        // Should get 3 children (newest first: C=1.1, B=1.2, A=1.3)
+        assert_eq!(result.len(), 3);
+    }
+
+    #[test]
+    fn test_range_selection_cross_parent() {
+        // Create 2 parents with children, test range 1.1-2.1
+        let mut store = InMemoryStore::new();
+
+        // Parent 1 with child
+        create::run(
+            &mut store,
+            Scope::Project,
+            "Parent 1".into(),
+            "".into(),
+            None,
+        )
+        .unwrap();
+        create::run(
+            &mut store,
+            Scope::Project,
+            "Child 1".into(),
+            "".into(),
+            Some(PadSelector::Path(vec![DisplayIndex::Regular(1)])),
+        )
+        .unwrap();
+
+        // Parent 2 with child
+        create::run(
+            &mut store,
+            Scope::Project,
+            "Parent 2".into(),
+            "".into(),
+            None,
+        )
+        .unwrap();
+        create::run(
+            &mut store,
+            Scope::Project,
+            "Child 2".into(),
+            "".into(),
+            Some(PadSelector::Path(vec![DisplayIndex::Regular(1)])),
+        )
+        .unwrap();
+
+        // Note: After creation, order is (newest first):
+        // 1: Parent 2, 1.1: Child 2
+        // 2: Parent 1, 2.1: Child 1
+
+        // Select range 1.1-2.1 should linearize to: 1, 1.1, 2, 2.1
+        // and select from 1.1 to 2.1: [1.1, 2, 2.1]
+        let result = resolve_selectors(
+            &store,
+            Scope::Project,
+            &[PadSelector::Range(
+                vec![DisplayIndex::Regular(1), DisplayIndex::Regular(1)],
+                vec![DisplayIndex::Regular(2), DisplayIndex::Regular(1)],
+            )],
+            false,
+        )
+        .unwrap();
+
+        // Should include: Child 2 (1.1), Parent 1 (2), Child 1 (2.1)
+        assert_eq!(result.len(), 3);
+    }
+
+    #[test]
+    fn test_range_selection_root_only() {
+        let mut store = InMemoryStore::new();
+
+        // Create: Root1 -> Child1, Root2
+        create::run(&mut store, Scope::Project, "Root 1".into(), "".into(), None).unwrap();
+        create::run(
+            &mut store,
+            Scope::Project,
+            "Child 1".into(),
+            "".into(),
+            Some(PadSelector::Path(vec![DisplayIndex::Regular(1)])),
+        )
+        .unwrap();
+        create::run(&mut store, Scope::Project, "Root 2".into(), "".into(), None).unwrap();
+
+        // Order (newest first): Root 2 (1), Root 1 (2) with Child 1 (2.1)
+        // Linear order: 1, 2, 2.1
+        // Range 1-2 selects from index 1 to 2, NOT including 2.1 (comes after 2 in linear order)
+        let result = resolve_selectors(
+            &store,
+            Scope::Project,
+            &[PadSelector::Range(
+                vec![DisplayIndex::Regular(1)],
+                vec![DisplayIndex::Regular(2)],
+            )],
+            false,
+        )
+        .unwrap();
+
+        // Should get Root 2 (1) and Root 1 (2) only, NOT Child 1 (2.1)
+        assert_eq!(result.len(), 2);
+    }
+
+    #[test]
+    fn test_range_includes_children_of_intermediate_nodes() {
+        let mut store = InMemoryStore::new();
+
+        // Create: Root1 -> Child1, Root2, Root3
+        create::run(&mut store, Scope::Project, "Root 1".into(), "".into(), None).unwrap();
+        create::run(
+            &mut store,
+            Scope::Project,
+            "Child 1".into(),
+            "".into(),
+            Some(PadSelector::Path(vec![DisplayIndex::Regular(1)])),
+        )
+        .unwrap();
+        create::run(&mut store, Scope::Project, "Root 2".into(), "".into(), None).unwrap();
+        create::run(&mut store, Scope::Project, "Root 3".into(), "".into(), None).unwrap();
+
+        // Order (newest first): Root 3 (1), Root 2 (2), Root 1 (3) with Child 1 (3.1)
+        // Linear order: 1, 2, 3, 3.1
+        // Range 1-3.1 selects all
+        let result = resolve_selectors(
+            &store,
+            Scope::Project,
+            &[PadSelector::Range(
+                vec![DisplayIndex::Regular(1)],
+                vec![DisplayIndex::Regular(3), DisplayIndex::Regular(1)],
+            )],
+            false,
+        )
+        .unwrap();
+
+        // Should get all 4: Root 3, Root 2, Root 1, Child 1
+        assert_eq!(result.len(), 4);
+    }
+
+    #[test]
+    fn test_pinned_child_addressable_by_path() {
+        let mut store = InMemoryStore::new();
+
+        // Create parent with pinned child
+        create::run(&mut store, Scope::Project, "Parent".into(), "".into(), None).unwrap();
+        create::run(
+            &mut store,
+            Scope::Project,
+            "Child".into(),
+            "".into(),
+            Some(PadSelector::Path(vec![DisplayIndex::Regular(1)])),
+        )
+        .unwrap();
+
+        // Pin the child
+        crate::commands::pinning::pin(
+            &mut store,
+            Scope::Project,
+            &[PadSelector::Path(vec![
+                DisplayIndex::Regular(1),
+                DisplayIndex::Regular(1),
+            ])],
+        )
+        .unwrap();
+
+        // Should be addressable as 1.p1
+        let result = resolve_selectors(
+            &store,
+            Scope::Project,
+            &[PadSelector::Path(vec![
+                DisplayIndex::Regular(1),
+                DisplayIndex::Pinned(1),
+            ])],
+            false,
+        )
+        .unwrap();
+
+        assert_eq!(result.len(), 1);
+        // Verify it's the child
+        let pad = store.get_pad(&result[0].1, Scope::Project).unwrap();
+        assert_eq!(pad.metadata.title, "Child");
+    }
+}

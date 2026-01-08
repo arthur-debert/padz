@@ -122,4 +122,95 @@ mod tests {
             _ => panic!("Expected Api error"),
         }
     }
+
+    #[test]
+    fn delete_parent_with_pinned_child_succeeds() {
+        // Deleting a parent should work even if it has a pinned child.
+        // The pinned child is NOT deleted (soft delete is non-recursive per spec).
+        let mut store = InMemoryStore::new();
+
+        // Create parent
+        create::run(&mut store, Scope::Project, "Parent".into(), "".into(), None).unwrap();
+
+        // Create child inside parent
+        create::run(
+            &mut store,
+            Scope::Project,
+            "Child".into(),
+            "".into(),
+            Some(PadSelector::Path(vec![DisplayIndex::Regular(1)])),
+        )
+        .unwrap();
+
+        // Pin the child (1.1)
+        crate::commands::pinning::pin(
+            &mut store,
+            Scope::Project,
+            &[PadSelector::Path(vec![
+                DisplayIndex::Regular(1),
+                DisplayIndex::Regular(1),
+            ])],
+        )
+        .unwrap();
+
+        // Delete the parent - should succeed (parent is not pinned)
+        let result = run(
+            &mut store,
+            Scope::Project,
+            &[PadSelector::Path(vec![DisplayIndex::Regular(1)])],
+        );
+        assert!(result.is_ok());
+
+        // Verify parent is deleted
+        let deleted = get::run(
+            &store,
+            Scope::Project,
+            get::PadFilter {
+                status: get::PadStatusFilter::Deleted,
+                ..Default::default()
+            },
+        )
+        .unwrap();
+        assert_eq!(deleted.listed_pads.len(), 1);
+        assert_eq!(deleted.listed_pads[0].pad.metadata.title, "Parent");
+
+        // Child should still exist (not deleted, just hidden under deleted parent)
+        // It appears under the deleted parent in deleted view
+        assert_eq!(deleted.listed_pads[0].children.len(), 2); // pinned + regular entry
+    }
+
+    #[test]
+    fn delete_nested_pad_via_path() {
+        let mut store = InMemoryStore::new();
+
+        // Create parent
+        create::run(&mut store, Scope::Project, "Parent".into(), "".into(), None).unwrap();
+
+        // Create child inside parent
+        create::run(
+            &mut store,
+            Scope::Project,
+            "Child".into(),
+            "".into(),
+            Some(PadSelector::Path(vec![DisplayIndex::Regular(1)])),
+        )
+        .unwrap();
+
+        // Delete the child using path notation 1.1
+        let result = run(
+            &mut store,
+            Scope::Project,
+            &[PadSelector::Path(vec![
+                DisplayIndex::Regular(1),
+                DisplayIndex::Regular(1),
+            ])],
+        );
+        assert!(result.is_ok());
+
+        // Parent should still be active with no visible children
+        let active = get::run(&store, Scope::Project, get::PadFilter::default()).unwrap();
+        assert_eq!(active.listed_pads.len(), 1);
+        assert_eq!(active.listed_pads[0].pad.metadata.title, "Parent");
+        assert_eq!(active.listed_pads[0].children.len(), 0); // child is deleted
+    }
 }

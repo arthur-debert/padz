@@ -212,4 +212,102 @@ mod tests {
         assert!(!restored_pad.pad.metadata.is_deleted);
         assert!(restored_pad.pad.metadata.deleted_at.is_none());
     }
+
+    #[test]
+    fn restore_deleted_parent_makes_children_visible() {
+        let mut store = InMemoryStore::new();
+
+        // Create parent with child
+        create::run(&mut store, Scope::Project, "Parent".into(), "".into(), None).unwrap();
+        create::run(
+            &mut store,
+            Scope::Project,
+            "Child".into(),
+            "".into(),
+            Some(PadSelector::Path(vec![DisplayIndex::Regular(1)])),
+        )
+        .unwrap();
+
+        // Delete parent (child is NOT marked deleted per spec)
+        delete::run(
+            &mut store,
+            Scope::Project,
+            &[PadSelector::Path(vec![DisplayIndex::Regular(1)])],
+        )
+        .unwrap();
+
+        // Verify parent and child are hidden from active view
+        let active = get::run(&store, Scope::Project, get::PadFilter::default()).unwrap();
+        assert_eq!(active.listed_pads.len(), 0);
+
+        // Restore parent
+        run(
+            &mut store,
+            Scope::Project,
+            &[PadSelector::Path(vec![DisplayIndex::Deleted(1)])],
+        )
+        .unwrap();
+
+        // Verify parent is active and child is visible again
+        let active_after = get::run(&store, Scope::Project, get::PadFilter::default()).unwrap();
+        assert_eq!(active_after.listed_pads.len(), 1);
+        assert_eq!(active_after.listed_pads[0].pad.metadata.title, "Parent");
+        assert_eq!(active_after.listed_pads[0].children.len(), 1);
+        assert_eq!(
+            active_after.listed_pads[0].children[0].pad.metadata.title,
+            "Child"
+        );
+    }
+
+    #[test]
+    fn restore_child_while_parent_deleted() {
+        // When a child is explicitly deleted (not just hidden), restoring it
+        // should work, but it will still be hidden if parent remains deleted.
+        let mut store = InMemoryStore::new();
+
+        // Create parent with child
+        create::run(&mut store, Scope::Project, "Parent".into(), "".into(), None).unwrap();
+        create::run(
+            &mut store,
+            Scope::Project,
+            "Child".into(),
+            "".into(),
+            Some(PadSelector::Path(vec![DisplayIndex::Regular(1)])),
+        )
+        .unwrap();
+
+        // Delete child explicitly
+        delete::run(
+            &mut store,
+            Scope::Project,
+            &[PadSelector::Path(vec![
+                DisplayIndex::Regular(1),
+                DisplayIndex::Regular(1),
+            ])],
+        )
+        .unwrap();
+
+        // Now delete parent too
+        delete::run(
+            &mut store,
+            Scope::Project,
+            &[PadSelector::Path(vec![DisplayIndex::Regular(1)])],
+        )
+        .unwrap();
+
+        // View deleted - should show parent (which shows child under it)
+        let deleted = get::run(
+            &store,
+            Scope::Project,
+            get::PadFilter {
+                status: get::PadStatusFilter::Deleted,
+                ..Default::default()
+            },
+        )
+        .unwrap();
+        assert_eq!(deleted.listed_pads.len(), 1);
+        assert_eq!(deleted.listed_pads[0].pad.metadata.title, "Parent");
+        // Child appears under deleted parent
+        assert_eq!(deleted.listed_pads[0].children.len(), 1);
+    }
 }
