@@ -165,4 +165,128 @@ mod tests {
         assert_eq!(pad_a.pad.content, "A Updated\n\nContent A");
         assert_eq!(pad_b.pad.content, "B Updated\n\nContent B");
     }
+
+    #[test]
+    fn update_normalizes_content_structure() {
+        let mut store = InMemoryStore::new();
+        create::run(&mut store, Scope::Project, "Title".into(), "".into(), None).unwrap();
+
+        // Update with content that needs normalization (title not in body)
+        let update = PadUpdate::new(
+            DisplayIndex::Regular(1),
+            "New Title".into(),
+            "Body content".into(),
+        );
+        run(&mut store, Scope::Project, &[update]).unwrap();
+
+        let pads = view::run(
+            &store,
+            Scope::Project,
+            &[PadSelector::Path(vec![DisplayIndex::Regular(1)])],
+        )
+        .unwrap()
+        .listed_pads;
+
+        // Title in metadata is set from update
+        assert_eq!(pads[0].pad.metadata.title, "New Title");
+        // Content is normalized with title at start and blank separator
+        assert_eq!(pads[0].pad.content, "New Title\n\nBody content");
+    }
+
+    #[test]
+    fn update_updates_timestamp() {
+        let mut store = InMemoryStore::new();
+        create::run(&mut store, Scope::Project, "Title".into(), "".into(), None).unwrap();
+
+        let pads_before = store.list_pads(Scope::Project).unwrap();
+        let original_updated_at = pads_before[0].metadata.updated_at;
+
+        // Small delay to ensure timestamp differs
+        std::thread::sleep(std::time::Duration::from_millis(10));
+
+        let update = PadUpdate::new(
+            DisplayIndex::Regular(1),
+            "Title".into(),
+            "New Content".into(),
+        );
+        run(&mut store, Scope::Project, &[update]).unwrap();
+
+        let pads_after = store.list_pads(Scope::Project).unwrap();
+        let new_updated_at = pads_after[0].metadata.updated_at;
+
+        assert!(new_updated_at > original_updated_at);
+    }
+
+    #[test]
+    fn update_returns_affected_pads() {
+        let mut store = InMemoryStore::new();
+        create::run(&mut store, Scope::Project, "Title".into(), "".into(), None).unwrap();
+
+        let update = PadUpdate::new(
+            DisplayIndex::Regular(1),
+            "Updated Title".into(),
+            "Content".into(),
+        );
+        let result = run(&mut store, Scope::Project, &[update]).unwrap();
+
+        // Should have one affected pad
+        assert_eq!(result.affected_pads.len(), 1);
+        assert_eq!(result.affected_pads[0].pad.metadata.title, "Updated Title");
+        assert!(matches!(
+            result.affected_pads[0].index,
+            DisplayIndex::Regular(1)
+        ));
+    }
+
+    #[test]
+    fn update_success_message_format() {
+        let mut store = InMemoryStore::new();
+        create::run(&mut store, Scope::Project, "Title".into(), "".into(), None).unwrap();
+
+        let update = PadUpdate::new(
+            DisplayIndex::Regular(1),
+            "Updated Title".into(),
+            "Content".into(),
+        );
+        let result = run(&mut store, Scope::Project, &[update]).unwrap();
+
+        assert_eq!(result.messages.len(), 1);
+        assert!(result.messages[0].content.contains("Pad updated"));
+        assert!(result.messages[0].content.contains("1")); // index
+        assert!(result.messages[0].content.contains("Updated Title"));
+    }
+
+    #[test]
+    fn update_nonexistent_pad_fails() {
+        let mut store = InMemoryStore::new();
+        create::run(&mut store, Scope::Project, "Title".into(), "".into(), None).unwrap();
+
+        let update = PadUpdate::new(DisplayIndex::Regular(99), "Title".into(), "Content".into());
+        let result = run(&mut store, Scope::Project, &[update]);
+
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn update_preserves_other_metadata() {
+        let mut store = InMemoryStore::new();
+        create::run(&mut store, Scope::Project, "Title".into(), "".into(), None).unwrap();
+
+        let pads_before = store.list_pads(Scope::Project).unwrap();
+        let original_created_at = pads_before[0].metadata.created_at;
+        let original_id = pads_before[0].metadata.id;
+
+        let update = PadUpdate::new(
+            DisplayIndex::Regular(1),
+            "New Title".into(),
+            "Content".into(),
+        );
+        run(&mut store, Scope::Project, &[update]).unwrap();
+
+        let pads_after = store.list_pads(Scope::Project).unwrap();
+        // Created_at should NOT change
+        assert_eq!(pads_after[0].metadata.created_at, original_created_at);
+        // ID should NOT change
+        assert_eq!(pads_after[0].metadata.id, original_id);
+    }
 }
