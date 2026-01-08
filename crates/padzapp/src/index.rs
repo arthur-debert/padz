@@ -114,15 +114,19 @@ pub struct DisplayPad {
     pub children: Vec<DisplayPad>,
 }
 
-/// Assigns canonical display indexes to a list of pads.
+/// Assigns canonical display indexes to a list of pads, building a tree structure.
 ///
-/// Returns a flat list of [`DisplayPad`] entries. Note that pinned pads will
-/// appear **twice**: once with a `Pinned` index and once with a `Regular` index.
-/// This is intentional—see module documentation for rationale.
+/// **Per-parent bucketing**: The same pinned/regular/deleted indexing logic is applied
+/// recursively at each nesting level. Each parent maintains its own index namespace:
+/// - Root level: `p1`, `1`, `2`, `d1`
+/// - Children of pad 1: `1.p1`, `1.1`, `1.2`, `1.d1`
+/// - Children of pad 1.2: `1.2.p1`, `1.2.1`, etc.
 ///
-/// The returned list preserves the new recursive structure.
+/// **Dual indexing**: Pinned pads appear **twice** at each level—once with a `Pinned`
+/// index and once with a `Regular` index. This ensures stability when unpinning.
 ///
 /// The returned list is ordered: pinned entries first, then regular, then deleted.
+/// Each entry's `children` vector follows the same ordering recursively.
 pub fn index_pads(pads: Vec<Pad>) -> Vec<DisplayPad> {
     // Group pads by parent_id
     let mut parent_map: HashMap<Option<Uuid>, Vec<Pad>> = HashMap::new();
@@ -133,19 +137,25 @@ pub fn index_pads(pads: Vec<Pad>) -> Vec<DisplayPad> {
             .push(pad);
     }
 
-    // Process roots (parent_id = None)
+    // Process roots (parent_id = None), recursively indexing their children
     let root_pads = parent_map.remove(&None).unwrap_or_default();
-
-    // parent_map is not mutable? We cloned the root pads out.
-    // Wait, we need to pass reference to parent_map to helper.
     index_level(root_pads, &parent_map)
 }
 
+/// Indexes a single level of the tree (siblings with the same parent).
+///
+/// Applies the standard three-pass indexing at this level:
+/// 1. **Pinned pass**: Assigns `Pinned(1)`, `Pinned(2)`, etc. to pinned non-deleted pads
+/// 2. **Regular pass**: Assigns `Regular(1)`, `Regular(2)`, etc. to ALL non-deleted pads
+/// 3. **Deleted pass**: Assigns `Deleted(1)`, `Deleted(2)`, etc. to deleted pads
+///
+/// Note: Pinned pads get entries in BOTH the pinned and regular passes (dual indexing).
+/// This is recursive—each pad's children are indexed the same way.
 fn index_level(
     mut pads: Vec<Pad>,
     parent_map: &HashMap<Option<Uuid>, Vec<Pad>>,
 ) -> Vec<DisplayPad> {
-    // Sort by created_at descending (newest first)
+    // Sort by created_at descending (newest first) within this level
     pads.sort_by(|a, b| b.metadata.created_at.cmp(&a.metadata.created_at));
 
     let mut results = Vec::new();
