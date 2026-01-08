@@ -156,15 +156,27 @@ impl<S: DataStore> PadzApi<S> {
         commands::update::run(&mut self.store, scope, updates)
     }
 
+    /// Returns a preview of what would be purged without actually deleting.
+    /// Use this to show a confirmation prompt before calling `purge_pads`.
+    pub fn preview_purge<I: AsRef<str>>(
+        &self,
+        scope: Scope,
+        indexes: &[I],
+        recursive: bool,
+    ) -> Result<commands::purge::PurgePreview> {
+        let selectors = parse_selectors(indexes)?;
+        commands::purge::preview(&self.store, scope, &selectors, recursive)
+    }
+
+    /// Permanently deletes pads. Call `preview_purge` first to show confirmation.
     pub fn purge_pads<I: AsRef<str>>(
         &mut self,
         scope: Scope,
         indexes: &[I],
-        skip_confirm: bool,
         recursive: bool,
     ) -> Result<commands::CmdResult> {
         let selectors = parse_selectors(indexes)?;
-        commands::purge::run(&mut self.store, scope, &selectors, skip_confirm, recursive)
+        commands::purge::run(&mut self.store, scope, &selectors, recursive)
     }
 
     pub fn restore_pads<I: AsRef<str>>(
