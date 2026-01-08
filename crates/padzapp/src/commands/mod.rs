@@ -82,6 +82,7 @@ pub mod paths;
 pub mod pinning;
 pub mod purge;
 pub mod restore;
+pub mod status;
 
 pub mod update;
 pub mod view;
