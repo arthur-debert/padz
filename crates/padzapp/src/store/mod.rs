@@ -45,10 +45,21 @@
 //! - `delete_protected`: Protection flag
 //! - `title`: Cached title for fast listing
 //!
-//! ## Implementations
+//! ## Architecture
 //!
-//! - [`fs::FileStore`]: Production implementation of the Lazy Reconciler architecture.
-//! - [`memory::InMemoryStore`]: For testing logic without filesystem I/O.
+//! The store layer is split into two tiers:
+//!
+//! 1. **[`backend::StorageBackend`]**: Low-level I/O trait (pure read/write operations)
+//!    - [`fs_backend::FsBackend`]: Filesystem backend with atomic writes
+//!    - [`mem_backend::MemBackend`]: In-memory backend for testing
+//!
+//! 2. **[`pad_store::PadStore<B>`]**: Business logic layer (sync, doctor, CRUD)
+//!    - Implements [`DataStore`] trait
+//!    - Generic over any `StorageBackend`
+//!
+//! For convenience, type aliases are provided:
+//! - [`fs::FileStore`]: `PadStore<FsBackend>` - production use
+//! - [`memory::InMemoryStore`]: `PadStore<MemBackend>` - testing
 //!
 //! ## Storage Layout
 //!
