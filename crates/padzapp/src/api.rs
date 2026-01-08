@@ -346,6 +346,274 @@ pub use commands::{CmdMessage, CmdResult, MessageLevel, PadUpdate, PadzPaths};
 mod tests {
     use super::*;
     use crate::index::{DisplayIndex, PadSelector};
+    use crate::store::memory::InMemoryStore;
+    use std::path::PathBuf;
+
+    fn make_api() -> PadzApi<InMemoryStore> {
+        let store = InMemoryStore::new();
+        let paths = PadzPaths {
+            project: Some(PathBuf::from("/tmp/test")),
+            global: PathBuf::from("/tmp/global"),
+        };
+        PadzApi::new(store, paths)
+    }
+
+    // --- parse_selectors tests ---
+
+    #[test]
+    fn test_parse_selectors_single_index() {
+        let inputs = vec!["1"];
+        let selectors = parse_selectors(&inputs).unwrap();
+
+        assert_eq!(selectors.len(), 1);
+        assert!(matches!(selectors[0], PadSelector::Path(_)));
+    }
+
+    #[test]
+    fn test_parse_selectors_multiple_indexes() {
+        let inputs = vec!["1", "3", "5"];
+        let selectors = parse_selectors(&inputs).unwrap();
+
+        assert_eq!(selectors.len(), 3);
+    }
+
+    #[test]
+    fn test_parse_selectors_deduplicates() {
+        let inputs = vec!["1", "1", "2", "1"];
+        let selectors = parse_selectors(&inputs).unwrap();
+
+        // Should deduplicate: [1, 2]
+        assert_eq!(selectors.len(), 2);
+    }
+
+    #[test]
+    fn test_parse_selectors_title_fallback() {
+        let inputs = vec!["meeting", "notes"];
+        let selectors = parse_selectors(&inputs).unwrap();
+
+        // Should become title search
+        assert_eq!(selectors.len(), 1);
+        match &selectors[0] {
+            PadSelector::Title(term) => assert_eq!(term, "meeting notes"),
+            _ => panic!("Expected Title selector"),
+        }
+    }
+
+    #[test]
+    fn test_parse_selectors_mixed_input_becomes_title() {
+        let inputs = vec!["1", "meeting", "2"];
+        let selectors = parse_selectors(&inputs).unwrap();
+
+        // Mixed input becomes title search
+        assert_eq!(selectors.len(), 1);
+        match &selectors[0] {
+            PadSelector::Title(term) => assert_eq!(term, "1 meeting 2"),
+            _ => panic!("Expected Title selector"),
+        }
+    }
+
+    #[test]
+    fn test_parse_selectors_range() {
+        let inputs = vec!["1-3"];
+        let selectors = parse_selectors(&inputs).unwrap();
+
+        assert_eq!(selectors.len(), 1);
+        assert!(matches!(selectors[0], PadSelector::Range(_, _)));
+    }
+
+    // --- API facade integration tests ---
+
+    #[test]
+    fn test_api_create_pad_simple() {
+        let mut api = make_api();
+
+        let result = api
+            .create_pad(Scope::Project, "Test Title".into(), "Content".into(), None)
+            .unwrap();
+
+        assert_eq!(result.affected_pads.len(), 1);
+        assert_eq!(result.affected_pads[0].pad.metadata.title, "Test Title");
+    }
+
+    #[test]
+    fn test_api_create_pad_with_parent_string() {
+        let mut api = make_api();
+
+        // Create parent first
+        api.create_pad(Scope::Project, "Parent".into(), "".into(), None)
+            .unwrap();
+
+        // Create child with parent string
+        let result = api
+            .create_pad(Scope::Project, "Child".into(), "".into(), Some("1"))
+            .unwrap();
+
+        assert_eq!(result.affected_pads.len(), 1);
+        assert_eq!(result.affected_pads[0].pad.metadata.title, "Child");
+        assert!(result.affected_pads[0].pad.metadata.parent_id.is_some());
+    }
+
+    #[test]
+    fn test_api_get_pads() {
+        let mut api = make_api();
+        api.create_pad(Scope::Project, "Test".into(), "".into(), None)
+            .unwrap();
+
+        let result = api.get_pads(Scope::Project, PadFilter::default()).unwrap();
+
+        assert_eq!(result.listed_pads.len(), 1);
+    }
+
+    #[test]
+    fn test_api_view_pads() {
+        let mut api = make_api();
+        api.create_pad(Scope::Project, "Test".into(), "".into(), None)
+            .unwrap();
+
+        let result = api.view_pads(Scope::Project, &["1"]).unwrap();
+
+        assert_eq!(result.listed_pads.len(), 1);
+        assert_eq!(result.listed_pads[0].pad.metadata.title, "Test");
+    }
+
+    #[test]
+    fn test_api_delete_pads() {
+        let mut api = make_api();
+        api.create_pad(Scope::Project, "Test".into(), "".into(), None)
+            .unwrap();
+
+        let result = api.delete_pads(Scope::Project, &["1"]).unwrap();
+
+        assert_eq!(result.affected_pads.len(), 1);
+        assert!(result.affected_pads[0].pad.metadata.is_deleted);
+    }
+
+    #[test]
+    fn test_api_pin_unpin_pads() {
+        let mut api = make_api();
+        api.create_pad(Scope::Project, "Test".into(), "".into(), None)
+            .unwrap();
+
+        // Pin
+        let result = api.pin_pads(Scope::Project, &["1"]).unwrap();
+        assert_eq!(result.affected_pads.len(), 1);
+        assert!(result.affected_pads[0].pad.metadata.is_pinned);
+
+        // Unpin
+        let result = api.unpin_pads(Scope::Project, &["p1"]).unwrap();
+        assert_eq!(result.affected_pads.len(), 1);
+        assert!(!result.affected_pads[0].pad.metadata.is_pinned);
+    }
+
+    #[test]
+    fn test_api_update_pads() {
+        let mut api = make_api();
+        api.create_pad(
+            Scope::Project,
+            "Old Title".into(),
+            "Old Content".into(),
+            None,
+        )
+        .unwrap();
+
+        let updates = vec![PadUpdate::new(
+            DisplayIndex::Regular(1),
+            "New Title".into(),
+            "New Content".into(),
+        )];
+        let result = api.update_pads(Scope::Project, &updates).unwrap();
+
+        assert_eq!(result.affected_pads.len(), 1);
+        assert_eq!(result.affected_pads[0].pad.metadata.title, "New Title");
+    }
+
+    #[test]
+    fn test_api_restore_pads() {
+        let mut api = make_api();
+        api.create_pad(Scope::Project, "Test".into(), "".into(), None)
+            .unwrap();
+        api.delete_pads(Scope::Project, &["1"]).unwrap();
+
+        // Restore using bare number (should be normalized to d1)
+        let result = api.restore_pads(Scope::Project, &["1"]).unwrap();
+
+        assert_eq!(result.affected_pads.len(), 1);
+        assert!(!result.affected_pads[0].pad.metadata.is_deleted);
+    }
+
+    #[test]
+    fn test_api_preview_purge() {
+        let mut api = make_api();
+        api.create_pad(Scope::Project, "Test".into(), "".into(), None)
+            .unwrap();
+        api.delete_pads(Scope::Project, &["1"]).unwrap();
+
+        let preview = api.preview_purge(Scope::Project, &["d1"], false).unwrap();
+
+        assert_eq!(preview.targets.len(), 1);
+    }
+
+    #[test]
+    fn test_api_purge_pads() {
+        let mut api = make_api();
+        api.create_pad(Scope::Project, "Test".into(), "".into(), None)
+            .unwrap();
+        api.delete_pads(Scope::Project, &["1"]).unwrap();
+
+        // Purge should succeed
+        let result = api.purge_pads(Scope::Project, &["d1"], false);
+        assert!(result.is_ok());
+
+        // Verify it's gone from the store
+        let list = api
+            .get_pads(
+                Scope::Project,
+                PadFilter {
+                    status: PadStatusFilter::All,
+                    search_term: None,
+                },
+            )
+            .unwrap();
+        assert_eq!(list.listed_pads.len(), 0);
+    }
+
+    #[test]
+    fn test_api_doctor() {
+        let mut api = make_api();
+
+        let result = api.doctor(Scope::Project).unwrap();
+
+        // Should return success message for clean store
+        assert!(!result.messages.is_empty());
+    }
+
+    #[test]
+    fn test_api_paths_accessor() {
+        let api = make_api();
+
+        let paths = api.paths();
+
+        assert_eq!(paths.project, Some(PathBuf::from("/tmp/test")));
+        assert_eq!(paths.global, PathBuf::from("/tmp/global"));
+    }
+
+    #[test]
+    fn test_api_import_pads() {
+        let mut api = make_api();
+        let temp_dir = tempfile::tempdir().unwrap();
+        let file_path = temp_dir.path().join("note.md");
+        std::fs::write(&file_path, "Imported Note\n\nContent").unwrap();
+
+        let result = api
+            .import_pads(Scope::Project, vec![file_path], &[".md".to_string()])
+            .unwrap();
+
+        assert!(result
+            .messages
+            .iter()
+            .any(|m| m.content.contains("Total imported: 1")));
+    }
+
     #[test]
     fn test_normalize_single_to_deleted() {
         // Bare numbers get 'd' prefix
