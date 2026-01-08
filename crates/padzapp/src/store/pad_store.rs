@@ -98,10 +98,13 @@ impl<B: StorageBackend> PadStore<B> {
 
                         // Recovery normalization (optional)
                         if content_raw != normalized_content
-                            && self.backend.write_content(id, scope, &normalized_content).is_ok()
-                            {
-                                report.fixed_content_files += 1;
-                            }
+                            && self
+                                .backend
+                                .write_content(id, scope, &normalized_content)
+                                .is_ok()
+                        {
+                            report.fixed_content_files += 1;
+                        }
                     }
                 }
             }
@@ -186,7 +189,7 @@ impl<B: StorageBackend> DataStore for PadStore<B> {
     }
 
     fn get_pad_path(&self, id: &Uuid, scope: Scope) -> Result<PathBuf> {
-        Ok(self.backend.content_path(id, scope))
+        self.backend.content_path(id, scope)
     }
 
     fn doctor(&mut self, scope: Scope) -> Result<DoctorReport> {

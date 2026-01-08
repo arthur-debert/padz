@@ -173,16 +173,13 @@ impl StorageBackend for FsBackend {
         }
     }
 
-    fn content_path(&self, id: &Uuid, scope: Scope) -> PathBuf {
-        let root = match self.get_store_path_by_scope(scope) {
-            Ok(r) => r,
-            Err(_) => PathBuf::from(""), // Should handle error better? Trait returns PathBuf, not Result
-        };
+    fn content_path(&self, id: &Uuid, scope: Scope) -> Result<PathBuf> {
+        let root = self.get_store_path_by_scope(scope)?;
 
         if let Some(path) = self.find_pad_file(&root, id) {
-            path
+            Ok(path)
         } else {
-            root.join(self.pad_filename(id))
+            Ok(root.join(self.pad_filename(id)))
         }
     }
 

@@ -43,7 +43,8 @@ pub trait StorageBackend {
 
     /// Get the "file path" for the content.
     /// For FsBackend, this is the real path. For MemBackend, a virtual path.
-    fn content_path(&self, id: &Uuid, scope: Scope) -> PathBuf;
+    /// Returns Err if the scope is not available.
+    fn content_path(&self, id: &Uuid, scope: Scope) -> Result<PathBuf>;
 
     /// Check if a scope is available (e.g. project root exists).
     fn scope_available(&self, scope: Scope) -> bool;

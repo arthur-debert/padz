@@ -112,8 +112,8 @@ impl StorageBackend for MemBackend {
         Ok(content.get(&(scope, *id)).map(|e| e.mtime))
     }
 
-    fn content_path(&self, id: &Uuid, _scope: Scope) -> PathBuf {
-        PathBuf::from(format!("memory://pad-{}", id))
+    fn content_path(&self, id: &Uuid, _scope: Scope) -> Result<PathBuf> {
+        Ok(PathBuf::from(format!("memory://pad-{}", id)))
     }
 
     fn scope_available(&self, _scope: Scope) -> bool {
