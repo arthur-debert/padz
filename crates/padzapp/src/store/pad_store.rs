@@ -315,9 +315,9 @@ mod tests {
 
         // Set mtime to be newer than the index's updated_at
         let future_time = Utc::now() + Duration::hours(1);
-        store
+        assert!(store
             .backend
-            .set_content_mtime(&pad_id, Scope::Project, future_time);
+            .set_content_mtime(&pad_id, Scope::Project, future_time));
 
         // Sync should detect staleness and update
         store.sync(Scope::Project).unwrap();
@@ -337,9 +337,9 @@ mod tests {
 
         // Set mtime to be older (in the past)
         let past_time = Utc::now() - Duration::hours(1);
-        store
+        assert!(store
             .backend
-            .set_content_mtime(&pad_id, Scope::Project, past_time);
+            .set_content_mtime(&pad_id, Scope::Project, past_time));
 
         // Sync should NOT read the content since mtime <= updated_at
         store.sync(Scope::Project).unwrap();
