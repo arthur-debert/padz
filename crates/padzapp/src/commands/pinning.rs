@@ -176,4 +176,95 @@ mod tests {
         );
         assert!(success.is_ok());
     }
+
+    #[test]
+    fn pinning_already_pinned_is_idempotent() {
+        let mut store = InMemoryStore::new();
+        create::run(&mut store, Scope::Project, "A".into(), "".into(), None).unwrap();
+
+        // Pin first time
+        pin(
+            &mut store,
+            Scope::Project,
+            slice::from_ref(&PadSelector::Path(vec![DisplayIndex::Regular(1)])),
+        )
+        .unwrap();
+
+        // Pin second time
+        let result = pin(
+            &mut store,
+            Scope::Project,
+            slice::from_ref(&PadSelector::Path(vec![DisplayIndex::Pinned(1)])),
+        )
+        .unwrap();
+
+        // Should return info message
+        assert!(matches!(
+            result.messages[0].level,
+            crate::commands::MessageLevel::Info
+        ));
+        assert!(result.messages[0].content.contains("already pinned"));
+    }
+
+    #[test]
+    fn unpinning_already_unpinned_is_idempotent() {
+        let mut store = InMemoryStore::new();
+        create::run(&mut store, Scope::Project, "A".into(), "".into(), None).unwrap();
+
+        // Unpin unpinned
+        let result = unpin(
+            &mut store,
+            Scope::Project,
+            slice::from_ref(&PadSelector::Path(vec![DisplayIndex::Regular(1)])),
+        )
+        .unwrap();
+
+        // Should return info message
+        assert!(matches!(
+            result.messages[0].level,
+            crate::commands::MessageLevel::Info
+        ));
+        assert!(result.messages[0].content.contains("already unpinned"));
+    }
+
+    #[test]
+    fn pinning_batch() {
+        let mut store = InMemoryStore::new();
+        create::run(&mut store, Scope::Project, "A".into(), "".into(), None).unwrap();
+        create::run(&mut store, Scope::Project, "B".into(), "".into(), None).unwrap();
+
+        let selectors = vec![
+            PadSelector::Path(vec![DisplayIndex::Regular(1)]),
+            PadSelector::Path(vec![DisplayIndex::Regular(2)]),
+        ];
+
+        pin(&mut store, Scope::Project, &selectors).unwrap();
+
+        let pads = get::run(&store, Scope::Project, get::PadFilter::default()).unwrap();
+        // Both pads should be pinned.
+        for dp in &pads.listed_pads {
+            assert!(
+                dp.pad.metadata.is_pinned,
+                "Pad {} should be is_pinned=true",
+                dp.pad.metadata.title
+            );
+        }
+        // When a pad is pinned, it appears twice in the default listing:
+        // Once as Regular(X) and once as Pinned(Y).
+        assert_eq!(pads.listed_pads.len(), 4);
+
+        let pinned_count = pads
+            .listed_pads
+            .iter()
+            .filter(|dp| matches!(dp.index, DisplayIndex::Pinned(_)))
+            .count();
+        let regular_count = pads
+            .listed_pads
+            .iter()
+            .filter(|dp| matches!(dp.index, DisplayIndex::Regular(_)))
+            .count();
+
+        assert_eq!(pinned_count, 2);
+        assert_eq!(regular_count, 2);
+    }
 }

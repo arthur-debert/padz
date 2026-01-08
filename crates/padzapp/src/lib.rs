@@ -114,3 +114,6 @@ pub mod init;
 pub mod model;
 pub mod peek;
 pub mod store;
+
+#[cfg(test)]
+pub mod test_utils;

@@ -507,4 +507,56 @@ mod tests {
             "my_notes.md"
         );
     }
+    #[test]
+    fn test_export_empty_does_nothing() {
+        let store = InMemoryStore::new();
+        // No pads created
+        let res = run(&store, Scope::Project, &[]).unwrap();
+        assert!(res
+            .messages
+            .iter()
+            .any(|m| m.content.contains("No pads to export")));
+
+        let res_single = run_single_file(&store, Scope::Project, &[], "out.md").unwrap();
+        assert!(res_single
+            .messages
+            .iter()
+            .any(|m| m.content.contains("No pads to export")));
+    }
+
+    #[test]
+    fn test_export_single_file_creates_file() {
+        use std::path::Path;
+        let mut store = InMemoryStore::new();
+        create::run(&mut store, Scope::Project, "A".into(), "".into(), None).unwrap();
+
+        // Since run_single_file forces writing to CWD with a sanitized name,
+        // we use a unique name to avoid collisions and check CWD.
+        let unique_title = format!("Export_Test_{}", uuid::Uuid::new_v4());
+        let expected_filename = format!("{}.md", unique_title); // sanitization should be no-op for alphanumeric+underscore
+        let expected_path = Path::new(&expected_filename);
+
+        // Export
+        // Pass title with extension to trigger Markdown format detection,
+        // but sanitization might duplicate extension if we are not careful?
+        // sanitize_output_filename: if ends with .md and format is markdown, strips it, then adds .md.
+        // So passing "Title.md" results in "Title.md".
+        let input_title = format!("{}.md", unique_title);
+
+        let res = run_single_file(&store, Scope::Project, &[], &input_title).unwrap();
+
+        assert!(res.messages[0].content.contains("Exported 1 pads"));
+        assert!(
+            expected_path.exists(),
+            "File {} should be created in CWD",
+            expected_filename
+        );
+
+        let content = std::fs::read_to_string(expected_path).unwrap();
+        assert!(content.contains(&format!("# {}", input_title))); // Title in H1
+        assert!(content.contains("## A"));
+
+        // Cleanup
+        let _ = std::fs::remove_file(expected_path);
+    }
 }

@@ -113,3 +113,58 @@ pub mod fixtures {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::fixtures::StoreFixture;
+    use super::*;
+
+    #[test]
+    fn test_delete_not_found() {
+        let mut store = InMemoryStore::new();
+        let id = Uuid::new_v4();
+        match store.delete_pad(&id, Scope::Project) {
+            Err(PadzError::PadNotFound(err_id)) => assert_eq!(err_id, id),
+            _ => panic!("Expected PadNotFound"),
+        }
+    }
+
+    #[test]
+    fn test_doctor_noop() {
+        let mut store = InMemoryStore::new();
+        let report = store.doctor(Scope::Project).unwrap();
+        // InMemoryStore doctor does nothing, so strict default check
+        assert_eq!(report.fixed_missing_files, 0);
+        assert_eq!(report.recovered_files, 0);
+        assert_eq!(report.fixed_content_files, 0);
+    }
+
+    #[test]
+    fn test_fixtures_coverage() {
+        // Exercise fixture methods to cover lines 71-112
+        let fixture = StoreFixture::default() // covers Default trait (71-72)
+            .with_pads(2, Scope::Project) // covers with_pads (83-91)
+            .with_active_pad("Active", Scope::Project) // covers with_active_pad (93-97)
+            .with_pinned_pad("Pinned", Scope::Project) // covers with_pinned_pad (99-105)
+            .with_deleted_pad("Deleted", Scope::Project); // covers with_deleted_pad (107-113)
+
+        let pads = fixture.store.list_pads(Scope::Project).unwrap();
+        assert_eq!(pads.len(), 5);
+
+        let active = pads.iter().find(|p| p.metadata.title == "Active").unwrap();
+        assert!(!active.metadata.is_pinned);
+        assert!(!active.metadata.is_deleted);
+
+        let pinned = pads.iter().find(|p| p.metadata.title == "Pinned").unwrap();
+        assert!(pinned.metadata.is_pinned);
+
+        let deleted = pads.iter().find(|p| p.metadata.title == "Deleted").unwrap();
+        assert!(deleted.metadata.is_deleted);
+
+        let generic = pads
+            .iter()
+            .filter(|p| p.metadata.title.starts_with("Test Pad"))
+            .count();
+        assert_eq!(generic, 2);
+    }
+}

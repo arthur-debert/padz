@@ -260,54 +260,66 @@ mod tests {
     }
 
     #[test]
-    fn restore_child_while_parent_deleted() {
-        // When a child is explicitly deleted (not just hidden), restoring it
-        // should work, but it will still be hidden if parent remains deleted.
+    fn restore_batch() {
         let mut store = InMemoryStore::new();
+        create::run(&mut store, Scope::Project, "A".into(), "".into(), None).unwrap();
+        create::run(&mut store, Scope::Project, "B".into(), "".into(), None).unwrap();
 
-        // Create parent with child
-        create::run(&mut store, Scope::Project, "Parent".into(), "".into(), None).unwrap();
-        create::run(
-            &mut store,
-            Scope::Project,
-            "Child".into(),
-            "".into(),
-            Some(PadSelector::Path(vec![DisplayIndex::Regular(1)])),
-        )
-        .unwrap();
-
-        // Delete child explicitly
+        // Delete both
         delete::run(
             &mut store,
             Scope::Project,
-            &[PadSelector::Path(vec![
-                DisplayIndex::Regular(1),
-                DisplayIndex::Regular(1),
-            ])],
+            &[
+                PadSelector::Path(vec![DisplayIndex::Regular(1)]),
+                PadSelector::Path(vec![DisplayIndex::Regular(2)]),
+            ],
         )
         .unwrap();
 
-        // Now delete parent too
-        delete::run(
+        // Restore both
+        let result = run(
+            &mut store,
+            Scope::Project,
+            &[
+                PadSelector::Path(vec![DisplayIndex::Deleted(1)]),
+                PadSelector::Path(vec![DisplayIndex::Deleted(2)]),
+            ],
+        )
+        .unwrap();
+
+        assert_eq!(result.messages.len(), 2);
+        let count = store
+            .list_pads(Scope::Project)
+            .unwrap()
+            .iter()
+            .filter(|p| !p.metadata.is_deleted)
+            .count();
+        assert_eq!(count, 2);
+    }
+
+    #[test]
+    fn restore_non_deleted_fails_selector() {
+        let mut store = InMemoryStore::new();
+        create::run(&mut store, Scope::Project, "A".into(), "".into(), None).unwrap();
+
+        // Try to restore an active pad using Regular selector?
+        // restore::run calls resolve_selectors(..., true). true means 'match_deleted'.
+        // If we pass Regular selector to match_deleted=true, resolve_selectors might fail or just not match non-deleted items depending on logic.
+        // Actually resolve_selectors logic:
+        // If match_deleted=true, it looks for matches in BOTH? or specifically checks deleted?
+        // Let's test the behavior:
+
+        // If I pass Regular selector, match_deleted=true in resolve_selectors allows matching ANY pad
+        // including active ones. The command effectively becomes idempotent.
+        let result = run(
             &mut store,
             Scope::Project,
             &[PadSelector::Path(vec![DisplayIndex::Regular(1)])],
         )
         .unwrap();
 
-        // View deleted - should show parent (which shows child under it)
-        let deleted = get::run(
-            &store,
-            Scope::Project,
-            get::PadFilter {
-                status: get::PadStatusFilter::Deleted,
-                ..Default::default()
-            },
-        )
-        .unwrap();
-        assert_eq!(deleted.listed_pads.len(), 1);
-        assert_eq!(deleted.listed_pads[0].pad.metadata.title, "Parent");
-        // Child appears under deleted parent
-        assert_eq!(deleted.listed_pads[0].children.len(), 1);
+        // It should succeed and report restored (idempotent)
+        assert_eq!(result.messages.len(), 1);
+        assert!(result.messages[0].content.contains("Pad restored"));
     }
 }

@@ -327,4 +327,45 @@ mod tests {
         assert_eq!(preview_result.targets[0].pad.metadata.title, "Parent");
         assert_eq!(preview_result.descendant_count, 1);
     }
+
+    #[test]
+    fn purge_selectors_vs_all() {
+        let mut store = InMemoryStore::new();
+        create::run(&mut store, Scope::Project, "A".into(), "".into(), None).unwrap();
+        create::run(&mut store, Scope::Project, "B".into(), "".into(), None).unwrap();
+
+        // Delete both to make them purgeable candidates
+        delete::run(
+            &mut store,
+            Scope::Project,
+            &[
+                PadSelector::Path(vec![DisplayIndex::Regular(1)]),
+                PadSelector::Path(vec![DisplayIndex::Regular(2)]),
+            ],
+        )
+        .unwrap();
+
+        // Purge only one (selectors provided)
+        let res = run(
+            &mut store,
+            Scope::Project,
+            &[PadSelector::Path(vec![DisplayIndex::Deleted(1)])],
+            false,
+        )
+        .unwrap();
+
+        assert_eq!(res.messages.len(), 1); // "Purged: ..."
+
+        let remaining = store.list_pads(Scope::Project).unwrap();
+        assert_eq!(remaining.len(), 1); // One remains
+        assert!(remaining[0].metadata.is_deleted);
+    }
+
+    #[test]
+    fn purge_nothing_found() {
+        let mut store = InMemoryStore::new();
+        // Empty store
+        let res = run(&mut store, Scope::Project, &[], false).unwrap();
+        assert!(res.messages[0].content.contains("No pads to purge"));
+    }
 }
