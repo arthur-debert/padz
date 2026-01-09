@@ -35,8 +35,25 @@
 //!     While best avoided, for when more complex logic is needed, it is best to move that logic
 //!     into the rust code, and pass the results as functions for the template to use.
 //!
+//! ## Debugging Template Output
 //!
-//!     
+//! When developing or testing templates, use the `--output=term-debug` flag to see
+//! style names as markup tags instead of ANSI escape codes:
+//!
+//! ```bash
+//! padz list --output=term-debug
+//! ```
+//!
+//! This renders output like:
+//! ```text
+//! [pinned]⚲[/pinned] [time]⚪︎[/time] [list-index]p1.[/list-index][list-title]My Pad[/list-title]
+//! ```
+//!
+//! This is invaluable for:
+//! - Verifying that the correct style is applied to each template element
+//! - Debugging layout issues by seeing exactly what styles are where
+//! - Writing test assertions that check for specific style applications
+//! - Comparing output between template changes without ANSI code noise
 //!
 pub const LIST_TEMPLATE: &str = include_str!("templates/list.tmp");
 pub const FULL_PAD_TEMPLATE: &str = include_str!("templates/full_pad.tmp");

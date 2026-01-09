@@ -67,6 +67,23 @@
 //! style. All of the styles are registered once through
 //! `once_cell::sync::Lazy`.
 //!
+//! ## Debugging Styled Output
+//!
+//! When developing or testing templates and styles, use the `--output=term-debug` flag
+//! to see style names as markup tags instead of ANSI escape codes:
+//!
+//! ```bash
+//! padz list --output=term-debug
+//! ```
+//!
+//! This renders output like:
+//! ```text
+//! [pinned]⚲[/pinned] [time]⚪︎[/time] [list-index]p1.[/list-index][list-title]My Pad[/list-title]
+//! ```
+//!
+//! This makes it easy to verify which styles are applied to each element, debug
+//! template issues, and write assertions in tests without dealing with ANSI codes.
+//!
 use console::Style;
 use once_cell::sync::Lazy;
 use outstanding::{rgb_to_ansi256, AdaptiveTheme, Theme};
