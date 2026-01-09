@@ -551,8 +551,8 @@ mod tests {
         assert!(output.contains(STATUS_PLANNED)); // Default status is Planned
         assert!(output.contains(" 1."));
         assert!(output.contains("Test Note"));
-        // Should have status icon at start, then base padding, then index
-        assert!(output.contains(&format!("{}    1.", STATUS_PLANNED)));
+        // Should have base padding, status icon, space, then index
+        assert!(output.contains(&format!("{}  1.", STATUS_PLANNED)));
     }
 
     #[test]
