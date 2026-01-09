@@ -8,15 +8,55 @@
 //! modules for the specifics and best practices of each.
 //!
 use super::setup::get_grouped_help;
-use super::styles::{names, PADZ_THEME};
-use super::templates::{FULL_PAD_TEMPLATE, LIST_TEMPLATE, MESSAGES_TEMPLATE, TEXT_LIST_TEMPLATE};
+use super::styles::{get_resolved_theme, names};
+use super::templates::{
+    DELETED_HELP_PARTIAL, FULL_PAD_TEMPLATE, LIST_TEMPLATE, MATCH_LINES_PARTIAL, MESSAGES_TEMPLATE,
+    PEEK_CONTENT_PARTIAL, TEXT_LIST_TEMPLATE,
+};
 use chrono::{DateTime, Utc};
-use outstanding::{render, render_with_output, truncate_to_width, OutputMode, ThemeChoice};
+use outstanding::{truncate_to_width, OutputMode, Renderer};
 use padzapp::api::{CmdMessage, MessageLevel, TodoStatus};
 use padzapp::index::{DisplayIndex, DisplayPad};
 use padzapp::peek::{format_as_peek, PeekResult};
 use serde::Serialize;
 use unicode_width::UnicodeWidthStr;
+
+/// Creates a Renderer with all templates registered.
+///
+/// The renderer resolves the adaptive theme based on terminal color mode
+/// and registers both main templates and partials, enabling `{% include %}`
+/// directives in templates.
+fn create_renderer(output_mode: OutputMode) -> Renderer {
+    let theme = get_resolved_theme();
+    let mut renderer = Renderer::with_output(theme, output_mode);
+
+    // Register main templates
+    renderer
+        .add_template("list", LIST_TEMPLATE)
+        .expect("Failed to register list template");
+    renderer
+        .add_template("full_pad", FULL_PAD_TEMPLATE)
+        .expect("Failed to register full_pad template");
+    renderer
+        .add_template("text_list", TEXT_LIST_TEMPLATE)
+        .expect("Failed to register text_list template");
+    renderer
+        .add_template("messages", MESSAGES_TEMPLATE)
+        .expect("Failed to register messages template");
+
+    // Register partial templates (for {% include %} support)
+    renderer
+        .add_template("_deleted_help", DELETED_HELP_PARTIAL)
+        .expect("Failed to register _deleted_help partial");
+    renderer
+        .add_template("_peek_content", PEEK_CONTENT_PARTIAL)
+        .expect("Failed to register _peek_content partial");
+    renderer
+        .add_template("_match_lines", MATCH_LINES_PARTIAL)
+        .expect("Failed to register _match_lines partial");
+
+    renderer
+}
 
 /// Configuration for list rendering.
 pub const LINE_WIDTH: usize = 100;
@@ -136,16 +176,11 @@ fn render_pad_list_internal(
     };
 
     if pads.is_empty() {
-        return match output_mode {
-            Some(mode) => render_with_output(
-                LIST_TEMPLATE,
-                &empty_data,
-                ThemeChoice::from(&*PADZ_THEME),
-                mode,
-            ),
-            None => render(LIST_TEMPLATE, &empty_data, ThemeChoice::from(&*PADZ_THEME)),
-        }
-        .unwrap_or_else(|_| "No pads found.\n".to_string());
+        let mode = output_mode.unwrap_or(OutputMode::Auto);
+        let renderer = create_renderer(mode);
+        return renderer
+            .render("list", &empty_data)
+            .unwrap_or_else(|_| "No pads found.\n".to_string());
     }
 
     let mut pad_lines = Vec::new();
@@ -340,13 +375,11 @@ fn render_pad_list_internal(
         peek,
     };
 
-    match output_mode {
-        Some(mode) => {
-            render_with_output(LIST_TEMPLATE, &data, ThemeChoice::from(&*PADZ_THEME), mode)
-        }
-        None => render(LIST_TEMPLATE, &data, ThemeChoice::from(&*PADZ_THEME)),
-    }
-    .unwrap_or_else(|e| format!("Render error: {}\n", e))
+    let mode = output_mode.unwrap_or(OutputMode::Auto);
+    let renderer = create_renderer(mode);
+    renderer
+        .render("list", &data)
+        .unwrap_or_else(|e| format!("Render error: {}\n", e))
 }
 
 fn truncate_match_segments(
@@ -405,16 +438,11 @@ fn render_full_pads_internal(pads: &[DisplayPad], output_mode: Option<OutputMode
 
     let data = FullPadData { pads: entries };
 
-    match output_mode {
-        Some(mode) => render_with_output(
-            FULL_PAD_TEMPLATE,
-            &data,
-            ThemeChoice::from(&*PADZ_THEME),
-            mode,
-        ),
-        None => render(FULL_PAD_TEMPLATE, &data, ThemeChoice::from(&*PADZ_THEME)),
-    }
-    .unwrap_or_else(|e| format!("Render error: {}\n", e))
+    let mode = output_mode.unwrap_or(OutputMode::Auto);
+    let renderer = create_renderer(mode);
+    renderer
+        .render("full_pad", &data)
+        .unwrap_or_else(|e| format!("Render error: {}\n", e))
 }
 
 pub fn render_text_list(lines: &[String], empty_message: &str, output_mode: OutputMode) -> String {
@@ -431,16 +459,11 @@ fn render_text_list_internal(
         empty_message: empty_message.to_string(),
     };
 
-    match output_mode {
-        Some(mode) => render_with_output(
-            TEXT_LIST_TEMPLATE,
-            &data,
-            ThemeChoice::from(&*PADZ_THEME),
-            mode,
-        ),
-        None => render(TEXT_LIST_TEMPLATE, &data, ThemeChoice::from(&*PADZ_THEME)),
-    }
-    .unwrap_or_else(|_| format!("{}\n", empty_message))
+    let mode = output_mode.unwrap_or(OutputMode::Auto);
+    let renderer = create_renderer(mode);
+    renderer
+        .render("text_list", &data)
+        .unwrap_or_else(|_| format!("{}\n", empty_message))
 }
 
 /// Renders command messages using the template system with themed styles.
@@ -469,7 +492,8 @@ pub fn render_messages(messages: &[CmdMessage]) -> String {
         messages: message_data,
     };
 
-    render(MESSAGES_TEMPLATE, &data, ThemeChoice::from(&*PADZ_THEME)).unwrap_or_else(|_| {
+    let renderer = create_renderer(OutputMode::Auto);
+    renderer.render("messages", &data).unwrap_or_else(|_| {
         messages
             .iter()
             .map(|m| format!("{}\n", m.content))

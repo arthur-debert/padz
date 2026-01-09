@@ -115,8 +115,20 @@ pub mod names {
     pub const HELP_USAGE: &str = "help-usage";
 }
 
+/// The adaptive theme for padz, containing both light and dark variants.
+/// Note: For rendering, use `get_resolved_theme()` which auto-detects the mode.
+#[allow(dead_code)]
 pub static PADZ_THEME: Lazy<AdaptiveTheme> =
     Lazy::new(|| AdaptiveTheme::new(build_light_theme(), build_dark_theme()));
+
+/// Returns the resolved theme based on the current terminal color mode.
+/// Uses the dark-light crate to detect light/dark mode automatically.
+pub fn get_resolved_theme() -> Theme {
+    match dark_light::detect() {
+        dark_light::Mode::Light => build_light_theme(),
+        dark_light::Mode::Dark => build_dark_theme(),
+    }
+}
 
 fn build_light_theme() -> Theme {
     let regular = Style::new().black();

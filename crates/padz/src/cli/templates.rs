@@ -55,7 +55,13 @@
 //! - Writing test assertions that check for specific style applications
 //! - Comparing output between template changes without ANSI code noise
 //!
+// Main templates
 pub const LIST_TEMPLATE: &str = include_str!("templates/list.tmp");
 pub const FULL_PAD_TEMPLATE: &str = include_str!("templates/full_pad.tmp");
 pub const TEXT_LIST_TEMPLATE: &str = include_str!("templates/text_list.tmp");
 pub const MESSAGES_TEMPLATE: &str = include_str!("templates/messages.tmp");
+
+// Partial templates (used via {% include %} in main templates)
+pub const DELETED_HELP_PARTIAL: &str = include_str!("templates/_deleted_help.tmp");
+pub const PEEK_CONTENT_PARTIAL: &str = include_str!("templates/_peek_content.tmp");
+pub const MATCH_LINES_PARTIAL: &str = include_str!("templates/_match_lines.tmp");

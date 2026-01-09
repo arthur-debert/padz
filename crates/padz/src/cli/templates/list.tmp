@@ -7,36 +7,13 @@
 {{- "" | nl -}}
 {%- else -%}
 {{- pad.left_pad }}{% if pad.show_left_pin %}{{ pin_marker | style("pinned") }} {% endif %}{{ pad.status_icon | style("time") }} {% if pad.is_pinned_section %}{{ pad.index | style("pinned") }}{% elif pad.is_deleted %}{{ pad.index | style("deleted-index") }}{% else %}{{ pad.index | style("list-index") }}{% endif %}{% if pad.is_deleted %}{{ pad.title | style("deleted-title") }}{% elif peek %}{{ pad.title | style("title") }}{% else %}{{ pad.title | style("list-title") }}{% endif %}{{ pad.padding }}{% if pad.show_right_pin %}{{ pin_marker | style("pinned") }} {% else %}  {% endif %}{{ pad.time_ago | style("time") | nl -}}
-{%- for match in pad.matches -%}
-{{- "    " }}{{ pad.left_pad }}    {{ match.line_number | style("muted") }} {% for seg in match.segments %}{{ seg.text | style(seg.style) }}{% endfor %}{{ "" | nl -}}
-{%- endfor -%}
-{%- if pad.more_matches_count > 0 -%}
-{{- "    " }}{{ pad.left_pad }}    And {{ pad.more_matches_count }} more results{{ "" | nl -}}
-{%- endif -%}
+{%- include "_match_lines" -%}
 {%- if pad.peek -%}
-{{- "" | nl -}}
-{{- "    " }}{{ pad.left_pad }}    {{ pad.peek.opening_lines | style("faint") | indent(8) | nl -}}
-{%- if pad.peek.truncated_count -%}
-{{- "" | nl -}}
-{{- "    " }}{{ pad.left_pad }}                      {{ ("... " ~ pad.peek.truncated_count ~ " lines not shown ...") | style("muted") | nl -}}
-{{- "" | nl -}}
-{%- endif -%}
-{%- if pad.peek.closing_lines -%}
-{{- "    " }}{{ pad.left_pad }}    {{ pad.peek.closing_lines | style("faint") | indent(8) | nl -}}
-{%- endif -%}
-{{- "" | nl -}}
+{%- include "_peek_content" -%}
 {%- endif -%}
 {%- endif -%}
 {%- endfor -%}
 {%- endif -%}
 {%- if deleted_help -%}
-{{- "Deleted Pads" | style("muted") | nl -}}
-{{- "" | nl -}}
-{{- "These pads are marked for deletion and will be permanently deleted after a month." | style("faint") | nl -}}
-{{- "To restore a pad:" | style("faint") | nl -}}
-{{- "    padz restore <index>      - Restore specific pads" | style("faint") | nl -}}
-{{- "    padz restore              - Restore all deleted pads" | style("faint") | nl -}}
-{{- "To permanently delete:" | style("faint") | nl -}}
-{{- "    padz purge <index>        - Permanently delete specific pads" | style("faint") | nl -}}
-{{- "    padz purge                - Permanently delete all deleted pads" | style("faint") | nl -}}
+{%- include "_deleted_help" -%}
 {%- endif -%}
