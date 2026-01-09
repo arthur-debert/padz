@@ -1,16 +1,12 @@
 //! # Rendering Module
 //!
-//! This module provides styled terminal output using the `outstanding` crate.
-//! Templates are defined here and rendered with automatic terminal color detection.
+//! This module provides styled terminal output using the `outstanding` crate.   The core padzpp api
+//! will return regulat result adata objects, and the CLI layer will do the rendering.
 //!
-//! ## Design Philosophy
+//! Redenring is mostly template based with , using minijinja templates, and using stylesheet's for
+//! controling formatted term output.  See the syles (crate::cli::styles) and templates (crate::cli::templates)
+//! modules for the specifics and best practices of each.
 //!
-//! Layout calculations (width, truncation, padding) stay in Rust because they require
-//! Unicode-aware processing. Templates handle presentation concerns:
-//! - Style selection based on semantic flags (is_pinned, is_deleted, etc.)
-//! - Section separators and grouping
-//! - Conditional icon rendering
-
 use super::setup::get_grouped_help;
 use super::styles::{names, PADZ_THEME};
 use super::templates::{FULL_PAD_TEMPLATE, LIST_TEMPLATE, MESSAGES_TEMPLATE, TEXT_LIST_TEMPLATE};
@@ -28,9 +24,9 @@ pub const TIME_WIDTH: usize = 14;
 pub const PIN_MARKER: &str = "⚲";
 
 /// Status indicators for todo status
-pub const STATUS_PLANNED: &str = "○";
-pub const STATUS_IN_PROGRESS: &str = "⊙";
-pub const STATUS_DONE: &str = "●";
+pub const STATUS_PLANNED: &str = "⚪︎";
+pub const STATUS_IN_PROGRESS: &str = "☉︎︎";
+pub const STATUS_DONE: &str = "⚫︎";
 
 #[derive(Serialize)]
 struct MatchSegmentData {
@@ -551,8 +547,9 @@ mod tests {
         assert!(output.contains(STATUS_PLANNED)); // Default status is Planned
         assert!(output.contains(" 1."));
         assert!(output.contains("Test Note"));
-        // Should have base padding, status icon, space, then index
-        assert!(output.contains(&format!("{}  1.", STATUS_PLANNED)));
+        // Should have base padding, then status icon, then index
+        assert!(output.contains(&format!("{} ", STATUS_PLANNED)));
+        assert!(output.contains(&format!("{} {}.", STATUS_PLANNED, " 1")));
     }
 
     #[test]
