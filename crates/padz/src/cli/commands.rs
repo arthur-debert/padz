@@ -46,6 +46,7 @@ use super::setup::{
     parse_cli, Cli, Commands, CompletionShell, CoreCommands, DataCommands, MiscCommands,
     PadCommands,
 };
+use outstanding::OutputMode;
 use padzapp::api::{ConfigAction, PadFilter, PadStatusFilter, PadzApi, TodoStatus};
 use padzapp::clipboard::{copy_to_clipboard, format_for_clipboard, get_from_clipboard};
 use padzapp::editor::open_in_editor;
@@ -72,19 +73,21 @@ struct AppContext {
     api: PadzApi<FileStore>,
     scope: Scope,
     import_extensions: Vec<String>,
+    output_mode: OutputMode,
 }
 
 pub fn run() -> Result<()> {
-    // parse_cli() uses outstanding-clap's TopicHelper which handles
-    // help display (including topics) and errors automatically
-    let cli = parse_cli();
+    // parse_cli() uses outstanding-clap's Outstanding which handles
+    // help display (including topics) and errors automatically.
+    // It also extracts the output mode from the --output flag.
+    let (cli, output_mode) = parse_cli();
 
     // Handle completions before context init (they don't need API)
     if let Some(Commands::Misc(MiscCommands::Completions { shell })) = &cli.command {
         return handle_completions(*shell);
     }
 
-    let mut ctx = init_context(&cli)?;
+    let mut ctx = init_context(&cli, output_mode)?;
 
     match cli.command {
         Some(Commands::Core(cmd)) => match cmd {
@@ -148,7 +151,7 @@ pub fn run() -> Result<()> {
     }
 }
 
-fn init_context(cli: &Cli) -> Result<AppContext> {
+fn init_context(cli: &Cli, output_mode: OutputMode) -> Result<AppContext> {
     let cwd = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
 
     let ctx = initialize(&cwd, cli.global);
@@ -157,6 +160,7 @@ fn init_context(cli: &Cli) -> Result<AppContext> {
         api: ctx.api,
         scope: ctx.scope,
         import_extensions: ctx.config.import_extensions.clone(),
+        output_mode,
     })
 }
 
@@ -262,9 +266,9 @@ fn handle_list(
 
     // Use outstanding-based rendering
     let output = if deleted {
-        render_pad_list_deleted(&result.listed_pads, peek)
+        render_pad_list_deleted(&result.listed_pads, peek, ctx.output_mode)
     } else {
-        render_pad_list(&result.listed_pads, peek)
+        render_pad_list(&result.listed_pads, peek, ctx.output_mode)
     };
     print!("{}", output);
 
@@ -276,9 +280,9 @@ fn handle_view(ctx: &mut AppContext, indexes: Vec<String>, peek: bool) -> Result
     let result = ctx.api.view_pads(ctx.scope, &indexes)?;
     let output = if peek {
         // Reuse list rendering for peek view
-        render_pad_list(&result.listed_pads, true)
+        render_pad_list(&result.listed_pads, true, ctx.output_mode)
     } else {
-        render_full_pads(&result.listed_pads)
+        render_full_pads(&result.listed_pads, ctx.output_mode)
     };
     print!("{}", output);
     print_messages(&result.messages);
@@ -386,7 +390,7 @@ fn handle_search(ctx: &mut AppContext, term: String) -> Result<()> {
         todo_status: None,
     };
     let result = ctx.api.get_pads(ctx.scope, filter)?;
-    let output = render_pad_list(&result.listed_pads, false);
+    let output = render_pad_list(&result.listed_pads, false, ctx.output_mode);
     print!("{}", output);
     print_messages(&result.messages);
     Ok(())
@@ -399,7 +403,7 @@ fn handle_paths(ctx: &mut AppContext, indexes: Vec<String>) -> Result<()> {
         .iter()
         .map(|path| path.display().to_string())
         .collect();
-    let output = render_text_list(&lines, "No pad paths found.");
+    let output = render_text_list(&lines, "No pad paths found.", ctx.output_mode);
     print!("{}", output);
     print_messages(&result.messages);
     Ok(())
@@ -504,7 +508,7 @@ fn handle_config(ctx: &mut AppContext, key: Option<String>, value: Option<String
             }
         }
     }
-    let output = render_text_list(&lines, "No configuration values.");
+    let output = render_text_list(&lines, "No configuration values.", ctx.output_mode);
     print!("{}", output);
     print_messages(&result.messages);
     Ok(())

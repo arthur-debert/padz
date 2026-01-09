@@ -1,7 +1,52 @@
 //! Styles for the Padz CLI application.
 //!
-//! Padz uses the `outstanding` crate for theming and styling console output, so
-//! we keep every style definition in one place. The CLI needs to work equally
+//! Padz uses the `outstanding` crate for theming and styling console output, to separate the data
+//! and it's presentaiion layers.
+//!
+//! We use an adaptattive theme, that is, one that had presentition styles for both light and dark
+//! modes, and which the outstanding crate manages automatically.
+//!
+//! A theme is a collections of named styles, which is a set for formatting optins as in colors, font
+//! decoration, weight and so on.
+//!
+//! Styles : A Three Layer Approach.
+//!
+//! Keeping in mind that our goal is to keep presentation easy to change, iterate and consistent,
+//! styling gets done in three layers.
+//!
+//! 1. The Application: Semantics (i.e. CSS Classes)
+//!
+//! On the template, the application is to use semantic style names, that is, names that describe
+//! the  data / information being presented. For example a a timestamp with the 'time' style.
+//!
+//! The semantic style does not define the actual presentation values it self, but rather it refers to
+//! the presentation layer.
+//!
+//! 2. The Presentation Layer: Consistence (i.e. enabled, , focused).
+//!
+//! The presentation layer defines presentation styles that are consistent accross the application.  
+//! These often relates to the data semantics, but often are a cross with state. For example, say that
+//! certain elements are disabled. You don't want every disabled element througout the app to look different.
+//! Or that an element is highlighted, or focused, etc.
+//!
+//! And the presentation layer ins't the raw values just yet, but rather another set of named styles,
+//! the visual layer.
+//!
+//! 3. The Visual Layer: Actual Colors and Decorations
+//!
+//! Now we reach the final point, in which we define the actual colors and decoration values are for
+//! presentation styles. Say we define the highlighted has a background color of yellow and black text.
+//!
+//! This layer gives us flexibility to iterate the visual while keeping the semantics and the presentation
+//! consistent. For example light and dark modes only need to define the visual layers differntly,
+//! while the  application's code, templates and presentation styles remain the same.
+//!
+//! The combined result of the three layers is that:
+//!    * Templates/ Code work on the semantic level, freening the code from presentation details.
+//!    * The presentation layer keeps the application consistent.
+//!    * The visual layer allows us to iterate the look and feel easily.
+//!
+//! The CLI needs to work equally
 //! well in light and dark terminals, so `PADZ_THEME` exposes an adaptive theme
 //! that resolves to the appropriate palette at runtime.
 //!
@@ -21,6 +66,23 @@
 //! the `pinned` style (icon only), and any time strings go through the `time`
 //! style. All of the styles are registered once through
 //! `once_cell::sync::Lazy`.
+//!
+//! ## Debugging Styled Output
+//!
+//! When developing or testing templates and styles, use the `--output=term-debug` flag
+//! to see style names as markup tags instead of ANSI escape codes:
+//!
+//! ```bash
+//! padz list --output=term-debug
+//! ```
+//!
+//! This renders output like:
+//! ```text
+//! [pinned]⚲[/pinned] [time]⚪︎[/time] [list-index]p1.[/list-index][list-title]My Pad[/list-title]
+//! ```
+//!
+//! This makes it easy to verify which styles are applied to each element, debug
+//! template issues, and write assertions in tests without dealing with ANSI codes.
 //!
 use console::Style;
 use once_cell::sync::Lazy;

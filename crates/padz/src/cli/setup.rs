@@ -2,7 +2,8 @@ use super::complete::{active_pads_completer, all_pads_completer, deleted_pads_co
 use clap::{CommandFactory, FromArgMatches, Parser, Subcommand, ValueEnum};
 use once_cell::sync::Lazy;
 use outstanding::topics::TopicRegistry;
-use outstanding_clap::{render_help_with_topics, TopicHelper};
+use outstanding::OutputMode;
+use outstanding_clap::{render_help_with_topics, Outstanding};
 
 #[derive(Copy, Clone, Debug, ValueEnum)]
 pub enum CompletionShell {
@@ -103,12 +104,27 @@ pub fn build_command() -> clap::Command {
     Cli::command()
 }
 
-/// Parses command-line arguments using outstanding-clap's TopicHelper.
+/// Parses command-line arguments using outstanding-clap's Outstanding.
 /// This handles help display (including topics) and errors automatically.
-pub fn parse_cli() -> Cli {
-    let helper = TopicHelper::new(HELP_TOPICS.clone());
-    let matches = helper.run(Cli::command());
-    Cli::from_arg_matches(&matches).expect("Failed to parse CLI arguments")
+/// It also adds the --output flag for output mode control (auto, term, text, term-debug).
+/// Returns the parsed CLI and the output mode extracted from the matches.
+pub fn parse_cli() -> (Cli, OutputMode) {
+    let outstanding = Outstanding::with_registry(HELP_TOPICS.clone());
+    let matches = outstanding.run_with(Cli::command());
+
+    // Extract output mode from the matches (outstanding-clap adds this as _output_mode)
+    let output_mode = match matches
+        .get_one::<String>("_output_mode")
+        .map(|s| s.as_str())
+    {
+        Some("term") => OutputMode::Term,
+        Some("text") => OutputMode::Text,
+        Some("term-debug") => OutputMode::TermDebug,
+        _ => OutputMode::Auto,
+    };
+
+    let cli = Cli::from_arg_matches(&matches).expect("Failed to parse CLI arguments");
+    (cli, output_mode)
 }
 
 /// Returns the help output as a styled string (used for empty list display).

@@ -1,21 +1,17 @@
 //! # Rendering Module
 //!
-//! This module provides styled terminal output using the `outstanding` crate.
-//! Templates are defined here and rendered with automatic terminal color detection.
+//! This module provides styled terminal output using the `outstanding` crate.   The core padzpp api
+//! will return regulat result adata objects, and the CLI layer will do the rendering.
 //!
-//! ## Design Philosophy
+//! Redenring is mostly template based with , using minijinja templates, and using stylesheet's for
+//! controling formatted term output.  See the syles (crate::cli::styles) and templates (crate::cli::templates)
+//! modules for the specifics and best practices of each.
 //!
-//! Layout calculations (width, truncation, padding) stay in Rust because they require
-//! Unicode-aware processing. Templates handle presentation concerns:
-//! - Style selection based on semantic flags (is_pinned, is_deleted, etc.)
-//! - Section separators and grouping
-//! - Conditional icon rendering
-
 use super::setup::get_grouped_help;
 use super::styles::{names, PADZ_THEME};
 use super::templates::{FULL_PAD_TEMPLATE, LIST_TEMPLATE, MESSAGES_TEMPLATE, TEXT_LIST_TEMPLATE};
 use chrono::{DateTime, Utc};
-use outstanding::{render, render_with_color, truncate_to_width, ThemeChoice};
+use outstanding::{render, render_with_output, truncate_to_width, OutputMode, ThemeChoice};
 use padzapp::api::{CmdMessage, MessageLevel, TodoStatus};
 use padzapp::index::{DisplayIndex, DisplayPad};
 use padzapp::peek::{format_as_peek, PeekResult};
@@ -28,9 +24,9 @@ pub const TIME_WIDTH: usize = 14;
 pub const PIN_MARKER: &str = "⚲";
 
 /// Status indicators for todo status
-pub const STATUS_PLANNED: &str = "○";
-pub const STATUS_IN_PROGRESS: &str = "⊙";
-pub const STATUS_DONE: &str = "●";
+pub const STATUS_PLANNED: &str = "⚪︎";
+pub const STATUS_IN_PROGRESS: &str = "☉︎︎";
+pub const STATUS_DONE: &str = "⚫︎";
 
 #[derive(Serialize)]
 struct MatchSegmentData {
@@ -115,18 +111,18 @@ struct MessagesData {
 }
 
 /// Renders a list of pads to a string.
-pub fn render_pad_list(pads: &[DisplayPad], peek: bool) -> String {
-    render_pad_list_internal(pads, None, false, peek)
+pub fn render_pad_list(pads: &[DisplayPad], peek: bool, output_mode: OutputMode) -> String {
+    render_pad_list_internal(pads, Some(output_mode), false, peek)
 }
 
 /// Renders a list of pads with optional deleted help text.
-pub fn render_pad_list_deleted(pads: &[DisplayPad], peek: bool) -> String {
-    render_pad_list_internal(pads, None, true, peek)
+pub fn render_pad_list_deleted(pads: &[DisplayPad], peek: bool, output_mode: OutputMode) -> String {
+    render_pad_list_internal(pads, Some(output_mode), true, peek)
 }
 
 fn render_pad_list_internal(
     pads: &[DisplayPad],
-    use_color: Option<bool>,
+    output_mode: Option<OutputMode>,
     show_deleted_help: bool,
     peek: bool,
 ) -> String {
@@ -140,12 +136,12 @@ fn render_pad_list_internal(
     };
 
     if pads.is_empty() {
-        return match use_color {
-            Some(c) => render_with_color(
+        return match output_mode {
+            Some(mode) => render_with_output(
                 LIST_TEMPLATE,
                 &empty_data,
                 ThemeChoice::from(&*PADZ_THEME),
-                c,
+                mode,
             ),
             None => render(LIST_TEMPLATE, &empty_data, ThemeChoice::from(&*PADZ_THEME)),
         }
@@ -344,8 +340,10 @@ fn render_pad_list_internal(
         peek,
     };
 
-    match use_color {
-        Some(c) => render_with_color(LIST_TEMPLATE, &data, ThemeChoice::from(&*PADZ_THEME), c),
+    match output_mode {
+        Some(mode) => {
+            render_with_output(LIST_TEMPLATE, &data, ThemeChoice::from(&*PADZ_THEME), mode)
+        }
         None => render(LIST_TEMPLATE, &data, ThemeChoice::from(&*PADZ_THEME)),
     }
     .unwrap_or_else(|e| format!("Render error: {}\n", e))
@@ -384,11 +382,11 @@ fn truncate_match_segments(
 }
 
 /// Renders full pad contents similar to the legacy `print_full_pads` output.
-pub fn render_full_pads(pads: &[DisplayPad]) -> String {
-    render_full_pads_internal(pads, None)
+pub fn render_full_pads(pads: &[DisplayPad], output_mode: OutputMode) -> String {
+    render_full_pads_internal(pads, Some(output_mode))
 }
 
-fn render_full_pads_internal(pads: &[DisplayPad], use_color: Option<bool>) -> String {
+fn render_full_pads_internal(pads: &[DisplayPad], output_mode: Option<OutputMode>) -> String {
     let entries = pads
         .iter()
         .map(|dp| {
@@ -407,33 +405,38 @@ fn render_full_pads_internal(pads: &[DisplayPad], use_color: Option<bool>) -> St
 
     let data = FullPadData { pads: entries };
 
-    match use_color {
-        Some(c) => render_with_color(FULL_PAD_TEMPLATE, &data, ThemeChoice::from(&*PADZ_THEME), c),
+    match output_mode {
+        Some(mode) => render_with_output(
+            FULL_PAD_TEMPLATE,
+            &data,
+            ThemeChoice::from(&*PADZ_THEME),
+            mode,
+        ),
         None => render(FULL_PAD_TEMPLATE, &data, ThemeChoice::from(&*PADZ_THEME)),
     }
     .unwrap_or_else(|e| format!("Render error: {}\n", e))
 }
 
-pub fn render_text_list(lines: &[String], empty_message: &str) -> String {
-    render_text_list_internal(lines, empty_message, None)
+pub fn render_text_list(lines: &[String], empty_message: &str, output_mode: OutputMode) -> String {
+    render_text_list_internal(lines, empty_message, Some(output_mode))
 }
 
 fn render_text_list_internal(
     lines: &[String],
     empty_message: &str,
-    use_color: Option<bool>,
+    output_mode: Option<OutputMode>,
 ) -> String {
     let data = TextListData {
         lines: lines.to_vec(),
         empty_message: empty_message.to_string(),
     };
 
-    match use_color {
-        Some(c) => render_with_color(
+    match output_mode {
+        Some(mode) => render_with_output(
             TEXT_LIST_TEMPLATE,
             &data,
             ThemeChoice::from(&*PADZ_THEME),
-            c,
+            mode,
         ),
         None => render(TEXT_LIST_TEMPLATE, &data, ThemeChoice::from(&*PADZ_THEME)),
     }
@@ -535,7 +538,7 @@ mod tests {
 
     #[test]
     fn test_render_empty_list() {
-        let output = render_pad_list_internal(&[], Some(false), false, false);
+        let output = render_pad_list_internal(&[], Some(OutputMode::Text), false, false);
         // Should show the "no pads yet" message with help text
         assert!(output.contains("No pads yet, create one with `padz create`"));
     }
@@ -545,14 +548,15 @@ mod tests {
         let pad = make_pad("Test Note", false, false);
         let dp = make_display_pad(pad, DisplayIndex::Regular(1));
 
-        let output = render_pad_list_internal(&[dp], Some(false), false, false);
+        let output = render_pad_list_internal(&[dp], Some(OutputMode::Text), false, false);
 
         // Should contain status icon, space-padded index and title
         assert!(output.contains(STATUS_PLANNED)); // Default status is Planned
         assert!(output.contains(" 1."));
         assert!(output.contains("Test Note"));
-        // Should have status icon at start, then base padding, then index
-        assert!(output.contains(&format!("{}    1.", STATUS_PLANNED)));
+        // Should have base padding, then status icon, then index
+        assert!(output.contains(&format!("{} ", STATUS_PLANNED)));
+        assert!(output.contains(&format!("{} {}.", STATUS_PLANNED, " 1")));
     }
 
     #[test]
@@ -560,7 +564,7 @@ mod tests {
         let pad = make_pad("Pinned Note", true, false);
         let dp = make_display_pad(pad, DisplayIndex::Pinned(1));
 
-        let output = render_pad_list_internal(&[dp], Some(false), false, false);
+        let output = render_pad_list_internal(&[dp], Some(OutputMode::Text), false, false);
 
         // Should contain pinned index
         assert!(output.contains("p1."));
@@ -574,7 +578,7 @@ mod tests {
         let pad = make_pad("Deleted Note", false, true);
         let dp = make_display_pad(pad, DisplayIndex::Deleted(1));
 
-        let output = render_pad_list_internal(&[dp], Some(false), false, false);
+        let output = render_pad_list_internal(&[dp], Some(OutputMode::Text), false, false);
 
         // Should contain deleted index
         assert!(output.contains("d1."));
@@ -592,7 +596,7 @@ mod tests {
             make_display_pad(pinned, DisplayIndex::Regular(2)),
         ];
 
-        let output = render_pad_list_internal(&pads, Some(false), false, false);
+        let output = render_pad_list_internal(&pads, Some(OutputMode::Text), false, false);
 
         // Should have pinned section with marker
         assert!(output.contains("p1."));
@@ -611,7 +615,7 @@ mod tests {
 
         let dp = make_display_pad(pad, DisplayIndex::Regular(1));
 
-        let output = render_pad_list_internal(&[dp], Some(false), false, false);
+        let output = render_pad_list_internal(&[dp], Some(OutputMode::Text), false, false);
 
         // Should have pin marker on the right side
         assert!(output.contains(PIN_MARKER));
@@ -623,7 +627,7 @@ mod tests {
         let dp = make_display_pad(pad, DisplayIndex::Regular(1));
 
         // Force styling for test environment
-        let output = render_pad_list_internal(&[dp], Some(true), false, false);
+        let output = render_pad_list_internal(&[dp], Some(OutputMode::Term), false, false);
 
         // When use_color is true, should include ANSI codes (at least for time which is dimmed)
         // Note: console crate may not emit codes in test env, so we just verify it runs
@@ -646,7 +650,7 @@ mod tests {
             ],
         }]);
 
-        let output = render_pad_list_internal(&[dp], Some(false), false, false);
+        let output = render_pad_list_internal(&[dp], Some(OutputMode::Text), false, false);
 
         assert!(output.contains("1."));
         assert!(output.contains("Search Result"));
@@ -656,7 +660,7 @@ mod tests {
 
     #[test]
     fn test_render_full_pads_empty() {
-        let output = render_full_pads_internal(&[], Some(false));
+        let output = render_full_pads_internal(&[], Some(OutputMode::Text));
         assert!(output.contains("No pads found."));
     }
 
@@ -665,7 +669,7 @@ mod tests {
         let pad = make_pad("Full Pad", false, false);
         let dp = make_display_pad(pad, DisplayIndex::Regular(3));
 
-        let output = render_full_pads_internal(&[dp], Some(false));
+        let output = render_full_pads_internal(&[dp], Some(OutputMode::Text));
 
         assert!(output.contains("3 Full Pad"));
         assert!(output.contains("some content"));
@@ -692,14 +696,14 @@ mod tests {
 
     #[test]
     fn test_render_text_list_empty() {
-        let output = render_text_list_internal(&[], "Nothing here.", Some(false));
+        let output = render_text_list_internal(&[], "Nothing here.", Some(OutputMode::Text));
         assert!(output.contains("Nothing here."));
     }
 
     #[test]
     fn test_render_text_list_lines() {
         let lines = vec!["first".to_string(), "second".to_string()];
-        let output = render_text_list_internal(&lines, "", Some(false));
+        let output = render_text_list_internal(&lines, "", Some(OutputMode::Text));
         assert!(output.contains("first"));
         assert!(output.contains("second"));
     }
