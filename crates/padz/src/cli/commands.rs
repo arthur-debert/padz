@@ -128,6 +128,7 @@ pub fn run() -> Result<()> {
             PadCommands::Path { indexes } => handle_paths(&mut ctx, indexes),
             PadCommands::Complete { indexes } => handle_complete(&mut ctx, indexes),
             PadCommands::Reopen { indexes } => handle_reopen(&mut ctx, indexes),
+            PadCommands::Move { indexes, root } => handle_move(&mut ctx, indexes, root),
         },
         Some(Commands::Data(cmd)) => match cmd {
             DataCommands::Purge {
@@ -373,6 +374,30 @@ fn handle_unpin(ctx: &mut AppContext, indexes: Vec<String>) -> Result<()> {
 
 fn handle_complete(ctx: &mut AppContext, indexes: Vec<String>) -> Result<()> {
     let result = ctx.api.complete_pads(ctx.scope, &indexes)?;
+    print_messages(&result.messages);
+    Ok(())
+}
+
+fn handle_move(ctx: &mut AppContext, mut indexes: Vec<String>, root: bool) -> Result<()> {
+    let destination = if root {
+        // If moving to root, all indexes are sources
+        None
+    } else {
+        // Otherwise, last index is destination
+        if indexes.len() < 2 {
+            // Need at least source and dest
+            // Actually, if indexes.len() == 1 and user expects "move 1 to root" they must use --root
+            // We should clarify this in error message
+            return Err(padzapp::error::PadzError::Api(
+                "Missing destination. Use `padz move <SOURCE>... <DEST>` or `padz move <SOURCE>... --root`".to_string()
+            ));
+        }
+        Some(indexes.pop().unwrap())
+    };
+
+    let result = ctx
+        .api
+        .move_pads(ctx.scope, &indexes, destination.as_deref())?;
     print_messages(&result.messages);
     Ok(())
 }
