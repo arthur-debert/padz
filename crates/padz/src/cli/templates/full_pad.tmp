@@ -1,13 +1,33 @@
-{% if pads | length == 0 %}{{ "No pads found." | style("muted") }}
+{#- Full pad view template -#}
+{#- Shows complete pad content with index, title, and body -#}
+
+{% if pads | length == 0 -%}
+{{- "No pads found." | style("muted") }}
 {% else -%}
 {% for pad in pads -%}
+
+{#- Separator between pads (not before first) -#}
 {%- if not loop.first %}
 
 {{ " " | style("faint") }}
 
 {% endif -%}
-{% if pad.is_pinned %}{{ pad.index | style("pinned") }}{% elif pad.is_deleted %}{{ pad.index | style("deleted") }}{% else %}{{ pad.index | style("regular") }}{% endif %} {% if pad.is_deleted %}{{ pad.title | style("deleted") }}{% else %}{{ pad.title | style("title") }}{% endif %}
+
+{#- Determine styles based on pad state -#}
+{%- set index_style = "regular" -%}
+{%- set title_style = "title" -%}
+{%- set content_style = "regular" -%}
+{%- if pad.is_pinned -%}
+  {%- set index_style = "pinned" -%}
+{%- elif pad.is_deleted -%}
+  {%- set index_style = "deleted" -%}
+  {%- set title_style = "deleted" -%}
+  {%- set content_style = "deleted" -%}
+{%- endif -%}
+
+{#- Render header: index + title -#}
+{{- pad.index | style(index_style) }} {{ pad.title | style(title_style) }}
 {{ " " | style("faint") }}
-{% if pad.is_deleted %}{{ pad.content | style("deleted") }}{% else %}{{ pad.content | style("regular") }}{% endif %}
+{{ pad.content | style(content_style) -}}
 {%- endfor %}
 {% endif %}
