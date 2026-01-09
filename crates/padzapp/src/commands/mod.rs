@@ -77,6 +77,7 @@ pub mod get;
 pub mod helpers;
 pub mod import;
 pub mod init;
+pub mod move_pads;
 
 pub mod paths;
 pub mod pinning;

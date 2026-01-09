@@ -176,6 +176,25 @@ impl<S: DataStore> PadzApi<S> {
         commands::update::run(&mut self.store, scope, updates)
     }
 
+    pub fn move_pads<I: AsRef<str>>(
+        &mut self,
+        scope: Scope,
+        indexes: &[I],
+        to_parent: Option<&str>,
+    ) -> Result<commands::CmdResult> {
+        let selectors = parse_selectors(indexes)?;
+        let parent_selector = if let Some(p) = to_parent {
+            if p.trim().is_empty() {
+                None // Empty string means move to root
+            } else {
+                Some(parse_index_or_range(p).map_err(PadzError::Api)?)
+            }
+        } else {
+            None
+        };
+        commands::move_pads::run(&mut self.store, scope, &selectors, parent_selector.as_ref())
+    }
+
     /// Returns a preview of what would be purged without actually deleting.
     /// Use this to show a confirmation prompt before calling `purge_pads`.
     pub fn preview_purge<I: AsRef<str>>(
@@ -745,5 +764,73 @@ mod tests {
             }
             _ => panic!("Expected PadSelector::Range"),
         }
+    }
+
+    #[test]
+    fn test_api_move_pads() {
+        let mut api = make_api();
+        // Create A (2 - Oldest)
+        api.create_pad(Scope::Project, "A".into(), "".into(), None)
+            .unwrap();
+
+        // Ensure timestamp difference
+        std::thread::sleep(std::time::Duration::from_millis(10));
+
+        // Create B (1 - Newest)
+        api.create_pad(Scope::Project, "B".into(), "".into(), None)
+            .unwrap();
+
+        // Move B (1) to A (2)
+        let result = api.move_pads(Scope::Project, &["1"], Some("2")).unwrap();
+
+        assert_eq!(result.messages.len(), 1);
+        assert!(result.messages[0].content.contains("Moved 'B' to A"));
+
+        // Verify hierarchy
+        let pads = api
+            .get_pads(Scope::Project, PadFilter::default())
+            .unwrap()
+            .listed_pads;
+        let pad_a = pads.iter().find(|p| p.pad.metadata.title == "A").unwrap();
+        assert_eq!(pad_a.children.len(), 1);
+        assert_eq!(pad_a.children[0].pad.metadata.title, "B");
+    }
+
+    #[test]
+    fn test_api_move_pads_to_root() {
+        let mut api = make_api();
+        // Create Parent
+        api.create_pad(Scope::Project, "Parent".into(), "".into(), None)
+            .unwrap();
+        // Create Child
+        api.create_pad(Scope::Project, "Child".into(), "".into(), Some("1"))
+            .unwrap();
+
+        // Move Child (1.1) to Root
+        let result = api.move_pads(Scope::Project, &["1.1"], None).unwrap();
+        assert_eq!(result.messages.len(), 1);
+
+        // Verify Child is now root
+        let pads = api
+            .get_pads(Scope::Project, PadFilter::default())
+            .unwrap()
+            .listed_pads;
+        let child = pads
+            .iter()
+            .find(|p| p.pad.metadata.title == "Child")
+            .unwrap();
+        assert!(child.pad.metadata.parent_id.is_none());
+    }
+
+    #[test]
+    fn test_api_move_pads_cycle_error() {
+        let mut api = make_api();
+        api.create_pad(Scope::Project, "A".into(), "".into(), None)
+            .unwrap();
+
+        // Move 1 to 1 should fail
+        let result = api.move_pads(Scope::Project, &["1"], Some("1"));
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("into itself"));
     }
 }
