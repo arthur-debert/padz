@@ -1,0 +1,30 @@
+{#- Single pad line rendering -#}
+{#- Expects: pad (PadLineData), pin_marker, peek (bool) -#}
+{#-
+  NOTE: status_icon uses "time" style - this is a semantic mismatch
+  that should be fixed in the style refactor step (Step 3).
+-#}
+
+{#- Determine index style based on section type -#}
+{%- set index_style = "list-index" -%}
+{%- if pad.is_pinned_section -%}
+  {%- set index_style = "pinned" -%}
+{%- elif pad.is_deleted -%}
+  {%- set index_style = "deleted-index" -%}
+{%- endif -%}
+
+{#- Determine title style based on state -#}
+{%- set title_style = "list-title" -%}
+{%- if pad.is_deleted -%}
+  {%- set title_style = "deleted-title" -%}
+{%- elif peek -%}
+  {%- set title_style = "title" -%}
+{%- endif -%}
+
+{#- Render the pad line -#}
+{{- pad.left_pad -}}
+{%- if pad.show_left_pin %}{{ pin_marker | style("pinned") }} {% endif -%}
+{{- pad.status_icon | style("time") }} {{ pad.index | style(index_style) -}}
+{{- pad.title | style(title_style) }}{{ pad.padding -}}
+{%- if pad.show_right_pin %}{{ pin_marker | style("pinned") }} {% else %}  {% endif -%}
+{{- pad.time_ago | style("time") | nl -}}

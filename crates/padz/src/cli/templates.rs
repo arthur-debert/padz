@@ -65,3 +65,4 @@ pub const MESSAGES_TEMPLATE: &str = include_str!("templates/messages.tmp");
 pub const DELETED_HELP_PARTIAL: &str = include_str!("templates/_deleted_help.tmp");
 pub const PEEK_CONTENT_PARTIAL: &str = include_str!("templates/_peek_content.tmp");
 pub const MATCH_LINES_PARTIAL: &str = include_str!("templates/_match_lines.tmp");
+pub const PAD_LINE_PARTIAL: &str = include_str!("templates/_pad_line.tmp");

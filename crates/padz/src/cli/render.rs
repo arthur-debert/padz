@@ -11,7 +11,7 @@ use super::setup::get_grouped_help;
 use super::styles::{get_resolved_theme, names};
 use super::templates::{
     DELETED_HELP_PARTIAL, FULL_PAD_TEMPLATE, LIST_TEMPLATE, MATCH_LINES_PARTIAL, MESSAGES_TEMPLATE,
-    PEEK_CONTENT_PARTIAL, TEXT_LIST_TEMPLATE,
+    PAD_LINE_PARTIAL, PEEK_CONTENT_PARTIAL, TEXT_LIST_TEMPLATE,
 };
 use chrono::{DateTime, Utc};
 use outstanding::{truncate_to_width, OutputMode, Renderer};
@@ -54,6 +54,9 @@ fn create_renderer(output_mode: OutputMode) -> Renderer {
     renderer
         .add_template("_match_lines", MATCH_LINES_PARTIAL)
         .expect("Failed to register _match_lines partial");
+    renderer
+        .add_template("_pad_line", PAD_LINE_PARTIAL)
+        .expect("Failed to register _pad_line partial");
 
     renderer
 }
