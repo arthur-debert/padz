@@ -268,6 +268,19 @@ pub enum PadCommands {
         indexes: Vec<String>,
     },
 
+    /// Move one or more pads to a new parent
+    #[command(alias = "mv", display_order = 13)]
+    Move {
+        /// Indexes of the pads (e.g. 1 2)
+        /// If --root is NOT specified, the last argument is the destination.
+        #[arg(required = true, num_args = 1.., add = active_pads_completer())]
+        indexes: Vec<String>,
+
+        /// Move to the root level (detach from any parent)
+        #[arg(long, short = 'r')]
+        root: bool,
+    },
+
     /// Print the file path to one or more pads
     #[command(display_order = 17)]
     Path {
