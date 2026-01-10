@@ -496,12 +496,29 @@ fn render_text_list_internal(
     empty_message: &str,
     output_mode: Option<OutputMode>,
 ) -> String {
+    let mode = output_mode.unwrap_or(OutputMode::Auto);
+
+    // For JSON mode, serialize the lines directly
+    if mode == OutputMode::Json {
+        let json_data = TextListData {
+            lines: lines.to_vec(),
+            empty_message: empty_message.to_string(),
+        };
+        let theme = get_resolved_theme();
+        return render_or_serialize(
+            "", // Template not used for JSON
+            &json_data,
+            ThemeChoice::from(&theme),
+            mode,
+        )
+        .unwrap_or_else(|_| "{\"lines\":[]}".to_string());
+    }
+
     let data = TextListData {
         lines: lines.to_vec(),
         empty_message: empty_message.to_string(),
     };
 
-    let mode = output_mode.unwrap_or(OutputMode::Auto);
     let renderer = create_renderer(mode);
     renderer
         .render("text_list", &data)
