@@ -195,27 +195,19 @@ impl<S: DataStore> PadzApi<S> {
         commands::move_pads::run(&mut self.store, scope, &selectors, parent_selector.as_ref())
     }
 
-    /// Returns a preview of what would be purged without actually deleting.
-    /// Use this to show a confirmation prompt before calling `purge_pads`.
-    pub fn preview_purge<I: AsRef<str>>(
-        &self,
-        scope: Scope,
-        indexes: &[I],
-        recursive: bool,
-    ) -> Result<commands::purge::PurgePreview> {
-        let selectors = parse_selectors(indexes)?;
-        commands::purge::preview(&self.store, scope, &selectors, recursive)
-    }
-
-    /// Permanently deletes pads. Call `preview_purge` first to show confirmation.
+    /// Permanently deletes pads.
+    ///
+    /// **Confirmation required**: The `confirmed` parameter must be `true` to proceed.
+    /// If `false`, returns an error with a message instructing to use `--yes` or `-y`.
     pub fn purge_pads<I: AsRef<str>>(
         &mut self,
         scope: Scope,
         indexes: &[I],
         recursive: bool,
+        confirmed: bool,
     ) -> Result<commands::CmdResult> {
         let selectors = parse_selectors(indexes)?;
-        commands::purge::run(&mut self.store, scope, &selectors, recursive)
+        commands::purge::run(&mut self.store, scope, &selectors, recursive, confirmed)
     }
 
     pub fn restore_pads<I: AsRef<str>>(
@@ -582,26 +574,14 @@ mod tests {
     }
 
     #[test]
-    fn test_api_preview_purge() {
+    fn test_api_purge_pads_confirmed() {
         let mut api = make_api();
         api.create_pad(Scope::Project, "Test".into(), "".into(), None)
             .unwrap();
         api.delete_pads(Scope::Project, &["1"]).unwrap();
 
-        let preview = api.preview_purge(Scope::Project, &["d1"], false).unwrap();
-
-        assert_eq!(preview.targets.len(), 1);
-    }
-
-    #[test]
-    fn test_api_purge_pads() {
-        let mut api = make_api();
-        api.create_pad(Scope::Project, "Test".into(), "".into(), None)
-            .unwrap();
-        api.delete_pads(Scope::Project, &["1"]).unwrap();
-
-        // Purge should succeed
-        let result = api.purge_pads(Scope::Project, &["d1"], false);
+        // Purge with confirmed=true should succeed
+        let result = api.purge_pads(Scope::Project, &["d1"], false, true);
         assert!(result.is_ok());
 
         // Verify it's gone from the store
@@ -616,6 +596,33 @@ mod tests {
             )
             .unwrap();
         assert_eq!(list.listed_pads.len(), 0);
+    }
+
+    #[test]
+    fn test_api_purge_pads_not_confirmed() {
+        let mut api = make_api();
+        api.create_pad(Scope::Project, "Test".into(), "".into(), None)
+            .unwrap();
+        api.delete_pads(Scope::Project, &["1"]).unwrap();
+
+        // Purge with confirmed=false should fail
+        let result = api.purge_pads(Scope::Project, &["d1"], false, false);
+        assert!(result.is_err());
+        let err = result.unwrap_err();
+        assert!(err.to_string().contains("Aborted"));
+
+        // Verify pad is still there
+        let list = api
+            .get_pads(
+                Scope::Project,
+                PadFilter {
+                    status: PadStatusFilter::Deleted,
+                    search_term: None,
+                    todo_status: None,
+                },
+            )
+            .unwrap();
+        assert_eq!(list.listed_pads.len(), 1);
     }
 
     #[test]

@@ -440,40 +440,9 @@ fn handle_purge(
     yes: bool,
     recursive: bool,
 ) -> Result<()> {
-    use std::io::{self, Write};
-
-    // Get preview of what would be purged
-    let preview = ctx.api.preview_purge(ctx.scope, &indexes, recursive)?;
-
-    if preview.targets.is_empty() {
-        println!("No pads to purge.");
-        return Ok(());
-    }
-
-    // Show confirmation unless --yes is provided
-    if !yes {
-        println!("This will permanently remove the following pads:");
-        for dp in &preview.targets {
-            println!("  {} {}", dp.index, dp.pad.metadata.title);
-        }
-        if preview.descendant_count > 0 {
-            println!("  ... and {} descendant(s)", preview.descendant_count);
-        }
-
-        print!("[Y] To delete: ");
-        io::stdout().flush()?;
-
-        let mut input = String::new();
-        io::stdin().read_line(&mut input)?;
-
-        if input.trim() != "Y" {
-            println!("Operation cancelled.");
-            return Ok(());
-        }
-    }
-
-    // Execute the purge
-    let result = ctx.api.purge_pads(ctx.scope, &indexes, recursive)?;
+    // Pass confirmation flag directly to API
+    // If not confirmed, API returns an error with a message about using --yes/-y
+    let result = ctx.api.purge_pads(ctx.scope, &indexes, recursive, yes)?;
     print_messages(&result.messages, ctx.output_mode);
     Ok(())
 }
