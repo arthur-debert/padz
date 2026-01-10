@@ -511,13 +511,6 @@ fn handle_config(ctx: &mut AppContext, key: Option<String>, value: Option<String
 fn handle_init(ctx: &AppContext) -> Result<()> {
     let result = ctx.api.init(ctx.scope)?;
     print_messages(&result.messages, ctx.output_mode);
-
-    // Show shell completion hint
-    println!();
-    println!("Tip: Enable shell completions for padz:");
-    println!("  eval \"$(padz completions bash)\"  # add to ~/.bashrc");
-    println!("  eval \"$(padz completions zsh)\"   # add to ~/.zshrc");
-
     Ok(())
 }
 
