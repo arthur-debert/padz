@@ -50,22 +50,46 @@
 //! well in light and dark terminals, so `PADZ_THEME` exposes an adaptive theme
 //! that resolves to the appropriate palette at runtime.
 //!
-//! The shared style tokens are:
+//! ## Style Reference
 //!
-//!     * Regular text (neutral foreground that matches the theme background)
-//!     * Muted text (used for metadata such as timestamps)
-//!     * Faint text (section separators, subtle hints)
-//!     * Highlighted text (black on a yellow background for emphasis)
-//!     * Pinned elements (yellow accents for icons and indexes)
-//!     * Deleted entries (red foreground for both themes)
-//!     * Error and warning styles (red / yellow respectively)
-//!     * Title text (regular color with added weight)
-//!     * Time text (muted + italic)
+//! The following table shows all styles with their three-layer mapping:
 //!
-//! Deleted pads should always render with the `deleted` style, pinned icons use
-//! the `pinned` style (icon only), and any time strings go through the `time`
-//! style. All of the styles are registered once through
-//! `once_cell::sync::Lazy`.
+//! | Semantic Name     | Presentation | Light Visual                | Dark Visual                 |
+//! |-------------------|--------------|-----------------------------|-----------------------------|
+//! | `status-icon`     | time         | gray #737373 italic         | gray #B4B4B4 italic         |
+//! | `time`            | time         | gray #737373 italic         | gray #B4B4B4 italic         |
+//! | `section-header`  | muted        | gray #737373                | gray #B4B4B4                |
+//! | `help-text`       | faint        | light gray #ADADAD          | dark gray #6E6E6E           |
+//! | `empty-message`   | muted        | gray #737373                | gray #B4B4B4                |
+//! | `preview`         | faint        | light gray #ADADAD          | dark gray #6E6E6E           |
+//! | `truncation`      | muted        | gray #737373                | gray #B4B4B4                |
+//! | `line-number`     | muted        | gray #737373                | gray #B4B4B4                |
+//! | `separator`       | faint        | light gray #ADADAD          | dark gray #6E6E6E           |
+//! | `list-index`      | —            | gold #C48C00                | yellow #FFD60A              |
+//! | `list-title`      | regular      | black                       | white                       |
+//! | `deleted-index`   | deleted      | red #BA212D                 | salmon #FF8A80              |
+//! | `deleted-title`   | muted        | gray #737373                | gray #B4B4B4                |
+//! | `pinned`          | —            | gold #C48C00 bold           | yellow #FFD60A bold         |
+//! | `title`           | regular+bold | black bold                  | white bold                  |
+//! | `regular`         | —            | black                       | white                       |
+//! | `muted`           | —            | gray #737373                | gray #B4B4B4                |
+//! | `faint`           | —            | light gray #ADADAD          | dark gray #6E6E6E           |
+//! | `highlight`       | —            | black on yellow #FFEB3B     | black on gold #E5B900       |
+//! | `deleted`         | —            | red #BA212D                 | salmon #FF8A80              |
+//! | `error`           | —            | red bold                    | red bold                    |
+//! | `warning`         | —            | yellow bold                 | yellow bold                 |
+//! | `success`         | —            | green                       | green                       |
+//! | `info`            | muted        | gray #737373                | gray #B4B4B4                |
+//!
+//! ### Help Command Styles
+//!
+//! | Semantic Name  | Presentation | Light Visual           | Dark Visual            |
+//! |----------------|--------------|------------------------|------------------------|
+//! | `help-header`  | regular+bold | black bold             | white bold             |
+//! | `help-section` | —            | gold #C48C00 bold      | yellow #FFD60A bold    |
+//! | `help-command` | —            | green #008000          | light green #90EE90    |
+//! | `help-desc`    | muted        | gray #737373           | gray #B4B4B4           |
+//! | `help-usage`   | —            | cyan                   | cyan                   |
 //!
 //! ## Debugging Styled Output
 //!
@@ -113,6 +137,15 @@ pub mod names {
     pub const HELP_COMMAND: &str = "help-command";
     pub const HELP_DESC: &str = "help-desc";
     pub const HELP_USAGE: &str = "help-usage";
+    // Semantic styles for template content
+    pub const STATUS_ICON: &str = "status-icon";
+    pub const HELP_TEXT: &str = "help-text";
+    pub const SECTION_HEADER: &str = "section-header";
+    pub const EMPTY_MESSAGE: &str = "empty-message";
+    pub const PREVIEW: &str = "preview";
+    pub const TRUNCATION: &str = "truncation";
+    pub const LINE_NUMBER: &str = "line-number";
+    pub const SEPARATOR: &str = "separator";
 }
 
 /// The adaptive theme for padz, containing both light and dark variants.
@@ -156,6 +189,15 @@ fn build_light_theme() -> Theme {
     let help_command = Style::new().color256(rgb_to_ansi256((0, 128, 0)));
     let help_desc = muted.clone();
     let help_usage = Style::new().cyan();
+    // Semantic styles - map to presentation styles
+    let status_icon = time.clone(); // Same as time (muted+italic)
+    let help_text = faint.clone(); // Same as faint
+    let section_header = muted.clone(); // Same as muted
+    let empty_message = muted.clone(); // Same as muted
+    let preview = faint.clone(); // Same as faint
+    let truncation = muted.clone(); // Same as muted
+    let line_number = muted.clone(); // Same as muted
+    let separator = faint.clone(); // Same as faint
 
     Theme::new()
         .add(names::REGULAR, regular)
@@ -179,6 +221,14 @@ fn build_light_theme() -> Theme {
         .add(names::HELP_COMMAND, help_command)
         .add(names::HELP_DESC, help_desc)
         .add(names::HELP_USAGE, help_usage)
+        .add(names::STATUS_ICON, status_icon)
+        .add(names::HELP_TEXT, help_text)
+        .add(names::SECTION_HEADER, section_header)
+        .add(names::EMPTY_MESSAGE, empty_message)
+        .add(names::PREVIEW, preview)
+        .add(names::TRUNCATION, truncation)
+        .add(names::LINE_NUMBER, line_number)
+        .add(names::SEPARATOR, separator)
 }
 
 fn build_dark_theme() -> Theme {
@@ -207,6 +257,15 @@ fn build_dark_theme() -> Theme {
     let help_command = Style::new().color256(rgb_to_ansi256((144, 238, 144)));
     let help_desc = muted.clone();
     let help_usage = Style::new().cyan();
+    // Semantic styles - map to presentation styles
+    let status_icon = time.clone(); // Same as time (muted+italic)
+    let help_text = faint.clone(); // Same as faint
+    let section_header = muted.clone(); // Same as muted
+    let empty_message = muted.clone(); // Same as muted
+    let preview = faint.clone(); // Same as faint
+    let truncation = muted.clone(); // Same as muted
+    let line_number = muted.clone(); // Same as muted
+    let separator = faint.clone(); // Same as faint
 
     Theme::new()
         .add(names::REGULAR, regular)
@@ -230,4 +289,12 @@ fn build_dark_theme() -> Theme {
         .add(names::HELP_COMMAND, help_command)
         .add(names::HELP_DESC, help_desc)
         .add(names::HELP_USAGE, help_usage)
+        .add(names::STATUS_ICON, status_icon)
+        .add(names::HELP_TEXT, help_text)
+        .add(names::SECTION_HEADER, section_header)
+        .add(names::EMPTY_MESSAGE, empty_message)
+        .add(names::PREVIEW, preview)
+        .add(names::TRUNCATION, truncation)
+        .add(names::LINE_NUMBER, line_number)
+        .add(names::SEPARATOR, separator)
 }
