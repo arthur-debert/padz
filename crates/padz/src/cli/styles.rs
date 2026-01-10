@@ -113,6 +113,8 @@ pub mod names {
     pub const HELP_COMMAND: &str = "help-command";
     pub const HELP_DESC: &str = "help-desc";
     pub const HELP_USAGE: &str = "help-usage";
+    // Status icon style
+    pub const STATUS_ICON: &str = "status-icon";
 }
 
 /// The adaptive theme for padz, containing both light and dark variants.
@@ -156,6 +158,7 @@ fn build_light_theme() -> Theme {
     let help_command = Style::new().color256(rgb_to_ansi256((0, 128, 0)));
     let help_desc = muted.clone();
     let help_usage = Style::new().cyan();
+    let status_icon = muted.clone();
 
     Theme::new()
         .add(names::REGULAR, regular)
@@ -179,6 +182,7 @@ fn build_light_theme() -> Theme {
         .add(names::HELP_COMMAND, help_command)
         .add(names::HELP_DESC, help_desc)
         .add(names::HELP_USAGE, help_usage)
+        .add(names::STATUS_ICON, status_icon)
 }
 
 fn build_dark_theme() -> Theme {
@@ -207,6 +211,7 @@ fn build_dark_theme() -> Theme {
     let help_command = Style::new().color256(rgb_to_ansi256((144, 238, 144)));
     let help_desc = muted.clone();
     let help_usage = Style::new().cyan();
+    let status_icon = muted.clone();
 
     Theme::new()
         .add(names::REGULAR, regular)
@@ -230,4 +235,5 @@ fn build_dark_theme() -> Theme {
         .add(names::HELP_COMMAND, help_command)
         .add(names::HELP_DESC, help_desc)
         .add(names::HELP_USAGE, help_usage)
+        .add(names::STATUS_ICON, status_icon)
 }
