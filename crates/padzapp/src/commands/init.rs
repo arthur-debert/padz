@@ -11,5 +11,18 @@ pub fn run(paths: &PadzPaths, scope: Scope) -> Result<CmdResult> {
         "Initialized padz store at {}",
         dir.display()
     )));
+
+    // Add shell completion hint
+    result.add_message(CmdMessage::info(String::new())); // blank line
+    result.add_message(CmdMessage::info(
+        "Tip: Enable shell completions for padz:".to_string(),
+    ));
+    result.add_message(CmdMessage::info(
+        "  eval \"$(padz completions bash)\"  # add to ~/.bashrc".to_string(),
+    ));
+    result.add_message(CmdMessage::info(
+        "  eval \"$(padz completions zsh)\"   # add to ~/.zshrc".to_string(),
+    ));
+
     Ok(result)
 }
