@@ -40,6 +40,9 @@ pub fn run<S: DataStore>(
     // Propagate status change to parent (e.g. adding a "Planned" child might revert parent from "Done")
     crate::todos::propagate_status_change(store, scope, pad.metadata.parent_id)?;
 
+    // Get the path for the created pad (for editor integration)
+    let pad_path = store.get_pad_path(&pad.metadata.id, scope)?;
+
     let mut result = CmdResult::default();
     // New pad is always the newest, so it gets index 1
     let display_pad = DisplayPad {
@@ -49,6 +52,7 @@ pub fn run<S: DataStore>(
         children: Vec::new(),
     };
     result.affected_pads.push(display_pad);
+    result.pad_paths.push(pad_path);
     result.add_message(CmdMessage::success(format!(
         "Pad created: {}",
         pad.metadata.title

@@ -1158,9 +1158,9 @@ dependencies = [
 
 [[package]]
 name = "outstanding"
-version = "0.6.0"
+version = "0.7.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "973671899ecc1aab51afcbe2c3dbd5bcb04ebcf5052ca68fb8eced143e123f09"
+checksum = "9c4b82a59cdb2179a410cbaea83126bdc32f933c8f8dba548dc165e44b00401d"
 dependencies = [
  "console",
  "dark-light",
@@ -1174,15 +1174,17 @@ dependencies = [
 
 [[package]]
 name = "outstanding-clap"
-version = "0.6.0"
+version = "0.7.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c0fe01e6db78603a29229777f7b833933cbda463603e30af96dad3b6c32947d8"
+checksum = "413970cdb3262cf9eabcd9be4ccc3c179ac3c283ac43be8ddd9b10a57be5e39a"
 dependencies = [
  "anyhow",
  "clap",
  "console",
  "outstanding",
  "serde",
+ "serde_json",
+ "thiserror 2.0.17",
 ]
 
 [[package]]

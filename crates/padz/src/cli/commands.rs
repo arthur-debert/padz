@@ -171,6 +171,32 @@ fn handle_create(
     no_editor: bool,
     inside: Option<String>,
 ) -> Result<()> {
+    // === Pre-dispatch: Resolve input from stdin/clipboard ===
+    let (final_title, initial_content, should_open_editor) = resolve_create_input(title, no_editor);
+
+    // === Dispatch: Call API ===
+    let title_to_use = final_title.unwrap_or_else(|| "Untitled".to_string());
+    let parent = inside.as_deref();
+    let result = ctx
+        .api
+        .create_pad(ctx.scope, title_to_use, initial_content, parent)?;
+
+    // === Output: Render messages ===
+    print_messages(&result.messages, ctx.output_mode);
+
+    // === Post-dispatch: Editor and clipboard side effects ===
+    if should_open_editor && !result.pad_paths.is_empty() {
+        let path = &result.pad_paths[0];
+        open_in_editor(path)?;
+        copy_pad_to_clipboard(path);
+    }
+
+    Ok(())
+}
+
+/// Pre-dispatch logic for create: resolve title and content from stdin/clipboard.
+/// Returns (title, content, should_open_editor).
+fn resolve_create_input(title: Option<String>, no_editor: bool) -> (Option<String>, String, bool) {
     let mut final_title = title;
     let mut initial_content = String::new();
     let mut should_open_editor = !no_editor;
@@ -178,59 +204,30 @@ fn handle_create(
     // 1. Check for piped input (stdin)
     if !std::io::stdin().is_terminal() {
         let mut buffer = String::new();
-        // Read stdin content
         if std::io::stdin().read_to_string(&mut buffer).is_ok() && !buffer.trim().is_empty() {
-            // If pipe has content, we use it.
-            // If no title was provided in args, we extract it from the content.
             if final_title.is_none() {
                 if let Some((parsed_title, _)) = parse_pad_content(&buffer) {
                     final_title = Some(parsed_title);
                 }
             }
             initial_content = buffer;
-            // Piped input skips the editor by default, as per requirement
-            should_open_editor = false;
+            should_open_editor = false; // Piped input skips editor
         }
     }
 
     // 2. If still no content/title, check clipboard
-    // "In case it's called with no text as the padz content as argument, use the clipboard data as the padz content."
     if final_title.is_none() && initial_content.is_empty() {
         if let Ok(clipboard_content) = get_from_clipboard() {
             if !clipboard_content.trim().is_empty() {
-                // Parse title from clipboard content
                 if let Some((parsed_title, _)) = parse_pad_content(&clipboard_content) {
                     final_title = Some(parsed_title);
                 }
                 initial_content = clipboard_content;
-                // Clipboard creation preserves editor behavior (opens unless --no-editor)
             }
         }
     }
 
-    // Use provided/parsed title or "Untitled" as placeholder
-    let title_to_use = final_title.unwrap_or_else(|| "Untitled".to_string());
-    // Convert Option<String> to Option<&str> for API
-    let parent = inside.as_deref();
-
-    let result = ctx
-        .api
-        .create_pad(ctx.scope, title_to_use, initial_content, parent)?;
-    print_messages(&result.messages, ctx.output_mode);
-
-    // Open editor if requested/appropriate
-    if should_open_editor && !result.affected_pads.is_empty() {
-        let display_pad = &result.affected_pads[0];
-        let path = ctx
-            .api
-            .get_path_by_id(ctx.scope, display_pad.pad.metadata.id)?;
-        open_in_editor(&path)?;
-
-        // Re-read the pad after editing and copy to clipboard
-        copy_pad_to_clipboard(&path);
-    }
-
-    Ok(())
+    (final_title, initial_content, should_open_editor)
 }
 
 fn handle_list(
@@ -304,14 +301,13 @@ fn handle_view(ctx: &mut AppContext, indexes: Vec<String>, peek: bool) -> Result
 }
 
 fn handle_edit(ctx: &mut AppContext, indexes: Vec<String>) -> Result<()> {
+    // === Dispatch: Call API (view returns paths) ===
     let result = ctx.api.view_pads(ctx.scope, &indexes)?;
 
-    for dp in &result.listed_pads {
-        let path = ctx.api.get_path_by_id(ctx.scope, dp.pad.metadata.id)?;
-        open_in_editor(&path)?;
-
-        // Re-read the pad after editing and copy to clipboard
-        copy_pad_to_clipboard(&path);
+    // === Post-dispatch: Editor and clipboard side effects ===
+    for path in &result.pad_paths {
+        open_in_editor(path)?;
+        copy_pad_to_clipboard(path);
     }
 
     Ok(())
