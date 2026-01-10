@@ -14,7 +14,7 @@ use super::templates::{
     PAD_LINE_PARTIAL, PEEK_CONTENT_PARTIAL, TEXT_LIST_TEMPLATE,
 };
 use chrono::{DateTime, Utc};
-use outstanding::{truncate_to_width, OutputMode, Renderer};
+use outstanding::{render_or_serialize, truncate_to_width, OutputMode, Renderer, ThemeChoice};
 use padzapp::api::{CmdMessage, MessageLevel, TodoStatus};
 use padzapp::index::{DisplayIndex, DisplayPad};
 use padzapp::peek::{format_as_peek, PeekResult};
@@ -143,6 +143,13 @@ struct TextListData {
     empty_message: String,
 }
 
+/// JSON-serializable wrapper for pad list output.
+/// Used for --output=json mode to provide machine-readable pad data.
+#[derive(Serialize)]
+struct JsonPadList {
+    pads: Vec<DisplayPad>,
+}
+
 #[derive(Serialize)]
 struct MessageData {
     content: String,
@@ -170,6 +177,23 @@ fn render_pad_list_internal(
     show_deleted_help: bool,
     peek: bool,
 ) -> String {
+    let mode = output_mode.unwrap_or(OutputMode::Auto);
+
+    // For JSON mode, serialize the pads directly
+    if mode == OutputMode::Json {
+        let json_data = JsonPadList {
+            pads: pads.to_vec(),
+        };
+        let theme = get_resolved_theme();
+        return render_or_serialize(
+            "", // Template not used for JSON
+            &json_data,
+            ThemeChoice::from(&theme),
+            mode,
+        )
+        .unwrap_or_else(|_| "{\"pads\":[]}".to_string());
+    }
+
     let empty_data = ListData {
         pads: vec![],
         empty: true,
@@ -180,7 +204,6 @@ fn render_pad_list_internal(
     };
 
     if pads.is_empty() {
-        let mode = output_mode.unwrap_or(OutputMode::Auto);
         let renderer = create_renderer(mode);
         return renderer
             .render("list", &empty_data)
@@ -379,7 +402,6 @@ fn render_pad_list_internal(
         peek,
     };
 
-    let mode = output_mode.unwrap_or(OutputMode::Auto);
     let renderer = create_renderer(mode);
     renderer
         .render("list", &data)
@@ -424,6 +446,23 @@ pub fn render_full_pads(pads: &[DisplayPad], output_mode: OutputMode) -> String 
 }
 
 fn render_full_pads_internal(pads: &[DisplayPad], output_mode: Option<OutputMode>) -> String {
+    let mode = output_mode.unwrap_or(OutputMode::Auto);
+
+    // For JSON mode, serialize the pads directly
+    if mode == OutputMode::Json {
+        let json_data = JsonPadList {
+            pads: pads.to_vec(),
+        };
+        let theme = get_resolved_theme();
+        return render_or_serialize(
+            "", // Template not used for JSON
+            &json_data,
+            ThemeChoice::from(&theme),
+            mode,
+        )
+        .unwrap_or_else(|_| "{\"pads\":[]}".to_string());
+    }
+
     let entries = pads
         .iter()
         .map(|dp| {
@@ -442,7 +481,6 @@ fn render_full_pads_internal(pads: &[DisplayPad], output_mode: Option<OutputMode
 
     let data = FullPadData { pads: entries };
 
-    let mode = output_mode.unwrap_or(OutputMode::Auto);
     let renderer = create_renderer(mode);
     renderer
         .render("full_pad", &data)
@@ -458,24 +496,65 @@ fn render_text_list_internal(
     empty_message: &str,
     output_mode: Option<OutputMode>,
 ) -> String {
+    let mode = output_mode.unwrap_or(OutputMode::Auto);
+
+    // For JSON mode, serialize the lines directly
+    if mode == OutputMode::Json {
+        let json_data = TextListData {
+            lines: lines.to_vec(),
+            empty_message: empty_message.to_string(),
+        };
+        let theme = get_resolved_theme();
+        return render_or_serialize(
+            "", // Template not used for JSON
+            &json_data,
+            ThemeChoice::from(&theme),
+            mode,
+        )
+        .unwrap_or_else(|_| "{\"lines\":[]}".to_string());
+    }
+
     let data = TextListData {
         lines: lines.to_vec(),
         empty_message: empty_message.to_string(),
     };
 
-    let mode = output_mode.unwrap_or(OutputMode::Auto);
     let renderer = create_renderer(mode);
     renderer
         .render("text_list", &data)
         .unwrap_or_else(|_| format!("{}\n", empty_message))
 }
 
+/// JSON-serializable wrapper for command messages.
+/// Used for --output=json mode to provide machine-readable output.
+#[derive(Serialize)]
+struct JsonMessages {
+    messages: Vec<CmdMessage>,
+}
+
 /// Renders command messages using the template system with themed styles.
-pub fn render_messages(messages: &[CmdMessage]) -> String {
+/// Supports JSON output mode for machine-readable output.
+pub fn render_messages(messages: &[CmdMessage], output_mode: OutputMode) -> String {
     if messages.is_empty() {
         return String::new();
     }
 
+    // For JSON mode, serialize the messages directly
+    if output_mode == OutputMode::Json {
+        let json_data = JsonMessages {
+            messages: messages.to_vec(),
+        };
+        let theme = get_resolved_theme();
+        return render_or_serialize(
+            "", // Template not used for JSON
+            &json_data,
+            ThemeChoice::from(&theme),
+            output_mode,
+        )
+        .unwrap_or_else(|_| "{}".to_string());
+    }
+
+    // For terminal modes, use template rendering
     let message_data: Vec<MessageData> = messages
         .iter()
         .map(|msg| {
@@ -496,7 +575,7 @@ pub fn render_messages(messages: &[CmdMessage]) -> String {
         messages: message_data,
     };
 
-    let renderer = create_renderer(OutputMode::Auto);
+    let renderer = create_renderer(output_mode);
     renderer.render("messages", &data).unwrap_or_else(|_| {
         messages
             .iter()
@@ -506,8 +585,9 @@ pub fn render_messages(messages: &[CmdMessage]) -> String {
 }
 
 /// Prints command messages to stdout using the template system.
-pub fn print_messages(messages: &[CmdMessage]) {
-    let output = render_messages(messages);
+/// Supports JSON output mode for machine-readable output.
+pub fn print_messages(messages: &[CmdMessage], output_mode: OutputMode) {
+    let output = render_messages(messages, output_mode);
     if !output.is_empty() {
         print!("{}", output);
     }
@@ -738,14 +818,14 @@ mod tests {
 
     #[test]
     fn test_render_messages_empty() {
-        let output = render_messages(&[]);
+        let output = render_messages(&[], OutputMode::Auto);
         assert!(output.is_empty());
     }
 
     #[test]
     fn test_render_messages_success() {
         let messages = vec![CmdMessage::success("Pad created: Test")];
-        let output = render_messages(&messages);
+        let output = render_messages(&messages, OutputMode::Auto);
         assert!(output.contains("Pad created: Test"));
     }
 
@@ -756,10 +836,22 @@ mod tests {
             CmdMessage::warning("Warning message"),
             CmdMessage::error("Error message"),
         ];
-        let output = render_messages(&messages);
+        let output = render_messages(&messages, OutputMode::Auto);
         assert!(output.contains("Info message"));
         assert!(output.contains("Warning message"));
         assert!(output.contains("Error message"));
+    }
+
+    #[test]
+    fn test_render_messages_json() {
+        let messages = vec![
+            CmdMessage::success("Operation completed"),
+            CmdMessage::info("Additional info"),
+        ];
+        let output = render_messages(&messages, OutputMode::Json);
+        assert!(output.contains("\"level\": \"success\""));
+        assert!(output.contains("\"content\": \"Operation completed\""));
+        assert!(output.contains("\"level\": \"info\""));
     }
 
     #[test]

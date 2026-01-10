@@ -45,26 +45,29 @@
 //! For input resolution (mapping indexes to UUIDs), see the [`crate::api`] module.
 
 use crate::model::Pad;
+use serde::Serialize;
 use std::collections::HashMap;
 use std::str::FromStr;
 use uuid::Uuid;
 
 /// A segment of text in a search match, either plain text or a matched term.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(tag = "type", content = "text")]
 pub enum MatchSegment {
     Plain(String),
     Match(String),
 }
 
 /// A line containing a search match.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct SearchMatch {
     pub line_number: usize, // 0 for title, 1+ for content lines
     pub segments: Vec<MatchSegment>,
 }
 
 /// A user-facing index for a pad.
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize)]
+#[serde(tag = "type", content = "value")]
 pub enum DisplayIndex {
     Pinned(usize),
     Regular(usize),
@@ -106,7 +109,7 @@ impl std::fmt::Display for PadSelector {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize)]
 pub struct DisplayPad {
     pub pad: Pad,
     pub index: DisplayIndex,

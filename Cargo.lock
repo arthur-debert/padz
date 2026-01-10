@@ -88,6 +88,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "anyhow"
+version = "1.0.100"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a23eb6b1614318a8071c9b2521f36b424b2c83db5eb3a0fead4a6c0809af6e61"
+
+[[package]]
 name = "assert_cmd"
 version = "2.1.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1152,9 +1158,9 @@ dependencies = [
 
 [[package]]
 name = "outstanding"
-version = "0.5.0"
+version = "0.6.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "53ce9b637ee75be425c9e362de590c771b446d42bab571dc4cd2cebd8927caef"
+checksum = "973671899ecc1aab51afcbe2c3dbd5bcb04ebcf5052ca68fb8eced143e123f09"
 dependencies = [
  "console",
  "dark-light",
@@ -1162,15 +1168,17 @@ dependencies = [
  "minijinja",
  "once_cell",
  "serde",
+ "serde_json",
  "unicode-width",
 ]
 
 [[package]]
 name = "outstanding-clap"
-version = "0.5.0"
+version = "0.6.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f2be591c3c0ab9d8fa19f2728da7d9fa2ff66d854f585d9c2cb074293527395b"
+checksum = "c0fe01e6db78603a29229777f7b833933cbda463603e30af96dad3b6c32947d8"
 dependencies = [
+ "anyhow",
  "clap",
  "console",
  "outstanding",
