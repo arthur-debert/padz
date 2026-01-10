@@ -143,6 +143,13 @@ struct TextListData {
     empty_message: String,
 }
 
+/// JSON-serializable wrapper for pad list output.
+/// Used for --output=json mode to provide machine-readable pad data.
+#[derive(Serialize)]
+struct JsonPadList {
+    pads: Vec<DisplayPad>,
+}
+
 #[derive(Serialize)]
 struct MessageData {
     content: String,
@@ -170,6 +177,23 @@ fn render_pad_list_internal(
     show_deleted_help: bool,
     peek: bool,
 ) -> String {
+    let mode = output_mode.unwrap_or(OutputMode::Auto);
+
+    // For JSON mode, serialize the pads directly
+    if mode == OutputMode::Json {
+        let json_data = JsonPadList {
+            pads: pads.to_vec(),
+        };
+        let theme = get_resolved_theme();
+        return render_or_serialize(
+            "", // Template not used for JSON
+            &json_data,
+            ThemeChoice::from(&theme),
+            mode,
+        )
+        .unwrap_or_else(|_| "{\"pads\":[]}".to_string());
+    }
+
     let empty_data = ListData {
         pads: vec![],
         empty: true,
@@ -180,7 +204,6 @@ fn render_pad_list_internal(
     };
 
     if pads.is_empty() {
-        let mode = output_mode.unwrap_or(OutputMode::Auto);
         let renderer = create_renderer(mode);
         return renderer
             .render("list", &empty_data)
@@ -379,7 +402,6 @@ fn render_pad_list_internal(
         peek,
     };
 
-    let mode = output_mode.unwrap_or(OutputMode::Auto);
     let renderer = create_renderer(mode);
     renderer
         .render("list", &data)
@@ -424,6 +446,23 @@ pub fn render_full_pads(pads: &[DisplayPad], output_mode: OutputMode) -> String 
 }
 
 fn render_full_pads_internal(pads: &[DisplayPad], output_mode: Option<OutputMode>) -> String {
+    let mode = output_mode.unwrap_or(OutputMode::Auto);
+
+    // For JSON mode, serialize the pads directly
+    if mode == OutputMode::Json {
+        let json_data = JsonPadList {
+            pads: pads.to_vec(),
+        };
+        let theme = get_resolved_theme();
+        return render_or_serialize(
+            "", // Template not used for JSON
+            &json_data,
+            ThemeChoice::from(&theme),
+            mode,
+        )
+        .unwrap_or_else(|_| "{\"pads\":[]}".to_string());
+    }
+
     let entries = pads
         .iter()
         .map(|dp| {
@@ -442,7 +481,6 @@ fn render_full_pads_internal(pads: &[DisplayPad], output_mode: Option<OutputMode
 
     let data = FullPadData { pads: entries };
 
-    let mode = output_mode.unwrap_or(OutputMode::Auto);
     let renderer = create_renderer(mode);
     renderer
         .render("full_pad", &data)
