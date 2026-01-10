@@ -1,9 +1,9 @@
-{{- "Deleted Pads" | style("info") | nl -}}
+{{- "Deleted Pads" | style("section-header") | nl -}}
 {{- "" | nl -}}
-{{- "These pads are marked for deletion and will be permanently deleted after a month." | style("hint") | nl -}}
-{{- "To restore a pad:" | style("hint") | nl -}}
-{{- "    padz restore <index>      - Restore specific pads" | style("hint") | nl -}}
-{{- "    padz restore              - Restore all deleted pads" | style("hint") | nl -}}
-{{- "To permanently delete:" | style("hint") | nl -}}
-{{- "    padz purge <index>        - Permanently delete specific pads" | style("hint") | nl -}}
-{{- "    padz purge                - Permanently delete all deleted pads" | style("hint") | nl -}}
+{{- "These pads are marked for deletion and will be permanently deleted after a month." | style("help-text") | nl -}}
+{{- "To restore a pad:" | style("help-text") | nl -}}
+{{- "    padz restore <index>      - Restore specific pads" | style("help-text") | nl -}}
+{{- "    padz restore              - Restore all deleted pads" | style("help-text") | nl -}}
+{{- "To permanently delete:" | style("help-text") | nl -}}
+{{- "    padz purge <index>        - Permanently delete specific pads" | style("help-text") | nl -}}
+{{- "    padz purge                - Permanently delete all deleted pads" | style("help-text") | nl -}}

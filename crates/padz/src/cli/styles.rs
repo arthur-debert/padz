@@ -48,9 +48,46 @@
 //! - **Easy iteration**: Change `_gray` color and all secondary text updates
 //! - **Light/dark support**: Only the visual layer differs between themes
 //!
-//! ## Debugging
+//! ## Style Reference
 //!
-//! Use `--output=term-debug` to see style names as bracket tags:
+//! | Semantic Name     | Presentation | Light Visual                | Dark Visual                 |
+//! |-------------------|--------------|-----------------------------|-----------------------------|
+//! | `status-icon`     | secondary    | gray #737373                | gray #B4B4B4                |
+//! | `time`            | secondary    | gray #737373 italic         | gray #B4B4B4 italic         |
+//! | `section-header`  | secondary    | gray #737373                | gray #B4B4B4                |
+//! | `hint`            | tertiary     | light gray #ADADAD          | dark gray #6E6E6E           |
+//! | `empty-message`   | secondary    | gray #737373                | gray #B4B4B4                |
+//! | `preview`         | tertiary     | light gray #ADADAD          | dark gray #6E6E6E           |
+//! | `truncation`      | secondary    | gray #737373                | gray #B4B4B4                |
+//! | `line-number`     | secondary    | gray #737373                | gray #B4B4B4                |
+//! | `separator`       | tertiary     | light gray #ADADAD          | dark gray #6E6E6E           |
+//! | `list-index`      | accent       | gold #C48C00                | yellow #FFD60A              |
+//! | `list-title`      | primary      | black                       | white                       |
+//! | `deleted-index`   | danger       | red #BA212D                 | salmon #FF8A80              |
+//! | `deleted-title`   | secondary    | gray #737373                | gray #B4B4B4                |
+//! | `pinned`          | accent+bold  | gold #C48C00 bold           | yellow #FFD60A bold         |
+//! | `title`           | primary+bold | black bold                  | white bold                  |
+//! | `highlight`       | yellow_bg    | black on yellow #FFEB3B     | black on gold #E5B900       |
+//! | `match`           | yellow_bg    | black on yellow #FFEB3B     | black on gold #E5B900       |
+//! | `error`           | danger+bold  | red bold                    | red bold                    |
+//! | `warning`         | accent+bold  | yellow bold                 | yellow bold                 |
+//! | `success`         | success      | green                       | green                       |
+//! | `info`            | secondary    | gray #737373                | gray #B4B4B4                |
+//!
+//! ### Help Command Styles
+//!
+//! | Semantic Name  | Presentation | Light Visual           | Dark Visual            |
+//! |----------------|--------------|------------------------|------------------------|
+//! | `help-header`  | primary+bold | black bold             | white bold             |
+//! | `help-section` | accent+bold  | gold #C48C00 bold      | yellow #FFD60A bold    |
+//! | `help-command` | success      | green #008000          | light green #90EE90    |
+//! | `help-desc`    | secondary    | gray #737373           | gray #B4B4B4           |
+//! | `help-usage`   | —            | cyan                   | cyan                   |
+//!
+//! ## Debugging Styled Output
+//!
+//! When developing or testing templates and styles, use the `--output=term-debug` flag
+//! to see style names as markup tags instead of ANSI escape codes:
 //!
 //! ```bash
 //! padz list --output=term-debug
@@ -96,6 +133,15 @@ pub mod names {
     pub const HELP_COMMAND: &str = "help-command";
     pub const HELP_DESC: &str = "help-desc";
     pub const HELP_USAGE: &str = "help-usage";
+
+    // Template content styles
+    pub const HELP_TEXT: &str = "help-text";
+    pub const SECTION_HEADER: &str = "section-header";
+    pub const EMPTY_MESSAGE: &str = "empty-message";
+    pub const PREVIEW: &str = "preview";
+    pub const TRUNCATION: &str = "truncation";
+    pub const LINE_NUMBER: &str = "line-number";
+    pub const SEPARATOR: &str = "separator";
 }
 
 /// The adaptive theme for padz, containing both light and dark variants.
@@ -176,6 +222,14 @@ fn build_light_theme() -> Theme {
         .add(names::HELP_COMMAND, "_success")
         .add(names::HELP_DESC, "_secondary")
         .add(names::HELP_USAGE, Style::new().cyan())
+        // Template content styles (aliases to presentation layer)
+        .add(names::HELP_TEXT, "_tertiary")
+        .add(names::SECTION_HEADER, "_secondary")
+        .add(names::EMPTY_MESSAGE, "_secondary")
+        .add(names::PREVIEW, "_tertiary")
+        .add(names::TRUNCATION, "_secondary")
+        .add(names::LINE_NUMBER, "_secondary")
+        .add(names::SEPARATOR, "_tertiary")
 }
 
 fn build_dark_theme() -> Theme {
@@ -238,4 +292,12 @@ fn build_dark_theme() -> Theme {
         .add(names::HELP_COMMAND, "_success")
         .add(names::HELP_DESC, "_secondary")
         .add(names::HELP_USAGE, Style::new().cyan())
+        // Template content styles (aliases to presentation layer)
+        .add(names::HELP_TEXT, "_tertiary")
+        .add(names::SECTION_HEADER, "_secondary")
+        .add(names::EMPTY_MESSAGE, "_secondary")
+        .add(names::PREVIEW, "_tertiary")
+        .add(names::TRUNCATION, "_secondary")
+        .add(names::LINE_NUMBER, "_secondary")
+        .add(names::SEPARATOR, "_tertiary")
 }

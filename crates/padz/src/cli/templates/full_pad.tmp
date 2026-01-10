@@ -2,14 +2,14 @@
 {#- Shows complete pad content with index, title, and body -#}
 
 {% if pads | length == 0 -%}
-{{- "No pads found." | style("info") }}
+{{- "No pads found." | style("empty-message") }}
 {% else -%}
 {% for pad in pads -%}
 
 {#- Separator between pads (not before first) -#}
 {%- if not loop.first %}
 
-{{ " " | style("hint") }}
+{{ " " | style("separator") }}
 
 {% endif -%}
 
@@ -27,7 +27,7 @@
 
 {#- Render header: index + title -#}
 {{- pad.index | style(index_style) }} {{ pad.title | style(title_style) }}
-{{ " " | style("hint") }}
+{{ " " | style("separator") }}
 {{ pad.content | style(content_style) -}}
 {%- endfor %}
 {% endif %}

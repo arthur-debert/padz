@@ -1,8 +1,8 @@
 {#- Search match lines for a pad -#}
 {#- Expects: pad.left_pad, pad.matches (list of {line_number, segments}), pad.more_matches_count -#}
 {%- for match in pad.matches -%}
-{{- "    " }}{{ pad.left_pad }}    {{ match.line_number | style("info") }} {% for seg in match.segments %}{{ seg.text | style(seg.style) }}{% endfor %}{{ "" | nl -}}
+{{- "    " }}{{ pad.left_pad }}    {{ match.line_number | style("line-number") }} {% for seg in match.segments %}{{ seg.text | style(seg.style) }}{% endfor %}{{ "" | nl -}}
 {%- endfor -%}
 {%- if pad.more_matches_count > 0 -%}
-{{- "    " }}{{ pad.left_pad }}    And {{ pad.more_matches_count }} more results{{ "" | nl -}}
+{{- "    " }}{{ pad.left_pad }}    {{ ("And " ~ pad.more_matches_count ~ " more results") | style("truncation") }}{{ "" | nl -}}
 {%- endif -%}
