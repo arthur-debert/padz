@@ -2,6 +2,6 @@
 {{ empty_message | style("empty-message") }}
 {% else -%}
 {% for line in lines -%}
-{{ line | style("regular") }}
+{{ line | style("list-title") }}
 {% endfor -%}
 {% endif %}
