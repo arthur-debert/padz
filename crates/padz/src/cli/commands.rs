@@ -216,7 +216,7 @@ fn handle_create(
     let result = ctx
         .api
         .create_pad(ctx.scope, title_to_use, initial_content, parent)?;
-    print_messages(&result.messages);
+    print_messages(&result.messages, ctx.output_mode);
 
     // Open editor if requested/appropriate
     if should_open_editor && !result.affected_pads.is_empty() {
@@ -273,7 +273,7 @@ fn handle_list(
     };
     print!("{}", output);
 
-    print_messages(&result.messages);
+    print_messages(&result.messages, ctx.output_mode);
     Ok(())
 }
 
@@ -286,7 +286,7 @@ fn handle_view(ctx: &mut AppContext, indexes: Vec<String>, peek: bool) -> Result
         render_full_pads(&result.listed_pads, ctx.output_mode)
     };
     print!("{}", output);
-    print_messages(&result.messages);
+    print_messages(&result.messages, ctx.output_mode);
 
     // Copy viewed pads to clipboard
     // Note: dp.pad.content already includes the title as the first line
@@ -346,35 +346,35 @@ fn handle_delete(ctx: &mut AppContext, indexes: Vec<String>, done_status: bool) 
             .collect();
 
         let result = ctx.api.delete_pads(ctx.scope, &done_indexes)?;
-        print_messages(&result.messages);
+        print_messages(&result.messages, ctx.output_mode);
     } else {
         let result = ctx.api.delete_pads(ctx.scope, &indexes)?;
-        print_messages(&result.messages);
+        print_messages(&result.messages, ctx.output_mode);
     }
     Ok(())
 }
 
 fn handle_restore(ctx: &mut AppContext, indexes: Vec<String>) -> Result<()> {
     let result = ctx.api.restore_pads(ctx.scope, &indexes)?;
-    print_messages(&result.messages);
+    print_messages(&result.messages, ctx.output_mode);
     Ok(())
 }
 
 fn handle_pin(ctx: &mut AppContext, indexes: Vec<String>) -> Result<()> {
     let result = ctx.api.pin_pads(ctx.scope, &indexes)?;
-    print_messages(&result.messages);
+    print_messages(&result.messages, ctx.output_mode);
     Ok(())
 }
 
 fn handle_unpin(ctx: &mut AppContext, indexes: Vec<String>) -> Result<()> {
     let result = ctx.api.unpin_pads(ctx.scope, &indexes)?;
-    print_messages(&result.messages);
+    print_messages(&result.messages, ctx.output_mode);
     Ok(())
 }
 
 fn handle_complete(ctx: &mut AppContext, indexes: Vec<String>) -> Result<()> {
     let result = ctx.api.complete_pads(ctx.scope, &indexes)?;
-    print_messages(&result.messages);
+    print_messages(&result.messages, ctx.output_mode);
     Ok(())
 }
 
@@ -398,13 +398,13 @@ fn handle_move(ctx: &mut AppContext, mut indexes: Vec<String>, root: bool) -> Re
     let result = ctx
         .api
         .move_pads(ctx.scope, &indexes, destination.as_deref())?;
-    print_messages(&result.messages);
+    print_messages(&result.messages, ctx.output_mode);
     Ok(())
 }
 
 fn handle_reopen(ctx: &mut AppContext, indexes: Vec<String>) -> Result<()> {
     let result = ctx.api.reopen_pads(ctx.scope, &indexes)?;
-    print_messages(&result.messages);
+    print_messages(&result.messages, ctx.output_mode);
     Ok(())
 }
 
@@ -417,7 +417,7 @@ fn handle_search(ctx: &mut AppContext, term: String) -> Result<()> {
     let result = ctx.api.get_pads(ctx.scope, filter)?;
     let output = render_pad_list(&result.listed_pads, false, ctx.output_mode);
     print!("{}", output);
-    print_messages(&result.messages);
+    print_messages(&result.messages, ctx.output_mode);
     Ok(())
 }
 
@@ -430,7 +430,7 @@ fn handle_paths(ctx: &mut AppContext, indexes: Vec<String>) -> Result<()> {
         .collect();
     let output = render_text_list(&lines, "No pad paths found.", ctx.output_mode);
     print!("{}", output);
-    print_messages(&result.messages);
+    print_messages(&result.messages, ctx.output_mode);
     Ok(())
 }
 
@@ -474,7 +474,7 @@ fn handle_purge(
 
     // Execute the purge
     let result = ctx.api.purge_pads(ctx.scope, &indexes, recursive)?;
-    print_messages(&result.messages);
+    print_messages(&result.messages, ctx.output_mode);
     Ok(())
 }
 
@@ -489,7 +489,7 @@ fn handle_export(
     } else {
         ctx.api.export_pads(ctx.scope, &indexes)?
     };
-    print_messages(&result.messages);
+    print_messages(&result.messages, ctx.output_mode);
     Ok(())
 }
 
@@ -498,13 +498,13 @@ fn handle_import(ctx: &mut AppContext, paths: Vec<String>) -> Result<()> {
     let result = ctx
         .api
         .import_pads(ctx.scope, paths, &ctx.import_extensions)?;
-    print_messages(&result.messages);
+    print_messages(&result.messages, ctx.output_mode);
     Ok(())
 }
 
 fn handle_doctor(ctx: &mut AppContext) -> Result<()> {
     let result = ctx.api.doctor(ctx.scope)?;
-    print_messages(&result.messages);
+    print_messages(&result.messages, ctx.output_mode);
     Ok(())
 }
 
@@ -535,13 +535,13 @@ fn handle_config(ctx: &mut AppContext, key: Option<String>, value: Option<String
     }
     let output = render_text_list(&lines, "No configuration values.", ctx.output_mode);
     print!("{}", output);
-    print_messages(&result.messages);
+    print_messages(&result.messages, ctx.output_mode);
     Ok(())
 }
 
 fn handle_init(ctx: &AppContext) -> Result<()> {
     let result = ctx.api.init(ctx.scope)?;
-    print_messages(&result.messages);
+    print_messages(&result.messages, ctx.output_mode);
 
     // Show shell completion hint
     println!();

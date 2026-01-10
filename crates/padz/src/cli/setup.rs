@@ -120,6 +120,7 @@ pub fn parse_cli() -> (Cli, OutputMode) {
         Some("term") => OutputMode::Term,
         Some("text") => OutputMode::Text,
         Some("term-debug") => OutputMode::TermDebug,
+        Some("json") => OutputMode::Json,
         _ => OutputMode::Auto,
     };
 

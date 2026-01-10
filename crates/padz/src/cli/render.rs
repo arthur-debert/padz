@@ -14,7 +14,7 @@ use super::templates::{
     PAD_LINE_PARTIAL, PEEK_CONTENT_PARTIAL, TEXT_LIST_TEMPLATE,
 };
 use chrono::{DateTime, Utc};
-use outstanding::{truncate_to_width, OutputMode, Renderer};
+use outstanding::{render_or_serialize, truncate_to_width, OutputMode, Renderer, ThemeChoice};
 use padzapp::api::{CmdMessage, MessageLevel, TodoStatus};
 use padzapp::index::{DisplayIndex, DisplayPad};
 use padzapp::peek::{format_as_peek, PeekResult};
@@ -470,12 +470,36 @@ fn render_text_list_internal(
         .unwrap_or_else(|_| format!("{}\n", empty_message))
 }
 
+/// JSON-serializable wrapper for command messages.
+/// Used for --output=json mode to provide machine-readable output.
+#[derive(Serialize)]
+struct JsonMessages {
+    messages: Vec<CmdMessage>,
+}
+
 /// Renders command messages using the template system with themed styles.
-pub fn render_messages(messages: &[CmdMessage]) -> String {
+/// Supports JSON output mode for machine-readable output.
+pub fn render_messages(messages: &[CmdMessage], output_mode: OutputMode) -> String {
     if messages.is_empty() {
         return String::new();
     }
 
+    // For JSON mode, serialize the messages directly
+    if output_mode == OutputMode::Json {
+        let json_data = JsonMessages {
+            messages: messages.to_vec(),
+        };
+        let theme = get_resolved_theme();
+        return render_or_serialize(
+            "", // Template not used for JSON
+            &json_data,
+            ThemeChoice::from(&theme),
+            output_mode,
+        )
+        .unwrap_or_else(|_| "{}".to_string());
+    }
+
+    // For terminal modes, use template rendering
     let message_data: Vec<MessageData> = messages
         .iter()
         .map(|msg| {
@@ -496,7 +520,7 @@ pub fn render_messages(messages: &[CmdMessage]) -> String {
         messages: message_data,
     };
 
-    let renderer = create_renderer(OutputMode::Auto);
+    let renderer = create_renderer(output_mode);
     renderer.render("messages", &data).unwrap_or_else(|_| {
         messages
             .iter()
@@ -506,8 +530,9 @@ pub fn render_messages(messages: &[CmdMessage]) -> String {
 }
 
 /// Prints command messages to stdout using the template system.
-pub fn print_messages(messages: &[CmdMessage]) {
-    let output = render_messages(messages);
+/// Supports JSON output mode for machine-readable output.
+pub fn print_messages(messages: &[CmdMessage], output_mode: OutputMode) {
+    let output = render_messages(messages, output_mode);
     if !output.is_empty() {
         print!("{}", output);
     }
@@ -738,14 +763,14 @@ mod tests {
 
     #[test]
     fn test_render_messages_empty() {
-        let output = render_messages(&[]);
+        let output = render_messages(&[], OutputMode::Auto);
         assert!(output.is_empty());
     }
 
     #[test]
     fn test_render_messages_success() {
         let messages = vec![CmdMessage::success("Pad created: Test")];
-        let output = render_messages(&messages);
+        let output = render_messages(&messages, OutputMode::Auto);
         assert!(output.contains("Pad created: Test"));
     }
 
@@ -756,10 +781,22 @@ mod tests {
             CmdMessage::warning("Warning message"),
             CmdMessage::error("Error message"),
         ];
-        let output = render_messages(&messages);
+        let output = render_messages(&messages, OutputMode::Auto);
         assert!(output.contains("Info message"));
         assert!(output.contains("Warning message"));
         assert!(output.contains("Error message"));
+    }
+
+    #[test]
+    fn test_render_messages_json() {
+        let messages = vec![
+            CmdMessage::success("Operation completed"),
+            CmdMessage::info("Additional info"),
+        ];
+        let output = render_messages(&messages, OutputMode::Json);
+        assert!(output.contains("\"level\": \"success\""));
+        assert!(output.contains("\"content\": \"Operation completed\""));
+        assert!(output.contains("\"level\": \"info\""));
     }
 
     #[test]

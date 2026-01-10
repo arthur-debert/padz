@@ -66,6 +66,7 @@ use crate::config::PadzConfig;
 use crate::error::{PadzError, Result};
 use crate::index::DisplayPad;
 use crate::model::Scope;
+use serde::Serialize;
 use std::path::PathBuf;
 
 pub mod config;
@@ -106,7 +107,8 @@ impl PadzPaths {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "lowercase")]
 pub enum MessageLevel {
     Info,
     Success,
@@ -114,7 +116,7 @@ pub enum MessageLevel {
     Error,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize)]
 pub struct CmdMessage {
     pub level: MessageLevel,
     pub content: String,
