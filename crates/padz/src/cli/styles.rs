@@ -50,32 +50,46 @@
 //! well in light and dark terminals, so `PADZ_THEME` exposes an adaptive theme
 //! that resolves to the appropriate palette at runtime.
 //!
-//! ## Style Tokens
+//! ## Style Reference
 //!
-//! ### Presentation Layer (visual primitives)
-//!     * regular - neutral foreground matching theme background
-//!     * muted - subdued text for metadata
-//!     * faint - very subtle, for separators and hints
-//!     * highlight - black on yellow background for emphasis
-//!     * pinned - yellow accents for pinned items
-//!     * deleted - red for deleted entries
-//!     * error/warning/success/info - status colors
-//!     * title - regular with bold weight
-//!     * time - muted with italic
+//! The following table shows all styles with their three-layer mapping:
 //!
-//! ### Semantic Layer (used in templates)
-//!     * status-icon - pad status indicators (planned/in-progress/done)
-//!     * section-header - section labels like "Deleted Pads"
-//!     * help-text - instructional/help text
-//!     * empty-message - messages when content is empty
-//!     * preview - peek content preview
-//!     * truncation - "X lines not shown" messages
-//!     * line-number - line numbers in search matches
-//!     * separator - visual separators between sections
-//!     * list-index/list-title - regular list item styling
-//!     * deleted-index/deleted-title - deleted list item styling
+//! | Semantic Name     | Presentation | Light Visual                | Dark Visual                 |
+//! |-------------------|--------------|-----------------------------|-----------------------------|
+//! | `status-icon`     | time         | gray #737373 italic         | gray #B4B4B4 italic         |
+//! | `time`            | time         | gray #737373 italic         | gray #B4B4B4 italic         |
+//! | `section-header`  | muted        | gray #737373                | gray #B4B4B4                |
+//! | `help-text`       | faint        | light gray #ADADAD          | dark gray #6E6E6E           |
+//! | `empty-message`   | muted        | gray #737373                | gray #B4B4B4                |
+//! | `preview`         | faint        | light gray #ADADAD          | dark gray #6E6E6E           |
+//! | `truncation`      | muted        | gray #737373                | gray #B4B4B4                |
+//! | `line-number`     | muted        | gray #737373                | gray #B4B4B4                |
+//! | `separator`       | faint        | light gray #ADADAD          | dark gray #6E6E6E           |
+//! | `list-index`      | —            | gold #C48C00                | yellow #FFD60A              |
+//! | `list-title`      | regular      | black                       | white                       |
+//! | `deleted-index`   | deleted      | red #BA212D                 | salmon #FF8A80              |
+//! | `deleted-title`   | muted        | gray #737373                | gray #B4B4B4                |
+//! | `pinned`          | —            | gold #C48C00 bold           | yellow #FFD60A bold         |
+//! | `title`           | regular+bold | black bold                  | white bold                  |
+//! | `regular`         | —            | black                       | white                       |
+//! | `muted`           | —            | gray #737373                | gray #B4B4B4                |
+//! | `faint`           | —            | light gray #ADADAD          | dark gray #6E6E6E           |
+//! | `highlight`       | —            | black on yellow #FFEB3B     | black on gold #E5B900       |
+//! | `deleted`         | —            | red #BA212D                 | salmon #FF8A80              |
+//! | `error`           | —            | red bold                    | red bold                    |
+//! | `warning`         | —            | yellow bold                 | yellow bold                 |
+//! | `success`         | —            | green                       | green                       |
+//! | `info`            | muted        | gray #737373                | gray #B4B4B4                |
 //!
-//! Templates use semantic names; theme builders map them to presentation styles.
+//! ### Help Command Styles
+//!
+//! | Semantic Name  | Presentation | Light Visual           | Dark Visual            |
+//! |----------------|--------------|------------------------|------------------------|
+//! | `help-header`  | regular+bold | black bold             | white bold             |
+//! | `help-section` | —            | gold #C48C00 bold      | yellow #FFD60A bold    |
+//! | `help-command` | —            | green #008000          | light green #90EE90    |
+//! | `help-desc`    | muted        | gray #737373           | gray #B4B4B4           |
+//! | `help-usage`   | —            | cyan                   | cyan                   |
 //!
 //! ## Debugging Styled Output
 //!
