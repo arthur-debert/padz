@@ -2,32 +2,32 @@
 {#- Shows complete pad content with index, title, and body -#}
 
 {% if pads | length == 0 -%}
-{{- "No pads found." | style("muted") }}
+{{- "No pads found." | style("info") }}
 {% else -%}
 {% for pad in pads -%}
 
 {#- Separator between pads (not before first) -#}
 {%- if not loop.first %}
 
-{{ " " | style("faint") }}
+{{ " " | style("hint") }}
 
 {% endif -%}
 
 {#- Determine styles based on pad state -#}
-{%- set index_style = "regular" -%}
+{%- set index_style = "list-index" -%}
 {%- set title_style = "title" -%}
-{%- set content_style = "regular" -%}
+{%- set content_style = "list-title" -%}
 {%- if pad.is_pinned -%}
   {%- set index_style = "pinned" -%}
 {%- elif pad.is_deleted -%}
-  {%- set index_style = "deleted" -%}
-  {%- set title_style = "deleted" -%}
-  {%- set content_style = "deleted" -%}
+  {%- set index_style = "deleted-index" -%}
+  {%- set title_style = "deleted-title" -%}
+  {%- set content_style = "deleted-title" -%}
 {%- endif -%}
 
 {#- Render header: index + title -#}
 {{- pad.index | style(index_style) }} {{ pad.title | style(title_style) }}
-{{ " " | style("faint") }}
+{{ " " | style("hint") }}
 {{ pad.content | style(content_style) -}}
 {%- endfor %}
 {% endif %}

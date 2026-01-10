@@ -1,120 +1,101 @@
-//! Styles for the Padz CLI application.
+//! # Styles for the Padz CLI
 //!
-//! Padz uses the `outstanding` crate for theming and styling console output, to separate the data
-//! and it's presentaiion layers.
+//! This module implements a **three-layer styling architecture** using the `outstanding` crate's
+//! style aliasing feature. This design separates concerns and makes it easy to iterate on the
+//! visual appearance without touching templates or application code.
 //!
-//! We use an adaptattive theme, that is, one that had presentition styles for both light and dark
-//! modes, and which the outstanding crate manages automatically.
+//! ## The Three Layers
 //!
-//! A theme is a collections of named styles, which is a set for formatting optins as in colors, font
-//! decoration, weight and so on.
+//! ### 1. Visual Layer (Private)
 //!
-//! Styles : A Three Layer Approach.
+//! The foundation layer defines concrete `console::Style` values with actual colors and
+//! decorations. These are registered with `_` prefix to indicate they're internal:
 //!
-//! Keeping in mind that our goal is to keep presentation easy to change, iterate and consistent,
-//! styling gets done in three layers.
+//! - `_primary` - Main text color (black for light, white for dark)
+//! - `_gray` - Secondary text color
+//! - `_gray_light` - Tertiary/hint text color
+//! - `_gold` - Accent color (yellow/gold)
+//! - `_red` - Danger/error color
+//! - `_green` - Success color
+//! - `_yellow_bg` - Highlight background
 //!
-//! 1. The Application: Semantics (i.e. CSS Classes)
+//! ### 2. Presentation Layer (Internal)
 //!
-//! On the template, the application is to use semantic style names, that is, names that describe
-//! the  data / information being presented. For example a a timestamp with the 'time' style.
+//! This layer defines cross-cutting visual concepts as aliases to visual styles:
 //!
-//! The semantic style does not define the actual presentation values it self, but rather it refers to
-//! the presentation layer.
+//! - `_secondary` -> `_gray` (less prominent text)
+//! - `_tertiary` -> `_gray_light` (subtle hints)
+//! - `_accent` -> `_gold` (attention/emphasis)
+//! - `_danger` -> `_red` (errors/warnings)
+//! - `_success` -> `_green` (positive feedback)
 //!
-//! 2. The Presentation Layer: Consistence (i.e. enabled, , focused).
+//! ### 3. Semantic Layer (Public)
 //!
-//! The presentation layer defines presentation styles that are consistent accross the application.  
-//! These often relates to the data semantics, but often are a cross with state. For example, say that
-//! certain elements are disabled. You don't want every disabled element througout the app to look different.
-//! Or that an element is highlighted, or focused, etc.
+//! Templates use these semantic names that describe WHAT is being displayed:
 //!
-//! And the presentation layer ins't the raw values just yet, but rather another set of named styles,
-//! the visual layer.
+//! - `time` - Timestamps
+//! - `title` - Pad titles
+//! - `list-index` - List item indexes
+//! - `pinned` - Pinned markers
+//! - `deleted-index` - Deleted item indexes
+//! - `hint` - Help text, subtle hints
+//! - `error`, `warning`, `success`, `info` - Messages
 //!
-//! 3. The Visual Layer: Actual Colors and Decorations
+//! ## Why Three Layers?
 //!
-//! Now we reach the final point, in which we define the actual colors and decoration values are for
-//! presentation styles. Say we define the highlighted has a background color of yellow and black text.
+//! - **Templates stay clean**: They use semantic names like `time` instead of color codes
+//! - **Consistency**: All "secondary" text looks the same across the app
+//! - **Easy iteration**: Change `_gray` color and all secondary text updates
+//! - **Light/dark support**: Only the visual layer differs between themes
 //!
-//! This layer gives us flexibility to iterate the visual while keeping the semantics and the presentation
-//! consistent. For example light and dark modes only need to define the visual layers differntly,
-//! while the  application's code, templates and presentation styles remain the same.
+//! ## Debugging
 //!
-//! The combined result of the three layers is that:
-//!    * Templates/ Code work on the semantic level, freening the code from presentation details.
-//!    * The presentation layer keeps the application consistent.
-//!    * The visual layer allows us to iterate the look and feel easily.
-//!
-//! The CLI needs to work equally
-//! well in light and dark terminals, so `PADZ_THEME` exposes an adaptive theme
-//! that resolves to the appropriate palette at runtime.
-//!
-//! The shared style tokens are:
-//!
-//!     * Regular text (neutral foreground that matches the theme background)
-//!     * Muted text (used for metadata such as timestamps)
-//!     * Faint text (section separators, subtle hints)
-//!     * Highlighted text (black on a yellow background for emphasis)
-//!     * Pinned elements (yellow accents for icons and indexes)
-//!     * Deleted entries (red foreground for both themes)
-//!     * Error and warning styles (red / yellow respectively)
-//!     * Title text (regular color with added weight)
-//!     * Time text (muted + italic)
-//!
-//! Deleted pads should always render with the `deleted` style, pinned icons use
-//! the `pinned` style (icon only), and any time strings go through the `time`
-//! style. All of the styles are registered once through
-//! `once_cell::sync::Lazy`.
-//!
-//! ## Debugging Styled Output
-//!
-//! When developing or testing templates and styles, use the `--output=term-debug` flag
-//! to see style names as markup tags instead of ANSI escape codes:
+//! Use `--output=term-debug` to see style names as bracket tags:
 //!
 //! ```bash
 //! padz list --output=term-debug
+//! # Output: [pinned]⚲[/pinned] [time]⚪︎[/time] [list-index]p1.[/list-index]
 //! ```
-//!
-//! This renders output like:
-//! ```text
-//! [pinned]⚲[/pinned] [time]⚪︎[/time] [list-index]p1.[/list-index][list-title]My Pad[/list-title]
-//! ```
-//!
-//! This makes it easy to verify which styles are applied to each element, debug
-//! template issues, and write assertions in tests without dealing with ANSI codes.
-//!
+
 use console::Style;
 use once_cell::sync::Lazy;
 use outstanding::{rgb_to_ansi256, AdaptiveTheme, Theme};
 
-/// Style identifiers shared between templates and renderers.
+/// Semantic style names for use in templates and renderers.
+///
+/// These are the ONLY style names that should be used in templates.
+/// All names describe WHAT is being displayed, not HOW it looks.
 pub mod names {
-    pub const REGULAR: &str = "regular";
-    pub const MUTED: &str = "muted";
-    pub const FAINT: &str = "faint";
-    pub const HIGHLIGHT: &str = "highlight";
+    // Core semantic styles
+    pub const TITLE: &str = "title";
+    pub const TIME: &str = "time";
+    pub const HINT: &str = "hint";
+
+    // List styles
+    pub const LIST_INDEX: &str = "list-index";
+    pub const LIST_TITLE: &str = "list-title";
     pub const PINNED: &str = "pinned";
     pub const DELETED: &str = "deleted";
+    pub const DELETED_INDEX: &str = "deleted-index";
+    pub const DELETED_TITLE: &str = "deleted-title";
+    pub const STATUS_ICON: &str = "status-icon";
+
+    // Search/highlight
+    pub const HIGHLIGHT: &str = "highlight";
+    pub const MATCH: &str = "match";
+
+    // Message styles
     pub const ERROR: &str = "error";
     pub const WARNING: &str = "warning";
     pub const SUCCESS: &str = "success";
     pub const INFO: &str = "info";
-    pub const TITLE: &str = "title";
-    pub const TIME: &str = "time";
-    // Semantic list styles
-    pub const LIST_INDEX: &str = "list-index";
-    pub const LIST_TITLE: &str = "list-title";
-    pub const DELETED_INDEX: &str = "deleted-index";
-    pub const DELETED_TITLE: &str = "deleted-title";
+
     // Help styles
     pub const HELP_HEADER: &str = "help-header";
     pub const HELP_SECTION: &str = "help-section";
     pub const HELP_COMMAND: &str = "help-command";
     pub const HELP_DESC: &str = "help-desc";
     pub const HELP_USAGE: &str = "help-usage";
-    // Status icon style
-    pub const STATUS_ICON: &str = "status-icon";
 }
 
 /// The adaptive theme for padz, containing both light and dark variants.
@@ -133,107 +114,128 @@ pub fn get_resolved_theme() -> Theme {
 }
 
 fn build_light_theme() -> Theme {
-    let regular = Style::new().black();
-    let muted = Style::new().color256(rgb_to_ansi256((115, 115, 115)));
-    let faint = Style::new().color256(rgb_to_ansi256((173, 173, 173)));
-    let pinned = Style::new().color256(rgb_to_ansi256((196, 140, 0))).bold();
-    let deleted = Style::new().color256(rgb_to_ansi256((186, 33, 45)));
-    let warning = Style::new().yellow().bold();
-    let error = Style::new().red().bold();
-    let success = Style::new().green();
-    let info = muted.clone();
-    let highlight = Style::new()
+    // =========================================================================
+    // VISUAL LAYER - Concrete styles with actual colors
+    // These are the raw building blocks, prefixed with _ to indicate internal use
+    // =========================================================================
+    let primary = Style::new().black();
+    let gray = Style::new().color256(rgb_to_ansi256((115, 115, 115)));
+    let gray_light = Style::new().color256(rgb_to_ansi256((173, 173, 173)));
+    let gold = Style::new().color256(rgb_to_ansi256((196, 140, 0)));
+    let red = Style::new().color256(rgb_to_ansi256((186, 33, 45)));
+    let green = Style::new().color256(rgb_to_ansi256((0, 128, 0)));
+    let yellow_bg = Style::new()
         .black()
         .on_color256(rgb_to_ansi256((255, 235, 59)));
-    let title = regular.clone().bold();
-    let time = muted.clone().italic();
-    // Semantic list styles
-    let list_index = Style::new().color256(rgb_to_ansi256((196, 140, 0))); // Yellow/gold for regular indexes
-    let list_title = regular.clone(); // Normal text for list titles (not bold)
-    let deleted_index = Style::new().color256(rgb_to_ansi256((186, 33, 45))); // Red for deleted indexes
-    let deleted_title = muted.clone(); // Muted gray for deleted titles
-                                       // Help styles
-    let help_header = regular.clone().bold();
-    let help_section = Style::new().color256(rgb_to_ansi256((196, 140, 0))).bold();
-    let help_command = Style::new().color256(rgb_to_ansi256((0, 128, 0)));
-    let help_desc = muted.clone();
-    let help_usage = Style::new().cyan();
-    let status_icon = muted.clone();
 
     Theme::new()
-        .add(names::REGULAR, regular)
-        .add(names::MUTED, muted.clone())
-        .add(names::FAINT, faint)
-        .add(names::HIGHLIGHT, highlight)
-        .add(names::PINNED, pinned)
-        .add(names::DELETED, deleted.clone())
-        .add(names::ERROR, error)
-        .add(names::WARNING, warning)
-        .add(names::SUCCESS, success)
-        .add(names::INFO, info)
-        .add(names::TITLE, title)
-        .add(names::TIME, time)
-        .add(names::LIST_INDEX, list_index)
-        .add(names::LIST_TITLE, list_title)
-        .add(names::DELETED_INDEX, deleted_index)
-        .add(names::DELETED_TITLE, deleted_title)
-        .add(names::HELP_HEADER, help_header)
-        .add(names::HELP_SECTION, help_section)
-        .add(names::HELP_COMMAND, help_command)
-        .add(names::HELP_DESC, help_desc)
-        .add(names::HELP_USAGE, help_usage)
-        .add(names::STATUS_ICON, status_icon)
+        // Visual layer - concrete styles (internal)
+        .add("_primary", primary.clone())
+        .add("_gray", gray.clone())
+        .add("_gray_light", gray_light.clone())
+        .add("_gold", gold.clone())
+        .add("_red", red.clone())
+        .add("_green", green.clone())
+        .add("_yellow_bg", yellow_bg)
+        // =====================================================================
+        // PRESENTATION LAYER - Cross-cutting visual concepts (aliases)
+        // These provide consistent appearance for similar elements
+        // =====================================================================
+        .add("_secondary", "_gray")
+        .add("_tertiary", "_gray_light")
+        .add("_accent", "_gold")
+        .add("_danger", "_red")
+        .add("_success", "_green")
+        // =====================================================================
+        // SEMANTIC LAYER - What templates use
+        // Some are aliases, some are concrete (when modifiers like bold/italic needed)
+        // =====================================================================
+        // Core semantic styles (concrete - need modifiers)
+        .add(names::TITLE, primary.clone().bold())
+        .add(names::TIME, gray.clone().italic())
+        .add(names::HINT, "_tertiary")
+        // List styles
+        .add(names::LIST_INDEX, "_accent")
+        .add(names::LIST_TITLE, "_primary")
+        .add(names::PINNED, gold.clone().bold())
+        .add(names::DELETED, "_danger")
+        .add(names::DELETED_INDEX, "_danger")
+        .add(names::DELETED_TITLE, "_secondary")
+        .add(names::STATUS_ICON, "_secondary")
+        // Search/highlight
+        .add(names::HIGHLIGHT, "_yellow_bg")
+        .add(names::MATCH, "_yellow_bg")
+        // Message styles (concrete - need modifiers for emphasis)
+        .add(names::ERROR, red.clone().bold())
+        .add(names::WARNING, gold.clone().bold())
+        .add(names::SUCCESS, "_success")
+        .add(names::INFO, "_secondary")
+        // Help styles
+        .add(names::HELP_HEADER, primary.clone().bold())
+        .add(names::HELP_SECTION, gold.clone().bold())
+        .add(names::HELP_COMMAND, "_success")
+        .add(names::HELP_DESC, "_secondary")
+        .add(names::HELP_USAGE, Style::new().cyan())
 }
 
 fn build_dark_theme() -> Theme {
-    let regular = Style::new().white();
-    let muted = Style::new().color256(rgb_to_ansi256((180, 180, 180)));
-    let faint = Style::new().color256(rgb_to_ansi256((110, 110, 110)));
-    let pinned = Style::new().color256(rgb_to_ansi256((255, 214, 10))).bold();
-    let deleted = Style::new().color256(rgb_to_ansi256((255, 138, 128)));
-    let warning = Style::new().yellow().bold();
-    let error = Style::new().red().bold();
-    let success = Style::new().green();
-    let info = muted.clone();
-    let highlight = Style::new()
+    // =========================================================================
+    // VISUAL LAYER - Concrete styles with actual colors (dark mode values)
+    // =========================================================================
+    let primary = Style::new().white();
+    let gray = Style::new().color256(rgb_to_ansi256((180, 180, 180)));
+    let gray_light = Style::new().color256(rgb_to_ansi256((110, 110, 110)));
+    let gold = Style::new().color256(rgb_to_ansi256((255, 214, 10)));
+    let red = Style::new().color256(rgb_to_ansi256((255, 138, 128)));
+    let green = Style::new().color256(rgb_to_ansi256((144, 238, 144)));
+    let yellow_bg = Style::new()
         .black()
         .on_color256(rgb_to_ansi256((229, 185, 0)));
-    let title = regular.clone().bold();
-    let time = muted.clone().italic();
-    // Semantic list styles
-    let list_index = Style::new().color256(rgb_to_ansi256((255, 214, 10))); // Yellow for regular indexes
-    let list_title = regular.clone(); // Normal text for list titles (not bold)
-    let deleted_index = Style::new().color256(rgb_to_ansi256((255, 138, 128))); // Red for deleted indexes
-    let deleted_title = muted.clone(); // Muted gray for deleted titles
-                                       // Help styles
-    let help_header = regular.clone().bold();
-    let help_section = Style::new().color256(rgb_to_ansi256((255, 214, 10))).bold();
-    let help_command = Style::new().color256(rgb_to_ansi256((144, 238, 144)));
-    let help_desc = muted.clone();
-    let help_usage = Style::new().cyan();
-    let status_icon = muted.clone();
 
     Theme::new()
-        .add(names::REGULAR, regular)
-        .add(names::MUTED, muted.clone())
-        .add(names::FAINT, faint)
-        .add(names::HIGHLIGHT, highlight)
-        .add(names::PINNED, pinned)
-        .add(names::DELETED, deleted.clone())
-        .add(names::ERROR, error)
-        .add(names::WARNING, warning)
-        .add(names::SUCCESS, success)
-        .add(names::INFO, info)
-        .add(names::TITLE, title)
-        .add(names::TIME, time)
-        .add(names::LIST_INDEX, list_index)
-        .add(names::LIST_TITLE, list_title)
-        .add(names::DELETED_INDEX, deleted_index)
-        .add(names::DELETED_TITLE, deleted_title)
-        .add(names::HELP_HEADER, help_header)
-        .add(names::HELP_SECTION, help_section)
-        .add(names::HELP_COMMAND, help_command)
-        .add(names::HELP_DESC, help_desc)
-        .add(names::HELP_USAGE, help_usage)
-        .add(names::STATUS_ICON, status_icon)
+        // Visual layer - concrete styles (internal)
+        .add("_primary", primary.clone())
+        .add("_gray", gray.clone())
+        .add("_gray_light", gray_light.clone())
+        .add("_gold", gold.clone())
+        .add("_red", red.clone())
+        .add("_green", green.clone())
+        .add("_yellow_bg", yellow_bg)
+        // =====================================================================
+        // PRESENTATION LAYER - Cross-cutting visual concepts (aliases)
+        // =====================================================================
+        .add("_secondary", "_gray")
+        .add("_tertiary", "_gray_light")
+        .add("_accent", "_gold")
+        .add("_danger", "_red")
+        .add("_success", "_green")
+        // =====================================================================
+        // SEMANTIC LAYER - What templates use
+        // =====================================================================
+        // Core semantic styles (concrete - need modifiers)
+        .add(names::TITLE, primary.clone().bold())
+        .add(names::TIME, gray.clone().italic())
+        .add(names::HINT, "_tertiary")
+        // List styles
+        .add(names::LIST_INDEX, "_accent")
+        .add(names::LIST_TITLE, "_primary")
+        .add(names::PINNED, gold.clone().bold())
+        .add(names::DELETED, "_danger")
+        .add(names::DELETED_INDEX, "_danger")
+        .add(names::DELETED_TITLE, "_secondary")
+        .add(names::STATUS_ICON, "_secondary")
+        // Search/highlight
+        .add(names::HIGHLIGHT, "_yellow_bg")
+        .add(names::MATCH, "_yellow_bg")
+        // Message styles (concrete - need modifiers for emphasis)
+        .add(names::ERROR, red.clone().bold())
+        .add(names::WARNING, gold.clone().bold())
+        .add(names::SUCCESS, "_success")
+        .add(names::INFO, "_secondary")
+        // Help styles
+        .add(names::HELP_HEADER, primary.clone().bold())
+        .add(names::HELP_SECTION, gold.clone().bold())
+        .add(names::HELP_COMMAND, "_success")
+        .add(names::HELP_DESC, "_secondary")
+        .add(names::HELP_USAGE, Style::new().cyan())
 }

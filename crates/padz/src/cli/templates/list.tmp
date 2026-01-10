@@ -1,5 +1,5 @@
 {%- if empty -%}
-{{- "No pads yet, create one with `padz create`" | style("muted") | nl -}}
+{{- "No pads yet, create one with `padz create`" | style("info") | nl -}}
 {{ help_text }}
 {%- else -%}
 {%- for pad in pads -%}

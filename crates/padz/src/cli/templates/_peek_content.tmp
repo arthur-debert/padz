@@ -1,13 +1,13 @@
 {#- Peek content preview for a pad -#}
 {#- Expects: pad.left_pad, pad.peek (PeekResult with opening_lines, truncated_count, closing_lines) -#}
 {{- "" | nl -}}
-{{- "    " }}{{ pad.left_pad }}    {{ pad.peek.opening_lines | style("faint") | indent(8) | nl -}}
+{{- "    " }}{{ pad.left_pad }}    {{ pad.peek.opening_lines | style("hint") | indent(8) | nl -}}
 {%- if pad.peek.truncated_count -%}
 {{- "" | nl -}}
-{{- "    " }}{{ pad.left_pad }}                      {{ ("... " ~ pad.peek.truncated_count ~ " lines not shown ...") | style("muted") | nl -}}
+{{- "    " }}{{ pad.left_pad }}                      {{ ("... " ~ pad.peek.truncated_count ~ " lines not shown ...") | style("info") | nl -}}
 {{- "" | nl -}}
 {%- endif -%}
 {%- if pad.peek.closing_lines -%}
-{{- "    " }}{{ pad.left_pad }}    {{ pad.peek.closing_lines | style("faint") | indent(8) | nl -}}
+{{- "    " }}{{ pad.left_pad }}    {{ pad.peek.closing_lines | style("hint") | indent(8) | nl -}}
 {%- endif -%}
 {{- "" | nl -}}

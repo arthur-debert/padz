@@ -28,7 +28,8 @@ use unicode_width::UnicodeWidthStr;
 /// directives in templates.
 fn create_renderer(output_mode: OutputMode) -> Renderer {
     let theme = get_resolved_theme();
-    let mut renderer = Renderer::with_output(theme, output_mode);
+    let mut renderer = Renderer::with_output(theme, output_mode)
+        .expect("Failed to create renderer - invalid theme aliases");
 
     // Register main templates
     renderer
@@ -267,11 +268,11 @@ fn render_pad_list_internal(
                     .map(|s| match s {
                         padzapp::index::MatchSegment::Plain(t) => MatchSegmentData {
                             text: t.clone(),
-                            style: names::MUTED.to_string(),
+                            style: names::INFO.to_string(),
                         },
                         padzapp::index::MatchSegment::Match(t) => MatchSegmentData {
                             text: t.clone(),
-                            style: names::HIGHLIGHT.to_string(),
+                            style: names::MATCH.to_string(),
                         },
                     })
                     .collect();
