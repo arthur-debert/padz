@@ -1,11 +1,24 @@
 //! # Rendering Module
 //!
-//! This module provides styled terminal output using the `outstanding` crate.   The core padzpp api
-//! will return regulat result adata objects, and the CLI layer will do the rendering.
+//! This module provides styled terminal output using the `outstanding` crate. The core padzapp API
+//! returns regular result data objects, and the CLI layer handles rendering.
 //!
-//! Redenring is mostly template based with , using minijinja templates, and using stylesheet's for
-//! controling formatted term output.  See the syles (crate::cli::styles) and templates (crate::cli::templates)
-//! modules for the specifics and best practices of each.
+//! Rendering is template-based using minijinja templates, with stylesheets controlling formatted
+//! terminal output. See the styles (`crate::cli::styles`) and templates (`crate::cli::templates`)
+//! modules for specifics and best practices.
+//!
+//! ## Table Layout
+//!
+//! The list view uses outstanding's `col()` filter for declarative column layout. Each row has:
+//! - `left_pin` (2 chars): Pin marker or empty
+//! - `status_icon` (2 chars): Todo status indicator
+//! - `index` (4 chars): Display index (p1., 1., d1.)
+//! - `title` (fill): Pad title, truncated to fit
+//! - `right_pin` (2 chars): Pin marker for pinned pads in regular section
+//! - `time_ago` (14 chars, right-aligned): Relative timestamp
+//!
+//! Column widths are defined as constants and the title width is calculated per-row based on
+//! the variable prefix width (which depends on section type and nesting depth).
 //!
 use super::setup::get_grouped_help;
 use super::styles::{get_resolved_theme, names};
@@ -19,7 +32,6 @@ use padzapp::api::{CmdMessage, MessageLevel, TodoStatus};
 use padzapp::index::{DisplayIndex, DisplayPad};
 use padzapp::peek::{format_as_peek, PeekResult};
 use serde::Serialize;
-use unicode_width::UnicodeWidthStr;
 
 /// Creates a Renderer with all templates registered.
 ///
@@ -64,8 +76,14 @@ fn create_renderer(output_mode: OutputMode) -> Renderer {
 
 /// Configuration for list rendering.
 pub const LINE_WIDTH: usize = 100;
-pub const TIME_WIDTH: usize = 14;
 pub const PIN_MARKER: &str = "⚲";
+
+/// Column widths for list layout (used by outstanding's `col()` filter)
+pub const COL_LEFT_PIN: usize = 2; // Pin marker or empty ("⚲ " or "  ")
+pub const COL_STATUS: usize = 2; // Status icon + space
+pub const COL_INDEX: usize = 4; // "p1.", " 1.", "d1."
+pub const COL_RIGHT_PIN: usize = 2; // Pin marker for pinned in regular section
+pub const COL_TIME: usize = 14; // Right-aligned timestamp
 
 /// Status indicators for todo status
 pub const STATUS_PLANNED: &str = "⚪︎";
@@ -86,23 +104,34 @@ struct MatchLineData {
 
 /// Semantic pad data for template rendering.
 ///
-/// Contains pre-computed layout strings plus semantic flags that templates
-/// use to select styles. This keeps layout math in Rust while letting
-/// templates handle style selection through conditionals.
+/// Contains raw values and semantic flags for template-driven styling.
+/// Layout is handled declaratively in templates using outstanding's `col()` filter.
+///
+/// ## Column Layout
+///
+/// Templates use `col(width)` for each column:
+/// - `indent` - Depth-based indentation (variable, not a `col()` column)
+/// - `left_pin | col(2)` - Pin marker or empty
+/// - `status_icon | col(2)` - Status indicator
+/// - `index | col(4)` - Display index
+/// - `title | col(title_width)` - Truncated/padded to fill
+/// - `right_pin | col(2)` - Right-side pin marker
+/// - `time_ago | col(14, align='right')` - Timestamp
 #[derive(Serialize)]
 struct PadLineData {
-    // Pre-computed layout components (Rust handles width calculations)
-    left_pad: String,
-    status_icon: String, // Todo status indicator (◯, ◐, ⬤)
-    index: String,
-    title: String,
-    padding: String,
-    time_ago: String,
+    // Layout prefix (depth-based indentation, not a col() column)
+    indent: String, // "  " per depth level + base padding for non-pinned
+    // Column values (templates handle truncation/padding via `col()` filter)
+    left_pin: String,    // "⚲" or "" (column pads to width)
+    status_icon: String, // Todo status indicator (⚪︎, ☉, ⚫︎)
+    index: String,       // "p1.", " 1.", "d1."
+    title: String,       // Raw title (template truncates via `col(title_width)`)
+    title_width: usize,  // Calculated fill width for this row
+    right_pin: String,   // "⚲" or "" for pinned pads in regular section
+    time_ago: String,    // Relative timestamp (template right-aligns via `col()`)
     // Semantic flags for template-driven style selection
     is_pinned_section: bool, // In the pinned section (p1, p2, etc.)
     is_deleted: bool,        // In the deleted section (d1, d2, etc.)
-    show_left_pin: bool,     // Show pin marker on left (pinned section)
-    show_right_pin: bool,    // Show pin marker on right (pinned pad in regular section)
     is_separator: bool,      // Empty line separator between sections
     // Search matches
     matches: Vec<MatchLineData>,
@@ -119,6 +148,12 @@ struct ListData {
     help_text: String,
     deleted_help: bool,
     peek: bool,
+    // Column widths for outstanding's `col()` filter
+    col_left_pin: usize,
+    col_status: usize,
+    col_index: usize,
+    col_right_pin: usize,
+    col_time: usize,
 }
 
 #[derive(Serialize)]
@@ -201,6 +236,11 @@ fn render_pad_list_internal(
         help_text: get_grouped_help(),
         deleted_help: false,
         peek: false,
+        col_left_pin: COL_LEFT_PIN,
+        col_status: COL_STATUS,
+        col_index: COL_INDEX,
+        col_right_pin: COL_RIGHT_PIN,
+        col_time: COL_TIME,
     };
 
     if pads.is_empty() {
@@ -236,19 +276,6 @@ fn render_pad_list_internal(
         // Display index: just local index with dot (no hierarchical prefix)
         let full_idx_str = format!("{}.", local_idx_str);
 
-        // Calculate left padding
-        // Base padding for root items:
-        // Pinned section: 0
-        // Regular section: 2 spaces (alignment with "⚲ ")
-        // Deleted section: 2 spaces (alignment)?
-        // Indentation for depth: depth * 2 spaces.
-        // TOTAL padding = base + depth*2.
-
-        let base_pad = if is_pinned_section { "" } else { "  " };
-
-        let depth_pad = "  ".repeat(depth);
-        let left_pad = format!("{}{}", base_pad, depth_pad);
-
         // Get status icon based on pad's todo status
         let status_icon = match dp.pad.metadata.status {
             TodoStatus::Planned => STATUS_PLANNED,
@@ -256,29 +283,50 @@ fn render_pad_list_internal(
             TodoStatus::Done => STATUS_DONE,
         }
         .to_string();
-        let status_icon_width = status_icon.width() + 1; // icon + space
 
-        // Calculate available width for title
-        let pin_width = PIN_MARKER.width();
-        let left_prefix_width = if is_pinned_section && depth == 0 {
-            pin_width + 1 // pin + " "
+        // Indent: The left_pin column (via col(2)) provides 2 chars.
+        // Additional indent is needed for nested items.
+        //
+        // Layout for total prefix (before status icon):
+        // - Pinned depth 0: 2 (just left_pin column with "⚲")
+        // - Pinned depth 1: 2 (left_pin = "  ", no extra indent)
+        // - Pinned depth 2+: depth * 2 (extra indent before left_pin)
+        // - Regular depth 0: 2 (just left_pin column with "  ")
+        // - Regular depth 1+: 2 + depth * 2 (extra indent before left_pin)
+        //
+        // Since left_pin always contributes 2, we need:
+        // - Pinned: max(0, (depth - 1) * 2) = depth.saturating_sub(1) * 2
+        // - Regular: depth * 2
+        let indent_width = if is_pinned_section {
+            depth.saturating_sub(1) * 2
         } else {
-            left_pad.width()
+            depth * 2
+        };
+        let total_indent_width = indent_width + COL_LEFT_PIN; // For title_width calculation
+        let indent = " ".repeat(indent_width);
+
+        // Column values for template's col() filter
+        // left_pin: pin marker for pinned section root items, empty otherwise
+        let left_pin = if is_pinned_section && depth == 0 {
+            PIN_MARKER.to_string()
+        } else {
+            String::new()
         };
 
-        let right_suffix_width = if show_right_pin { pin_width + 1 } else { 2 };
+        // right_pin: pin marker for pinned pads shown in regular section
+        let right_pin = if show_right_pin {
+            PIN_MARKER.to_string()
+        } else {
+            String::new()
+        };
 
-        let idx_width = full_idx_str.width();
-        let fixed_width =
-            left_prefix_width + status_icon_width + idx_width + right_suffix_width + TIME_WIDTH;
-        let available = LINE_WIDTH.saturating_sub(fixed_width);
+        // Calculate title_width (fill column)
+        // Fixed columns: left_pin(2) + status(2) + index(4) + right_pin(2) + time(14) = 24
+        // Plus the variable indent width
+        let fixed_columns = COL_LEFT_PIN + COL_STATUS + COL_INDEX + COL_RIGHT_PIN + COL_TIME;
+        let title_width = LINE_WIDTH.saturating_sub(fixed_columns + total_indent_width);
 
-        let title_display = truncate_to_width(dp.pad.metadata.title.as_str(), available);
-        let title_width = title_display.width();
-        let padding = " ".repeat(available.saturating_sub(title_width));
-
-        // Process matches (simplified for recursion, assume linear search logic handled matches correctly?)
-        // Matches logic seems OK.
+        // Process matches
         let mut match_lines = Vec::new();
         if let Some(matches) = &dp.matches {
             for m in matches {
@@ -300,10 +348,9 @@ fn render_pad_list_internal(
                     })
                     .collect();
 
-                let indent_width = left_prefix_width + idx_width + 1; // Approx alignment
-                let match_available = LINE_WIDTH
-                    .saturating_sub(TIME_WIDTH)
-                    .saturating_sub(indent_width);
+                // Match lines are indented to align under the title
+                let match_indent = total_indent_width + COL_LEFT_PIN + COL_STATUS + COL_INDEX;
+                let match_available = LINE_WIDTH.saturating_sub(COL_TIME + match_indent);
                 let truncated = truncate_match_segments(segments, match_available);
                 match_lines.push(MatchLineData {
                     line_number: format!("{:02}", m.line_number),
@@ -326,16 +373,16 @@ fn render_pad_list_internal(
         };
 
         pad_lines.push(PadLineData {
-            left_pad,
+            indent,
+            left_pin,
             status_icon,
             index: full_idx_str.clone(),
-            title: title_display,
-            padding,
+            title: dp.pad.metadata.title.clone(), // Raw title - template truncates via col()
+            title_width,
+            right_pin,
             time_ago: format_time_ago(dp.pad.metadata.created_at),
-            is_pinned_section: is_pinned_section && depth == 0, // Only root items get the pin section marker flow
-            is_deleted: is_deleted || is_deleted_root, // Inherit usage for color style? Or just per item? Usually per item.
-            show_left_pin: is_pinned_section && depth == 0,
-            show_right_pin,
+            is_pinned_section: is_pinned_section && depth == 0,
+            is_deleted: is_deleted || is_deleted_root,
             is_separator: false,
             matches: match_lines,
             more_matches_count: 0,
@@ -344,7 +391,6 @@ fn render_pad_list_internal(
 
         // RECURSE CHILDREN
         for child in &dp.children {
-            // New prefix is "full_idx_str" e.g. "01."
             process_pad(
                 child,
                 pad_lines,
@@ -364,16 +410,16 @@ fn render_pad_list_internal(
         // Separator between pinned and regular ROOTS
         if last_was_pinned && !is_pinned_section {
             pad_lines.push(PadLineData {
-                left_pad: String::new(),
+                indent: String::new(),
+                left_pin: String::new(),
                 status_icon: String::new(),
                 index: String::new(),
                 title: String::new(),
-                padding: String::new(),
+                title_width: 0,
+                right_pin: String::new(),
                 time_ago: String::new(),
                 is_pinned_section: false,
                 is_deleted: false,
-                show_left_pin: false,
-                show_right_pin: false,
                 is_separator: true,
                 matches: vec![],
                 more_matches_count: 0,
@@ -400,6 +446,11 @@ fn render_pad_list_internal(
         help_text: String::new(), // Not used when not empty
         deleted_help: show_deleted_help,
         peek,
+        col_left_pin: COL_LEFT_PIN,
+        col_status: COL_STATUS,
+        col_index: COL_INDEX,
+        col_right_pin: COL_RIGHT_PIN,
+        col_time: COL_TIME,
     };
 
     let renderer = create_renderer(mode);
@@ -607,7 +658,8 @@ fn format_time_ago(timestamp: DateTime<Utc>) -> String {
     //   2   hours ago
     // Match with " ago" suffix to avoid substring issues (e.g., "hour" in "hours")
     // Note: seconds/minutes are already 7 chars, no replacement needed
-    let time_str = time_str
+    // The template handles right-alignment via col(col_time, align='right')
+    time_str
         .replace("hours ago", "  hours ago") // 5 -> 7
         .replace("hour ago", "   hour ago") // 4 -> 7
         .replace("days ago", "   days ago") // 4 -> 7
@@ -617,10 +669,7 @@ fn format_time_ago(timestamp: DateTime<Utc>) -> String {
         .replace("months ago", " months ago") // 6 -> 7
         .replace("month ago", "  month ago") // 5 -> 7
         .replace("years ago", "  years ago") // 5 -> 7
-        .replace("year ago", "   year ago"); // 4 -> 7
-
-    // Right-pad to TIME_WIDTH for consistent column alignment
-    format!("{:>width$}", time_str, width = TIME_WIDTH)
+        .replace("year ago", "   year ago") // 4 -> 7
 }
 
 #[cfg(test)]

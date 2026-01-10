@@ -1,5 +1,5 @@
 {#- Single pad line rendering -#}
-{#- Expects: pad (PadLineData), pin_marker, peek (bool) -#}
+{#- Expects: pad (PadLineData), pin_marker, peek (bool), col_* (column widths) -#}
 
 {#- Determine index style based on section type -#}
 {%- set index_style = "list-index" -%}
@@ -17,10 +17,12 @@
   {%- set title_style = "title" -%}
 {%- endif -%}
 
-{#- Render the pad line -#}
-{{- pad.left_pad -}}
-{%- if pad.show_left_pin %}{{ pin_marker | style("pinned") }} {% endif -%}
-{{- pad.status_icon | style("status-icon") }} {{ pad.index | style(index_style) -}}
-{{- pad.title | style(title_style) }}{{ pad.padding -}}
-{%- if pad.show_right_pin %}{{ pin_marker | style("pinned") }} {% else %}  {% endif -%}
-{{- pad.time_ago | style("time") | nl -}}
+{#- Render the pad line using col() filter for layout -#}
+{#- Layout: indent | left_pin(2) | status(2) | index(4) | title(fill) | right_pin(2) | time(14) -#}
+{{- pad.indent -}}
+{{- pad.left_pin | col(col_left_pin) | style("pinned") -}}
+{{- pad.status_icon | col(col_status) | style("status-icon") -}}
+{{- pad.index | col(col_index) | style(index_style) -}}
+{{- pad.title | col(pad.title_width) | style(title_style) -}}
+{{- pad.right_pin | col(col_right_pin) | style("pinned") -}}
+{{- pad.time_ago | col(col_time, align='right') | style("time") | nl -}}
