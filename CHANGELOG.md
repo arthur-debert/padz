@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **Updated outstanding to v0.11.1** - Latest rendering and styling features
+- **File-based YAML stylesheet** - Styles now defined in `styles/default.yaml` with adaptive light/dark support
+- **Refactored templates** - Renamed to `.tmpl` extension, loaded via HashMap for cleaner code
+
 ## [0.10.1] - 2026-01-11
 
 ### Changed
