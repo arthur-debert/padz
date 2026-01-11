@@ -95,8 +95,7 @@
 //! ```
 
 use console::Style;
-use once_cell::sync::Lazy;
-use outstanding::{rgb_to_ansi256, AdaptiveTheme, Theme};
+use outstanding::{rgb_to_ansi256, Theme};
 
 /// Semantic style names for use in templates and renderers.
 ///
@@ -143,12 +142,6 @@ pub mod names {
     pub const LINE_NUMBER: &str = "line-number";
     pub const SEPARATOR: &str = "separator";
 }
-
-/// The adaptive theme for padz, containing both light and dark variants.
-/// Note: For rendering, use `get_resolved_theme()` which auto-detects the mode.
-#[allow(dead_code)]
-pub static PADZ_THEME: Lazy<AdaptiveTheme> =
-    Lazy::new(|| AdaptiveTheme::new(build_light_theme(), build_dark_theme()));
 
 /// Returns the resolved theme based on the current terminal color mode.
 /// Uses the dark-light crate to detect light/dark mode automatically.

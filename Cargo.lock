@@ -497,6 +497,27 @@ dependencies = [
 ]
 
 [[package]]
+name = "csv"
+version = "1.4.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "52cd9d68cf7efc6ddfaaee42e7288d3a99d613d4b50f76ce9827ae0c6e14f938"
+dependencies = [
+ "csv-core",
+ "itoa",
+ "ryu",
+ "serde_core",
+]
+
+[[package]]
+name = "csv-core"
+version = "0.1.13"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "704a3c26996a80471189265814dbc2c257598b96b8a7feae2d31ace646bb9782"
+dependencies = [
+ "memchr",
+]
+
+[[package]]
 name = "dark-light"
 version = "0.2.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1158,25 +1179,28 @@ dependencies = [
 
 [[package]]
 name = "outstanding"
-version = "0.9.0"
+version = "0.11.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e07c8f77812baa5e21043562a9a6c3e38e927dbc9c4871a976e9e53062c32341"
+checksum = "ede79cd293a4aad15400be4a03ec780fdc0d2c86e5bd25ec2a3340dd66eac22a"
 dependencies = [
  "console",
+ "csv",
  "dark-light",
  "deunicode",
  "minijinja",
  "once_cell",
+ "quick-xml",
  "serde",
  "serde_json",
+ "serde_yaml",
  "unicode-width",
 ]
 
 [[package]]
 name = "outstanding-clap"
-version = "0.9.0"
+version = "0.11.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "52107047c0b034890d0328af042021a0d707df5b498d7818aa71697f2e89aeb2"
+checksum = "1377248c1cfe17e24dfff4c819cd26bdcd646573bcd785271c8f312cf0baa6a5"
 dependencies = [
  "anyhow",
  "clap",
@@ -1390,6 +1414,16 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "41b27c0d365d60ff3e085007911d73419e5664de48155d558ebfa84d117a5109"
 dependencies = [
  "pulldown-cmark",
+]
+
+[[package]]
+name = "quick-xml"
+version = "0.36.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f7649a7b4df05aed9ea7ec6f628c67c9953a43869b8bc50929569b2999d443fe"
+dependencies = [
+ "memchr",
+ "serde",
 ]
 
 [[package]]
@@ -1617,6 +1651,19 @@ dependencies = [
  "proc-macro2",
  "quote",
  "syn 2.0.111",
+]
+
+[[package]]
+name = "serde_yaml"
+version = "0.9.34+deprecated"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "6a8b1a1a2ebf674015cc02edccce75287f1a0130d394307b36743c2f5d504b47"
+dependencies = [
+ "indexmap",
+ "itoa",
+ "ryu",
+ "serde",
+ "unsafe-libyaml",
 ]
 
 [[package]]
@@ -1879,6 +1926,12 @@ name = "unicode-width"
 version = "0.2.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b4ac048d71ede7ee76d585517add45da530660ef4390e49b098733c6e897f254"
+
+[[package]]
+name = "unsafe-libyaml"
+version = "0.2.11"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "673aac59facbab8a9007c7f6108d11f63b603f7cabff99fabf650fea5c32b861"
 
 [[package]]
 name = "utf8parse"

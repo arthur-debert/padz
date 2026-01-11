@@ -27,7 +27,7 @@ use super::templates::{
     PAD_LINE_PARTIAL, PEEK_CONTENT_PARTIAL, TEXT_LIST_TEMPLATE,
 };
 use chrono::{DateTime, Utc};
-use outstanding::{render_or_serialize, truncate_to_width, OutputMode, Renderer, ThemeChoice};
+use outstanding::{render_or_serialize, truncate_to_width, OutputMode, Renderer};
 use padzapp::api::{CmdMessage, MessageLevel, TodoStatus};
 use padzapp::index::{DisplayIndex, DisplayPad};
 use padzapp::peek::{format_as_peek, PeekResult};
@@ -222,9 +222,7 @@ fn render_pad_list_internal(
         let theme = get_resolved_theme();
         return render_or_serialize(
             "", // Template not used for JSON
-            &json_data,
-            ThemeChoice::from(&theme),
-            mode,
+            &json_data, &theme, mode,
         )
         .unwrap_or_else(|_| "{\"pads\":[]}".to_string());
     }
@@ -244,7 +242,7 @@ fn render_pad_list_internal(
     };
 
     if pads.is_empty() {
-        let renderer = create_renderer(mode);
+        let mut renderer = create_renderer(mode);
         return renderer
             .render("list", &empty_data)
             .unwrap_or_else(|_| "No pads found.\n".to_string());
@@ -453,7 +451,7 @@ fn render_pad_list_internal(
         col_time: COL_TIME,
     };
 
-    let renderer = create_renderer(mode);
+    let mut renderer = create_renderer(mode);
     renderer
         .render("list", &data)
         .unwrap_or_else(|e| format!("Render error: {}\n", e))
@@ -507,9 +505,7 @@ fn render_full_pads_internal(pads: &[DisplayPad], output_mode: Option<OutputMode
         let theme = get_resolved_theme();
         return render_or_serialize(
             "", // Template not used for JSON
-            &json_data,
-            ThemeChoice::from(&theme),
-            mode,
+            &json_data, &theme, mode,
         )
         .unwrap_or_else(|_| "{\"pads\":[]}".to_string());
     }
@@ -532,7 +528,7 @@ fn render_full_pads_internal(pads: &[DisplayPad], output_mode: Option<OutputMode
 
     let data = FullPadData { pads: entries };
 
-    let renderer = create_renderer(mode);
+    let mut renderer = create_renderer(mode);
     renderer
         .render("full_pad", &data)
         .unwrap_or_else(|e| format!("Render error: {}\n", e))
@@ -558,9 +554,7 @@ fn render_text_list_internal(
         let theme = get_resolved_theme();
         return render_or_serialize(
             "", // Template not used for JSON
-            &json_data,
-            ThemeChoice::from(&theme),
-            mode,
+            &json_data, &theme, mode,
         )
         .unwrap_or_else(|_| "{\"lines\":[]}".to_string());
     }
@@ -570,7 +564,7 @@ fn render_text_list_internal(
         empty_message: empty_message.to_string(),
     };
 
-    let renderer = create_renderer(mode);
+    let mut renderer = create_renderer(mode);
     renderer
         .render("text_list", &data)
         .unwrap_or_else(|_| format!("{}\n", empty_message))
@@ -599,7 +593,7 @@ pub fn render_messages(messages: &[CmdMessage], output_mode: OutputMode) -> Stri
         return render_or_serialize(
             "", // Template not used for JSON
             &json_data,
-            ThemeChoice::from(&theme),
+            &theme,
             output_mode,
         )
         .unwrap_or_else(|_| "{}".to_string());
@@ -626,7 +620,7 @@ pub fn render_messages(messages: &[CmdMessage], output_mode: OutputMode) -> Stri
         messages: message_data,
     };
 
-    let renderer = create_renderer(output_mode);
+    let mut renderer = create_renderer(output_mode);
     renderer.render("messages", &data).unwrap_or_else(|_| {
         messages
             .iter()

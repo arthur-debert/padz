@@ -21,8 +21,8 @@ clap_complete = { version = "4.5", features = ["unstable-dynamic"] }
 console = "0.15"
 dark-light = "0.2"
 once_cell = "1.19"
-outstanding = "0.9.0"
-outstanding-clap = "0.9.0"
+outstanding = "0.11.1"
+outstanding-clap = "0.11.1"
 serde = { version = "1.0.228", features = ["derive"] }
 timeago = "0.4"
 unicode-width = "0.2.2"
