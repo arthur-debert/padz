@@ -22,10 +22,7 @@
 //!
 use super::setup::get_grouped_help;
 use super::styles::{get_resolved_theme, names};
-use super::templates::{
-    DELETED_HELP_PARTIAL, FULL_PAD_TEMPLATE, LIST_TEMPLATE, MATCH_LINES_PARTIAL, MESSAGES_TEMPLATE,
-    PAD_LINE_PARTIAL, PEEK_CONTENT_PARTIAL, TEXT_LIST_TEMPLATE,
-};
+use super::templates::EMBEDDED_TEMPLATES;
 use chrono::{DateTime, Utc};
 use outstanding::{render_or_serialize, truncate_to_width, OutputMode, Renderer};
 use padzapp::api::{CmdMessage, MessageLevel, TodoStatus};
@@ -38,38 +35,21 @@ use serde::Serialize;
 /// The renderer resolves the adaptive theme based on terminal color mode
 /// and registers both main templates and partials, enabling `{% include %}`
 /// directives in templates.
+///
+/// Templates are loaded from the embedded HashMap which is populated from
+/// template files at compile time (see templates module).
 fn create_renderer(output_mode: OutputMode) -> Renderer {
     let theme = get_resolved_theme();
     let mut renderer = Renderer::with_output(theme, output_mode)
         .expect("Failed to create renderer - invalid theme aliases");
 
-    // Register main templates
-    renderer
-        .add_template("list", LIST_TEMPLATE)
-        .expect("Failed to register list template");
-    renderer
-        .add_template("full_pad", FULL_PAD_TEMPLATE)
-        .expect("Failed to register full_pad template");
-    renderer
-        .add_template("text_list", TEXT_LIST_TEMPLATE)
-        .expect("Failed to register text_list template");
-    renderer
-        .add_template("messages", MESSAGES_TEMPLATE)
-        .expect("Failed to register messages template");
-
-    // Register partial templates (for {% include %} support)
-    renderer
-        .add_template("_deleted_help", DELETED_HELP_PARTIAL)
-        .expect("Failed to register _deleted_help partial");
-    renderer
-        .add_template("_peek_content", PEEK_CONTENT_PARTIAL)
-        .expect("Failed to register _peek_content partial");
-    renderer
-        .add_template("_match_lines", MATCH_LINES_PARTIAL)
-        .expect("Failed to register _match_lines partial");
-    renderer
-        .add_template("_pad_line", PAD_LINE_PARTIAL)
-        .expect("Failed to register _pad_line partial");
+    // Load all templates into the renderer
+    // This ensures {% include %} directives work correctly
+    for (name, content) in EMBEDDED_TEMPLATES.iter() {
+        renderer
+            .add_template(name, content)
+            .unwrap_or_else(|_| panic!("Failed to register template: {}", name));
+    }
 
     renderer
 }
