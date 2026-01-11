@@ -9,8 +9,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [0.10.1] - 2026-01-11
 
-## [0.10.1] - 2026-01-11
-
 ### Changed
 
 - Switched to outstanding's `col()` filter for declarative table layout
@@ -251,7 +249,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Live testing shell
 
 [Unreleased]: https://github.com/arthur-debert/padz/compare/v0.10.1...HEAD
-[0.10.1]: https://github.com/arthur-debert/padz/compare/v0.10.0...v0.10.1
 [0.10.1]: https://github.com/arthur-debert/padz/compare/v0.10.0...v0.10.1
 [0.10.0]: https://github.com/arthur-debert/padz/compare/v0.9.8...v0.10.0
 [0.9.8]: https://github.com/arthur-debert/padz/compare/v0.9.7...v0.9.8
