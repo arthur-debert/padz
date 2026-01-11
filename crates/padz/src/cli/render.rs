@@ -21,7 +21,7 @@
 //! the variable prefix width (which depends on section type and nesting depth).
 //!
 use super::setup::get_grouped_help;
-use super::styles::{get_resolved_theme, names};
+use super::styles::get_resolved_theme;
 use super::templates::EMBEDDED_TEMPLATES;
 use chrono::{DateTime, Utc};
 use outstanding::{render_or_serialize, truncate_to_width, OutputMode, Renderer};
@@ -317,11 +317,11 @@ fn render_pad_list_internal(
                     .map(|s| match s {
                         padzapp::index::MatchSegment::Plain(t) => MatchSegmentData {
                             text: t.clone(),
-                            style: names::INFO.to_string(),
+                            style: "info".to_string(),
                         },
                         padzapp::index::MatchSegment::Match(t) => MatchSegmentData {
                             text: t.clone(),
-                            style: names::MATCH.to_string(),
+                            style: "match".to_string(),
                         },
                     })
                     .collect();
@@ -584,10 +584,10 @@ pub fn render_messages(messages: &[CmdMessage], output_mode: OutputMode) -> Stri
         .iter()
         .map(|msg| {
             let style = match msg.level {
-                MessageLevel::Info => names::INFO,
-                MessageLevel::Success => names::SUCCESS,
-                MessageLevel::Warning => names::WARNING,
-                MessageLevel::Error => names::ERROR,
+                MessageLevel::Info => "info",
+                MessageLevel::Success => "success",
+                MessageLevel::Warning => "warning",
+                MessageLevel::Error => "error",
             };
             MessageData {
                 content: msg.content.clone(),
