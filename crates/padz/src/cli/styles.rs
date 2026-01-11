@@ -46,7 +46,7 @@
 //! - **Templates stay clean**: They use semantic names like `time` instead of color codes
 //! - **Consistency**: All "secondary" text looks the same across the app
 //! - **Easy iteration**: Change `_gray` color and all secondary text updates
-//! - **Light/dark support**: Only the visual layer differs between themes
+//! - **Light/dark support**: Styles are adaptive with light/dark variants
 //!
 //! ## Style Reference
 //!
@@ -94,13 +94,16 @@
 //! # Output: [pinned]⚲[/pinned] [time]⚪︎[/time] [list-index]p1.[/list-index]
 //! ```
 
-use console::Style;
-use outstanding::{rgb_to_ansi256, Theme};
+use outstanding::Theme;
+
+/// The default stylesheet, embedded at compile time.
+const DEFAULT_STYLESHEET: &str = include_str!("../styles/default.yaml");
 
 /// Semantic style names for use in templates and renderers.
 ///
 /// These are the ONLY style names that should be used in templates.
 /// All names describe WHAT is being displayed, not HOW it looks.
+#[allow(dead_code)]
 pub mod names {
     // Core semantic styles
     pub const TITLE: &str = "title";
@@ -144,153 +147,8 @@ pub mod names {
 }
 
 /// Returns the resolved theme based on the current terminal color mode.
-/// Uses the dark-light crate to detect light/dark mode automatically.
+/// The theme is loaded from the embedded YAML stylesheet and automatically
+/// adapts to light/dark mode based on OS detection.
 pub fn get_resolved_theme() -> Theme {
-    match dark_light::detect() {
-        dark_light::Mode::Light => build_light_theme(),
-        dark_light::Mode::Dark => build_dark_theme(),
-    }
-}
-
-fn build_light_theme() -> Theme {
-    // =========================================================================
-    // VISUAL LAYER - Concrete styles with actual colors
-    // These are the raw building blocks, prefixed with _ to indicate internal use
-    // =========================================================================
-    let primary = Style::new().black();
-    let gray = Style::new().color256(rgb_to_ansi256((115, 115, 115)));
-    let gray_light = Style::new().color256(rgb_to_ansi256((173, 173, 173)));
-    let gold = Style::new().color256(rgb_to_ansi256((196, 140, 0)));
-    let red = Style::new().color256(rgb_to_ansi256((186, 33, 45)));
-    let green = Style::new().color256(rgb_to_ansi256((0, 128, 0)));
-    let yellow_bg = Style::new()
-        .black()
-        .on_color256(rgb_to_ansi256((255, 235, 59)));
-
-    Theme::new()
-        // Visual layer - concrete styles (internal)
-        .add("_primary", primary.clone())
-        .add("_gray", gray.clone())
-        .add("_gray_light", gray_light.clone())
-        .add("_gold", gold.clone())
-        .add("_red", red.clone())
-        .add("_green", green.clone())
-        .add("_yellow_bg", yellow_bg)
-        // =====================================================================
-        // PRESENTATION LAYER - Cross-cutting visual concepts (aliases)
-        // These provide consistent appearance for similar elements
-        // =====================================================================
-        .add("_secondary", "_gray")
-        .add("_tertiary", "_gray_light")
-        .add("_accent", "_gold")
-        .add("_danger", "_red")
-        .add("_success", "_green")
-        // =====================================================================
-        // SEMANTIC LAYER - What templates use
-        // Some are aliases, some are concrete (when modifiers like bold/italic needed)
-        // =====================================================================
-        // Core semantic styles (concrete - need modifiers)
-        .add(names::TITLE, primary.clone().bold())
-        .add(names::TIME, gray.clone().italic())
-        .add(names::HINT, "_tertiary")
-        // List styles
-        .add(names::LIST_INDEX, "_accent")
-        .add(names::LIST_TITLE, "_primary")
-        .add(names::PINNED, gold.clone().bold())
-        .add(names::DELETED, "_danger")
-        .add(names::DELETED_INDEX, "_danger")
-        .add(names::DELETED_TITLE, "_secondary")
-        .add(names::STATUS_ICON, "_secondary")
-        // Search/highlight
-        .add(names::HIGHLIGHT, "_yellow_bg")
-        .add(names::MATCH, "_yellow_bg")
-        // Message styles (concrete - need modifiers for emphasis)
-        .add(names::ERROR, red.clone().bold())
-        .add(names::WARNING, gold.clone().bold())
-        .add(names::SUCCESS, "_success")
-        .add(names::INFO, "_secondary")
-        // Help styles
-        .add(names::HELP_HEADER, primary.clone().bold())
-        .add(names::HELP_SECTION, gold.clone().bold())
-        .add(names::HELP_COMMAND, "_success")
-        .add(names::HELP_DESC, "_secondary")
-        .add(names::HELP_USAGE, Style::new().cyan())
-        // Template content styles (aliases to presentation layer)
-        .add(names::HELP_TEXT, "_tertiary")
-        .add(names::SECTION_HEADER, "_secondary")
-        .add(names::EMPTY_MESSAGE, "_secondary")
-        .add(names::PREVIEW, "_tertiary")
-        .add(names::TRUNCATION, "_secondary")
-        .add(names::LINE_NUMBER, "_secondary")
-        .add(names::SEPARATOR, "_tertiary")
-}
-
-fn build_dark_theme() -> Theme {
-    // =========================================================================
-    // VISUAL LAYER - Concrete styles with actual colors (dark mode values)
-    // =========================================================================
-    let primary = Style::new().white();
-    let gray = Style::new().color256(rgb_to_ansi256((180, 180, 180)));
-    let gray_light = Style::new().color256(rgb_to_ansi256((110, 110, 110)));
-    let gold = Style::new().color256(rgb_to_ansi256((255, 214, 10)));
-    let red = Style::new().color256(rgb_to_ansi256((255, 138, 128)));
-    let green = Style::new().color256(rgb_to_ansi256((144, 238, 144)));
-    let yellow_bg = Style::new()
-        .black()
-        .on_color256(rgb_to_ansi256((229, 185, 0)));
-
-    Theme::new()
-        // Visual layer - concrete styles (internal)
-        .add("_primary", primary.clone())
-        .add("_gray", gray.clone())
-        .add("_gray_light", gray_light.clone())
-        .add("_gold", gold.clone())
-        .add("_red", red.clone())
-        .add("_green", green.clone())
-        .add("_yellow_bg", yellow_bg)
-        // =====================================================================
-        // PRESENTATION LAYER - Cross-cutting visual concepts (aliases)
-        // =====================================================================
-        .add("_secondary", "_gray")
-        .add("_tertiary", "_gray_light")
-        .add("_accent", "_gold")
-        .add("_danger", "_red")
-        .add("_success", "_green")
-        // =====================================================================
-        // SEMANTIC LAYER - What templates use
-        // =====================================================================
-        // Core semantic styles (concrete - need modifiers)
-        .add(names::TITLE, primary.clone().bold())
-        .add(names::TIME, gray.clone().italic())
-        .add(names::HINT, "_tertiary")
-        // List styles
-        .add(names::LIST_INDEX, "_accent")
-        .add(names::LIST_TITLE, "_primary")
-        .add(names::PINNED, gold.clone().bold())
-        .add(names::DELETED, "_danger")
-        .add(names::DELETED_INDEX, "_danger")
-        .add(names::DELETED_TITLE, "_secondary")
-        .add(names::STATUS_ICON, "_secondary")
-        // Search/highlight
-        .add(names::HIGHLIGHT, "_yellow_bg")
-        .add(names::MATCH, "_yellow_bg")
-        // Message styles (concrete - need modifiers for emphasis)
-        .add(names::ERROR, red.clone().bold())
-        .add(names::WARNING, gold.clone().bold())
-        .add(names::SUCCESS, "_success")
-        .add(names::INFO, "_secondary")
-        // Help styles
-        .add(names::HELP_HEADER, primary.clone().bold())
-        .add(names::HELP_SECTION, gold.clone().bold())
-        .add(names::HELP_COMMAND, "_success")
-        .add(names::HELP_DESC, "_secondary")
-        .add(names::HELP_USAGE, Style::new().cyan())
-        // Template content styles (aliases to presentation layer)
-        .add(names::HELP_TEXT, "_tertiary")
-        .add(names::SECTION_HEADER, "_secondary")
-        .add(names::EMPTY_MESSAGE, "_secondary")
-        .add(names::PREVIEW, "_tertiary")
-        .add(names::TRUNCATION, "_secondary")
-        .add(names::LINE_NUMBER, "_secondary")
-        .add(names::SEPARATOR, "_tertiary")
+    Theme::from_yaml(DEFAULT_STYLESHEET).expect("Failed to parse embedded stylesheet")
 }
