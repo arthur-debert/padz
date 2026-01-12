@@ -2,13 +2,16 @@
 //!
 //! Styles are defined in `styles/default.yaml` using a three-layer architecture.
 //! See that file for the full style reference.
+//!
+//! Stylesheets are embedded at compile time using the `embed_styles!` macro.
 
-use outstanding::Theme;
+use once_cell::sync::Lazy;
+use outstanding::{embed_styles, Theme};
 
-/// The default stylesheet, embedded at compile time.
-const DEFAULT_STYLESHEET: &str = include_str!("../styles/default.yaml");
-
-/// Returns the resolved theme based on the current terminal color mode.
-pub fn get_resolved_theme() -> Theme {
-    Theme::from_yaml(DEFAULT_STYLESHEET).expect("Failed to parse embedded stylesheet")
-}
+/// The default theme, embedded at compile time.
+pub static DEFAULT_THEME: Lazy<Theme> = Lazy::new(|| {
+    let mut registry = embed_styles!("src/styles");
+    registry
+        .get("default")
+        .expect("Failed to load default theme")
+});

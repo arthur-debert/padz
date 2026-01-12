@@ -21,14 +21,19 @@
 //! the variable prefix width (which depends on section type and nesting depth).
 //!
 use super::setup::get_grouped_help;
-use super::styles::get_resolved_theme;
-use super::templates::EMBEDDED_TEMPLATES;
+use super::styles::DEFAULT_THEME;
+use super::templates::TEMPLATES;
 use chrono::{DateTime, Utc};
-use outstanding::{render_or_serialize, truncate_to_width, OutputMode, Renderer};
+use outstanding::{render_or_serialize, truncate_to_width, OutputMode, Renderer, Theme};
 use padzapp::api::{CmdMessage, MessageLevel, TodoStatus};
 use padzapp::index::{DisplayIndex, DisplayPad};
 use padzapp::peek::{format_as_peek, PeekResult};
 use serde::Serialize;
+
+/// Gets the default theme from the embedded stylesheet.
+fn get_theme() -> Theme {
+    DEFAULT_THEME.clone()
+}
 
 /// Creates a Renderer with all templates registered.
 ///
@@ -36,18 +41,18 @@ use serde::Serialize;
 /// and registers both main templates and partials, enabling `{% include %}`
 /// directives in templates.
 ///
-/// Templates are loaded from the embedded HashMap which is populated from
-/// template files at compile time (see templates module).
+/// Stylesheets and templates are embedded at compile time using outstanding macros.
 fn create_renderer(output_mode: OutputMode) -> Renderer {
-    let theme = get_resolved_theme();
+    let theme = get_theme();
+
     let mut renderer = Renderer::with_output(theme, output_mode)
         .expect("Failed to create renderer - invalid theme aliases");
 
-    // Load all templates into the renderer
-    // This ensures {% include %} directives work correctly
-    for (name, content) in EMBEDDED_TEMPLATES.iter() {
+    // Load all embedded templates
+    for name in TEMPLATES.names() {
+        let content = TEMPLATES.get_content(name).expect("Template not found");
         renderer
-            .add_template(name, content)
+            .add_template(name, &content)
             .unwrap_or_else(|_| panic!("Failed to register template: {}", name));
     }
 
@@ -199,7 +204,7 @@ fn render_pad_list_internal(
         let json_data = JsonPadList {
             pads: pads.to_vec(),
         };
-        let theme = get_resolved_theme();
+        let theme = get_theme();
         return render_or_serialize(
             "", // Template not used for JSON
             &json_data, &theme, mode,
@@ -482,7 +487,7 @@ fn render_full_pads_internal(pads: &[DisplayPad], output_mode: Option<OutputMode
         let json_data = JsonPadList {
             pads: pads.to_vec(),
         };
-        let theme = get_resolved_theme();
+        let theme = get_theme();
         return render_or_serialize(
             "", // Template not used for JSON
             &json_data, &theme, mode,
@@ -531,7 +536,7 @@ fn render_text_list_internal(
             lines: lines.to_vec(),
             empty_message: empty_message.to_string(),
         };
-        let theme = get_resolved_theme();
+        let theme = get_theme();
         return render_or_serialize(
             "", // Template not used for JSON
             &json_data, &theme, mode,
@@ -569,7 +574,7 @@ pub fn render_messages(messages: &[CmdMessage], output_mode: OutputMode) -> Stri
         let json_data = JsonMessages {
             messages: messages.to_vec(),
         };
-        let theme = get_resolved_theme();
+        let theme = get_theme();
         return render_or_serialize(
             "", // Template not used for JSON
             &json_data,

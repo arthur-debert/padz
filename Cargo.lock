@@ -1179,9 +1179,9 @@ dependencies = [
 
 [[package]]
 name = "outstanding"
-version = "0.11.1"
+version = "0.12.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ede79cd293a4aad15400be4a03ec780fdc0d2c86e5bd25ec2a3340dd66eac22a"
+checksum = "5f6f997ffc3951ef4aa2f4b302197312ed80af58ff71a258147be341a4d75582"
 dependencies = [
  "console",
  "csv",
@@ -1189,6 +1189,7 @@ dependencies = [
  "deunicode",
  "minijinja",
  "once_cell",
+ "outstanding-macros",
  "quick-xml",
  "serde",
  "serde_json",
@@ -1198,9 +1199,9 @@ dependencies = [
 
 [[package]]
 name = "outstanding-clap"
-version = "0.11.1"
+version = "0.12.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1377248c1cfe17e24dfff4c819cd26bdcd646573bcd785271c8f312cf0baa6a5"
+checksum = "eac259b247a43aec836bb66bc853c009ee39b2a0ca64d47a20bfb447b98527e7"
 dependencies = [
  "anyhow",
  "clap",
@@ -1211,6 +1212,17 @@ dependencies = [
  "serde_json",
  "terminal_size",
  "thiserror 2.0.17",
+]
+
+[[package]]
+name = "outstanding-macros"
+version = "0.12.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "eb65b8f263d241bad5ad7cb574ce991c17bab6e8ccf1dca5a56a9b6960c8b7aa"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn 2.0.111",
 ]
 
 [[package]]
