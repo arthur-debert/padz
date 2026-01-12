@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.10.2] - 2026-01-12
+
+## [0.10.2] - 2026-01-12
+
 ### Changed
 
 - **Updated outstanding to v0.12.0** - Compile-time embedding with macros
@@ -255,7 +259,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Demo flow verification script
 - Live testing shell
 
-[Unreleased]: https://github.com/arthur-debert/padz/compare/v0.10.1...HEAD
+[Unreleased]: https://github.com/arthur-debert/padz/compare/v0.10.2...HEAD
+[0.10.2]: https://github.com/arthur-debert/padz/compare/v0.10.1...v0.10.2
+[0.10.2]: https://github.com/arthur-debert/padz/compare/v0.10.1...v0.10.2
 [0.10.1]: https://github.com/arthur-debert/padz/compare/v0.10.0...v0.10.1
 [0.10.0]: https://github.com/arthur-debert/padz/compare/v0.9.8...v0.10.0
 [0.9.8]: https://github.com/arthur-debert/padz/compare/v0.9.7...v0.9.8
