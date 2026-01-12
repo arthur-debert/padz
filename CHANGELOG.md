@@ -9,9 +9,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
-- **Updated outstanding to v0.11.1** - Latest rendering and styling features
-- **File-based YAML stylesheet** - Styles now defined in `styles/default.yaml` with adaptive light/dark support
-- **Refactored templates** - Renamed to `.tmpl` extension, loaded via HashMap for cleaner code
+- **Updated outstanding to v0.12.0** - Compile-time embedding with macros
+- **File-based YAML stylesheet** - Styles defined in `styles/default.yaml` with adaptive light/dark support
+- **Compile-time embedding** - Using `embed_styles!` and `embed_templates!` macros for zero-overhead resource loading
+- **Template extension** - Renamed templates from `.tmpl` to `.jinja` (new standard)
 
 ## [0.10.1] - 2026-01-11
 
