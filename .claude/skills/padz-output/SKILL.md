@@ -11,7 +11,8 @@ description: |
 
 ## Architecture Overview
 
-Padz uses a three-layer system for CLI output:
+Padz uses a three-layer system for CLI output, much like web appl, wher the api returns a data object, and 
+the rendering system (using outstanding create) uses file based templates (minijinja) + styles to render:
 
 1. **Templates** (Minijinja `.jinja` files) - Define structure and layout
 2. **Styles** (YAML stylesheet) - Define colors and formatting
@@ -32,7 +33,7 @@ padz list --output=json       # Machine-readable JSON
 ### Key Files
 
 | Purpose | Location |
-|---------|----------|
+| --------- | ---------- |
 | Templates | `crates/padz/src/cli/templates/*.jinja` |
 | Template registry | `crates/padz/src/cli/templates.rs` |
 | Stylesheet | `crates/padz/src/styles/default.yaml` |
@@ -67,6 +68,7 @@ Templates use Minijinja syntax. Located in `crates/padz/src/cli/templates/`.
 ```
 
 Key filters from outstanding:
+
 - `col(width, align='left'|'right')` - Column layout
 - `style("name")` - Apply semantic style
 - `nl` - Explicit newline
@@ -77,14 +79,19 @@ Key filters from outstanding:
 
 1. Create `.jinja` file in `templates/` directory
 2. Register in `templates.rs`:
+
    ```rust
    pub const MY_TEMPLATE: &str = include_str!("templates/my_template.jinja");
    ```
+
 3. Add to renderer in `create_renderer()`:
+
    ```rust
    renderer.add_template("my_template", MY_TEMPLATE)?;
    ```
+
 4. Call from render function:
+
    ```rust
    renderer.render("my_template", &data)?
    ```
@@ -185,7 +192,8 @@ JSON types in `render.rs`: `JsonPadList`, `JsonPad`, `JsonMessages`
 ## Debugging Output
 
 Use `--output=term-debug` to see style names:
-```
+
+```text
 [pinned]⚲[/pinned] [list-index]p1.[/list-index] [list-title]My Pad[/list-title]
 ```
 
