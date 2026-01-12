@@ -7,6 +7,14 @@
 //! terminal output. See the styles (`crate::cli::styles`) and templates (`crate::cli::templates`)
 //! modules for specifics and best practices.
 //!
+//! ## Architecture
+//!
+//! Uses `OutstandingApp` for all rendering:
+//! - Templates and styles are embedded at compile time via `embed_*!` macros
+//! - Debug builds hot-reload from disk; release uses embedded content
+//! - Structured output modes (JSON, YAML, XML, CSV) are handled automatically
+//! - All templates are pre-loaded, enabling `{% include %}` directives
+//!
 //! ## Table Layout
 //!
 //! The list view uses outstanding's `col()` filter for declarative column layout. Each row has:
@@ -21,43 +29,32 @@
 //! the variable prefix width (which depends on section type and nesting depth).
 //!
 use super::setup::get_grouped_help;
-use super::styles::DEFAULT_THEME;
-use super::templates::TEMPLATES;
 use chrono::{DateTime, Utc};
-use outstanding::{render_or_serialize, truncate_to_width, OutputMode, Renderer, Theme};
+use once_cell::sync::Lazy;
+use outstanding::{
+    embed_styles, embed_templates, truncate_to_width, OutputMode, OutstandingApp, RenderSetup,
+};
 use padzapp::api::{CmdMessage, MessageLevel, TodoStatus};
 use padzapp::index::{DisplayIndex, DisplayPad};
 use padzapp::peek::{format_as_peek, PeekResult};
 use serde::Serialize;
 
-/// Gets the default theme from the embedded stylesheet.
-fn get_theme() -> Theme {
-    DEFAULT_THEME.clone()
-}
-
-/// Creates a Renderer with all templates registered.
+/// The configured Outstanding application for all rendering.
 ///
-/// The renderer resolves the adaptive theme based on terminal color mode
-/// and registers both main templates and partials, enabling `{% include %}`
-/// directives in templates.
+/// This static holds the pre-configured renderer with:
+/// - Embedded templates (with hot-reload in debug mode)
+/// - Embedded styles with the "default" theme
+/// - All templates pre-loaded for `{% include %}` support
 ///
-/// Stylesheets and templates are embedded at compile time using outstanding macros.
-fn create_renderer(output_mode: OutputMode) -> Renderer {
-    let theme = get_theme();
-
-    let mut renderer = Renderer::with_output(theme, output_mode)
-        .expect("Failed to create renderer - invalid theme aliases");
-
-    // Load all embedded templates
-    for name in TEMPLATES.names() {
-        let content = TEMPLATES.get_content(name).expect("Template not found");
-        renderer
-            .add_template(name, &content)
-            .unwrap_or_else(|_| panic!("Failed to register template: {}", name));
-    }
-
-    renderer
-}
+/// Uses `&self` rendering - no mutex or interior mutability needed.
+static APP: Lazy<OutstandingApp> = Lazy::new(|| {
+    RenderSetup::new()
+        .templates(embed_templates!("src/cli/templates"))
+        .styles(embed_styles!("src/styles"))
+        .default_theme("default")
+        .build()
+        .expect("Failed to build Outstanding app - check templates and styles")
+});
 
 /// Configuration for list rendering.
 pub const LINE_WIDTH: usize = 100;
@@ -199,17 +196,14 @@ fn render_pad_list_internal(
 ) -> String {
     let mode = output_mode.unwrap_or(OutputMode::Auto);
 
-    // For JSON mode, serialize the pads directly
-    if mode == OutputMode::Json {
+    // For structured modes (JSON, YAML, XML, CSV), serialize the pads directly
+    if mode.is_structured() {
         let json_data = JsonPadList {
             pads: pads.to_vec(),
         };
-        let theme = get_theme();
-        return render_or_serialize(
-            "", // Template not used for JSON
-            &json_data, &theme, mode,
-        )
-        .unwrap_or_else(|_| "{\"pads\":[]}".to_string());
+        return APP
+            .render("list", &json_data, mode)
+            .unwrap_or_else(|_| "{\"pads\":[]}".to_string());
     }
 
     let empty_data = ListData {
@@ -227,9 +221,8 @@ fn render_pad_list_internal(
     };
 
     if pads.is_empty() {
-        let mut renderer = create_renderer(mode);
-        return renderer
-            .render("list", &empty_data)
+        return APP
+            .render("list", &empty_data, mode)
             .unwrap_or_else(|_| "No pads found.\n".to_string());
     }
 
@@ -436,9 +429,7 @@ fn render_pad_list_internal(
         col_time: COL_TIME,
     };
 
-    let mut renderer = create_renderer(mode);
-    renderer
-        .render("list", &data)
+    APP.render("list", &data, mode)
         .unwrap_or_else(|e| format!("Render error: {}\n", e))
 }
 
@@ -482,17 +473,14 @@ pub fn render_full_pads(pads: &[DisplayPad], output_mode: OutputMode) -> String 
 fn render_full_pads_internal(pads: &[DisplayPad], output_mode: Option<OutputMode>) -> String {
     let mode = output_mode.unwrap_or(OutputMode::Auto);
 
-    // For JSON mode, serialize the pads directly
-    if mode == OutputMode::Json {
+    // For structured modes, serialize the pads directly
+    if mode.is_structured() {
         let json_data = JsonPadList {
             pads: pads.to_vec(),
         };
-        let theme = get_theme();
-        return render_or_serialize(
-            "", // Template not used for JSON
-            &json_data, &theme, mode,
-        )
-        .unwrap_or_else(|_| "{\"pads\":[]}".to_string());
+        return APP
+            .render("full_pad", &json_data, mode)
+            .unwrap_or_else(|_| "{\"pads\":[]}".to_string());
     }
 
     let entries = pads
@@ -513,9 +501,7 @@ fn render_full_pads_internal(pads: &[DisplayPad], output_mode: Option<OutputMode
 
     let data = FullPadData { pads: entries };
 
-    let mut renderer = create_renderer(mode);
-    renderer
-        .render("full_pad", &data)
+    APP.render("full_pad", &data, mode)
         .unwrap_or_else(|e| format!("Render error: {}\n", e))
 }
 
@@ -530,28 +516,13 @@ fn render_text_list_internal(
 ) -> String {
     let mode = output_mode.unwrap_or(OutputMode::Auto);
 
-    // For JSON mode, serialize the lines directly
-    if mode == OutputMode::Json {
-        let json_data = TextListData {
-            lines: lines.to_vec(),
-            empty_message: empty_message.to_string(),
-        };
-        let theme = get_theme();
-        return render_or_serialize(
-            "", // Template not used for JSON
-            &json_data, &theme, mode,
-        )
-        .unwrap_or_else(|_| "{\"lines\":[]}".to_string());
-    }
-
     let data = TextListData {
         lines: lines.to_vec(),
         empty_message: empty_message.to_string(),
     };
 
-    let mut renderer = create_renderer(mode);
-    renderer
-        .render("text_list", &data)
+    // OutstandingApp handles structured modes (JSON, YAML, etc.) automatically
+    APP.render("text_list", &data, mode)
         .unwrap_or_else(|_| format!("{}\n", empty_message))
 }
 
@@ -563,28 +534,23 @@ struct JsonMessages {
 }
 
 /// Renders command messages using the template system with themed styles.
-/// Supports JSON output mode for machine-readable output.
+/// Supports structured output modes (JSON, YAML, etc.) for machine-readable output.
 pub fn render_messages(messages: &[CmdMessage], output_mode: OutputMode) -> String {
     if messages.is_empty() {
         return String::new();
     }
 
-    // For JSON mode, serialize the messages directly
-    if output_mode == OutputMode::Json {
+    // For structured modes, serialize the messages directly
+    if output_mode.is_structured() {
         let json_data = JsonMessages {
             messages: messages.to_vec(),
         };
-        let theme = get_theme();
-        return render_or_serialize(
-            "", // Template not used for JSON
-            &json_data,
-            &theme,
-            output_mode,
-        )
-        .unwrap_or_else(|_| "{}".to_string());
+        return APP
+            .render("messages", &json_data, output_mode)
+            .unwrap_or_else(|_| "{}".to_string());
     }
 
-    // For terminal modes, use template rendering
+    // For terminal modes, use template rendering with style mapping
     let message_data: Vec<MessageData> = messages
         .iter()
         .map(|msg| {
@@ -605,13 +571,13 @@ pub fn render_messages(messages: &[CmdMessage], output_mode: OutputMode) -> Stri
         messages: message_data,
     };
 
-    let mut renderer = create_renderer(output_mode);
-    renderer.render("messages", &data).unwrap_or_else(|_| {
-        messages
-            .iter()
-            .map(|m| format!("{}\n", m.content))
-            .collect()
-    })
+    APP.render("messages", &data, output_mode)
+        .unwrap_or_else(|_| {
+            messages
+                .iter()
+                .map(|m| format!("{}\n", m.content))
+                .collect()
+        })
 }
 
 /// Prints command messages to stdout using the template system.

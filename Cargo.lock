@@ -1179,9 +1179,9 @@ dependencies = [
 
 [[package]]
 name = "outstanding"
-version = "0.12.0"
+version = "0.14.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5f6f997ffc3951ef4aa2f4b302197312ed80af58ff71a258147be341a4d75582"
+checksum = "c6473b70557d9fc910a58de81cb5999611f9a5c5cd2e5fe464f6cc335041803a"
 dependencies = [
  "console",
  "csv",
@@ -1199,9 +1199,9 @@ dependencies = [
 
 [[package]]
 name = "outstanding-clap"
-version = "0.12.0"
+version = "0.14.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "eac259b247a43aec836bb66bc853c009ee39b2a0ca64d47a20bfb447b98527e7"
+checksum = "21e4b33debb3d9b8729bf341cf45f370384ccf9dd44d3386cfe078daa030abbf"
 dependencies = [
  "anyhow",
  "clap",
@@ -1216,9 +1216,9 @@ dependencies = [
 
 [[package]]
 name = "outstanding-macros"
-version = "0.12.0"
+version = "0.14.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "eb65b8f263d241bad5ad7cb574ce991c17bab6e8ccf1dca5a56a9b6960c8b7aa"
+checksum = "0dad596ae2e484247ef5c627fa1f9142d192c78317c8227cfde2895fde269dc5"
 dependencies = [
  "proc-macro2",
  "quote",

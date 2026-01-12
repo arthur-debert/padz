@@ -49,16 +49,12 @@
 //! ## Module Structure
 //!
 //! - `commands`: Per-command handlers that call API and format output
-//! - `render`: Output formatting (tables, colors, messages)
+//! - `render`: Output formatting using outstanding's `OutstandingApp` (styles and templates embedded at compile time)
 //! - `setup`: Argument parsing via clap, help text
-//! - `styles`: Terminal styling constants
-//! - `templates`: Output templates
 
 mod commands;
 mod complete;
 mod render;
 pub mod setup;
-mod styles;
-mod templates;
 
 pub use commands::run;
