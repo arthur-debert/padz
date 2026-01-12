@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **Updated outstanding to v0.12.0** - Compile-time embedding with macros
+- **File-based YAML stylesheet** - Styles defined in `styles/default.yaml` with adaptive light/dark support
+- **Compile-time embedding** - Using `embed_styles!` and `embed_templates!` macros for zero-overhead resource loading
+- **Template extension** - Renamed templates from `.tmpl` to `.jinja` (new standard)
+
 ## [0.10.1] - 2026-01-11
 
 ### Changed

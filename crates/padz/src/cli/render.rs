@@ -21,55 +21,40 @@
 //! the variable prefix width (which depends on section type and nesting depth).
 //!
 use super::setup::get_grouped_help;
-use super::styles::{get_resolved_theme, names};
-use super::templates::{
-    DELETED_HELP_PARTIAL, FULL_PAD_TEMPLATE, LIST_TEMPLATE, MATCH_LINES_PARTIAL, MESSAGES_TEMPLATE,
-    PAD_LINE_PARTIAL, PEEK_CONTENT_PARTIAL, TEXT_LIST_TEMPLATE,
-};
+use super::styles::DEFAULT_THEME;
+use super::templates::TEMPLATES;
 use chrono::{DateTime, Utc};
-use outstanding::{render_or_serialize, truncate_to_width, OutputMode, Renderer, ThemeChoice};
+use outstanding::{render_or_serialize, truncate_to_width, OutputMode, Renderer, Theme};
 use padzapp::api::{CmdMessage, MessageLevel, TodoStatus};
 use padzapp::index::{DisplayIndex, DisplayPad};
 use padzapp::peek::{format_as_peek, PeekResult};
 use serde::Serialize;
+
+/// Gets the default theme from the embedded stylesheet.
+fn get_theme() -> Theme {
+    DEFAULT_THEME.clone()
+}
 
 /// Creates a Renderer with all templates registered.
 ///
 /// The renderer resolves the adaptive theme based on terminal color mode
 /// and registers both main templates and partials, enabling `{% include %}`
 /// directives in templates.
+///
+/// Stylesheets and templates are embedded at compile time using outstanding macros.
 fn create_renderer(output_mode: OutputMode) -> Renderer {
-    let theme = get_resolved_theme();
+    let theme = get_theme();
+
     let mut renderer = Renderer::with_output(theme, output_mode)
         .expect("Failed to create renderer - invalid theme aliases");
 
-    // Register main templates
-    renderer
-        .add_template("list", LIST_TEMPLATE)
-        .expect("Failed to register list template");
-    renderer
-        .add_template("full_pad", FULL_PAD_TEMPLATE)
-        .expect("Failed to register full_pad template");
-    renderer
-        .add_template("text_list", TEXT_LIST_TEMPLATE)
-        .expect("Failed to register text_list template");
-    renderer
-        .add_template("messages", MESSAGES_TEMPLATE)
-        .expect("Failed to register messages template");
-
-    // Register partial templates (for {% include %} support)
-    renderer
-        .add_template("_deleted_help", DELETED_HELP_PARTIAL)
-        .expect("Failed to register _deleted_help partial");
-    renderer
-        .add_template("_peek_content", PEEK_CONTENT_PARTIAL)
-        .expect("Failed to register _peek_content partial");
-    renderer
-        .add_template("_match_lines", MATCH_LINES_PARTIAL)
-        .expect("Failed to register _match_lines partial");
-    renderer
-        .add_template("_pad_line", PAD_LINE_PARTIAL)
-        .expect("Failed to register _pad_line partial");
+    // Load all embedded templates
+    for name in TEMPLATES.names() {
+        let content = TEMPLATES.get_content(name).expect("Template not found");
+        renderer
+            .add_template(name, &content)
+            .unwrap_or_else(|_| panic!("Failed to register template: {}", name));
+    }
 
     renderer
 }
@@ -219,12 +204,10 @@ fn render_pad_list_internal(
         let json_data = JsonPadList {
             pads: pads.to_vec(),
         };
-        let theme = get_resolved_theme();
+        let theme = get_theme();
         return render_or_serialize(
             "", // Template not used for JSON
-            &json_data,
-            ThemeChoice::from(&theme),
-            mode,
+            &json_data, &theme, mode,
         )
         .unwrap_or_else(|_| "{\"pads\":[]}".to_string());
     }
@@ -244,7 +227,7 @@ fn render_pad_list_internal(
     };
 
     if pads.is_empty() {
-        let renderer = create_renderer(mode);
+        let mut renderer = create_renderer(mode);
         return renderer
             .render("list", &empty_data)
             .unwrap_or_else(|_| "No pads found.\n".to_string());
@@ -339,11 +322,11 @@ fn render_pad_list_internal(
                     .map(|s| match s {
                         padzapp::index::MatchSegment::Plain(t) => MatchSegmentData {
                             text: t.clone(),
-                            style: names::INFO.to_string(),
+                            style: "info".to_string(),
                         },
                         padzapp::index::MatchSegment::Match(t) => MatchSegmentData {
                             text: t.clone(),
-                            style: names::MATCH.to_string(),
+                            style: "match".to_string(),
                         },
                     })
                     .collect();
@@ -453,7 +436,7 @@ fn render_pad_list_internal(
         col_time: COL_TIME,
     };
 
-    let renderer = create_renderer(mode);
+    let mut renderer = create_renderer(mode);
     renderer
         .render("list", &data)
         .unwrap_or_else(|e| format!("Render error: {}\n", e))
@@ -504,12 +487,10 @@ fn render_full_pads_internal(pads: &[DisplayPad], output_mode: Option<OutputMode
         let json_data = JsonPadList {
             pads: pads.to_vec(),
         };
-        let theme = get_resolved_theme();
+        let theme = get_theme();
         return render_or_serialize(
             "", // Template not used for JSON
-            &json_data,
-            ThemeChoice::from(&theme),
-            mode,
+            &json_data, &theme, mode,
         )
         .unwrap_or_else(|_| "{\"pads\":[]}".to_string());
     }
@@ -532,7 +513,7 @@ fn render_full_pads_internal(pads: &[DisplayPad], output_mode: Option<OutputMode
 
     let data = FullPadData { pads: entries };
 
-    let renderer = create_renderer(mode);
+    let mut renderer = create_renderer(mode);
     renderer
         .render("full_pad", &data)
         .unwrap_or_else(|e| format!("Render error: {}\n", e))
@@ -555,12 +536,10 @@ fn render_text_list_internal(
             lines: lines.to_vec(),
             empty_message: empty_message.to_string(),
         };
-        let theme = get_resolved_theme();
+        let theme = get_theme();
         return render_or_serialize(
             "", // Template not used for JSON
-            &json_data,
-            ThemeChoice::from(&theme),
-            mode,
+            &json_data, &theme, mode,
         )
         .unwrap_or_else(|_| "{\"lines\":[]}".to_string());
     }
@@ -570,7 +549,7 @@ fn render_text_list_internal(
         empty_message: empty_message.to_string(),
     };
 
-    let renderer = create_renderer(mode);
+    let mut renderer = create_renderer(mode);
     renderer
         .render("text_list", &data)
         .unwrap_or_else(|_| format!("{}\n", empty_message))
@@ -595,11 +574,11 @@ pub fn render_messages(messages: &[CmdMessage], output_mode: OutputMode) -> Stri
         let json_data = JsonMessages {
             messages: messages.to_vec(),
         };
-        let theme = get_resolved_theme();
+        let theme = get_theme();
         return render_or_serialize(
             "", // Template not used for JSON
             &json_data,
-            ThemeChoice::from(&theme),
+            &theme,
             output_mode,
         )
         .unwrap_or_else(|_| "{}".to_string());
@@ -610,10 +589,10 @@ pub fn render_messages(messages: &[CmdMessage], output_mode: OutputMode) -> Stri
         .iter()
         .map(|msg| {
             let style = match msg.level {
-                MessageLevel::Info => names::INFO,
-                MessageLevel::Success => names::SUCCESS,
-                MessageLevel::Warning => names::WARNING,
-                MessageLevel::Error => names::ERROR,
+                MessageLevel::Info => "info",
+                MessageLevel::Success => "success",
+                MessageLevel::Warning => "warning",
+                MessageLevel::Error => "error",
             };
             MessageData {
                 content: msg.content.clone(),
@@ -626,7 +605,7 @@ pub fn render_messages(messages: &[CmdMessage], output_mode: OutputMode) -> Stri
         messages: message_data,
     };
 
-    let renderer = create_renderer(output_mode);
+    let mut renderer = create_renderer(output_mode);
     renderer.render("messages", &data).unwrap_or_else(|_| {
         messages
             .iter()
