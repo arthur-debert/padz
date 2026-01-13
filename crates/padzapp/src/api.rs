@@ -790,8 +790,11 @@ mod tests {
         // Move B (1) to A (2)
         let result = api.move_pads(Scope::Project, &["1"], Some("2")).unwrap();
 
-        assert_eq!(result.messages.len(), 1);
-        assert!(result.messages[0].content.contains("Moved 'B' to A"));
+        // No messages - CLI handles unified rendering
+        assert!(result.messages.is_empty());
+        // Should have 1 affected pad
+        assert_eq!(result.affected_pads.len(), 1);
+        assert_eq!(result.affected_pads[0].pad.metadata.title, "B");
 
         // Verify hierarchy
         let pads = api
@@ -815,7 +818,10 @@ mod tests {
 
         // Move Child (1.1) to Root
         let result = api.move_pads(Scope::Project, &["1.1"], None).unwrap();
-        assert_eq!(result.messages.len(), 1);
+        // No messages - CLI handles unified rendering
+        assert!(result.messages.is_empty());
+        // Should have 1 affected pad
+        assert_eq!(result.affected_pads.len(), 1);
 
         // Verify Child is now root
         let pads = api

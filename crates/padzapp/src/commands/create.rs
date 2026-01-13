@@ -1,4 +1,4 @@
-use crate::commands::{CmdMessage, CmdResult};
+use crate::commands::CmdResult;
 use crate::error::Result;
 use crate::index::{DisplayIndex, DisplayPad};
 use crate::model::{Pad, Scope};
@@ -53,10 +53,7 @@ pub fn run<S: DataStore>(
     };
     result.affected_pads.push(display_pad);
     result.pad_paths.push(pad_path);
-    result.add_message(CmdMessage::success(format!(
-        "Pad created: {}",
-        pad.metadata.title
-    )));
+    // Note: No success message - CLI layer handles unified rendering
     Ok(result)
 }
 
@@ -166,10 +163,8 @@ mod tests {
             DisplayIndex::Regular(1)
         ));
 
-        // Should have success message
-        assert_eq!(result.messages.len(), 1);
-        assert!(result.messages[0].content.contains("Pad created"));
-        assert!(result.messages[0].content.contains("New Pad"));
+        // No messages - CLI handles unified rendering
+        assert!(result.messages.is_empty());
     }
 
     #[test]

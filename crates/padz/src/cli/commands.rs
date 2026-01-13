@@ -40,7 +40,8 @@
 //! - `print_*()`: Output formatting functions
 
 use super::render::{
-    print_messages, render_full_pads, render_pad_list, render_pad_list_deleted, render_text_list,
+    print_messages, render_full_pads, render_modification_result, render_pad_list,
+    render_pad_list_deleted, render_text_list,
 };
 use super::setup::{
     parse_cli, Cli, Commands, CompletionShell, CoreCommands, DataCommands, MiscCommands,
@@ -181,8 +182,14 @@ fn handle_create(
         .api
         .create_pad(ctx.scope, title_to_use, initial_content, parent)?;
 
-    // === Output: Render messages ===
-    print_messages(&result.messages, ctx.output_mode);
+    // === Output: Render unified modification result ===
+    let output = render_modification_result(
+        "Created",
+        &result.affected_pads,
+        &result.messages,
+        ctx.output_mode,
+    );
+    print!("{}", output);
 
     // === Post-dispatch: Editor and clipboard side effects ===
     if should_open_editor && !result.pad_paths.is_empty() {
@@ -342,35 +349,71 @@ fn handle_delete(ctx: &mut AppContext, indexes: Vec<String>, done_status: bool) 
             .collect();
 
         let result = ctx.api.delete_pads(ctx.scope, &done_indexes)?;
-        print_messages(&result.messages, ctx.output_mode);
+        let output = render_modification_result(
+            "Deleted",
+            &result.affected_pads,
+            &result.messages,
+            ctx.output_mode,
+        );
+        print!("{}", output);
     } else {
         let result = ctx.api.delete_pads(ctx.scope, &indexes)?;
-        print_messages(&result.messages, ctx.output_mode);
+        let output = render_modification_result(
+            "Deleted",
+            &result.affected_pads,
+            &result.messages,
+            ctx.output_mode,
+        );
+        print!("{}", output);
     }
     Ok(())
 }
 
 fn handle_restore(ctx: &mut AppContext, indexes: Vec<String>) -> Result<()> {
     let result = ctx.api.restore_pads(ctx.scope, &indexes)?;
-    print_messages(&result.messages, ctx.output_mode);
+    let output = render_modification_result(
+        "Restored",
+        &result.affected_pads,
+        &result.messages,
+        ctx.output_mode,
+    );
+    print!("{}", output);
     Ok(())
 }
 
 fn handle_pin(ctx: &mut AppContext, indexes: Vec<String>) -> Result<()> {
     let result = ctx.api.pin_pads(ctx.scope, &indexes)?;
-    print_messages(&result.messages, ctx.output_mode);
+    let output = render_modification_result(
+        "Pinned",
+        &result.affected_pads,
+        &result.messages,
+        ctx.output_mode,
+    );
+    print!("{}", output);
     Ok(())
 }
 
 fn handle_unpin(ctx: &mut AppContext, indexes: Vec<String>) -> Result<()> {
     let result = ctx.api.unpin_pads(ctx.scope, &indexes)?;
-    print_messages(&result.messages, ctx.output_mode);
+    let output = render_modification_result(
+        "Unpinned",
+        &result.affected_pads,
+        &result.messages,
+        ctx.output_mode,
+    );
+    print!("{}", output);
     Ok(())
 }
 
 fn handle_complete(ctx: &mut AppContext, indexes: Vec<String>) -> Result<()> {
     let result = ctx.api.complete_pads(ctx.scope, &indexes)?;
-    print_messages(&result.messages, ctx.output_mode);
+    let output = render_modification_result(
+        "Completed",
+        &result.affected_pads,
+        &result.messages,
+        ctx.output_mode,
+    );
+    print!("{}", output);
     Ok(())
 }
 
@@ -394,13 +437,25 @@ fn handle_move(ctx: &mut AppContext, mut indexes: Vec<String>, root: bool) -> Re
     let result = ctx
         .api
         .move_pads(ctx.scope, &indexes, destination.as_deref())?;
-    print_messages(&result.messages, ctx.output_mode);
+    let output = render_modification_result(
+        "Moved",
+        &result.affected_pads,
+        &result.messages,
+        ctx.output_mode,
+    );
+    print!("{}", output);
     Ok(())
 }
 
 fn handle_reopen(ctx: &mut AppContext, indexes: Vec<String>) -> Result<()> {
     let result = ctx.api.reopen_pads(ctx.scope, &indexes)?;
-    print_messages(&result.messages, ctx.output_mode);
+    let output = render_modification_result(
+        "Reopened",
+        &result.affected_pads,
+        &result.messages,
+        ctx.output_mode,
+    );
+    print!("{}", output);
     Ok(())
 }
 

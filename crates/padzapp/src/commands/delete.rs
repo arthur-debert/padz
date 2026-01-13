@@ -1,4 +1,4 @@
-use crate::commands::{CmdMessage, CmdResult};
+use crate::commands::CmdResult;
 use crate::error::Result;
 use crate::index::{DisplayPad, PadSelector};
 use crate::model::Scope;
@@ -18,7 +18,7 @@ pub fn run<S: DataStore>(
 
     // Collect UUIDs and perform deletions
     let mut deleted_uuids: Vec<Uuid> = Vec::new();
-    for (display_index, uuid) in resolved {
+    for (_display_index, uuid) in resolved {
         let mut pad = store.get_pad(&uuid, scope)?;
         pad.metadata.is_deleted = true;
         pad.metadata.deleted_at = Some(Utc::now());
@@ -27,11 +27,7 @@ pub fn run<S: DataStore>(
         // Propagate status change to parent (deleted child no longer affects status)
         crate::todos::propagate_status_change(store, scope, pad.metadata.parent_id)?;
 
-        result.add_message(CmdMessage::success(format!(
-            "Pad deleted ({}): {}",
-            super::helpers::fmt_path(&display_index),
-            pad.metadata.title
-        )));
+        // Note: No per-pad message - CLI handles unified rendering
         deleted_uuids.push(uuid);
     }
 

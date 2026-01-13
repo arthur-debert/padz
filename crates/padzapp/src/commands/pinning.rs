@@ -44,22 +44,13 @@ fn pin_state<S: DataStore>(
         pad.metadata.delete_protected = is_pinned;
         store.save_pad(&pad, scope)?;
 
-        if is_pinned && !was_already_pinned {
-            result.add_message(CmdMessage::success(format!(
-                "Pinned pad {}",
-                super::helpers::fmt_path(&display_index)
-            )));
-        } else if !is_pinned && was_already_pinned {
-            result.add_message(CmdMessage::success(format!(
-                "Unpinned pad {}",
-                super::helpers::fmt_path(&display_index)
-            )));
-        } else if is_pinned && was_already_pinned {
+        // Only add info messages for no-op cases; success cases are shown via pad list
+        if is_pinned && was_already_pinned {
             result.add_message(CmdMessage::info(format!(
                 "Pad {} is already pinned",
                 super::helpers::fmt_path(&display_index)
             )));
-        } else {
+        } else if !is_pinned && !was_already_pinned {
             result.add_message(CmdMessage::info(format!(
                 "Pad {} is already unpinned",
                 super::helpers::fmt_path(&display_index)

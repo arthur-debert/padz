@@ -45,10 +45,7 @@ pub fn run<S: DataStore>(
         None
     };
 
-    let (dest_uuid, dest_title) = match destination_data {
-        Some((uuid, title)) => (Some(uuid), title),
-        None => (None, "Root".to_string()),
-    };
+    let dest_uuid = destination_data.map(|(uuid, _)| uuid);
 
     let mut result = CmdResult::default();
 
@@ -97,10 +94,7 @@ pub fn run<S: DataStore>(
 
         store.save_pad(&pad, scope)?;
 
-        result.add_message(CmdMessage::success(format!(
-            "Moved '{}' to {}",
-            pad.metadata.title, dest_title
-        )));
+        // Note: No success message - CLI handles unified rendering
 
         // Note: The index in result will be the *old* index because we haven't re-indexed the world.
         // But for the purpose of "affected pads", we return the pad state.
