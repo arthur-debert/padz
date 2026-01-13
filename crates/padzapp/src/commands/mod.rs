@@ -187,6 +187,46 @@ impl CmdResult {
     }
 }
 
+/// Result from commands that modify pads.
+///
+/// Provides structured output for unified CLI rendering:
+/// - `affected_pads`: The pads that were modified (rendered as a list)
+/// - `trailing_messages`: Info/warning messages shown after the pad list
+///
+/// The CLI layer generates the start message (e.g., "Completing 2 pads...")
+/// based on the action and affected_pads count.
+#[derive(Debug, Default)]
+pub struct ModificationResult {
+    /// Pads that were modified by the operation
+    pub affected_pads: Vec<DisplayPad>,
+    /// Messages shown after the pad list (info, warnings, errors)
+    pub trailing_messages: Vec<CmdMessage>,
+}
+
+impl ModificationResult {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    pub fn with_pads(mut self, pads: Vec<DisplayPad>) -> Self {
+        self.affected_pads = pads;
+        self
+    }
+
+    pub fn add_info(&mut self, content: impl Into<String>) {
+        self.trailing_messages.push(CmdMessage::info(content));
+    }
+
+    /// Convert to CmdResult for backward compatibility
+    pub fn into_cmd_result(self) -> CmdResult {
+        CmdResult {
+            affected_pads: self.affected_pads,
+            messages: self.trailing_messages,
+            ..Default::default()
+        }
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct PadUpdate {
     pub index: crate::index::DisplayIndex,

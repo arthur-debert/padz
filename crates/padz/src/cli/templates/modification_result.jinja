@@ -1,0 +1,17 @@
+{#- Unified rendering for modification commands -#}
+{#- Expects: start_message, pads (list of PadLineData), trailing_messages, peek (bool), col_* -#}
+
+{#- Start message -#}
+{%- if start_message -%}
+{{ start_message | style("info") | nl }}
+{%- endif -%}
+
+{#- Affected pads list -#}
+{%- for pad in pads -%}
+{%- include "_pad_line" -%}
+{%- endfor -%}
+
+{#- Trailing messages (info, warnings, errors) -#}
+{%- for msg in trailing_messages -%}
+{{ msg.content | style(msg.style) | nl }}
+{%- endfor -%}

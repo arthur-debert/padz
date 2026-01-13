@@ -46,7 +46,7 @@ fn set_status<S: DataStore>(
         let old_status = pad.metadata.status;
 
         if old_status == new_status {
-            // Already in desired state
+            // Already in desired state - add info message
             let status_name = match new_status {
                 TodoStatus::Done => "done",
                 TodoStatus::Planned => "planned",
@@ -67,17 +67,7 @@ fn set_status<S: DataStore>(
             // Propagate status change to parent
             crate::todos::propagate_status_change(store, scope, parent_id)?;
 
-            let action = match new_status {
-                TodoStatus::Done => "Completed",
-                TodoStatus::Planned => "Reopened",
-                TodoStatus::InProgress => "Set to in-progress",
-            };
-            result.add_message(CmdMessage::success(format!(
-                "{} pad {}: {}",
-                action,
-                super::helpers::fmt_path(&display_index),
-                pad.metadata.title
-            )));
+            // Note: No success message - CLI handles unified rendering via pad list
         }
         affected_uuids.push(uuid);
     }
@@ -118,8 +108,10 @@ mod tests {
         let sel = PadSelector::Path(vec![DisplayIndex::Regular(1)]);
         let result = complete(&mut store, Scope::Project, slice::from_ref(&sel)).unwrap();
 
-        assert_eq!(result.messages.len(), 1);
-        assert!(result.messages[0].content.contains("Completed"));
+        // No messages for successful completion - CLI handles unified rendering
+        assert!(result.messages.is_empty());
+        // Should have affected pad
+        assert_eq!(result.affected_pads.len(), 1);
 
         let pads = get::run(&store, Scope::Project, get::PadFilter::default()).unwrap();
         assert_eq!(pads.listed_pads[0].pad.metadata.status, TodoStatus::Done);
@@ -137,8 +129,10 @@ mod tests {
         // Then reopen it
         let result = reopen(&mut store, Scope::Project, slice::from_ref(&sel)).unwrap();
 
-        assert_eq!(result.messages.len(), 1);
-        assert!(result.messages[0].content.contains("Reopened"));
+        // No messages for successful reopen - CLI handles unified rendering
+        assert!(result.messages.is_empty());
+        // Should have affected pad
+        assert_eq!(result.affected_pads.len(), 1);
 
         let pads = get::run(&store, Scope::Project, get::PadFilter::default()).unwrap();
         assert_eq!(pads.listed_pads[0].pad.metadata.status, TodoStatus::Planned);
@@ -192,11 +186,10 @@ mod tests {
 
         let result = complete(&mut store, Scope::Project, &selectors).unwrap();
 
-        assert_eq!(result.messages.len(), 2);
-        assert!(result
-            .messages
-            .iter()
-            .all(|m| m.content.contains("Completed")));
+        // No messages for successful completion - CLI handles unified rendering
+        assert!(result.messages.is_empty());
+        // Should have 2 affected pads
+        assert_eq!(result.affected_pads.len(), 2);
 
         let pads = get::run(&store, Scope::Project, get::PadFilter::default()).unwrap();
         assert!(pads

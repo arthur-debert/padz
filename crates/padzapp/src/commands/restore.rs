@@ -1,4 +1,4 @@
-use crate::commands::{CmdMessage, CmdResult};
+use crate::commands::CmdResult;
 use crate::error::Result;
 use crate::index::{DisplayIndex, DisplayPad, PadSelector};
 use crate::model::Scope;
@@ -17,7 +17,7 @@ pub fn run<S: DataStore>(
 
     // Collect UUIDs and perform restores
     let mut restored_uuids: Vec<Uuid> = Vec::new();
-    for (display_index, uuid) in resolved {
+    for (_display_index, uuid) in resolved {
         let mut pad = store.get_pad(&uuid, scope)?;
         pad.metadata.is_deleted = false;
         pad.metadata.deleted_at = None;
@@ -26,11 +26,8 @@ pub fn run<S: DataStore>(
 
         // Propagate status change to parent (restored child affects status again)
         crate::todos::propagate_status_change(store, scope, pad.metadata.parent_id)?;
-        result.add_message(CmdMessage::success(format!(
-            "Pad restored ({}): {}",
-            super::helpers::fmt_path(&display_index),
-            pad.metadata.title
-        )));
+
+        // Note: No per-pad message - CLI handles unified rendering
         restored_uuids.push(uuid);
     }
 
@@ -98,9 +95,8 @@ mod tests {
         )
         .unwrap();
 
-        assert_eq!(result.messages.len(), 1);
-        assert!(result.messages[0].content.contains("Pad restored"));
-        assert!(result.messages[0].content.contains("Title"));
+        // No messages - CLI handles unified rendering
+        assert!(result.messages.is_empty());
 
         // Verify affected_pads contains the restored pad
         assert_eq!(result.affected_pads.len(), 1);
@@ -161,7 +157,10 @@ mod tests {
         )
         .unwrap();
 
-        assert_eq!(result.messages.len(), 2);
+        // No messages - CLI handles unified rendering
+        assert!(result.messages.is_empty());
+        // Should have 2 affected pads
+        assert_eq!(result.affected_pads.len(), 2);
 
         // Verify 2 active, 1 deleted
         let active = get::run(&store, Scope::Project, get::PadFilter::default()).unwrap();
@@ -298,7 +297,10 @@ mod tests {
         )
         .unwrap();
 
-        assert_eq!(result.messages.len(), 2);
+        // No messages - CLI handles unified rendering
+        assert!(result.messages.is_empty());
+        // Should have 2 affected pads
+        assert_eq!(result.affected_pads.len(), 2);
         let count = store
             .list_pads(Scope::Project)
             .unwrap()
@@ -309,18 +311,11 @@ mod tests {
     }
 
     #[test]
-    fn restore_non_deleted_fails_selector() {
+    fn restore_non_deleted_is_idempotent() {
         let mut store = InMemoryStore::new();
         create::run(&mut store, Scope::Project, "A".into(), "".into(), None).unwrap();
 
-        // Try to restore an active pad using Regular selector?
-        // restore::run calls resolve_selectors(..., true). true means 'match_deleted'.
-        // If we pass Regular selector to match_deleted=true, resolve_selectors might fail or just not match non-deleted items depending on logic.
-        // Actually resolve_selectors logic:
-        // If match_deleted=true, it looks for matches in BOTH? or specifically checks deleted?
-        // Let's test the behavior:
-
-        // If I pass Regular selector, match_deleted=true in resolve_selectors allows matching ANY pad
+        // If we pass Regular selector, match_deleted=true in resolve_selectors allows matching ANY pad
         // including active ones. The command effectively becomes idempotent.
         let result = run(
             &mut store,
@@ -329,8 +324,9 @@ mod tests {
         )
         .unwrap();
 
-        // It should succeed and report restored (idempotent)
-        assert_eq!(result.messages.len(), 1);
-        assert!(result.messages[0].content.contains("Pad restored"));
+        // No messages - CLI handles unified rendering (even for idempotent ops)
+        assert!(result.messages.is_empty());
+        // Should still have 1 affected pad
+        assert_eq!(result.affected_pads.len(), 1);
     }
 }
