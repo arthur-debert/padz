@@ -1,0 +1,223 @@
+name: Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      bump:
+        description: 'Version bump type'
+        required: true
+        type: choice
+        options:
+          - patch
+          - minor
+          - major
+  push:
+    tags:
+      - 'v[0-9]+.[0-9]+.[0-9]+'
+
+permissions:
+  contents: write
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  prepare:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install cargo-release
+        if: github.event_name == 'workflow_dispatch'
+        run: cargo install cargo-release
+
+      - name: Configure git
+        if: github.event_name == 'workflow_dispatch'
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+      - name: Bump version (dispatch)
+        if: github.event_name == 'workflow_dispatch'
+        run: cargo release ${{ inputs.bump }} --no-publish --no-push --no-verify --execute
+
+      - name: Push changes (dispatch)
+        if: github.event_name == 'workflow_dispatch'
+        run: git push origin main --follow-tags
+
+      - name: Extract version (dispatch)
+        if: github.event_name == 'workflow_dispatch'
+        id: version_dispatch
+        run: |
+          VERSION=$(cargo metadata --no-deps --format-version 1 | jq -r '.packages[0].version')
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+
+      - name: Extract version (tag)
+        if: github.event_name == 'push'
+        id: version_tag
+        run: |
+          VERSION=${GITHUB_REF#refs/tags/v}
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+
+      - name: Set version output
+        id: version
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "version=${{ steps.version_dispatch.outputs.version }}" >> $GITHUB_OUTPUT
+          else
+            echo "version=${{ steps.version_tag.outputs.version }}" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Extract release notes from CHANGELOG
+        run: |
+          VERSION="${{ steps.version.outputs.version }}"
+          # Extract section for this version (between ## [VERSION] and next ## [)
+          awk '/^## \['"$VERSION"'\]/{found=1; next} /^## \[/{if(found) exit} found{print}' CHANGELOG.md > release-notes.md
+          # If empty, provide fallback
+          if [ ! -s release-notes.md ]; then
+            echo "Release v$VERSION" > release-notes.md
+          fi
+          echo "=== Release Notes ==="
+          cat release-notes.md
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: release-notes
+          path: release-notes.md
+
+  publish:
+    needs: prepare
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: v${{ needs.prepare.outputs.version }}
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Publish padzapp to crates.io
+        env:
+          VERSION: ${{ needs.prepare.outputs.version }}
+        run: |
+          cargo publish --token ${{ secrets.CRATES_IO_KEY }} -p padzapp 2>&1 || {
+            if cargo search padzapp --limit 1 2>/dev/null | grep -q "padzapp.*\"$VERSION\""; then
+              echo "padzapp@$VERSION already published, skipping"
+            else
+              echo "Failed to publish padzapp"
+              exit 1
+            fi
+          }
+
+      - name: Wait for crates.io index update
+        run: sleep 30
+
+      - name: Publish padz to crates.io
+        env:
+          VERSION: ${{ needs.prepare.outputs.version }}
+        run: |
+          cargo publish --token ${{ secrets.CRATES_IO_KEY }} -p padz 2>&1 || {
+            if cargo search padz --limit 1 2>/dev/null | grep -q "padz.*\"$VERSION\""; then
+              echo "padz@$VERSION already published, skipping"
+            else
+              echo "Failed to publish padz"
+              exit 1
+            fi
+          }
+
+  release:
+    needs: prepare
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: release-notes
+
+      - name: Create GitHub Release (draft)
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v${{ needs.prepare.outputs.version }}
+          name: v${{ needs.prepare.outputs.version }}
+          body_path: release-notes.md
+          draft: true
+
+  build-binaries:
+    needs: prepare
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: aarch64-apple-darwin
+            os: macos-latest
+            artifact: padz-aarch64-apple-darwin
+            cross: false
+          - target: x86_64-unknown-linux-gnu
+            os: ubuntu-latest
+            artifact: padz-x86_64-linux-gnu
+            cross: false
+          - target: aarch64-unknown-linux-gnu
+            os: ubuntu-latest
+            artifact: padz-aarch64-linux-gnu
+            cross: true
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: v${{ needs.prepare.outputs.version }}
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      - name: Install cross
+        if: matrix.cross
+        run: cargo install cross --git https://github.com/cross-rs/cross
+
+      - name: Build binary
+        run: |
+          if [ "${{ matrix.cross }}" = "true" ]; then
+            cross build --release --target ${{ matrix.target }} -p padz
+          else
+            cargo build --release --target ${{ matrix.target }} -p padz
+          fi
+
+      - name: Package binary
+        run: |
+          mkdir -p dist
+          cp target/${{ matrix.target }}/release/padz dist/${{ matrix.artifact }}
+          cd dist
+          tar -czvf ../${{ matrix.artifact }}.tar.gz ${{ matrix.artifact }}
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.artifact }}
+          path: ${{ matrix.artifact }}.tar.gz
+
+  finalize:
+    needs: [prepare, release, build-binaries, publish]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: padz-*
+          merge-multiple: true
+
+      - name: List artifacts
+        run: ls -la
+
+      - name: Attach binaries and publish release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v${{ needs.prepare.outputs.version }}
+          files: padz-*.tar.gz
+          draft: false

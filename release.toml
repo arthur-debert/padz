@@ -1,5 +1,9 @@
 # cargo-release configuration for padz workspace
 # See: https://github.com/crate-ci/cargo-release/blob/master/docs/reference.md
+#
+# Usage:
+#   Local release: cargo release patch --execute (full flow: bump, tag, push, publish)
+#   CI release: workflow_dispatch in GitHub Actions (uses --no-publish --no-push flags)
 
 # Keep both crates on the same version
 shared-version = true
