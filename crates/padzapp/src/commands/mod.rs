@@ -85,6 +85,7 @@ pub mod pinning;
 pub mod purge;
 pub mod restore;
 pub mod status;
+pub mod tags;
 
 pub mod update;
 pub mod view;

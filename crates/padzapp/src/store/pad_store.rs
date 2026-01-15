@@ -200,6 +200,14 @@ impl<B: StorageBackend> DataStore for PadStore<B> {
         let (report, _) = self.reconcile(scope)?;
         Ok(report)
     }
+
+    fn load_tags(&self, scope: Scope) -> Result<Vec<crate::tags::TagEntry>> {
+        self.backend.load_tags(scope)
+    }
+
+    fn save_tags(&mut self, scope: Scope, tags: &[crate::tags::TagEntry]) -> Result<()> {
+        self.backend.save_tags(scope, tags)
+    }
 }
 
 #[cfg(test)]

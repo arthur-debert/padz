@@ -72,6 +72,7 @@
 
 use crate::error::Result;
 use crate::model::{Pad, Scope};
+use crate::tags::TagEntry;
 use std::path::PathBuf;
 use uuid::Uuid;
 
@@ -112,4 +113,12 @@ pub trait DataStore {
 
     /// Verify and fix consistency issues
     fn doctor(&mut self, scope: Scope) -> Result<DoctorReport>;
+
+    // --- Tag Registry Operations ---
+
+    /// Load all tags from the registry
+    fn load_tags(&self, scope: Scope) -> Result<Vec<TagEntry>>;
+
+    /// Save the tag registry
+    fn save_tags(&mut self, scope: Scope, tags: &[TagEntry]) -> Result<()>;
 }
