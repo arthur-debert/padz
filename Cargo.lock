@@ -1227,7 +1227,7 @@ dependencies = [
 
 [[package]]
 name = "padz"
-version = "0.10.2"
+version = "0.11.0"
 dependencies = [
  "assert_cmd",
  "chrono",
@@ -1247,7 +1247,7 @@ dependencies = [
 
 [[package]]
 name = "padzapp"
-version = "0.10.2"
+version = "0.11.0"
 dependencies = [
  "chrono",
  "directories",

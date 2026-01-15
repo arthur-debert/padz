@@ -6,6 +6,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [0.11.0] - 2026-01-15
+
+## [0.11.0] - 2026-01-15
+
 - **Added**
   - **Data path override** - `--data <PATH>` option to explicitly specify the `.padz` data directory, useful for git worktrees or working from temp directories
 
@@ -212,7 +216,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
   - Demo flow verification script
   - Live testing shell
 
-[Unreleased]: https://github.com/arthur-debert/padz/compare/v0.10.2...HEAD
+[Unreleased]: https://github.com/arthur-debert/padz/compare/v0.11.0...HEAD
+[0.11.0]: https://github.com/arthur-debert/padz/compare/v0.10.2...v0.11.0
+[0.11.0]: https://github.com/arthur-debert/padz/compare/v0.10.2...v0.11.0
 [0.10.2]: https://github.com/arthur-debert/padz/compare/v0.10.1...v0.10.2
 [0.10.1]: https://github.com/arthur-debert/padz/compare/v0.10.0...v0.10.1
 [0.10.0]: https://github.com/arthur-debert/padz/compare/v0.9.8...v0.10.0
