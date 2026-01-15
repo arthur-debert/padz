@@ -44,25 +44,34 @@ The scope is resolved during `padz::init::initialize`:
 
 ### 3.1 Data Path Override (--data option)
 
-The `--data <PATH>` option allows explicitly specifying the `.padz` data directory,
+The `--data <PATH>` option allows explicitly specifying the data directory,
 bypassing automatic scope detection. This is useful when:
 -   Working in a git worktree that should share data with the main repo
 -   Working in a temp directory for a project located elsewhere
 -   Explicitly pointing to a specific data store location
 
+**Path handling:**
+-   If the path ends with `.padz`, it's used directly as the data directory
+-   Otherwise, `.padz` is appended to the path
+
 Example usage:
 ```bash
-# Working in a worktree, use main repo's pads
+# Point to a project directory (`.padz` is appended automatically)
+padz --data ~/projects/myproject list
+# Uses: ~/projects/myproject/.padz
+
+# Point directly to a .padz directory (used as-is)
 padz --data ~/projects/myproject/.padz list
+# Uses: ~/projects/myproject/.padz
 
 # Create a pad from temp directory, saved to project
-padz --data /home/user/myproject/.padz create "temp notes"
+padz --data /home/user/myproject create "temp notes"
 ```
 
 When `--data` is provided:
--   The path is used directly as the project data directory
 -   Scope detection via `find_project_root` is skipped
--   The scope defaults to `Scope::Project` (unless `-g` forces global)
+-   The scope defaults to `Scope::Project`
+-   Note: `--data` and `-g` are mutually exclusive
 
 ### 4. Nested Repositories
 

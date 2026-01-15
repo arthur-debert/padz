@@ -48,14 +48,15 @@
 //!
 //! ## Data Path Override
 //!
-//! The `data_override` parameter allows explicitly specifying the `.padz` data directory,
+//! The `data_override` parameter allows explicitly specifying the data directory,
 //! bypassing automatic scope detection. This is useful when:
 //! - Working in a git worktree that should share data with the main repo
 //! - Working in a temp directory for a project located elsewhere
 //! - Explicitly pointing to a specific data store location
 //!
 //! When `data_override` is provided:
-//! - The path is used directly as the project data directory
+//! - If the path ends with `.padz`, it's used directly as the data directory
+//! - Otherwise, `.padz` is appended to the path (e.g., `/path/to/project` becomes `/path/to/project/.padz`)
 //! - Scope detection via [`find_project_root`] is skipped
 //! - The scope defaults to `Scope::Project` (unless `-g` forces global)
 
@@ -115,8 +116,10 @@ pub fn find_project_root(cwd: &Path) -> Option<PathBuf> {
 ///
 /// * `cwd` - The current working directory to start scope detection from
 /// * `use_global` - If true, forces `Scope::Global` regardless of detection
-/// * `data_override` - Optional explicit path to the `.padz` data directory.
-///   When provided, bypasses automatic scope detection and uses this path directly.
+/// * `data_override` - Optional explicit path to the data directory.
+///   When provided, bypasses automatic scope detection.
+///   - If path ends with `.padz`, it's used as the data directory directly
+///   - Otherwise, `.padz` is appended to the path
 ///
 /// # Examples
 ///
@@ -127,19 +130,31 @@ pub fn find_project_root(cwd: &Path) -> Option<PathBuf> {
 /// // Force global scope
 /// let ctx = initialize(&cwd, true, None);
 ///
-/// // Use explicit data directory (e.g., for git worktrees)
+/// // Use explicit data directory - path ends with .padz, used directly
 /// let ctx = initialize(&cwd, false, Some(PathBuf::from("/path/to/project/.padz")));
+///
+/// // Use explicit project directory - .padz is appended
+/// let ctx = initialize(&cwd, false, Some(PathBuf::from("/path/to/project")));
 /// ```
 pub fn initialize(cwd: &Path, use_global: bool, data_override: Option<PathBuf>) -> PadzContext {
     // Determine project data directory:
-    // 1. If data_override provided, use it directly
+    // 1. If data_override provided:
+    //    - If it ends with ".padz", use it directly
+    //    - Otherwise, append ".padz" to it
     // 2. Otherwise, try to find a project root with both .git and .padz
     // 3. Fallback to cwd/.padz
-    let project_padz_dir = data_override.unwrap_or_else(|| {
-        find_project_root(cwd)
+    let project_padz_dir = match data_override {
+        Some(path) => {
+            if path.file_name().is_some_and(|name| name == ".padz") {
+                path
+            } else {
+                path.join(".padz")
+            }
+        }
+        None => find_project_root(cwd)
             .map(|root| root.join(".padz"))
-            .unwrap_or_else(|| cwd.join(".padz"))
-    });
+            .unwrap_or_else(|| cwd.join(".padz")),
+    };
 
     let proj_dirs =
         ProjectDirs::from("com", "padz", "padz").expect("Could not determine config dir");
@@ -290,22 +305,42 @@ mod tests {
     // --- initialize() with data_override tests ---
 
     #[test]
-    fn test_initialize_with_data_override_bypasses_detection() {
+    fn test_initialize_with_data_override_ending_in_padz() {
         // Setup: repo with .git and .padz
         let temp = TempDir::new().unwrap();
         let repo = temp.path();
         fs::create_dir(repo.join(".git")).unwrap();
         fs::create_dir(repo.join(".padz")).unwrap();
 
-        // Create a separate override directory
-        let override_dir = temp.path().join("custom-data");
+        // Create a separate override directory ending in .padz
+        let override_dir = temp.path().join("custom-data").join(".padz");
         fs::create_dir_all(&override_dir).unwrap();
 
-        // Initialize with override - should use override path, not the detected .padz
+        // Initialize with override ending in .padz - should use it directly
         let ctx = initialize(repo, false, Some(override_dir.clone()));
 
-        // Verify the override path is used
+        // Verify the override path is used directly (no .padz appended)
         assert_eq!(ctx.api.paths().project, Some(override_dir));
+        assert_eq!(ctx.scope, crate::model::Scope::Project);
+    }
+
+    #[test]
+    fn test_initialize_with_data_override_not_ending_in_padz() {
+        // Setup: repo with .git and .padz
+        let temp = TempDir::new().unwrap();
+        let repo = temp.path();
+        fs::create_dir(repo.join(".git")).unwrap();
+        fs::create_dir(repo.join(".padz")).unwrap();
+
+        // Create a separate override directory NOT ending in .padz
+        let override_dir = temp.path().join("custom-project");
+        fs::create_dir_all(&override_dir).unwrap();
+
+        // Initialize with override - should append .padz
+        let ctx = initialize(repo, false, Some(override_dir.clone()));
+
+        // Verify .padz was appended
+        assert_eq!(ctx.api.paths().project, Some(override_dir.join(".padz")));
         assert_eq!(ctx.scope, crate::model::Scope::Project);
     }
 
@@ -333,12 +368,13 @@ mod tests {
         fs::create_dir(repo.join(".git")).unwrap();
         fs::create_dir(repo.join(".padz")).unwrap();
 
-        // Override directory
-        let override_dir = temp.path().join("custom-data");
+        // Override directory ending in .padz
+        let override_dir = temp.path().join("custom-data").join(".padz");
         fs::create_dir_all(&override_dir).unwrap();
 
         // Initialize with override AND global flag
         // The override still sets project path, but scope is Global
+        // Note: CLI prevents this combination, but library allows it
         let ctx = initialize(repo, true, Some(override_dir.clone()));
 
         assert_eq!(ctx.api.paths().project, Some(override_dir));
