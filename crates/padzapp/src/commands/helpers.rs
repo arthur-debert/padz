@@ -78,12 +78,7 @@ pub fn resolve_selectors<S: DataStore>(
                 let term_lower = term.to_lowercase();
                 let matches: Vec<&(Vec<DisplayIndex>, &DisplayPad)> = linearized
                     .iter()
-                    .filter(|(_, dp)| {
-                        if dp.pad.metadata.title.to_lowercase().contains(&term_lower) {
-                            return true;
-                        }
-                        dp.pad.content.to_lowercase().contains(&term_lower)
-                    })
+                    .filter(|(_, dp)| dp.pad.metadata.title.to_lowercase().contains(&term_lower))
                     .collect();
 
                 match matches.len() {
@@ -540,7 +535,7 @@ mod tests {
     }
 
     #[test]
-    fn test_title_search_matches_content_not_just_title() {
+    fn test_title_search_matches_title_only_not_content() {
         let mut store = InMemoryStore::new();
         create::run(
             &mut store,
@@ -559,11 +554,22 @@ mod tests {
         )
         .unwrap();
 
-        // Search for content that's in body, not title
+        // Search for content that's in body, not title - should NOT match
         let result = resolve_selectors(
             &store,
             Scope::Project,
             &[PadSelector::Title("apples".to_string())],
+            false,
+        );
+
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("No pad found"));
+
+        // Search for title should work
+        let result = resolve_selectors(
+            &store,
+            Scope::Project,
+            &[PadSelector::Title("Shopping".to_string())],
             false,
         )
         .unwrap();
