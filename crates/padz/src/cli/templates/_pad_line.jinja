@@ -24,6 +24,6 @@
 {{- pad.status_icon | col(col_status) | style("status-icon") -}}
 {{- pad.index | col(col_index) | style(index_style) -}}
 {{- pad.title | col(pad.title_width) | style(title_style) -}}
-{%- for tag in pad.tags -%} [{{ tag | style("tag") }}]{%- endfor -%}
+{% if pad.tags %} {% endif %}{%- for tag in pad.tags -%}{{ tag | style("tag") }}{% if not loop.last %} {% endif %}{%- endfor -%}
 {{- pad.right_pin | col(col_right_pin) | style("pinned") -}}
 {{- pad.time_ago | col(col_time, align='right') | style("time") | nl -}}

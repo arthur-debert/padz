@@ -297,11 +297,22 @@ fn render_pad_list_internal(
             String::new()
         };
 
+        // Calculate tags display width (tag names + spaces between)
+        let tags_width = if dp.pad.metadata.tags.is_empty() {
+            0
+        } else {
+            use unicode_width::UnicodeWidthStr;
+            let tag_chars: usize = dp.pad.metadata.tags.iter().map(|t| t.width()).sum();
+            let spaces = dp.pad.metadata.tags.len().saturating_sub(1); // spaces between tags
+            tag_chars + spaces + 1 // +1 for leading space before tags
+        };
+
         // Calculate title_width (fill column)
         // Fixed columns: left_pin(2) + status(2) + index(4) + right_pin(2) + time(14) = 24
-        // Plus the variable indent width
+        // Plus the variable indent width and tags width
         let fixed_columns = COL_LEFT_PIN + COL_STATUS + COL_INDEX + COL_RIGHT_PIN + COL_TIME;
-        let title_width = LINE_WIDTH.saturating_sub(fixed_columns + total_indent_width);
+        let title_width =
+            LINE_WIDTH.saturating_sub(fixed_columns + total_indent_width + tags_width);
 
         // Process matches
         let mut match_lines = Vec::new();
@@ -683,9 +694,19 @@ pub fn render_modification_result(
                 String::new()
             };
 
+            // Calculate tags display width
+            let tags_width = if dp.pad.metadata.tags.is_empty() {
+                0
+            } else {
+                use unicode_width::UnicodeWidthStr;
+                let tag_chars: usize = dp.pad.metadata.tags.iter().map(|t| t.width()).sum();
+                let spaces = dp.pad.metadata.tags.len().saturating_sub(1);
+                tag_chars + spaces + 1
+            };
+
             // Calculate title width
             let fixed_columns = COL_LEFT_PIN + COL_STATUS + COL_INDEX + COL_RIGHT_PIN + COL_TIME;
-            let title_width = LINE_WIDTH.saturating_sub(fixed_columns + COL_LEFT_PIN);
+            let title_width = LINE_WIDTH.saturating_sub(fixed_columns + COL_LEFT_PIN + tags_width);
 
             PadLineData {
                 indent: String::new(),
