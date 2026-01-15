@@ -1,32 +1,85 @@
 #!/usr/bin/env bash
+# =============================================================================
+# PADZ LIVE TEST RUNNER
+# =============================================================================
+#
+# PURPOSE (WHY)
+# -------------
+# Unit tests are great for isolated logic, but real-world CLI tools need
+# end-to-end validation in realistic environments. This script creates an
+# isolated sandbox where you can:
+#
+#   1. Test the latest dev build against real filesystem operations
+#   2. Verify both global and project-scoped pad behavior
+#   3. Run reproducible test scripts or explore interactively
+#   4. Avoid polluting your real padz data
+#
+# DESIGN DECISIONS
+# ----------------
+# 1. OS-managed temp dir: We use the system's temp directory (via mktemp)
+#    rather than a project-local tmp/. This ensures proper cleanup by the OS
+#    and avoids cluttering the repo.
+#
+# 2. Global data isolation: We set PADZ_GLOBAL_DATA to point to our temp dir.
+#    This isolates the "global" scope entirely - no risk of touching real data.
+#
+# 3. Dual-scope structure: We create both a project directory (with .git) and
+#    a global-data directory. This lets you test scope interactions:
+#      - workspace/projects/project-a/ -> project scope (has .git)
+#      - workspace/global-data/        -> global scope (via PADZ_GLOBAL_DATA)
+#
+# 4. EDITOR=true: The `true` command exits immediately with success code 0.
+#    This prevents scripts from hanging on editor prompts. For interactive
+#    sessions, override with: export EDITOR=vim (or your preferred editor).
+#
+# 5. Fresh binary: We always build before running to ensure you're testing
+#    the latest code, not a stale binary.
+#
+# DIRECTORY STRUCTURE
+# -------------------
+# After setup, you'll be in:
+#
+#   /tmp/padz-live-XXXXX/           <- workspace root (your cwd)
+#   ├── projects/
+#   │   └── project-a/              <- cd here for project-scoped testing
+#   │       └── .git/
+#   └── global-data/                <- PADZ_GLOBAL_DATA points here
+#                                      global pads stored directly here
+#
+# USAGE
+# -----
+#   live-tests/run                     # interactive shell in workspace
+#   live-tests/run <script>            # run script, then exit
+#   live-tests/run <script> -i         # run script, then interactive shell
+#   live-tests/run -i <script>         # same as above
+#
+# =============================================================================
 
 set -euo pipefail
 
-# Get the project root directory (where this script is located)
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
-LIVE_TESTS_DIR="${SCRIPT_DIR}"
 
-# Colors for output
+# Colors
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
-BLUE='\033[0;34m'
 RED='\033[0;31m'
-GRAY='\033[38;5;245m' # Medium gray
-NC='\033[0m'          # No Color
+GRAY='\033[38;5;245m'
+NC='\033[0m'
 
-# Usage function
 usage() {
     echo "Usage: ./run [options] [script_file]"
     echo
-    echo "This script creates a sub-shell, with a fresh temp directory, and drops you in it with an "
-    echo "inited padz store. This allows you to fully e2e test the padz app without overwriting a live pad install"
-    echo "It will build the bynari padz to be used, so you're sure to use the last version."
-    echo
+    echo "Create an isolated sandbox for end-to-end padz testing."
     echo
     echo "Options:"
     echo "  -i, --interactive    Start interactive shell after script execution"
     echo "  -h, --help           Show this help message"
+    echo
+    echo "Examples:"
+    echo "  live-tests/run                        # Interactive exploration"
+    echo "  live-tests/run base-fixture.sh        # Set up fixture data"
+    echo "  live-tests/run base-fixture.sh -i     # Fixture + interactive"
 }
 
 # Parse arguments
@@ -55,152 +108,89 @@ while [[ $# -gt 0 ]]; do
     esac
 done
 
-# Validate script file if provided
+# Resolve script file path
 if [[ -n "${SCRIPT_FILE}" ]]; then
     if [[ ! -f "${SCRIPT_FILE}" ]]; then
-        # Check if it exists in the script directory
-        if [[ -f "${LIVE_TESTS_DIR}/${SCRIPT_FILE}" ]]; then
-            SCRIPT_FILE="${LIVE_TESTS_DIR}/${SCRIPT_FILE}"
+        if [[ -f "${SCRIPT_DIR}/${SCRIPT_FILE}" ]]; then
+            SCRIPT_FILE="${SCRIPT_DIR}/${SCRIPT_FILE}"
         else
-            echo -e "${RED}Error: Script file '${SCRIPT_FILE}' does not exist (checked current dir and ${LIVE_TESTS_DIR})${NC}" >&2
+            echo -e "${RED}Error: Script '${SCRIPT_FILE}' not found${NC}" >&2
             exit 1
         fi
     fi
-    # Convert to absolute path
-    script_dir="$(dirname "${SCRIPT_FILE}")"
-    script_name="$(basename "${SCRIPT_FILE}")"
-    if ! cd "${script_dir}"; then
-        echo -e "${RED}Error: Cannot access directory containing script file${NC}" >&2
-        exit 1
-    fi
-    script_abs_dir="$(pwd)"
-    cd - >/dev/null || exit 1
-    SCRIPT_FILE="${script_abs_dir}/${script_name}"
-    # Make sure it's executable
-    if [[ ! -x "${SCRIPT_FILE}" ]]; then
-        echo -e "${GRAY}Making script file executable...${NC}"
-        chmod +x "${SCRIPT_FILE}"
-    fi
+    SCRIPT_FILE="$(cd "$(dirname "${SCRIPT_FILE}")" && pwd)/$(basename "${SCRIPT_FILE}")"
+    [[ ! -x "${SCRIPT_FILE}" ]] && chmod +x "${SCRIPT_FILE}"
 fi
 
-# Ensure tmp directory exists
-TMP_BASE="${PROJECT_ROOT}/tmp"
-mkdir -p "${TMP_BASE}"
-
-# Create a unique temporary directory
-TEMP_DIR=$(mktemp -d "${TMP_BASE}/padz-test-XXXXXX")
-
-# Always build a fresh binary to ensure we're testing the latest code
-PADZ_BIN_REL="target/debug/padz"
-PADZ_BIN="${PROJECT_ROOT}/${PADZ_BIN_REL}"
-
-echo -e "${GRAY}Building fresh padz binary...${NC}"
-if ! (cd "${PROJECT_ROOT}" && cargo build --bin padz >/dev/null 2>&1); then
-    echo -e "${RED}Error: Binary build failed${NC}" >&2
+# Build fresh binary
+PADZ_BIN="${PROJECT_ROOT}/target/debug/padz"
+echo -e "${GRAY}Building padz...${NC}"
+if ! (cd "${PROJECT_ROOT}" && cargo build --bin padz 2>&1 | grep -E "Compiling|Finished|error" || true); then
+    echo -e "${RED}Build failed${NC}" >&2
     exit 1
 fi
+[[ ! -x "${PADZ_BIN}" ]] && { echo -e "${RED}Binary not found${NC}" >&2; exit 1; }
 
-# Verify the binary exists and is executable
-if [[ ! -x "${PADZ_BIN}" ]]; then
-    echo -e "${RED}Error: Binary build failed or binary not found at ${PADZ_BIN}${NC}" >&2
-    exit 1
-fi
+# Create workspace in OS temp directory
+WORKSPACE="$(mktemp -d)"
+echo -e "${GRAY}Workspace: ${WORKSPACE}${NC}"
 
-# Function to cleanup on exit
 cleanup() {
-    echo -e "\n${YELLOW}Cleaning up test environment...${NC}"
-    if [[ -d "${TEMP_DIR}" ]]; then
-        rm -rf "${TEMP_DIR}"
-        echo -e "${GREEN}Test environment cleaned up${NC}"
-    fi
+    echo -e "\n${YELLOW}Cleaning up...${NC}"
+    rm -rf "${WORKSPACE}"
+    echo -e "${GREEN}Done${NC}"
 }
-
-# Set up trap to cleanup on exit
 trap cleanup EXIT INT TERM
 
-# Change to temp directory
-cd "${TEMP_DIR}"
+# Set up directory structure
+mkdir -p "${WORKSPACE}/projects/project-a"
+mkdir -p "${WORKSPACE}/global-data"
 
-# Initialize git repo to ensure "Project Scope" works
-git init --quiet
-echo -e "${GRAY}Initialized git repo in ${TEMP_DIR} (Project Scope)${NC}"
+# Initialize git in project-a
+(cd "${WORKSPACE}/projects/project-a" && git init --quiet)
 
-# Display environment info
-echo -e "${GRAY}Working directory: ${TEMP_DIR}${NC}"
-echo -e "${GRAY}Padz binary: ${PADZ_BIN}${NC}"
-
-# Add project bin to PATH for easy access if needed, but we alias mainly
-export PATH="${PROJECT_ROOT}/target/debug:${PATH}"
-
-# Set up history file for the session
-export HISTFILE="${TEMP_DIR}/.zsh_history"
+# Export environment for the subshell
+export PADZ_BIN
+export WORKSPACE
+export PADZ_GLOBAL_DATA="${WORKSPACE}/global-data"
+export EDITOR=true
+export HISTFILE="${WORKSPACE}/.zsh_history"
 export HISTSIZE=10000
 export SAVEHIST=10000
-export EDITOR=ed
-# Create a function to export history without line numbers
-function export_history() {
-    fc -ln 1 2>/dev/null || echo "# No history available"
+
+# Change to workspace root
+cd "${WORKSPACE}"
+
+# Function to run script via wrapper
+run_script() {
+    local script="$1"
+    echo -e "${GRAY}Running: $(basename "${script}")${NC}\n"
+
+    # Create wrapper with substitutions
+    sed -e "s|__WORKSPACE__|${WORKSPACE}|g" \
+        -e "s|__PADZ_BIN__|${PADZ_BIN}|g" \
+        "${SCRIPT_DIR}/.wrapper" > "${WORKSPACE}/.wrapper.zsh"
+    chmod +x "${WORKSPACE}/.wrapper.zsh"
+
+    zsh --no-globalrcs --no-rcs "${WORKSPACE}/.wrapper.zsh" "${script}"
 }
 
-# Create a wrapper function/alias for padz
-function padz() {
-    command "${PADZ_BIN}" "$@"
-}
-export -f padz 2>/dev/null || true
+# Function to start interactive shell
+start_interactive() {
+    echo -e "\n${YELLOW}$(cat "${SCRIPT_DIR}/.welcome")${NC}\n"
 
-# Function to launch interactive shell or execute script
-launch_shell() {
-    local script_to_run="${1:-}"
-    local start_interactive_shell=false
+    # Prepare zshrc
+    sed -e "s|__WORKSPACE__|${WORKSPACE}|g" \
+        -e "s|__PADZ_BIN__|${PADZ_BIN}|g" \
+        "${SCRIPT_DIR}/.zshrc" > "${WORKSPACE}/.zshrc"
 
-    if [[ -n "${script_to_run}" ]]; then
-        # Execute the script
-        echo -e "${GRAY}Executing script: ${script_to_run}${NC}\n"
-
-        # Use zsh to execute the script in the current environment
-        if ! command -v zsh >/dev/null 2>&1; then
-            echo -e "${RED}Error: zsh not found${NC}" >&2
-            exit 1
-        fi
-
-        # Execute the script with the current environment
-        # Extract commands from the script (excluding comments and empty lines)
-        if ! grep -v '^#' "${script_to_run}" | grep -v '^$' >"${TEMP_DIR}/.command_history"; then
-            true # Ignore grep failures
-        fi
-
-        # Copy and customize the wrapper script
-        sed -e "s|TEMP_DIR_PLACEHOLDER|${TEMP_DIR}|g" \
-            "${LIVE_TESTS_DIR}/.wrapper" >"${TEMP_DIR}/.wrapper.zsh"
-        chmod +x "${TEMP_DIR}/.wrapper.zsh"
-
-        # Run zsh with no rc files to avoid user config interference
-        # We export PADZ_BIN_PATH for the wrapper to use
-        export PADZ_BIN_PATH="${PADZ_BIN}"
-        zsh --no-globalrcs --no-rcs "${TEMP_DIR}/.wrapper.zsh" "${script_to_run}"
-
-        # Check if we should start interactive shell after script
-        if [[ "${INTERACTIVE}" == "true" ]]; then
-            start_interactive_shell=true
-        fi
-    else
-        start_interactive_shell=true
-    fi
-
-    if [[ "${start_interactive_shell}" == "true" ]]; then
-        # Start interactive shell
-        echo -e "\n${YELLOW}$(cat "${LIVE_TESTS_DIR}/.welcome")${NC}\n"
-
-        # Copy zshrc to temp directory
-        cp "${LIVE_TESTS_DIR}/.zshrc" "${TEMP_DIR}/.zshrc"
-        
-        # Append alias to zshrc
-        echo "alias padz='${PADZ_BIN}'" >> "${TEMP_DIR}/.zshrc"
-
-        # Start a new shell with custom config
-        ZDOTDIR="${TEMP_DIR}" zsh
-    fi
+    ZDOTDIR="${WORKSPACE}" zsh -i
 }
 
-# Launch shell or execute script
-launch_shell "${SCRIPT_FILE}"
+# Execute
+if [[ -n "${SCRIPT_FILE}" ]]; then
+    run_script "${SCRIPT_FILE}"
+    [[ "${INTERACTIVE}" == "true" ]] && start_interactive
+else
+    start_interactive
+fi

@@ -1,6 +1,15 @@
-Welcome to the PADZ Live Test Shell!
--------------------------------------
-You are in a temporary directory with a fresh git repo.
-Type 'padz' (or 'pa') to use the locally built binary.
-Data is stored in .padz/ in this directory.
+PADZ Live Test Shell
+====================
+You're in an isolated workspace with two scopes:
+
+  Global scope:  Stay here (workspace root, no git)
+  Project scope: Run 'proj' to cd into projects/project-a/
+
+Commands:
+  padz, pa     Run the dev binary
+  proj         cd to project-a (project scope)
+  ws           cd to workspace root (global scope)
+  scope        Show current scope
+  env_info     Show environment details
+
 Exit the shell to clean up.

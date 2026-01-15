@@ -1,39 +1,37 @@
 #!/usr/bin/env zsh
+# Script wrapper for batch execution
+# Reads a script file and executes each command, showing output
 
-# Define export_history function that reads captured commands
-function export_history() {
-    if [[ -f "TEMP_DIR_PLACEHOLDER/.command_history" ]]; then
-        grep -v 'export_history' "TEMP_DIR_PLACEHOLDER/.command_history" 2>/dev/null || true
-    else
-        echo "# No history available"
-    fi
-}
+# Don't exit on errors - we want to show all command outputs
+setopt no_err_exit
 
 # Wrapper function for padz
-function padz() {
-    if [[ -n "${PADZ_BIN_PATH}" ]]; then
-        "${PADZ_BIN_PATH}" "$@"
-    else
-        command pa "$@"
-    fi
+padz() {
+    __PADZ_BIN__ "$@"
 }
 
-# Set up color codes
+# Convenience alias
+alias pa='padz'
+
+# Colors
 GRAY=$'\033[38;5;245m'
 NC=$'\033[0m'
 
-# Read and execute the script line by line
+# Change to workspace
+cd "__WORKSPACE__"
+
+# Read entire script into array first to avoid stdin consumption issues
+# (some commands like padz may read from stdin, consuming the script file)
+lines=("${(@f)$(cat "$1")}")
+
 prev_was_comment=false
-while IFS= read -r line; do
+for line in "${lines[@]}"; do
     # Handle comments - display them in gray
-    if [[ "$line" =~ ^[[:space:]]*# ]]; then
-        # Extract comment text (remove # and leading whitespace)
-        comment_text="$(echo "$line" | sed 's/^[[:space:]]*#[[:space:]]*//')"
+    if [[ "$line" =~ '^[[:space:]]*#' ]]; then
+        # Extract comment text after # and leading whitespace
+        comment_text=$(echo "$line" | sed 's/^[[:space:]]*#[[:space:]]*//')
         if [[ -n "$comment_text" ]]; then
-            # Only add newline if previous line wasn't a comment
-            if [[ "$prev_was_comment" == false ]]; then
-                echo
-            fi
+            [[ "$prev_was_comment" == false ]] && echo
             echo "${GRAY}${comment_text}${NC}"
         fi
         prev_was_comment=true
@@ -46,11 +44,10 @@ while IFS= read -r line; do
         continue
     fi
 
-    # Echo the command in gray
+    # Echo and execute command (redirect stdin from /dev/null to prevent
+    # commands from consuming script input)
     echo
     echo "${GRAY}$ ${line}${NC}"
-
-    # Execute the command
-    eval "$line"
+    eval "$line" </dev/null
     prev_was_comment=false
-done <"$1"
+done
