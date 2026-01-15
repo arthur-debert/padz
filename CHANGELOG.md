@@ -6,6 +6,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+- **Added**
+  - **Unified release workflow** - GitHub Actions workflow with dual triggers (workflow_dispatch or tag push), cross-platform binary builds (macOS ARM, Linux x64/ARM), automatic GitHub Releases with changelog-based release notes, and idempotent crates.io publishing
+
 ## [0.12.0] - 2026-01-15
 
 ## [0.12.0] - 2026-01-15
