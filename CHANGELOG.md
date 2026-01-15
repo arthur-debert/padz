@@ -6,6 +6,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+- **Added**
+  - **Data path override** - `--data <PATH>` option to explicitly specify the `.padz` data directory, useful for git worktrees or working from temp directories
+
 ## [0.10.2] - 2026-01-12
 
 ## [0.10.2] - 2026-01-12
