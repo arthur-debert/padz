@@ -18,11 +18,12 @@
 {%- endif -%}
 
 {#- Render the pad line using col() filter for layout -#}
-{#- Layout: indent | left_pin(2) | status(2) | index(4) | title(fill) | right_pin(2) | time(14) -#}
+{#- Layout: indent | left_pin(2) | status(2) | index(4) | title(fill) | tags | right_pin(2) | time(14) -#}
 {{- pad.indent -}}
 {{- pad.left_pin | col(col_left_pin) | style("pinned") -}}
 {{- pad.status_icon | col(col_status) | style("status-icon") -}}
 {{- pad.index | col(col_index) | style(index_style) -}}
 {{- pad.title | col(pad.title_width) | style(title_style) -}}
+{% if pad.tags %} {% endif %}{%- for tag in pad.tags -%}{{ tag | style("tag") }}{% if not loop.last %} {% endif %}{%- endfor -%}
 {{- pad.right_pin | col(col_right_pin) | style("pinned") -}}
 {{- pad.time_ago | col(col_time, align='right') | style("time") | nl -}}

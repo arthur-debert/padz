@@ -276,6 +276,67 @@ impl<S: DataStore> PadzApi<S> {
     pub fn paths(&self) -> &commands::PadzPaths {
         &self.paths
     }
+
+    // --- Tag Management ---
+
+    /// List all tags in the registry.
+    pub fn list_tags(&self, scope: Scope) -> Result<commands::CmdResult> {
+        commands::tags::list_tags(&self.store, scope)
+    }
+
+    /// Create a new tag in the registry.
+    pub fn create_tag(&mut self, scope: Scope, name: &str) -> Result<commands::CmdResult> {
+        commands::tags::create_tag(&mut self.store, scope, name)
+    }
+
+    /// Delete a tag from the registry (cascades to remove from all pads).
+    pub fn delete_tag(&mut self, scope: Scope, name: &str) -> Result<commands::CmdResult> {
+        commands::tags::delete_tag(&mut self.store, scope, name)
+    }
+
+    /// Rename a tag in the registry (updates all pads).
+    pub fn rename_tag(
+        &mut self,
+        scope: Scope,
+        old_name: &str,
+        new_name: &str,
+    ) -> Result<commands::CmdResult> {
+        commands::tags::rename_tag(&mut self.store, scope, old_name, new_name)
+    }
+
+    // --- Pad Tagging ---
+
+    /// Add tags to pads.
+    pub fn add_tags_to_pads<I: AsRef<str>>(
+        &mut self,
+        scope: Scope,
+        indexes: &[I],
+        tags: &[String],
+    ) -> Result<commands::CmdResult> {
+        let selectors = parse_selectors(indexes)?;
+        commands::tagging::add_tags(&mut self.store, scope, &selectors, tags)
+    }
+
+    /// Remove tags from pads.
+    pub fn remove_tags_from_pads<I: AsRef<str>>(
+        &mut self,
+        scope: Scope,
+        indexes: &[I],
+        tags: &[String],
+    ) -> Result<commands::CmdResult> {
+        let selectors = parse_selectors(indexes)?;
+        commands::tagging::remove_tags(&mut self.store, scope, &selectors, tags)
+    }
+
+    /// Clear all tags from pads.
+    pub fn clear_tags_from_pads<I: AsRef<str>>(
+        &mut self,
+        scope: Scope,
+        indexes: &[I],
+    ) -> Result<commands::CmdResult> {
+        let selectors = parse_selectors(indexes)?;
+        commands::tagging::clear_tags(&mut self.store, scope, &selectors)
+    }
 }
 
 fn parse_selectors<I: AsRef<str>>(inputs: &[I]) -> Result<Vec<PadSelector>> {
@@ -592,6 +653,7 @@ mod tests {
                     status: PadStatusFilter::All,
                     search_term: None,
                     todo_status: None,
+                    tags: None,
                 },
             )
             .unwrap();
@@ -619,6 +681,7 @@ mod tests {
                     status: PadStatusFilter::Deleted,
                     search_term: None,
                     todo_status: None,
+                    tags: None,
                 },
             )
             .unwrap();
@@ -845,5 +908,108 @@ mod tests {
         let result = api.move_pads(Scope::Project, &["1"], Some("1"));
         assert!(result.is_err());
         assert!(result.unwrap_err().to_string().contains("into itself"));
+    }
+
+    // --- Tag Management API tests ---
+
+    #[test]
+    fn test_api_list_tags() {
+        let mut api = make_api();
+        api.create_tag(Scope::Project, "work").unwrap();
+
+        let result = api.list_tags(Scope::Project).unwrap();
+
+        assert!(result.messages.iter().any(|m| m.content.contains("work")));
+    }
+
+    #[test]
+    fn test_api_create_tag() {
+        let mut api = make_api();
+
+        let result = api.create_tag(Scope::Project, "rust").unwrap();
+
+        assert!(result.messages[0].content.contains("Created tag 'rust'"));
+    }
+
+    #[test]
+    fn test_api_delete_tag() {
+        let mut api = make_api();
+        api.create_tag(Scope::Project, "work").unwrap();
+
+        let result = api.delete_tag(Scope::Project, "work").unwrap();
+
+        assert!(result.messages[0].content.contains("Deleted tag 'work'"));
+    }
+
+    #[test]
+    fn test_api_rename_tag() {
+        let mut api = make_api();
+        api.create_tag(Scope::Project, "old-name").unwrap();
+
+        let result = api
+            .rename_tag(Scope::Project, "old-name", "new-name")
+            .unwrap();
+
+        assert!(result.messages[0]
+            .content
+            .contains("Renamed tag 'old-name' to 'new-name'"));
+    }
+
+    // --- Pad Tagging API tests ---
+
+    #[test]
+    fn test_api_add_tags_to_pads() {
+        let mut api = make_api();
+        api.create_pad(Scope::Project, "Test".into(), "".into(), None)
+            .unwrap();
+        api.create_tag(Scope::Project, "work").unwrap();
+
+        let result = api
+            .add_tags_to_pads(Scope::Project, &["1"], &["work".to_string()])
+            .unwrap();
+
+        assert!(result.messages[0].content.contains("Added tag"));
+        assert!(result.affected_pads[0]
+            .pad
+            .metadata
+            .tags
+            .contains(&"work".to_string()));
+    }
+
+    #[test]
+    fn test_api_remove_tags_from_pads() {
+        let mut api = make_api();
+        api.create_pad(Scope::Project, "Test".into(), "".into(), None)
+            .unwrap();
+        api.create_tag(Scope::Project, "work").unwrap();
+        api.add_tags_to_pads(Scope::Project, &["1"], &["work".to_string()])
+            .unwrap();
+
+        let result = api
+            .remove_tags_from_pads(Scope::Project, &["1"], &["work".to_string()])
+            .unwrap();
+
+        assert!(result.messages[0].content.contains("Removed tag"));
+        assert!(result.affected_pads[0].pad.metadata.tags.is_empty());
+    }
+
+    #[test]
+    fn test_api_clear_tags_from_pads() {
+        let mut api = make_api();
+        api.create_pad(Scope::Project, "Test".into(), "".into(), None)
+            .unwrap();
+        api.create_tag(Scope::Project, "work").unwrap();
+        api.create_tag(Scope::Project, "rust").unwrap();
+        api.add_tags_to_pads(
+            Scope::Project,
+            &["1"],
+            &["work".to_string(), "rust".to_string()],
+        )
+        .unwrap();
+
+        let result = api.clear_tags_from_pads(Scope::Project, &["1"]).unwrap();
+
+        assert!(result.messages[0].content.contains("Cleared tags"));
+        assert!(result.affected_pads[0].pad.metadata.tags.is_empty());
     }
 }

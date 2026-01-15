@@ -18,6 +18,9 @@ pub struct PadFilter {
     pub search_term: Option<String>,
     /// Filter by todo status. None means show all (no filtering by todo status).
     pub todo_status: Option<TodoStatus>,
+    /// Filter by tags. None means show all (no filtering by tags).
+    /// Multiple tags means AND logic - pads must have ALL specified tags.
+    pub tags: Option<Vec<String>>,
 }
 
 impl Default for PadFilter {
@@ -26,6 +29,7 @@ impl Default for PadFilter {
             status: PadStatusFilter::Active,
             search_term: None,
             todo_status: None, // Show all todo statuses by default
+            tags: None,        // Show all tags by default
         }
     }
 }
@@ -109,6 +113,31 @@ fn filter_pad_by_todo_status(mut dp: DisplayPad, todo_status: TodoStatus) -> Opt
     }
 }
 
+/// Recursively filters the tree based on tags.
+/// Returns pads that have ALL specified tags (AND logic), preserving hierarchy.
+fn filter_by_tags(pads: Vec<DisplayPad>, tags: &[String]) -> Vec<DisplayPad> {
+    pads.into_iter()
+        .filter_map(|dp| filter_pad_by_tags(dp, tags))
+        .collect()
+}
+
+fn filter_pad_by_tags(mut dp: DisplayPad, tags: &[String]) -> Option<DisplayPad> {
+    // First, recursively filter children
+    dp.children = dp
+        .children
+        .into_iter()
+        .filter_map(|child| filter_pad_by_tags(child, tags))
+        .collect();
+
+    // Include this pad if it has ALL the specified tags (AND logic)
+    let has_all_tags = tags.iter().all(|tag| dp.pad.metadata.tags.contains(tag));
+    if has_all_tags {
+        Some(dp)
+    } else {
+        None
+    }
+}
+
 fn matches_status(index: &DisplayIndex, status: PadStatusFilter) -> bool {
     match status {
         PadStatusFilter::All => true,
@@ -130,7 +159,14 @@ pub fn run<S: DataStore>(store: &S, scope: Scope, filter: PadFilter) -> Result<C
         filtered = filter_by_todo_status(filtered, todo_status);
     }
 
-    // 3. Apply search if needed
+    // 3. Filter by tags if specified (AND logic - must have all tags)
+    if let Some(ref tags) = filter.tags {
+        if !tags.is_empty() {
+            filtered = filter_by_tags(filtered, tags);
+        }
+    }
+
+    // 4. Apply search if needed
     if let Some(term) = &filter.search_term {
         let term_lower = term.to_lowercase();
         let mut matches: Vec<(DisplayPad, u8)> = filtered
@@ -333,7 +369,7 @@ fn extract_context(line: &str, term_lower: &str, context_words: usize) -> Vec<Ma
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::commands::{create, delete};
+    use crate::commands::{create, delete, tagging, tags};
     use crate::index::PadSelector;
     use crate::model::Scope;
     use crate::store::memory::InMemoryStore;
@@ -367,6 +403,7 @@ mod tests {
                 status: PadStatusFilter::Active,
                 search_term: None,
                 todo_status: None,
+                tags: None,
             },
         )
         .unwrap();
@@ -381,6 +418,7 @@ mod tests {
                 status: PadStatusFilter::Deleted,
                 search_term: None,
                 todo_status: None,
+                tags: None,
             },
         )
         .unwrap();
@@ -395,6 +433,7 @@ mod tests {
                 status: PadStatusFilter::All,
                 search_term: None,
                 todo_status: None,
+                tags: None,
             },
         )
         .unwrap();
@@ -421,6 +460,7 @@ mod tests {
                 status: PadStatusFilter::Active,
                 search_term: Some("foo".into()),
                 todo_status: None,
+                tags: None,
             },
         )
         .unwrap();
@@ -574,6 +614,7 @@ mod tests {
                 status: PadStatusFilter::Deleted,
                 search_term: None,
                 todo_status: None,
+                tags: None,
             },
         )
         .unwrap();
@@ -656,6 +697,7 @@ mod tests {
                 status: PadStatusFilter::Active,
                 search_term: None,
                 todo_status: Some(TodoStatus::Planned),
+                tags: None,
             },
         )
         .unwrap();
@@ -691,6 +733,7 @@ mod tests {
                 status: PadStatusFilter::Active,
                 search_term: None,
                 todo_status: Some(TodoStatus::Done),
+                tags: None,
             },
         )
         .unwrap();
@@ -729,6 +772,7 @@ mod tests {
                 status: PadStatusFilter::Active,
                 search_term: None,
                 todo_status: Some(TodoStatus::InProgress),
+                tags: None,
             },
         )
         .unwrap();
@@ -785,6 +829,7 @@ mod tests {
                 status: PadStatusFilter::Active,
                 search_term: None,
                 todo_status: None,
+                tags: None,
             },
         )
         .unwrap();
@@ -823,6 +868,7 @@ mod tests {
                 status: PadStatusFilter::Active,
                 search_term: None,
                 todo_status: Some(TodoStatus::Planned),
+                tags: None,
             },
         )
         .unwrap();
@@ -889,6 +935,7 @@ mod tests {
                 status: PadStatusFilter::Active,
                 search_term: None,
                 todo_status: Some(TodoStatus::Planned),
+                tags: None,
             },
         )
         .unwrap();
@@ -901,5 +948,318 @@ mod tests {
         // Child1 is Done, so it's filtered out
         assert_eq!(res.listed_pads[0].children.len(), 1);
         assert_eq!(res.listed_pads[0].children[0].pad.metadata.title, "Child2");
+    }
+
+    // --- Tag filtering tests ---
+
+    #[test]
+    fn test_tag_filter_single_tag() {
+        let mut store = InMemoryStore::new();
+        tags::create_tag(&mut store, Scope::Project, "work").unwrap();
+        tags::create_tag(&mut store, Scope::Project, "rust").unwrap();
+
+        create::run(&mut store, Scope::Project, "Pad1".into(), "".into(), None).unwrap();
+        create::run(&mut store, Scope::Project, "Pad2".into(), "".into(), None).unwrap();
+        create::run(&mut store, Scope::Project, "Pad3".into(), "".into(), None).unwrap();
+
+        // Tag Pad1 with "work"
+        tagging::add_tags(
+            &mut store,
+            Scope::Project,
+            &[PadSelector::Path(vec![DisplayIndex::Regular(3)])],
+            &["work".to_string()],
+        )
+        .unwrap();
+
+        // Tag Pad2 with "rust"
+        tagging::add_tags(
+            &mut store,
+            Scope::Project,
+            &[PadSelector::Path(vec![DisplayIndex::Regular(2)])],
+            &["rust".to_string()],
+        )
+        .unwrap();
+
+        // Filter by "work" tag
+        let res = run(
+            &store,
+            Scope::Project,
+            PadFilter {
+                status: PadStatusFilter::Active,
+                search_term: None,
+                todo_status: None,
+                tags: Some(vec!["work".to_string()]),
+            },
+        )
+        .unwrap();
+
+        assert_eq!(res.listed_pads.len(), 1);
+        assert_eq!(res.listed_pads[0].pad.metadata.title, "Pad1");
+    }
+
+    #[test]
+    fn test_tag_filter_multiple_tags_and_logic() {
+        let mut store = InMemoryStore::new();
+        tags::create_tag(&mut store, Scope::Project, "work").unwrap();
+        tags::create_tag(&mut store, Scope::Project, "rust").unwrap();
+
+        create::run(&mut store, Scope::Project, "Pad1".into(), "".into(), None).unwrap();
+        create::run(&mut store, Scope::Project, "Pad2".into(), "".into(), None).unwrap();
+
+        // Pad1 has both tags
+        tagging::add_tags(
+            &mut store,
+            Scope::Project,
+            &[PadSelector::Path(vec![DisplayIndex::Regular(2)])],
+            &["work".to_string(), "rust".to_string()],
+        )
+        .unwrap();
+
+        // Pad2 has only "work"
+        tagging::add_tags(
+            &mut store,
+            Scope::Project,
+            &[PadSelector::Path(vec![DisplayIndex::Regular(1)])],
+            &["work".to_string()],
+        )
+        .unwrap();
+
+        // Filter by both tags (AND logic)
+        let res = run(
+            &store,
+            Scope::Project,
+            PadFilter {
+                status: PadStatusFilter::Active,
+                search_term: None,
+                todo_status: None,
+                tags: Some(vec!["work".to_string(), "rust".to_string()]),
+            },
+        )
+        .unwrap();
+
+        // Only Pad1 has both tags
+        assert_eq!(res.listed_pads.len(), 1);
+        assert_eq!(res.listed_pads[0].pad.metadata.title, "Pad1");
+    }
+
+    #[test]
+    fn test_tag_filter_no_matches() {
+        let mut store = InMemoryStore::new();
+        tags::create_tag(&mut store, Scope::Project, "work").unwrap();
+
+        create::run(&mut store, Scope::Project, "Pad1".into(), "".into(), None).unwrap();
+
+        // Filter by tag that no pad has
+        let res = run(
+            &store,
+            Scope::Project,
+            PadFilter {
+                status: PadStatusFilter::Active,
+                search_term: None,
+                todo_status: None,
+                tags: Some(vec!["work".to_string()]),
+            },
+        )
+        .unwrap();
+
+        assert_eq!(res.listed_pads.len(), 0);
+    }
+
+    #[test]
+    fn test_tag_filter_empty_tags_shows_all() {
+        let mut store = InMemoryStore::new();
+        create::run(&mut store, Scope::Project, "Pad1".into(), "".into(), None).unwrap();
+        create::run(&mut store, Scope::Project, "Pad2".into(), "".into(), None).unwrap();
+
+        // Filter with empty tags list should show all
+        let res = run(
+            &store,
+            Scope::Project,
+            PadFilter {
+                status: PadStatusFilter::Active,
+                search_term: None,
+                todo_status: None,
+                tags: Some(vec![]),
+            },
+        )
+        .unwrap();
+
+        assert_eq!(res.listed_pads.len(), 2);
+    }
+
+    #[test]
+    fn test_tag_filter_preserves_index() {
+        let mut store = InMemoryStore::new();
+        tags::create_tag(&mut store, Scope::Project, "work").unwrap();
+
+        create::run(&mut store, Scope::Project, "First".into(), "".into(), None).unwrap();
+        create::run(&mut store, Scope::Project, "Second".into(), "".into(), None).unwrap();
+        create::run(&mut store, Scope::Project, "Third".into(), "".into(), None).unwrap();
+
+        // Tag only First (index 3) and Third (index 1)
+        tagging::add_tags(
+            &mut store,
+            Scope::Project,
+            &[PadSelector::Path(vec![DisplayIndex::Regular(3)])],
+            &["work".to_string()],
+        )
+        .unwrap();
+        tagging::add_tags(
+            &mut store,
+            Scope::Project,
+            &[PadSelector::Path(vec![DisplayIndex::Regular(1)])],
+            &["work".to_string()],
+        )
+        .unwrap();
+
+        let res = run(
+            &store,
+            Scope::Project,
+            PadFilter {
+                status: PadStatusFilter::Active,
+                search_term: None,
+                todo_status: None,
+                tags: Some(vec!["work".to_string()]),
+            },
+        )
+        .unwrap();
+
+        // Should show 2 pads with indexes 1 and 3 (not renumbered)
+        assert_eq!(res.listed_pads.len(), 2);
+
+        let third = res
+            .listed_pads
+            .iter()
+            .find(|dp| dp.pad.metadata.title == "Third")
+            .unwrap();
+        assert!(matches!(third.index, DisplayIndex::Regular(1)));
+
+        let first = res
+            .listed_pads
+            .iter()
+            .find(|dp| dp.pad.metadata.title == "First")
+            .unwrap();
+        assert!(matches!(first.index, DisplayIndex::Regular(3)));
+    }
+
+    #[test]
+    fn test_tag_filter_with_nested_pads() {
+        let mut store = InMemoryStore::new();
+        tags::create_tag(&mut store, Scope::Project, "work").unwrap();
+
+        create::run(&mut store, Scope::Project, "Parent".into(), "".into(), None).unwrap();
+        create::run(
+            &mut store,
+            Scope::Project,
+            "Child1".into(),
+            "".into(),
+            Some(PadSelector::Path(vec![DisplayIndex::Regular(1)])),
+        )
+        .unwrap();
+        create::run(
+            &mut store,
+            Scope::Project,
+            "Child2".into(),
+            "".into(),
+            Some(PadSelector::Path(vec![DisplayIndex::Regular(1)])),
+        )
+        .unwrap();
+
+        // Tag Parent and Child1 with "work"
+        tagging::add_tags(
+            &mut store,
+            Scope::Project,
+            &[PadSelector::Path(vec![DisplayIndex::Regular(1)])],
+            &["work".to_string()],
+        )
+        .unwrap();
+        tagging::add_tags(
+            &mut store,
+            Scope::Project,
+            &[PadSelector::Path(vec![
+                DisplayIndex::Regular(1),
+                DisplayIndex::Regular(2),
+            ])],
+            &["work".to_string()],
+        )
+        .unwrap();
+
+        let res = run(
+            &store,
+            Scope::Project,
+            PadFilter {
+                status: PadStatusFilter::Active,
+                search_term: None,
+                todo_status: None,
+                tags: Some(vec!["work".to_string()]),
+            },
+        )
+        .unwrap();
+
+        // Parent has "work" so it shows
+        assert_eq!(res.listed_pads.len(), 1);
+        assert_eq!(res.listed_pads[0].pad.metadata.title, "Parent");
+
+        // Child1 has "work" so it shows
+        // Child2 doesn't have "work" so it's filtered out
+        assert_eq!(res.listed_pads[0].children.len(), 1);
+        assert_eq!(res.listed_pads[0].children[0].pad.metadata.title, "Child1");
+    }
+
+    #[test]
+    fn test_tag_filter_combined_with_search() {
+        let mut store = InMemoryStore::new();
+        tags::create_tag(&mut store, Scope::Project, "work").unwrap();
+
+        create::run(
+            &mut store,
+            Scope::Project,
+            "Rust Guide".into(),
+            "".into(),
+            None,
+        )
+        .unwrap();
+        create::run(
+            &mut store,
+            Scope::Project,
+            "Python Guide".into(),
+            "".into(),
+            None,
+        )
+        .unwrap();
+        create::run(
+            &mut store,
+            Scope::Project,
+            "Rust Notes".into(),
+            "".into(),
+            None,
+        )
+        .unwrap();
+
+        // Tag only Rust Guide with "work"
+        tagging::add_tags(
+            &mut store,
+            Scope::Project,
+            &[PadSelector::Path(vec![DisplayIndex::Regular(3)])],
+            &["work".to_string()],
+        )
+        .unwrap();
+
+        // Search for "Rust" AND filter by "work" tag
+        let res = run(
+            &store,
+            Scope::Project,
+            PadFilter {
+                status: PadStatusFilter::Active,
+                search_term: Some("rust".into()),
+                todo_status: None,
+                tags: Some(vec!["work".to_string()]),
+            },
+        )
+        .unwrap();
+
+        // Only "Rust Guide" matches both search and tag
+        assert_eq!(res.listed_pads.len(), 1);
+        assert_eq!(res.listed_pads[0].pad.metadata.title, "Rust Guide");
     }
 }

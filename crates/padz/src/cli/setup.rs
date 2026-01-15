@@ -164,6 +164,10 @@ pub enum Commands {
     #[command(flatten)]
     Data(DataCommands),
 
+    /// Manage tags
+    #[command(subcommand, display_order = 25)]
+    Tags(TagsCommands),
+
     #[command(flatten)]
     Misc(MiscCommands),
 }
@@ -212,11 +216,22 @@ pub enum CoreCommands {
         /// Show only in-progress pads
         #[arg(long, conflicts_with_all = ["planned", "done"])]
         in_progress: bool,
+
+        /// Filter by tag(s) (can be specified multiple times, uses AND logic)
+        #[arg(long = "tag", short = 't', num_args = 1..)]
+        tags: Vec<String>,
     },
 
     /// Search pads (dedicated command)
     #[command(display_order = 3)]
-    Search { term: String },
+    Search {
+        /// Search term
+        term: String,
+
+        /// Filter by tag(s) (can be specified multiple times, uses AND logic)
+        #[arg(long = "tag", short = 't', num_args = 1..)]
+        tags: Vec<String>,
+    },
 }
 
 #[derive(Subcommand, Debug)]
@@ -321,6 +336,30 @@ pub enum PadCommands {
         #[arg(required = true, num_args = 1.., add = active_pads_completer())]
         indexes: Vec<String>,
     },
+
+    /// Add tags to pads
+    #[command(name = "add-tag", display_order = 23)]
+    AddTag {
+        /// Indexes of the pads (e.g. 1 3 5 or 1-5)
+        #[arg(required = true, num_args = 1.., add = active_pads_completer())]
+        indexes: Vec<String>,
+
+        /// Tag(s) to add (can be specified multiple times)
+        #[arg(long = "tag", short = 't', required = true, num_args = 1..)]
+        tags: Vec<String>,
+    },
+
+    /// Remove tags from pads
+    #[command(name = "remove-tag", display_order = 24)]
+    RemoveTag {
+        /// Indexes of the pads (e.g. 1 3 5 or 1-5)
+        #[arg(required = true, num_args = 1.., add = active_pads_completer())]
+        indexes: Vec<String>,
+
+        /// Tag(s) to remove (can be specified multiple times) - if omitted, clears all tags
+        #[arg(long = "tag", short = 't', num_args = 1..)]
+        tags: Vec<String>,
+    },
 }
 
 #[derive(Subcommand, Debug)]
@@ -359,6 +398,36 @@ pub enum DataCommands {
         /// Paths to files or directories to import
         #[arg(required = true, num_args = 1..)]
         paths: Vec<String>,
+    },
+}
+
+#[derive(Subcommand, Debug)]
+pub enum TagsCommands {
+    /// List all defined tags
+    #[command(alias = "ls", display_order = 25)]
+    List,
+
+    /// Create a new tag
+    #[command(display_order = 26)]
+    Create {
+        /// Name of the tag to create
+        name: String,
+    },
+
+    /// Delete a tag (removes from all pads)
+    #[command(alias = "rm", display_order = 27)]
+    Delete {
+        /// Name of the tag to delete
+        name: String,
+    },
+
+    /// Rename a tag (updates all pads)
+    #[command(alias = "mv", display_order = 28)]
+    Rename {
+        /// Current name of the tag
+        old_name: String,
+        /// New name for the tag
+        new_name: String,
     },
 }
 

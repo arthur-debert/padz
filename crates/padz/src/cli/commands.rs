@@ -45,7 +45,7 @@ use super::render::{
 };
 use super::setup::{
     parse_cli, Cli, Commands, CompletionShell, CoreCommands, DataCommands, MiscCommands,
-    PadCommands,
+    PadCommands, TagsCommands,
 };
 use outstanding::OutputMode;
 use padzapp::api::{ConfigAction, PadFilter, PadStatusFilter, PadzApi, TodoStatus};
@@ -112,8 +112,18 @@ pub fn run() -> Result<()> {
                 planned,
                 done,
                 in_progress,
-            } => handle_list(&mut ctx, search, deleted, peek, planned, done, in_progress),
-            CoreCommands::Search { term } => handle_search(&mut ctx, term),
+                tags,
+            } => handle_list(
+                &mut ctx,
+                search,
+                deleted,
+                peek,
+                planned,
+                done,
+                in_progress,
+                tags,
+            ),
+            CoreCommands::Search { term, tags } => handle_search(&mut ctx, term, tags),
         },
         Some(Commands::Pad(cmd)) => match cmd {
             PadCommands::View { indexes, peek } => handle_view(&mut ctx, indexes, peek),
@@ -130,6 +140,8 @@ pub fn run() -> Result<()> {
             PadCommands::Complete { indexes } => handle_complete(&mut ctx, indexes),
             PadCommands::Reopen { indexes } => handle_reopen(&mut ctx, indexes),
             PadCommands::Move { indexes, root } => handle_move(&mut ctx, indexes, root),
+            PadCommands::AddTag { indexes, tags } => handle_add_tag(&mut ctx, indexes, tags),
+            PadCommands::RemoveTag { indexes, tags } => handle_remove_tag(&mut ctx, indexes, tags),
         },
         Some(Commands::Data(cmd)) => match cmd {
             DataCommands::Purge {
@@ -143,13 +155,21 @@ pub fn run() -> Result<()> {
             } => handle_export(&mut ctx, indexes, single_file),
             DataCommands::Import { paths } => handle_import(&mut ctx, paths),
         },
+        Some(Commands::Tags(cmd)) => match cmd {
+            TagsCommands::List => handle_tags_list(&mut ctx),
+            TagsCommands::Create { name } => handle_tags_create(&mut ctx, name),
+            TagsCommands::Delete { name } => handle_tags_delete(&mut ctx, name),
+            TagsCommands::Rename { old_name, new_name } => {
+                handle_tags_rename(&mut ctx, old_name, new_name)
+            }
+        },
         Some(Commands::Misc(cmd)) => match cmd {
             MiscCommands::Doctor => handle_doctor(&mut ctx),
             MiscCommands::Config { key, value } => handle_config(&mut ctx, key, value),
             MiscCommands::Init => handle_init(&ctx),
             MiscCommands::Completions { shell } => handle_completions(shell),
         },
-        None => handle_list(&mut ctx, None, false, false, false, false, false),
+        None => handle_list(&mut ctx, None, false, false, false, false, false, vec![]),
     }
 }
 
@@ -238,6 +258,7 @@ fn resolve_create_input(title: Option<String>, no_editor: bool) -> (Option<Strin
     (final_title, initial_content, should_open_editor)
 }
 
+#[allow(clippy::too_many_arguments)]
 fn handle_list(
     ctx: &mut AppContext,
     search: Option<String>,
@@ -246,6 +267,7 @@ fn handle_list(
     planned: bool,
     done: bool,
     in_progress: bool,
+    tags: Vec<String>,
 ) -> Result<()> {
     // Determine todo status filter
     let todo_status = if planned {
@@ -266,6 +288,7 @@ fn handle_list(
         },
         search_term: search,
         todo_status,
+        tags: if tags.is_empty() { None } else { Some(tags) },
     };
 
     let result = ctx.api.get_pads(ctx.scope, filter)?;
@@ -334,6 +357,7 @@ fn handle_delete(ctx: &mut AppContext, indexes: Vec<String>, done_status: bool) 
             status: PadStatusFilter::Active,
             search_term: None,
             todo_status: Some(TodoStatus::Done),
+            tags: None,
         };
         let pads = ctx.api.get_pads(ctx.scope, filter)?;
 
@@ -460,11 +484,12 @@ fn handle_reopen(ctx: &mut AppContext, indexes: Vec<String>) -> Result<()> {
     Ok(())
 }
 
-fn handle_search(ctx: &mut AppContext, term: String) -> Result<()> {
+fn handle_search(ctx: &mut AppContext, term: String, tags: Vec<String>) -> Result<()> {
     let filter = PadFilter {
         status: PadStatusFilter::Active,
         search_term: Some(term),
         todo_status: None,
+        tags: if tags.is_empty() { None } else { Some(tags) },
     };
     let result = ctx.api.get_pads(ctx.scope, filter)?;
     let output = render_pad_list(&result.listed_pads, false, ctx.output_mode);
@@ -606,5 +631,63 @@ fn handle_completions(shell: CompletionShell) -> Result<()> {
     // Suppress unused variable warning
     let _ = completer;
 
+    Ok(())
+}
+
+// --- Tag management commands ---
+
+fn handle_tags_list(ctx: &mut AppContext) -> Result<()> {
+    let result = ctx.api.list_tags(ctx.scope)?;
+    print_messages(&result.messages, ctx.output_mode);
+    Ok(())
+}
+
+fn handle_tags_create(ctx: &mut AppContext, name: String) -> Result<()> {
+    let result = ctx.api.create_tag(ctx.scope, &name)?;
+    print_messages(&result.messages, ctx.output_mode);
+    Ok(())
+}
+
+fn handle_tags_delete(ctx: &mut AppContext, name: String) -> Result<()> {
+    let result = ctx.api.delete_tag(ctx.scope, &name)?;
+    print_messages(&result.messages, ctx.output_mode);
+    Ok(())
+}
+
+fn handle_tags_rename(ctx: &mut AppContext, old_name: String, new_name: String) -> Result<()> {
+    let result = ctx.api.rename_tag(ctx.scope, &old_name, &new_name)?;
+    print_messages(&result.messages, ctx.output_mode);
+    Ok(())
+}
+
+// --- Pad tagging commands ---
+
+fn handle_add_tag(ctx: &mut AppContext, indexes: Vec<String>, tags: Vec<String>) -> Result<()> {
+    let result = ctx.api.add_tags_to_pads(ctx.scope, &indexes, &tags)?;
+    let output = render_modification_result(
+        "Tagged",
+        &result.affected_pads,
+        &result.messages,
+        ctx.output_mode,
+    );
+    print!("{}", output);
+    Ok(())
+}
+
+fn handle_remove_tag(ctx: &mut AppContext, indexes: Vec<String>, tags: Vec<String>) -> Result<()> {
+    let result = if tags.is_empty() {
+        // If no tags specified, clear all tags from pads
+        ctx.api.clear_tags_from_pads(ctx.scope, &indexes)?
+    } else {
+        // Remove specific tags
+        ctx.api.remove_tags_from_pads(ctx.scope, &indexes, &tags)?
+    };
+    let output = render_modification_result(
+        "Untagged",
+        &result.affected_pads,
+        &result.messages,
+        ctx.output_mode,
+    );
+    print!("{}", output);
     Ok(())
 }

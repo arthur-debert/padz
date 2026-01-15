@@ -1,5 +1,6 @@
 use crate::error::Result;
 use crate::model::{Metadata, Scope};
+use crate::tags::TagEntry;
 use chrono::{DateTime, Utc};
 use std::collections::HashMap;
 use std::path::PathBuf;
@@ -16,6 +17,14 @@ pub trait StorageBackend {
 
     /// Save the metadata index
     fn save_index(&self, scope: Scope, index: &HashMap<Uuid, Metadata>) -> Result<()>;
+
+    // --- Tag Registry Operations ---
+
+    /// Load the tag registry (tags.json)
+    fn load_tags(&self, scope: Scope) -> Result<Vec<TagEntry>>;
+
+    /// Save the tag registry
+    fn save_tags(&self, scope: Scope, tags: &[TagEntry]) -> Result<()>;
 
     // --- Content Operations ---
 

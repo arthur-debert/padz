@@ -94,6 +94,7 @@ impl<B: StorageBackend> PadStore<B> {
                             parent_id: None,
                             title,
                             status: crate::model::TodoStatus::Planned,
+                            tags: Vec::new(),
                         };
                         meta_map.insert(*id, new_meta);
                         report.recovered_files += 1;
@@ -199,6 +200,14 @@ impl<B: StorageBackend> DataStore for PadStore<B> {
         let (report, _) = self.reconcile(scope)?;
         Ok(report)
     }
+
+    fn load_tags(&self, scope: Scope) -> Result<Vec<crate::tags::TagEntry>> {
+        self.backend.load_tags(scope)
+    }
+
+    fn save_tags(&mut self, scope: Scope, tags: &[crate::tags::TagEntry]) -> Result<()> {
+        self.backend.save_tags(scope, tags)
+    }
 }
 
 #[cfg(test)]
@@ -283,6 +292,7 @@ mod tests {
                 parent_id: None,
                 title: "Zombie".to_string(),
                 status: crate::model::TodoStatus::Planned,
+                tags: Vec::new(),
             },
         );
         backend.save_index(Scope::Project, &index).unwrap();

@@ -2,6 +2,7 @@ use chrono::Utc;
 use padzapp::model::{Metadata, Scope};
 use padzapp::store::backend::StorageBackend;
 use padzapp::store::fs_backend::FsBackend;
+use padzapp::tags::TagEntry;
 use std::collections::HashMap;
 use std::fs;
 use tempfile::TempDir;
@@ -329,4 +330,57 @@ fn test_fs_backend_load_index_empty_dir() {
     // Loading index from dir without data.json should return empty HashMap
     let index = backend.load_index(Scope::Project).unwrap();
     assert!(index.is_empty());
+}
+
+#[test]
+fn test_fs_backend_tags_empty_dir() {
+    let (_proj, _glob, backend) = setup();
+
+    // Loading tags from dir without tags.json should return empty Vec
+    let tags = backend.load_tags(Scope::Project).unwrap();
+    assert!(tags.is_empty());
+}
+
+#[test]
+fn test_fs_backend_tags_save_and_load() {
+    let (proj, _glob, backend) = setup();
+
+    let tags = vec![
+        TagEntry::new("work".to_string()),
+        TagEntry::new("rust".to_string()),
+    ];
+
+    // Save tags
+    backend.save_tags(Scope::Project, &tags).unwrap();
+
+    // Verify file was created
+    let tags_file = proj.path().join("tags.json");
+    assert!(tags_file.exists());
+
+    // Load tags
+    let loaded = backend.load_tags(Scope::Project).unwrap();
+    assert_eq!(loaded.len(), 2);
+    assert_eq!(loaded[0].name, "work");
+    assert_eq!(loaded[1].name, "rust");
+}
+
+#[test]
+fn test_fs_backend_tags_scope_isolation() {
+    let (_proj, _glob, backend) = setup();
+
+    let project_tags = vec![TagEntry::new("project-tag".to_string())];
+    let global_tags = vec![TagEntry::new("global-tag".to_string())];
+
+    backend.save_tags(Scope::Project, &project_tags).unwrap();
+    backend.save_tags(Scope::Global, &global_tags).unwrap();
+
+    // Load from each scope
+    let loaded_project = backend.load_tags(Scope::Project).unwrap();
+    let loaded_global = backend.load_tags(Scope::Global).unwrap();
+
+    assert_eq!(loaded_project.len(), 1);
+    assert_eq!(loaded_project[0].name, "project-tag");
+
+    assert_eq!(loaded_global.len(), 1);
+    assert_eq!(loaded_global[0].name, "global-tag");
 }

@@ -80,7 +80,9 @@ mod tests {
     use super::*;
     use crate::error::PadzError;
     use crate::model::Scope;
+    use crate::store::backend::StorageBackend;
     use crate::store::DataStore;
+    use crate::tags::TagEntry;
     use uuid::Uuid;
 
     #[test]
@@ -130,5 +132,53 @@ mod tests {
             .filter(|p| p.metadata.title.starts_with("Test Pad"))
             .count();
         assert_eq!(generic, 2);
+    }
+
+    #[test]
+    fn test_mem_backend_tags_empty() {
+        use crate::store::mem_backend::MemBackend;
+
+        let backend = MemBackend::new();
+        let tags = backend.load_tags(Scope::Project).unwrap();
+        assert!(tags.is_empty());
+    }
+
+    #[test]
+    fn test_mem_backend_tags_save_and_load() {
+        use crate::store::mem_backend::MemBackend;
+
+        let backend = MemBackend::new();
+        let tags = vec![
+            TagEntry::new("work".to_string()),
+            TagEntry::new("rust".to_string()),
+        ];
+
+        backend.save_tags(Scope::Project, &tags).unwrap();
+
+        let loaded = backend.load_tags(Scope::Project).unwrap();
+        assert_eq!(loaded.len(), 2);
+        assert_eq!(loaded[0].name, "work");
+        assert_eq!(loaded[1].name, "rust");
+    }
+
+    #[test]
+    fn test_mem_backend_tags_scope_isolation() {
+        use crate::store::mem_backend::MemBackend;
+
+        let backend = MemBackend::new();
+        let project_tags = vec![TagEntry::new("project-tag".to_string())];
+        let global_tags = vec![TagEntry::new("global-tag".to_string())];
+
+        backend.save_tags(Scope::Project, &project_tags).unwrap();
+        backend.save_tags(Scope::Global, &global_tags).unwrap();
+
+        let loaded_project = backend.load_tags(Scope::Project).unwrap();
+        let loaded_global = backend.load_tags(Scope::Global).unwrap();
+
+        assert_eq!(loaded_project.len(), 1);
+        assert_eq!(loaded_project[0].name, "project-tag");
+
+        assert_eq!(loaded_global.len(), 1);
+        assert_eq!(loaded_global[0].name, "global-tag");
     }
 }

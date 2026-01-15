@@ -6,6 +6,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+- **Added**
+  - **Tag support** - Organize pads with tags. Create tags with `padz tags create`, assign with `padz add-tag`, filter lists with `--tag`. Tags are scoped (project or global) and displayed inline in list views.
+
 - **Fixed**
   - Pad name matching now only searches titles, not content (e.g., `padz view About` no longer matches pads where "About" only appears in the body)
 

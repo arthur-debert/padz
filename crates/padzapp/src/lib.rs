@@ -114,6 +114,7 @@ pub mod init;
 pub mod model;
 pub mod peek;
 pub mod store;
+pub mod tags;
 pub mod todos;
 
 #[cfg(test)]
