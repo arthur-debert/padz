@@ -276,6 +276,33 @@ impl<S: DataStore> PadzApi<S> {
     pub fn paths(&self) -> &commands::PadzPaths {
         &self.paths
     }
+
+    // --- Tag Management ---
+
+    /// List all tags in the registry.
+    pub fn list_tags(&self, scope: Scope) -> Result<commands::CmdResult> {
+        commands::tags::list_tags(&self.store, scope)
+    }
+
+    /// Create a new tag in the registry.
+    pub fn create_tag(&mut self, scope: Scope, name: &str) -> Result<commands::CmdResult> {
+        commands::tags::create_tag(&mut self.store, scope, name)
+    }
+
+    /// Delete a tag from the registry (cascades to remove from all pads).
+    pub fn delete_tag(&mut self, scope: Scope, name: &str) -> Result<commands::CmdResult> {
+        commands::tags::delete_tag(&mut self.store, scope, name)
+    }
+
+    /// Rename a tag in the registry (updates all pads).
+    pub fn rename_tag(
+        &mut self,
+        scope: Scope,
+        old_name: &str,
+        new_name: &str,
+    ) -> Result<commands::CmdResult> {
+        commands::tags::rename_tag(&mut self.store, scope, old_name, new_name)
+    }
 }
 
 fn parse_selectors<I: AsRef<str>>(inputs: &[I]) -> Result<Vec<PadSelector>> {
@@ -845,5 +872,50 @@ mod tests {
         let result = api.move_pads(Scope::Project, &["1"], Some("1"));
         assert!(result.is_err());
         assert!(result.unwrap_err().to_string().contains("into itself"));
+    }
+
+    // --- Tag Management API tests ---
+
+    #[test]
+    fn test_api_list_tags() {
+        let mut api = make_api();
+        api.create_tag(Scope::Project, "work").unwrap();
+
+        let result = api.list_tags(Scope::Project).unwrap();
+
+        assert!(result.messages.iter().any(|m| m.content.contains("work")));
+    }
+
+    #[test]
+    fn test_api_create_tag() {
+        let mut api = make_api();
+
+        let result = api.create_tag(Scope::Project, "rust").unwrap();
+
+        assert!(result.messages[0].content.contains("Created tag 'rust'"));
+    }
+
+    #[test]
+    fn test_api_delete_tag() {
+        let mut api = make_api();
+        api.create_tag(Scope::Project, "work").unwrap();
+
+        let result = api.delete_tag(Scope::Project, "work").unwrap();
+
+        assert!(result.messages[0].content.contains("Deleted tag 'work'"));
+    }
+
+    #[test]
+    fn test_api_rename_tag() {
+        let mut api = make_api();
+        api.create_tag(Scope::Project, "old-name").unwrap();
+
+        let result = api
+            .rename_tag(Scope::Project, "old-name", "new-name")
+            .unwrap();
+
+        assert!(result.messages[0]
+            .content
+            .contains("Renamed tag 'old-name' to 'new-name'"));
     }
 }
