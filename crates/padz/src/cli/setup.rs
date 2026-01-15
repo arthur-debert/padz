@@ -164,6 +164,10 @@ pub enum Commands {
     #[command(flatten)]
     Data(DataCommands),
 
+    /// Manage tags
+    #[command(subcommand, display_order = 25)]
+    Tags(TagsCommands),
+
     #[command(flatten)]
     Misc(MiscCommands),
 }
@@ -359,6 +363,36 @@ pub enum DataCommands {
         /// Paths to files or directories to import
         #[arg(required = true, num_args = 1..)]
         paths: Vec<String>,
+    },
+}
+
+#[derive(Subcommand, Debug)]
+pub enum TagsCommands {
+    /// List all defined tags
+    #[command(alias = "ls", display_order = 25)]
+    List,
+
+    /// Create a new tag
+    #[command(display_order = 26)]
+    Create {
+        /// Name of the tag to create
+        name: String,
+    },
+
+    /// Delete a tag (removes from all pads)
+    #[command(alias = "rm", display_order = 27)]
+    Delete {
+        /// Name of the tag to delete
+        name: String,
+    },
+
+    /// Rename a tag (updates all pads)
+    #[command(alias = "mv", display_order = 28)]
+    Rename {
+        /// Current name of the tag
+        old_name: String,
+        /// New name for the tag
+        new_name: String,
     },
 }
 

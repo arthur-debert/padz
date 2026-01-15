@@ -45,7 +45,7 @@ use super::render::{
 };
 use super::setup::{
     parse_cli, Cli, Commands, CompletionShell, CoreCommands, DataCommands, MiscCommands,
-    PadCommands,
+    PadCommands, TagsCommands,
 };
 use outstanding::OutputMode;
 use padzapp::api::{ConfigAction, PadFilter, PadStatusFilter, PadzApi, TodoStatus};
@@ -142,6 +142,14 @@ pub fn run() -> Result<()> {
                 indexes,
             } => handle_export(&mut ctx, indexes, single_file),
             DataCommands::Import { paths } => handle_import(&mut ctx, paths),
+        },
+        Some(Commands::Tags(cmd)) => match cmd {
+            TagsCommands::List => handle_tags_list(&mut ctx),
+            TagsCommands::Create { name } => handle_tags_create(&mut ctx, name),
+            TagsCommands::Delete { name } => handle_tags_delete(&mut ctx, name),
+            TagsCommands::Rename { old_name, new_name } => {
+                handle_tags_rename(&mut ctx, old_name, new_name)
+            }
         },
         Some(Commands::Misc(cmd)) => match cmd {
             MiscCommands::Doctor => handle_doctor(&mut ctx),
@@ -609,5 +617,31 @@ fn handle_completions(shell: CompletionShell) -> Result<()> {
     // Suppress unused variable warning
     let _ = completer;
 
+    Ok(())
+}
+
+// --- Tag management commands ---
+
+fn handle_tags_list(ctx: &mut AppContext) -> Result<()> {
+    let result = ctx.api.list_tags(ctx.scope)?;
+    print_messages(&result.messages, ctx.output_mode);
+    Ok(())
+}
+
+fn handle_tags_create(ctx: &mut AppContext, name: String) -> Result<()> {
+    let result = ctx.api.create_tag(ctx.scope, &name)?;
+    print_messages(&result.messages, ctx.output_mode);
+    Ok(())
+}
+
+fn handle_tags_delete(ctx: &mut AppContext, name: String) -> Result<()> {
+    let result = ctx.api.delete_tag(ctx.scope, &name)?;
+    print_messages(&result.messages, ctx.output_mode);
+    Ok(())
+}
+
+fn handle_tags_rename(ctx: &mut AppContext, old_name: String, new_name: String) -> Result<()> {
+    let result = ctx.api.rename_tag(ctx.scope, &old_name, &new_name)?;
+    print_messages(&result.messages, ctx.output_mode);
     Ok(())
 }
