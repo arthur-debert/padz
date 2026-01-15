@@ -94,6 +94,7 @@ mod tests {
                 parent_id: None,
                 title: "Zombie".to_string(),
                 status: crate::model::TodoStatus::Planned,
+                tags: Vec::new(),
             },
         );
         backend.save_index(Scope::Project, &index).unwrap();
@@ -138,6 +139,7 @@ mod tests {
                 parent_id: None,
                 title: "Zombie".to_string(),
                 status: crate::model::TodoStatus::Planned,
+                tags: Vec::new(),
             },
         );
         backend.save_index(Scope::Project, &index).unwrap();

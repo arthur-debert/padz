@@ -87,6 +87,9 @@ pub struct Metadata {
     pub title: String,
     #[serde(default)]
     pub status: TodoStatus,
+    /// Tags assigned to this pad (references tag names from the tag registry)
+    #[serde(default)]
+    pub tags: Vec<String>,
 }
 
 // Custom deserializer to handle legacy data where `delete_protected` is missing.
@@ -112,6 +115,7 @@ impl<'de> Deserialize<'de> for Metadata {
             parent_id: helper.parent_id,
             title: helper.title,
             status: helper.status.unwrap_or(TodoStatus::Planned),
+            tags: helper.tags,
         })
     }
 }
@@ -132,6 +136,8 @@ struct MetadataHelper {
     title: String,
     #[serde(default)]
     status: Option<TodoStatus>,
+    #[serde(default)]
+    tags: Vec<String>,
 }
 
 impl Metadata {
@@ -149,6 +155,7 @@ impl Metadata {
             parent_id: None,
             title,
             status: TodoStatus::Planned,
+            tags: Vec::new(),
         }
     }
 }
@@ -416,5 +423,54 @@ mod tests {
 
         assert_eq!(pad.content, old_content);
         assert_eq!(pad.metadata.updated_at, old_updated_at);
+    }
+
+    #[test]
+    fn test_legacy_metadata_without_tags() {
+        let id = Uuid::new_v4();
+        // JSON without tags field (legacy format before tags were added)
+        let json = format!(
+            r#"{{
+            "id": "{}",
+            "created_at": "2023-01-01T00:00:00Z",
+            "updated_at": "2023-01-01T00:00:00Z",
+            "is_pinned": false,
+            "pinned_at": null,
+            "is_deleted": false,
+            "deleted_at": null,
+            "delete_protected": false,
+            "title": "Legacy Pad Without Tags"
+        }}"#,
+            id
+        );
+
+        let loaded: Metadata = serde_json::from_str(&json).unwrap();
+
+        assert_eq!(loaded.id, id);
+        assert_eq!(loaded.title, "Legacy Pad Without Tags");
+        // Tags should default to empty vector
+        assert!(loaded.tags.is_empty());
+    }
+
+    #[test]
+    fn test_metadata_with_tags_roundtrip() {
+        let mut meta = Metadata::new("Tagged Pad".to_string());
+        meta.tags = vec!["work".to_string(), "rust".to_string()];
+
+        // Serialize
+        let json = serde_json::to_string(&meta).unwrap();
+
+        // Deserialize
+        let loaded: Metadata = serde_json::from_str(&json).unwrap();
+
+        assert_eq!(loaded.id, meta.id);
+        assert_eq!(loaded.title, "Tagged Pad");
+        assert_eq!(loaded.tags, vec!["work", "rust"]);
+    }
+
+    #[test]
+    fn test_new_metadata_has_empty_tags() {
+        let meta = Metadata::new("New Pad".to_string());
+        assert!(meta.tags.is_empty());
     }
 }
