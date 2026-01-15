@@ -1,6 +1,7 @@
 use super::backend::StorageBackend;
 use crate::error::{PadzError, Result};
 use crate::model::{Metadata, Scope};
+use crate::tags::TagEntry;
 use chrono::{DateTime, Utc};
 use std::cell::RefCell;
 use std::collections::HashMap;
@@ -20,6 +21,7 @@ struct ContentEntry {
 /// `StorageBackend` trait to use `&self` for all methods.
 pub struct MemBackend {
     index: RefCell<HashMap<Scope, HashMap<Uuid, Metadata>>>,
+    tags: RefCell<HashMap<Scope, Vec<TagEntry>>>,
     content: RefCell<HashMap<(Scope, Uuid), ContentEntry>>,
     simulate_write_error: RefCell<bool>,
 }
@@ -28,6 +30,7 @@ impl Default for MemBackend {
     fn default() -> Self {
         Self {
             index: RefCell::new(HashMap::new()),
+            tags: RefCell::new(HashMap::new()),
             content: RefCell::new(HashMap::new()),
             simulate_write_error: RefCell::new(false),
         }
@@ -69,6 +72,20 @@ impl StorageBackend for MemBackend {
         }
         let mut index = self.index.borrow_mut();
         index.insert(scope, new_index.clone());
+        Ok(())
+    }
+
+    fn load_tags(&self, scope: Scope) -> Result<Vec<TagEntry>> {
+        let tags = self.tags.borrow();
+        Ok(tags.get(&scope).cloned().unwrap_or_default())
+    }
+
+    fn save_tags(&self, scope: Scope, new_tags: &[TagEntry]) -> Result<()> {
+        if *self.simulate_write_error.borrow() {
+            return Err(PadzError::Store("Simulated write error".to_string()));
+        }
+        let mut tags = self.tags.borrow_mut();
+        tags.insert(scope, new_tags.to_vec());
         Ok(())
     }
 

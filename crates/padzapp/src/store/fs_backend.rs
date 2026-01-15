@@ -1,6 +1,7 @@
 use super::backend::StorageBackend;
 use crate::error::{PadzError, Result};
 use crate::model::{Metadata, Scope};
+use crate::tags::TagEntry;
 use chrono::{DateTime, Utc};
 use std::collections::HashMap;
 use std::fs;
@@ -99,6 +100,33 @@ impl StorageBackend for FsBackend {
         let tmp_file = root.join(format!(".data-{}.tmp", Uuid::new_v4()));
         fs::write(&tmp_file, content).map_err(PadzError::Io)?;
         fs::rename(&tmp_file, &data_file).map_err(PadzError::Io)?;
+
+        Ok(())
+    }
+
+    fn load_tags(&self, scope: Scope) -> Result<Vec<TagEntry>> {
+        let root = self.get_store_path_by_scope(scope)?;
+        let tags_file = root.join("tags.json");
+        if !tags_file.exists() {
+            return Ok(Vec::new());
+        }
+        let content = fs::read_to_string(tags_file).map_err(PadzError::Io)?;
+        let tags: Vec<TagEntry> =
+            serde_json::from_str(&content).map_err(PadzError::Serialization)?;
+        Ok(tags)
+    }
+
+    fn save_tags(&self, scope: Scope, tags: &[TagEntry]) -> Result<()> {
+        let root = self.get_store_path_by_scope(scope)?;
+        self.ensure_dir(&root)?;
+
+        let tags_file = root.join("tags.json");
+        let content = serde_json::to_string_pretty(tags).map_err(PadzError::Serialization)?;
+
+        // Atomic write
+        let tmp_file = root.join(format!(".tags-{}.tmp", Uuid::new_v4()));
+        fs::write(&tmp_file, content).map_err(PadzError::Io)?;
+        fs::rename(&tmp_file, &tags_file).map_err(PadzError::Io)?;
 
         Ok(())
     }
