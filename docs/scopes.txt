@@ -37,9 +37,32 @@ The result is that you must explicitly `padz init` in a repo to opt-in to projec
 
 The scope is resolved during `padz::init::initialize`:
 1.  If `-g` flag is present → Force `Scope::Global`.
-2.  Otherwise → Run `find_project_root(cwd)`.
+2.  If `--data <PATH>` is provided → Use that path directly as project data directory.
+3.  Otherwise → Run `find_project_root(cwd)`.
     -   Found → `Scope::Project`.
     -   Not Found → `Scope::Project` with `cwd/.padz` as path (may need `init`).
+
+### 3.1 Data Path Override (--data option)
+
+The `--data <PATH>` option allows explicitly specifying the `.padz` data directory,
+bypassing automatic scope detection. This is useful when:
+-   Working in a git worktree that should share data with the main repo
+-   Working in a temp directory for a project located elsewhere
+-   Explicitly pointing to a specific data store location
+
+Example usage:
+```bash
+# Working in a worktree, use main repo's pads
+padz --data ~/projects/myproject/.padz list
+
+# Create a pad from temp directory, saved to project
+padz --data /home/user/myproject/.padz create "temp notes"
+```
+
+When `--data` is provided:
+-   The path is used directly as the project data directory
+-   Scope detection via `find_project_root` is skipped
+-   The scope defaults to `Scope::Project` (unless `-g` forces global)
 
 ### 4. Nested Repositories
 
