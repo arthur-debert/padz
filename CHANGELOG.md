@@ -6,6 +6,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+- **Fixed**
+  - Pad name matching now only searches titles, not content (e.g., `padz view About` no longer matches pads where "About" only appears in the body)
+
 ## [0.12.1] - 2026-01-15
 
 ## [0.12.1] - 2026-01-15
