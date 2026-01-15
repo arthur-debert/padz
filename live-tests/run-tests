@@ -1,0 +1,121 @@
+#!/usr/bin/env bash
+# =============================================================================
+# PADZ BATS TEST RUNNER
+# =============================================================================
+#
+# PURPOSE
+# -------
+# Runs the Bats test suite in an isolated live-test environment. This ensures
+# tests run against the real padz binary with proper fixtures, without touching
+# user data.
+#
+# HOW IT WORKS
+# ------------
+# 1. Builds a fresh padz binary
+# 2. Creates an isolated workspace (OS temp dir)
+# 3. Sets up the directory structure (global-data/, projects/project-a/)
+# 4. Runs the base fixture to populate test data
+# 5. Exports environment variables for tests
+# 6. Runs bats with forwarded arguments
+# 7. Cleans up on exit
+#
+# USAGE
+# -----
+#   live-tests/run-tests              # Run all tests
+#   live-tests/run-tests smoke.bats   # Run specific test file
+#   live-tests/run-tests -t "search"  # Run tests matching pattern
+#   live-tests/run-tests --tap        # TAP output format
+#   live-tests/run-tests -j 4         # Parallel execution
+#
+# ENVIRONMENT VARIABLES (available in tests)
+# ------------------------------------------
+#   PADZ_BIN          - Path to the built padz binary
+#   WORKSPACE         - Root of the test workspace
+#   PADZ_GLOBAL_DATA  - Where global pads are stored
+#   PROJECT_A         - Path to project-a directory (git repo)
+#
+# =============================================================================
+
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PROJECT_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
+TESTS_DIR="${SCRIPT_DIR}/tests"
+
+# Colors
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+GRAY='\033[38;5;245m'
+NC='\033[0m'
+
+# Check for bats
+if ! command -v bats &>/dev/null; then
+    echo -e "${RED}Error: bats not found. Install with: brew install bats-core${NC}" >&2
+    exit 1
+fi
+
+# Build fresh binary
+PADZ_BIN="${PROJECT_ROOT}/target/debug/padz"
+echo -e "${GRAY}Building padz...${NC}"
+if ! (cd "${PROJECT_ROOT}" && cargo build --bin padz 2>&1 | grep -E "Compiling|Finished|error" || true); then
+    echo -e "${RED}Build failed${NC}" >&2
+    exit 1
+fi
+[[ ! -x "${PADZ_BIN}" ]] && { echo -e "${RED}Binary not found${NC}" >&2; exit 1; }
+
+# Create workspace in OS temp directory
+WORKSPACE="$(mktemp -d)"
+echo -e "${GRAY}Workspace: ${WORKSPACE}${NC}"
+
+cleanup() {
+    local exit_code=$?
+    rm -rf "${WORKSPACE}"
+    exit $exit_code
+}
+trap cleanup EXIT INT TERM
+
+# Set up directory structure
+mkdir -p "${WORKSPACE}/projects/project-a"
+mkdir -p "${WORKSPACE}/global-data"
+
+# Initialize git in project-a
+(cd "${WORKSPACE}/projects/project-a" && git init --quiet)
+
+# Export environment for tests
+export PADZ_BIN
+export WORKSPACE
+export PADZ_GLOBAL_DATA="${WORKSPACE}/global-data"
+export PROJECT_A="${WORKSPACE}/projects/project-a"
+export EDITOR=true
+export BATS_LIB_PATH="${SCRIPT_DIR}/lib"
+
+# Run base fixture silently to populate test data
+echo -e "${GRAY}Setting up fixtures...${NC}"
+(
+    cd "${WORKSPACE}"
+
+    # Define padz function for fixture
+    padz() { "${PADZ_BIN}" "$@"; }
+
+    # Source the fixture script directly (it's designed to be sourced)
+    # Redirect all output to /dev/null for clean test output
+    source "${SCRIPT_DIR}/base-fixture.sh" >/dev/null 2>&1
+)
+
+# Run bats
+echo -e "${GRAY}Running tests...${NC}\n"
+
+# Default to running all tests in the tests directory
+if [[ $# -eq 0 ]]; then
+    bats "${TESTS_DIR}"
+else
+    # Check if first arg is a file in tests dir
+    if [[ -f "${TESTS_DIR}/$1" ]]; then
+        first_arg="${TESTS_DIR}/$1"
+        shift
+        bats "$first_arg" "$@"
+    else
+        bats "$@"
+    fi
+fi
