@@ -59,8 +59,14 @@ jobs:
           VERSION: ${{ needs.prepare.outputs.version }}
         run: |
           echo "Setting version to $VERSION"
+          # Update workspace version
           sed -i 's/^version = ".*"/version = "'"$VERSION"'"/' Cargo.toml
-          cat Cargo.toml | grep "^version"
+          # Update padzapp dependency version in padz crate
+          sed -i 's/padzapp = { version = "[^"]*"/padzapp = { version = "'"$VERSION"'"/' crates/padz/Cargo.toml
+          echo "=== Root Cargo.toml ==="
+          grep "^version" Cargo.toml
+          echo "=== padz/Cargo.toml padzapp dep ==="
+          grep "padzapp" crates/padz/Cargo.toml
           cargo update -w
 
       - name: Publish padzapp to crates.io
@@ -138,8 +144,10 @@ jobs:
         run: |
           if [[ "$OSTYPE" == "darwin"* ]]; then
             sed -i '' 's/^version = ".*"/version = "'"$VERSION"'"/' Cargo.toml
+            sed -i '' 's/padzapp = { version = "[^"]*"/padzapp = { version = "'"$VERSION"'"/' crates/padz/Cargo.toml
           else
             sed -i 's/^version = ".*"/version = "'"$VERSION"'"/' Cargo.toml
+            sed -i 's/padzapp = { version = "[^"]*"/padzapp = { version = "'"$VERSION"'"/' crates/padz/Cargo.toml
           fi
 
       - name: Install Rust
