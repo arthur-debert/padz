@@ -653,6 +653,7 @@ mod tests {
                     status: PadStatusFilter::All,
                     search_term: None,
                     todo_status: None,
+                    tags: None,
                 },
             )
             .unwrap();
@@ -680,6 +681,7 @@ mod tests {
                     status: PadStatusFilter::Deleted,
                     search_term: None,
                     todo_status: None,
+                    tags: None,
                 },
             )
             .unwrap();

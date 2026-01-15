@@ -266,6 +266,7 @@ fn handle_list(
         },
         search_term: search,
         todo_status,
+        tags: None, // Tag filtering will be added via CLI option later
     };
 
     let result = ctx.api.get_pads(ctx.scope, filter)?;
@@ -334,6 +335,7 @@ fn handle_delete(ctx: &mut AppContext, indexes: Vec<String>, done_status: bool) 
             status: PadStatusFilter::Active,
             search_term: None,
             todo_status: Some(TodoStatus::Done),
+            tags: None,
         };
         let pads = ctx.api.get_pads(ctx.scope, filter)?;
 
@@ -465,6 +467,7 @@ fn handle_search(ctx: &mut AppContext, term: String) -> Result<()> {
         status: PadStatusFilter::Active,
         search_term: Some(term),
         todo_status: None,
+        tags: None, // Tag filtering will be added via CLI option later
     };
     let result = ctx.api.get_pads(ctx.scope, filter)?;
     let output = render_pad_list(&result.listed_pads, false, ctx.output_mode);
