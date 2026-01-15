@@ -73,7 +73,7 @@ jobs:
         env:
           VERSION: ${{ needs.prepare.outputs.version }}
         run: |
-          cargo publish --token ${{ secrets.CRATES_IO_KEY }} -p padzapp 2>&1 || {
+          cargo publish --token ${{ secrets.CRATES_IO_KEY }} --allow-dirty -p padzapp 2>&1 || {
             if cargo search padzapp --limit 1 2>/dev/null | grep -q "padzapp.*\"$VERSION\""; then
               echo "padzapp@$VERSION already published, skipping"
             else
@@ -89,7 +89,7 @@ jobs:
         env:
           VERSION: ${{ needs.prepare.outputs.version }}
         run: |
-          cargo publish --token ${{ secrets.CRATES_IO_KEY }} -p padz 2>&1 || {
+          cargo publish --token ${{ secrets.CRATES_IO_KEY }} --allow-dirty -p padz 2>&1 || {
             if cargo search padz --limit 1 2>/dev/null | grep -q "padz.*\"$VERSION\""; then
               echo "padz@$VERSION already published, skipping"
             else
