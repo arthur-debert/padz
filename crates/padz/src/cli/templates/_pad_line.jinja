@@ -17,14 +17,6 @@
   {%- set title_style = "title" -%}
 {%- endif -%}
 
-{#- Format tags for display -#}
-{%- set tags_display = "" -%}
-{%- if pad.tags | length > 0 -%}
-  {%- for tag in pad.tags -%}
-    {%- set tags_display = tags_display ~ " [" ~ tag ~ "]" -%}
-  {%- endfor -%}
-{%- endif -%}
-
 {#- Render the pad line using col() filter for layout -#}
 {#- Layout: indent | left_pin(2) | status(2) | index(4) | title(fill) | tags | right_pin(2) | time(14) -#}
 {{- pad.indent -}}
@@ -32,6 +24,6 @@
 {{- pad.status_icon | col(col_status) | style("status-icon") -}}
 {{- pad.index | col(col_index) | style(index_style) -}}
 {{- pad.title | col(pad.title_width) | style(title_style) -}}
-{%- if tags_display -%}{{- tags_display | style("tag") -}}{%- endif -%}
+{%- for tag in pad.tags -%} [{{ tag | style("tag") }}]{%- endfor -%}
 {{- pad.right_pin | col(col_right_pin) | style("pinned") -}}
 {{- pad.time_ago | col(col_time, align='right') | style("time") | nl -}}
