@@ -38,6 +38,11 @@ padz unpin p1
 # Search pads
 padz search "query"
 
+# Tags
+padz tags create feature
+padz add-tag 1 --tag feature
+padz list --tag feature
+
 # Use global pads (shared across projects)
 padz -g list
 padz --global create "Global note"
@@ -66,6 +71,7 @@ Completions include:
 - Project-aware: pads are stored per-project by default
 - Global pads: use `-g` flag for cross-project notes
 - Pin important pads for quick access
+- Tags: organize pads with scoped tags
 - Full-text search across all pads
 - Dynamic shell completion with pad titles
 
