@@ -325,6 +325,30 @@ pub enum PadCommands {
         #[arg(required = true, num_args = 1.., add = active_pads_completer())]
         indexes: Vec<String>,
     },
+
+    /// Add tags to pads
+    #[command(name = "add-tag", display_order = 23)]
+    AddTag {
+        /// Indexes of the pads (e.g. 1 3 5 or 1-5)
+        #[arg(required = true, num_args = 1.., add = active_pads_completer())]
+        indexes: Vec<String>,
+
+        /// Tag(s) to add (can be specified multiple times)
+        #[arg(long = "tag", short = 't', required = true, num_args = 1..)]
+        tags: Vec<String>,
+    },
+
+    /// Remove tags from pads
+    #[command(name = "remove-tag", display_order = 24)]
+    RemoveTag {
+        /// Indexes of the pads (e.g. 1 3 5 or 1-5)
+        #[arg(required = true, num_args = 1.., add = active_pads_completer())]
+        indexes: Vec<String>,
+
+        /// Tag(s) to remove (can be specified multiple times) - if omitted, clears all tags
+        #[arg(long = "tag", short = 't', num_args = 1..)]
+        tags: Vec<String>,
+    },
 }
 
 #[derive(Subcommand, Debug)]

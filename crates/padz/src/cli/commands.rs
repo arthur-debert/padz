@@ -130,6 +130,8 @@ pub fn run() -> Result<()> {
             PadCommands::Complete { indexes } => handle_complete(&mut ctx, indexes),
             PadCommands::Reopen { indexes } => handle_reopen(&mut ctx, indexes),
             PadCommands::Move { indexes, root } => handle_move(&mut ctx, indexes, root),
+            PadCommands::AddTag { indexes, tags } => handle_add_tag(&mut ctx, indexes, tags),
+            PadCommands::RemoveTag { indexes, tags } => handle_remove_tag(&mut ctx, indexes, tags),
         },
         Some(Commands::Data(cmd)) => match cmd {
             DataCommands::Purge {
@@ -643,5 +645,37 @@ fn handle_tags_delete(ctx: &mut AppContext, name: String) -> Result<()> {
 fn handle_tags_rename(ctx: &mut AppContext, old_name: String, new_name: String) -> Result<()> {
     let result = ctx.api.rename_tag(ctx.scope, &old_name, &new_name)?;
     print_messages(&result.messages, ctx.output_mode);
+    Ok(())
+}
+
+// --- Pad tagging commands ---
+
+fn handle_add_tag(ctx: &mut AppContext, indexes: Vec<String>, tags: Vec<String>) -> Result<()> {
+    let result = ctx.api.add_tags_to_pads(ctx.scope, &indexes, &tags)?;
+    let output = render_modification_result(
+        "Tagged",
+        &result.affected_pads,
+        &result.messages,
+        ctx.output_mode,
+    );
+    print!("{}", output);
+    Ok(())
+}
+
+fn handle_remove_tag(ctx: &mut AppContext, indexes: Vec<String>, tags: Vec<String>) -> Result<()> {
+    let result = if tags.is_empty() {
+        // If no tags specified, clear all tags from pads
+        ctx.api.clear_tags_from_pads(ctx.scope, &indexes)?
+    } else {
+        // Remove specific tags
+        ctx.api.remove_tags_from_pads(ctx.scope, &indexes, &tags)?
+    };
+    let output = render_modification_result(
+        "Untagged",
+        &result.affected_pads,
+        &result.messages,
+        ctx.output_mode,
+    );
+    print!("{}", output);
     Ok(())
 }
