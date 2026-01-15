@@ -1,16 +1,6 @@
 name: Release
 
 on:
-  workflow_dispatch:
-    inputs:
-      bump:
-        description: 'Version bump type'
-        required: true
-        type: choice
-        options:
-          - patch
-          - minor
-          - major
   push:
     tags:
       - 'v[0-9]+.[0-9]+.[0-9]+'
@@ -31,49 +21,12 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Install Rust
-        uses: dtolnay/rust-toolchain@stable
-
-      - name: Install cargo-release
-        if: github.event_name == 'workflow_dispatch'
-        run: cargo install cargo-release
-
-      - name: Configure git
-        if: github.event_name == 'workflow_dispatch'
-        run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-
-      - name: Bump version (dispatch)
-        if: github.event_name == 'workflow_dispatch'
-        run: cargo release ${{ inputs.bump }} --no-publish --no-push --no-verify --execute
-
-      - name: Push changes (dispatch)
-        if: github.event_name == 'workflow_dispatch'
-        run: git push origin main --follow-tags
-
-      - name: Extract version (dispatch)
-        if: github.event_name == 'workflow_dispatch'
-        id: version_dispatch
-        run: |
-          VERSION=$(cargo metadata --no-deps --format-version 1 | jq -r '.packages[0].version')
-          echo "version=$VERSION" >> $GITHUB_OUTPUT
-
-      - name: Extract version (tag)
-        if: github.event_name == 'push'
-        id: version_tag
+      - name: Extract version from tag
+        id: version
         run: |
           VERSION=${GITHUB_REF#refs/tags/v}
           echo "version=$VERSION" >> $GITHUB_OUTPUT
-
-      - name: Set version output
-        id: version
-        run: |
-          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
-            echo "version=${{ steps.version_dispatch.outputs.version }}" >> $GITHUB_OUTPUT
-          else
-            echo "version=${{ steps.version_tag.outputs.version }}" >> $GITHUB_OUTPUT
-          fi
+          echo "Release version: $VERSION"
 
       - name: Extract release notes from CHANGELOG
         run: |
@@ -97,11 +50,18 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-        with:
-          ref: v${{ needs.prepare.outputs.version }}
 
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
+
+      - name: Set version from tag
+        env:
+          VERSION: ${{ needs.prepare.outputs.version }}
+        run: |
+          echo "Setting version to $VERSION"
+          sed -i 's/^version = ".*"/version = "'"$VERSION"'"/' Cargo.toml
+          cat Cargo.toml | grep "^version"
+          cargo update -w
 
       - name: Publish padzapp to crates.io
         env:
@@ -171,8 +131,16 @@ jobs:
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
-        with:
-          ref: v${{ needs.prepare.outputs.version }}
+
+      - name: Set version from tag
+        env:
+          VERSION: ${{ needs.prepare.outputs.version }}
+        run: |
+          if [[ "$OSTYPE" == "darwin"* ]]; then
+            sed -i '' 's/^version = ".*"/version = "'"$VERSION"'"/' Cargo.toml
+          else
+            sed -i 's/^version = ".*"/version = "'"$VERSION"'"/' Cargo.toml
+          fi
 
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
