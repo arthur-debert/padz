@@ -216,11 +216,22 @@ pub enum CoreCommands {
         /// Show only in-progress pads
         #[arg(long, conflicts_with_all = ["planned", "done"])]
         in_progress: bool,
+
+        /// Filter by tag(s) (can be specified multiple times, uses AND logic)
+        #[arg(long = "tag", short = 't', num_args = 1..)]
+        tags: Vec<String>,
     },
 
     /// Search pads (dedicated command)
     #[command(display_order = 3)]
-    Search { term: String },
+    Search {
+        /// Search term
+        term: String,
+
+        /// Filter by tag(s) (can be specified multiple times, uses AND logic)
+        #[arg(long = "tag", short = 't', num_args = 1..)]
+        tags: Vec<String>,
+    },
 }
 
 #[derive(Subcommand, Debug)]

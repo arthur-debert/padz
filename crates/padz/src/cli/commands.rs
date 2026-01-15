@@ -112,8 +112,18 @@ pub fn run() -> Result<()> {
                 planned,
                 done,
                 in_progress,
-            } => handle_list(&mut ctx, search, deleted, peek, planned, done, in_progress),
-            CoreCommands::Search { term } => handle_search(&mut ctx, term),
+                tags,
+            } => handle_list(
+                &mut ctx,
+                search,
+                deleted,
+                peek,
+                planned,
+                done,
+                in_progress,
+                tags,
+            ),
+            CoreCommands::Search { term, tags } => handle_search(&mut ctx, term, tags),
         },
         Some(Commands::Pad(cmd)) => match cmd {
             PadCommands::View { indexes, peek } => handle_view(&mut ctx, indexes, peek),
@@ -159,7 +169,7 @@ pub fn run() -> Result<()> {
             MiscCommands::Init => handle_init(&ctx),
             MiscCommands::Completions { shell } => handle_completions(shell),
         },
-        None => handle_list(&mut ctx, None, false, false, false, false, false),
+        None => handle_list(&mut ctx, None, false, false, false, false, false, vec![]),
     }
 }
 
@@ -248,6 +258,7 @@ fn resolve_create_input(title: Option<String>, no_editor: bool) -> (Option<Strin
     (final_title, initial_content, should_open_editor)
 }
 
+#[allow(clippy::too_many_arguments)]
 fn handle_list(
     ctx: &mut AppContext,
     search: Option<String>,
@@ -256,6 +267,7 @@ fn handle_list(
     planned: bool,
     done: bool,
     in_progress: bool,
+    tags: Vec<String>,
 ) -> Result<()> {
     // Determine todo status filter
     let todo_status = if planned {
@@ -276,7 +288,7 @@ fn handle_list(
         },
         search_term: search,
         todo_status,
-        tags: None, // Tag filtering will be added via CLI option later
+        tags: if tags.is_empty() { None } else { Some(tags) },
     };
 
     let result = ctx.api.get_pads(ctx.scope, filter)?;
@@ -472,12 +484,12 @@ fn handle_reopen(ctx: &mut AppContext, indexes: Vec<String>) -> Result<()> {
     Ok(())
 }
 
-fn handle_search(ctx: &mut AppContext, term: String) -> Result<()> {
+fn handle_search(ctx: &mut AppContext, term: String, tags: Vec<String>) -> Result<()> {
     let filter = PadFilter {
         status: PadStatusFilter::Active,
         search_term: Some(term),
         todo_status: None,
-        tags: None, // Tag filtering will be added via CLI option later
+        tags: if tags.is_empty() { None } else { Some(tags) },
     };
     let result = ctx.api.get_pads(ctx.scope, filter)?;
     let output = render_pad_list(&result.listed_pads, false, ctx.output_mode);
