@@ -47,7 +47,13 @@ pub struct Cli {
     pub command: Option<Commands>,
 
     /// Operate on global pads
-    #[arg(short, long, global = true, help_heading = "Options")]
+    #[arg(
+        short,
+        long,
+        global = true,
+        help_heading = "Options",
+        conflicts_with = "data"
+    )]
     pub global: bool,
 
     /// Verbose output
@@ -55,7 +61,13 @@ pub struct Cli {
     pub verbose: bool,
 
     /// Override data directory path (e.g., for git worktrees)
-    #[arg(long, global = true, value_name = "PATH", help_heading = "Options")]
+    #[arg(
+        long,
+        global = true,
+        value_name = "PATH",
+        help_heading = "Options",
+        conflicts_with = "global"
+    )]
     pub data: Option<String>,
 }
 
@@ -415,10 +427,12 @@ mod tests {
     }
 
     #[test]
-    fn test_data_and_global_options_together() {
-        let cli = Cli::try_parse_from(["padz", "--data", "/tmp/.padz", "-g", "list"]).unwrap();
-        assert_eq!(cli.data, Some("/tmp/.padz".to_string()));
-        assert!(cli.global);
+    fn test_data_and_global_options_conflict() {
+        // --data and -g are mutually exclusive
+        let result = Cli::try_parse_from(["padz", "--data", "/tmp/.padz", "-g", "list"]);
+        assert!(result.is_err());
+        let err = result.unwrap_err().to_string();
+        assert!(err.contains("--data") || err.contains("--global"));
     }
 
     #[test]
