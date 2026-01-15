@@ -156,7 +156,8 @@ pub fn run() -> Result<()> {
 fn init_context(cli: &Cli, output_mode: OutputMode) -> Result<AppContext> {
     let cwd = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
 
-    let ctx = initialize(&cwd, cli.global);
+    let data_override = cli.data.as_ref().map(PathBuf::from);
+    let ctx = initialize(&cwd, cli.global, data_override);
 
     Ok(AppContext {
         api: ctx.api,

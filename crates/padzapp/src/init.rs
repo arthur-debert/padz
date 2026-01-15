@@ -41,9 +41,23 @@
 //!
 //! The scope is resolved during [`initialize`]:
 //! 1. If `-g` flag is present → Force `Scope::Global`.
-//! 2. Otherwise → Run [`find_project_root`].
+//! 2. If `data_override` is provided → Use that path directly as project data directory.
+//! 3. Otherwise → Run [`find_project_root`].
 //!    - Found → `Scope::Project`.
 //!    - Not Found → `Scope::Project` with `cwd/.padz` as path.
+//!
+//! ## Data Path Override
+//!
+//! The `data_override` parameter allows explicitly specifying the `.padz` data directory,
+//! bypassing automatic scope detection. This is useful when:
+//! - Working in a git worktree that should share data with the main repo
+//! - Working in a temp directory for a project located elsewhere
+//! - Explicitly pointing to a specific data store location
+//!
+//! When `data_override` is provided:
+//! - The path is used directly as the project data directory
+//! - Scope detection via [`find_project_root`] is skipped
+//! - The scope defaults to `Scope::Project` (unless `-g` forces global)
 
 use crate::api::{PadzApi, PadzPaths};
 use crate::config::PadzConfig;
@@ -95,11 +109,37 @@ pub fn find_project_root(cwd: &Path) -> Option<PathBuf> {
     }
 }
 
-pub fn initialize(cwd: &Path, use_global: bool) -> PadzContext {
-    // Try to find a project root with both .git and .padz
-    let project_padz_dir = find_project_root(cwd)
-        .map(|root| root.join(".padz"))
-        .unwrap_or_else(|| cwd.join(".padz"));
+/// Initialize the padz context with scope detection and store setup.
+///
+/// # Arguments
+///
+/// * `cwd` - The current working directory to start scope detection from
+/// * `use_global` - If true, forces `Scope::Global` regardless of detection
+/// * `data_override` - Optional explicit path to the `.padz` data directory.
+///   When provided, bypasses automatic scope detection and uses this path directly.
+///
+/// # Examples
+///
+/// ```ignore
+/// // Normal initialization with automatic scope detection
+/// let ctx = initialize(&cwd, false, None);
+///
+/// // Force global scope
+/// let ctx = initialize(&cwd, true, None);
+///
+/// // Use explicit data directory (e.g., for git worktrees)
+/// let ctx = initialize(&cwd, false, Some(PathBuf::from("/path/to/project/.padz")));
+/// ```
+pub fn initialize(cwd: &Path, use_global: bool, data_override: Option<PathBuf>) -> PadzContext {
+    // Determine project data directory:
+    // 1. If data_override provided, use it directly
+    // 2. Otherwise, try to find a project root with both .git and .padz
+    // 3. Fallback to cwd/.padz
+    let project_padz_dir = data_override.unwrap_or_else(|| {
+        find_project_root(cwd)
+            .map(|root| root.join(".padz"))
+            .unwrap_or_else(|| cwd.join(".padz"))
+    });
 
     let proj_dirs =
         ProjectDirs::from("com", "padz", "padz").expect("Could not determine config dir");
@@ -245,5 +285,84 @@ mod tests {
         // From parent, should also find grandparent
         let result = find_project_root(&parent);
         assert_eq!(result, Some(grandparent.to_path_buf()));
+    }
+
+    // --- initialize() with data_override tests ---
+
+    #[test]
+    fn test_initialize_with_data_override_bypasses_detection() {
+        // Setup: repo with .git and .padz
+        let temp = TempDir::new().unwrap();
+        let repo = temp.path();
+        fs::create_dir(repo.join(".git")).unwrap();
+        fs::create_dir(repo.join(".padz")).unwrap();
+
+        // Create a separate override directory
+        let override_dir = temp.path().join("custom-data");
+        fs::create_dir_all(&override_dir).unwrap();
+
+        // Initialize with override - should use override path, not the detected .padz
+        let ctx = initialize(repo, false, Some(override_dir.clone()));
+
+        // Verify the override path is used
+        assert_eq!(ctx.api.paths().project, Some(override_dir));
+        assert_eq!(ctx.scope, crate::model::Scope::Project);
+    }
+
+    #[test]
+    fn test_initialize_without_override_uses_detection() {
+        // Setup: repo with .git and .padz
+        let temp = TempDir::new().unwrap();
+        let repo = temp.path();
+        fs::create_dir(repo.join(".git")).unwrap();
+        fs::create_dir(repo.join(".padz")).unwrap();
+
+        // Initialize without override - should use detected .padz
+        let ctx = initialize(repo, false, None);
+
+        // Verify the detected path is used
+        assert_eq!(ctx.api.paths().project, Some(repo.join(".padz")));
+        assert_eq!(ctx.scope, crate::model::Scope::Project);
+    }
+
+    #[test]
+    fn test_initialize_data_override_with_global_flag() {
+        // Setup: repo with .git and .padz
+        let temp = TempDir::new().unwrap();
+        let repo = temp.path();
+        fs::create_dir(repo.join(".git")).unwrap();
+        fs::create_dir(repo.join(".padz")).unwrap();
+
+        // Override directory
+        let override_dir = temp.path().join("custom-data");
+        fs::create_dir_all(&override_dir).unwrap();
+
+        // Initialize with override AND global flag
+        // The override still sets project path, but scope is Global
+        let ctx = initialize(repo, true, Some(override_dir.clone()));
+
+        assert_eq!(ctx.api.paths().project, Some(override_dir));
+        assert_eq!(ctx.scope, crate::model::Scope::Global);
+    }
+
+    #[test]
+    fn test_initialize_data_override_from_unrelated_directory() {
+        // Use case: working in /tmp but want to use ~/projects/myproject/.padz
+        let temp = TempDir::new().unwrap();
+
+        // Create "project" with its .padz
+        let project = temp.path().join("project");
+        fs::create_dir_all(project.join(".padz")).unwrap();
+        fs::create_dir(project.join(".git")).unwrap();
+
+        // Create "workdir" - unrelated temp directory
+        let workdir = temp.path().join("workdir");
+        fs::create_dir_all(&workdir).unwrap();
+
+        // Initialize from workdir, pointing to project's .padz
+        let ctx = initialize(&workdir, false, Some(project.join(".padz")));
+
+        // Should use project's .padz path
+        assert_eq!(ctx.api.paths().project, Some(project.join(".padz")));
     }
 }

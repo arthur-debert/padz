@@ -53,6 +53,10 @@ pub struct Cli {
     /// Verbose output
     #[arg(short, long, global = true, help_heading = "Options")]
     pub verbose: bool,
+
+    /// Override data directory path (e.g., for git worktrees)
+    #[arg(long, global = true, value_name = "PATH", help_heading = "Options")]
+    pub data: Option<String>,
 }
 
 // Help topics registry - loaded from topics directory
@@ -373,4 +377,67 @@ pub enum MiscCommands {
         #[arg(value_enum)]
         shell: CompletionShell,
     },
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use clap::Parser;
+
+    #[test]
+    fn test_data_option_parses() {
+        let cli = Cli::try_parse_from(["padz", "--data", "/path/to/.padz", "list"]).unwrap();
+        assert_eq!(cli.data, Some("/path/to/.padz".to_string()));
+        assert!(!cli.global);
+    }
+
+    #[test]
+    fn test_data_option_with_equals() {
+        let cli = Cli::try_parse_from(["padz", "--data=/custom/data", "list"]).unwrap();
+        assert_eq!(cli.data, Some("/custom/data".to_string()));
+    }
+
+    #[test]
+    fn test_data_option_before_command() {
+        let cli = Cli::try_parse_from(["padz", "--data", "/tmp/.padz", "create", "test"]).unwrap();
+        assert_eq!(cli.data, Some("/tmp/.padz".to_string()));
+        assert!(matches!(
+            cli.command,
+            Some(Commands::Core(CoreCommands::Create { .. }))
+        ));
+    }
+
+    #[test]
+    fn test_data_option_after_command() {
+        // Global options can appear after subcommand
+        let cli = Cli::try_parse_from(["padz", "list", "--data", "/tmp/.padz"]).unwrap();
+        assert_eq!(cli.data, Some("/tmp/.padz".to_string()));
+    }
+
+    #[test]
+    fn test_data_and_global_options_together() {
+        let cli = Cli::try_parse_from(["padz", "--data", "/tmp/.padz", "-g", "list"]).unwrap();
+        assert_eq!(cli.data, Some("/tmp/.padz".to_string()));
+        assert!(cli.global);
+    }
+
+    #[test]
+    fn test_no_data_option() {
+        let cli = Cli::try_parse_from(["padz", "list"]).unwrap();
+        assert_eq!(cli.data, None);
+    }
+
+    #[test]
+    fn test_data_option_with_worktree_path() {
+        // Real-world use case: git worktree pointing to main repo's .padz
+        let cli = Cli::try_parse_from([
+            "padz",
+            "--data",
+            "/home/user/project/.padz",
+            "create",
+            "todo",
+        ])
+        .unwrap();
+        assert_eq!(cli.data, Some("/home/user/project/.padz".to_string()));
+    }
 }
