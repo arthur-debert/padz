@@ -112,6 +112,16 @@ status-icon: _secondary
 highlight: _yellow_bg
 match: _yellow_bg
 
+# Tags
+tag:
+  bold: true
+  light:
+    fg: black
+    bg: [255, 235, 59]
+  dark:
+    fg: black
+    bg: [229, 185, 0]
+
 # Message styles (concrete - need modifiers for emphasis)
 error:
   bold: true

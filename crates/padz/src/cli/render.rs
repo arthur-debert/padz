@@ -109,6 +109,7 @@ struct PadLineData {
     index: String,       // "p1.", " 1.", "d1."
     title: String,       // Raw title (template truncates via `col(title_width)`)
     title_width: usize,  // Calculated fill width for this row
+    tags: Vec<String>,   // Tags for this pad
     right_pin: String,   // "⚲" or "" for pinned pads in regular section
     time_ago: String,    // Relative timestamp (template right-aligns via `col()`)
     // Semantic flags for template-driven style selection
@@ -355,6 +356,7 @@ fn render_pad_list_internal(
             index: full_idx_str.clone(),
             title: dp.pad.metadata.title.clone(), // Raw title - template truncates via col()
             title_width,
+            tags: dp.pad.metadata.tags.clone(),
             right_pin,
             time_ago: format_time_ago(dp.pad.metadata.created_at),
             is_pinned_section: is_pinned_section && depth == 0,
@@ -392,6 +394,7 @@ fn render_pad_list_internal(
                 index: String::new(),
                 title: String::new(),
                 title_width: 0,
+                tags: vec![],
                 right_pin: String::new(),
                 time_ago: String::new(),
                 is_pinned_section: false,
@@ -691,6 +694,7 @@ pub fn render_modification_result(
                 index: full_idx_str,
                 title: dp.pad.metadata.title.clone(),
                 title_width,
+                tags: dp.pad.metadata.tags.clone(),
                 right_pin,
                 time_ago: format_time_ago(dp.pad.metadata.created_at),
                 is_pinned_section,
