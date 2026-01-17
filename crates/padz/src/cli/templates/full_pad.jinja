@@ -2,32 +2,30 @@
 {#- Shows complete pad content with index, title, and body -#}
 
 {% if pads | length == 0 -%}
-{{- "No pads found." | style("empty-message") }}
+[empty-message]No pads found.[/empty-message]
 {% else -%}
 {% for pad in pads -%}
 
 {#- Separator between pads (not before first) -#}
 {%- if not loop.first %}
 
-{{ " " | style("separator") }}
+[separator] [/separator]
 
 {% endif -%}
 
-{#- Determine styles based on pad state -#}
-{%- set index_style = "list-index" -%}
-{%- set title_style = "title" -%}
-{%- set content_style = "list-title" -%}
-{%- if pad.is_pinned -%}
-  {%- set index_style = "pinned" -%}
-{%- elif pad.is_deleted -%}
-  {%- set index_style = "deleted-index" -%}
-  {%- set title_style = "deleted-title" -%}
-  {%- set content_style = "deleted-title" -%}
-{%- endif -%}
-
 {#- Render header: index + title -#}
-{{- pad.index | style(index_style) }} {{ pad.title | style(title_style) }}
-{{ " " | style("separator") }}
-{{ pad.content | style(content_style) -}}
+{%- if pad.is_pinned -%}
+[pinned]{{ pad.index }}[/pinned] [title]{{ pad.title }}[/title]
+{%- elif pad.is_deleted -%}
+[deleted-index]{{ pad.index }}[/deleted-index] [deleted-title]{{ pad.title }}[/deleted-title]
+{%- else -%}
+[list-index]{{ pad.index }}[/list-index] [title]{{ pad.title }}[/title]
+{%- endif %}
+
+{%- if pad.is_deleted -%}
+[deleted-title]{{ pad.content }}[/deleted-title]
+{%- else -%}
+[list-title]{{ pad.content }}[/list-title]
+{%- endif -%}
 {%- endfor %}
 {% endif %}

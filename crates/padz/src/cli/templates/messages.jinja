@@ -1,3 +1,3 @@
 {% for msg in messages -%}
-{{ msg.content | style(msg.style) }}
+{{ msg.content | style_as(msg.style) }}
 {% endfor %}

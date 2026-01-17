@@ -497,6 +497,29 @@ dependencies = [
 ]
 
 [[package]]
+name = "cssparser"
+version = "0.31.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "5b3df4f93e5fbbe73ec01ec8d3f68bba73107993a5b1e7519273c32db9b0d5be"
+dependencies = [
+ "cssparser-macros",
+ "dtoa-short",
+ "itoa",
+ "phf",
+ "smallvec",
+]
+
+[[package]]
+name = "cssparser-macros"
+version = "0.6.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "13b588ba4ac1a99f7f2964d24b3d896ddc6bf847ee3855dbd4366f058cfcd331"
+dependencies = [
+ "quote",
+ "syn 2.0.111",
+]
+
+[[package]]
 name = "csv"
 version = "1.4.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -625,6 +648,21 @@ name = "dlv-list"
 version = "0.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "0688c2a7f92e427f44895cd63841bff7b29f8d7a1648b9e7e07a4a365b2e1257"
+
+[[package]]
+name = "dtoa"
+version = "1.0.11"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "4c3cf4824e2d5f025c7b531afcb2325364084a16806f6d47fbc1f5fbd9960590"
+
+[[package]]
+name = "dtoa-short"
+version = "0.3.5"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "cd1511a7b6a56299bd043a9c167a6d2bfb37bf84a6dfceaba651168adfb43c87"
+dependencies = [
+ "dtoa",
+]
 
 [[package]]
 name = "encode_unicode"
@@ -1178,54 +1216,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "outstanding"
-version = "0.14.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c6473b70557d9fc910a58de81cb5999611f9a5c5cd2e5fe464f6cc335041803a"
-dependencies = [
- "console",
- "csv",
- "dark-light",
- "deunicode",
- "minijinja",
- "once_cell",
- "outstanding-macros",
- "quick-xml",
- "serde",
- "serde_json",
- "serde_yaml",
- "unicode-width",
-]
-
-[[package]]
-name = "outstanding-clap"
-version = "0.14.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "21e4b33debb3d9b8729bf341cf45f370384ccf9dd44d3386cfe078daa030abbf"
-dependencies = [
- "anyhow",
- "clap",
- "console",
- "minijinja",
- "outstanding",
- "serde",
- "serde_json",
- "terminal_size",
- "thiserror 2.0.17",
-]
-
-[[package]]
-name = "outstanding-macros"
-version = "0.14.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0dad596ae2e484247ef5c627fa1f9142d192c78317c8227cfde2895fde269dc5"
-dependencies = [
- "proc-macro2",
- "quote",
- "syn 2.0.111",
-]
-
-[[package]]
 name = "padz"
 version = "0.14.0"
 dependencies = [
@@ -1236,11 +1226,12 @@ dependencies = [
  "console",
  "dark-light",
  "once_cell",
- "outstanding",
- "outstanding-clap",
  "padzapp",
  "predicates",
  "serde",
+ "serde_json",
+ "serde_yaml",
+ "standout",
  "timeago",
  "unicode-width",
 ]
@@ -1277,7 +1268,31 @@ version = "0.11.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "1fd6780a80ae0c52cc120a26a1a42c1ae51b247a253e4e06113d23d2c2edd078"
 dependencies = [
+ "phf_macros",
  "phf_shared",
+]
+
+[[package]]
+name = "phf_generator"
+version = "0.11.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "3c80231409c20246a13fddb31776fb942c38553c51e871f8cbd687a4cfb5843d"
+dependencies = [
+ "phf_shared",
+ "rand",
+]
+
+[[package]]
+name = "phf_macros"
+version = "0.11.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f84ac04429c13a7ff43785d75ad27569f2951ce0ffd30a3321230db2fc727216"
+dependencies = [
+ "phf_generator",
+ "phf_shared",
+ "proc-macro2",
+ "quote",
+ "syn 2.0.111",
 ]
 
 [[package]]
@@ -1723,6 +1738,12 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7a2ae44ef20feb57a68b23d846850f861394c2e02dc425a50098ae8c90267589"
 
 [[package]]
+name = "smallvec"
+version = "1.15.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "67b1b7a3b5fe4f1376887184045fcf45c69e92af734b7aaddc05fb777b6fbd03"
+
+[[package]]
 name = "socket2"
 version = "0.4.10"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1730,6 +1751,49 @@ checksum = "9f7916fc008ca5542385b89a3d3ce689953c143e9304a9bf8beec1de48994c0d"
 dependencies = [
  "libc",
  "winapi",
+]
+
+[[package]]
+name = "standout"
+version = "1.0.0"
+source = "git+https://github.com/arthur-debert/standout.git?rev=b1644edc139dab254e95d722e4e52702cab49dcb#b1644edc139dab254e95d722e4e52702cab49dcb"
+dependencies = [
+ "anyhow",
+ "clap",
+ "console",
+ "cssparser",
+ "csv",
+ "dark-light",
+ "deunicode",
+ "minijinja",
+ "once_cell",
+ "quick-xml",
+ "serde",
+ "serde_json",
+ "serde_yaml",
+ "standout-bbparser",
+ "standout-macros",
+ "terminal_size",
+ "thiserror 2.0.17",
+ "unicode-width",
+]
+
+[[package]]
+name = "standout-bbparser"
+version = "1.0.0"
+source = "git+https://github.com/arthur-debert/standout.git?rev=b1644edc139dab254e95d722e4e52702cab49dcb#b1644edc139dab254e95d722e4e52702cab49dcb"
+dependencies = [
+ "console",
+]
+
+[[package]]
+name = "standout-macros"
+version = "1.0.0"
+source = "git+https://github.com/arthur-debert/standout.git?rev=b1644edc139dab254e95d722e4e52702cab49dcb#b1644edc139dab254e95d722e4e52702cab49dcb"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn 2.0.111",
 ]
 
 [[package]]

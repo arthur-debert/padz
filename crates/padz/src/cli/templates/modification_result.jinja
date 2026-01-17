@@ -3,15 +3,15 @@
 
 {#- Start message -#}
 {%- if start_message -%}
-{{ start_message | style("info") | nl }}
+[info]{{ start_message }}[/info]{{ "" | nl }}
 {%- endif -%}
 
 {#- Affected pads list -#}
 {%- for pad in pads -%}
-{%- include "_pad_line" -%}
+{%- include "_pad_line.jinja" -%}
 {%- endfor -%}
 
 {#- Trailing messages (info, warnings, errors) -#}
 {%- for msg in trailing_messages -%}
-{{ msg.content | style(msg.style) | nl }}
+{{ msg.content | style_as(msg.style) }}{{ "" | nl }}
 {%- endfor -%}

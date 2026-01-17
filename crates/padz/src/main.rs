@@ -20,7 +20,7 @@
 //! │  CLI Layer (crates/padz-cli/src/cli/)                       │
 //! │  - clap argument parsing (setup.rs)                         │
 //! │  - Command selection + context wiring (commands.rs)         │
-//! │  - Terminal rendering via Outstanding templates (render.rs) │
+//! │  - Terminal rendering via Standout templates (render.rs)    │
 //! │  - Shell completion scripts + helpers                       │
 //! └─────────────────────────────────────────────────────────────┘
 //!                              │
@@ -45,9 +45,9 @@
 //! is therefore responsible for **all** user-facing concerns: argument parsing,
 //! context initialization, dispatch, error handling, and rendering.
 //!
-//! ## Rendering with Outstanding
+//! ## Rendering with Standout
 //!
-//! Terminal output is produced through the `outstanding` crate. Templates live in
+//! Terminal output is produced through the `standout` crate. Templates live in
 //! `src/cli/templates/` (e.g., `list.tmp`, `full_pad.tmp`) and are embedded at
 //! compile time via `include_str!()`. `render.rs` feeds data structures into those
 //! templates and the CLI commands simply print the rendered strings. This keeps CLI

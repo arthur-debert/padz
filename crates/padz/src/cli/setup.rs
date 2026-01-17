@@ -1,9 +1,9 @@
 use super::complete::{active_pads_completer, all_pads_completer, deleted_pads_completer};
 use clap::{CommandFactory, FromArgMatches, Parser, Subcommand, ValueEnum};
 use once_cell::sync::Lazy;
-use outstanding::topics::TopicRegistry;
-use outstanding::OutputMode;
-use outstanding_clap::{render_help_with_topics, Outstanding};
+use standout::cli::{render_help_with_topics, App};
+use standout::topics::TopicRegistry;
+use standout::OutputMode;
 
 #[derive(Copy, Clone, Debug, ValueEnum)]
 pub enum CompletionShell {
@@ -84,7 +84,7 @@ static HELP_TOPICS: Lazy<TopicRegistry> = Lazy::new(|| {
 });
 
 /// Parse a topic file content into a Topic struct
-fn parse_topic_file(name: &str, content: &str) -> Option<outstanding::topics::Topic> {
+fn parse_topic_file(name: &str, content: &str) -> Option<standout::topics::Topic> {
     let lines: Vec<&str> = content.lines().collect();
     if lines.len() < 2 {
         return None;
@@ -106,10 +106,10 @@ fn parse_topic_file(name: &str, content: &str) -> Option<outstanding::topics::To
         return None;
     }
 
-    Some(outstanding::topics::Topic::new(
+    Some(standout::topics::Topic::new(
         title,
         body,
-        outstanding::topics::TopicType::Text,
+        standout::topics::TopicType::Text,
         Some(name.to_string()),
     ))
 }
@@ -120,15 +120,15 @@ pub fn build_command() -> clap::Command {
     Cli::command()
 }
 
-/// Parses command-line arguments using outstanding-clap's Outstanding.
+/// Parses command-line arguments using standout's App.
 /// This handles help display (including topics) and errors automatically.
 /// It also adds the --output flag for output mode control (auto, term, text, term-debug).
 /// Returns the parsed CLI and the output mode extracted from the matches.
 pub fn parse_cli() -> (Cli, OutputMode) {
-    let outstanding = Outstanding::with_registry(HELP_TOPICS.clone());
-    let matches = outstanding.run_with(Cli::command());
+    let app = App::with_registry(HELP_TOPICS.clone());
+    let matches = app.parse_with(Cli::command());
 
-    // Extract output mode from the matches (outstanding-clap adds this as _output_mode)
+    // Extract output mode from the matches (standout adds this as _output_mode)
     let output_mode = match matches
         .get_one::<String>("_output_mode")
         .map(|s| s.as_str())

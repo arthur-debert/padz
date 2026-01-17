@@ -1,7 +1,7 @@
 {% if lines | length == 0 %}
-{{ empty_message | style("empty-message") }}
+[empty-message]{{ empty_message }}[/empty-message]
 {% else -%}
 {% for line in lines -%}
-{{ line | style("list-title") }}
+[list-title]{{ line }}[/list-title]
 {% endfor -%}
 {% endif %}
