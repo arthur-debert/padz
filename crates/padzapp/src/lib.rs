@@ -104,6 +104,7 @@
 //! - [`error`]: Error types
 
 pub mod api;
+pub mod attributes;
 pub mod clipboard;
 pub mod commands;
 pub mod config;
