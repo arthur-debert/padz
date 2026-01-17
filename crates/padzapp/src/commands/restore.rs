@@ -1,3 +1,4 @@
+use crate::attributes::AttrValue;
 use crate::commands::CmdResult;
 use crate::error::Result;
 use crate::index::{DisplayIndex, DisplayPad, PadSelector};
@@ -19,9 +20,10 @@ pub fn run<S: DataStore>(
     let mut restored_uuids: Vec<Uuid> = Vec::new();
     for (_display_index, uuid) in resolved {
         let mut pad = store.get_pad(&uuid, scope)?;
-        pad.metadata.is_deleted = false;
-        pad.metadata.deleted_at = None;
-        // Keep original created_at so the pad appears in its original position
+
+        // Use the attribute API - this sets is_deleted=false and deleted_at=None
+        // Keeps original created_at so the pad appears in its original position
+        pad.metadata.set_attr("deleted", AttrValue::Bool(false));
         store.save_pad(&pad, scope)?;
 
         // Propagate status change to parent (restored child affects status again)
