@@ -8,6 +8,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 - **Added**
   - **Tag support** - Organize pads with tags. Create tags with `padz tags create`, assign with `padz add-tag`, filter lists with `--tag`. Tags are scoped (project or global) and displayed inline in list views.
+  - **Attribute abstraction layer** - Unified system for metadata attributes (pinned, deleted, status, tags). Provides `get_attr()`/`set_attr()` methods on Metadata with automatic handling of coupled fields (e.g., pinning sets both `is_pinned` and `delete_protected`). Includes `AttrFilter` for generic filtering, replacing separate filter functions.
+
+- **Changed**
+  - Refactored pin/unpin, delete/restore, and tagging commands to use the new attribute API
+  - Unified `filter_by_todo_status()` and `filter_by_tags()` into generic `apply_attr_filters()`
 
 - **Fixed**
   - Pad name matching now only searches titles, not content (e.g., `padz view About` no longer matches pads where "About" only appears in the body)

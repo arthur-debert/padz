@@ -1,37 +1,70 @@
 //! # Attribute System
 //!
-//! This module provides a unified abstraction for pad metadata attributes.
-//! Instead of handling each attribute (pinned, deleted, status, tags, etc.) ad-hoc,
-//! the attribute system provides:
+//! A unified abstraction layer for pad metadata attributes.
 //!
-//! - **Type definitions**: What kinds of values attributes can hold
-//! - **Specifications**: Metadata about each attribute (filterable, cascades, etc.)
-//! - **Unified access**: `get_attr()` / `set_attr()` methods on Metadata
-//! - **Filtering**: Generic filter predicates that work with any attribute
+//! ## Design Motivation
 //!
-//! ## Attribute Types
+//! Padz metadata fields (pinned, deleted, status, tags, parent_id) were originally
+//! handled ad-hoc, with each command directly manipulating struct fields. This led to:
 //!
-//! | Kind | Examples | Description |
-//! |------|----------|-------------|
-//! | `Bool` | `delete_protected` | Simple true/false |
-//! | `BoolWithTimestamp` | `pinned`, `deleted` | Flag + when it was set |
-//! | `Enum` | `status` | Closed set of values |
-//! | `List` | `tags` | Open set with optional registry |
-//! | `Ref` | `parent_id` | Reference to another pad |
+//! - **Scattered coupling logic**: Pinning required setting 3 fields (`is_pinned`,
+//!   `pinned_at`, `delete_protected`) in multiple places
+//! - **Inconsistent patterns**: Tags used a registry, status propagated up, deletion
+//!   had protection checks—each with its own implementation
+//! - **Duplicate filter code**: `filter_by_todo_status()` and `filter_by_tags()` were
+//!   nearly identical tree-recursive functions
 //!
-//! ## Usage
+//! The attribute system addresses this by providing:
 //!
-//! ```ignore
-//! // Getting an attribute
-//! let value = pad.metadata.get_attr("pinned");
+//! 1. **Centralized coupling**: `set_attr("pinned", true)` handles all 3 fields
+//! 2. **Unified type system**: `AttrValue` represents any attribute value
+//! 3. **Generic filtering**: One `apply_attr_filters()` replaces multiple filter functions
+//! 4. **Declarative specs**: `ATTRIBUTES` registry describes each attribute's behavior
 //!
-//! // Setting an attribute (handles coupled fields automatically)
-//! let effects = pad.metadata.set_attr("pinned", AttrValue::Bool(true));
+//! ## Architecture Decisions
 //!
-//! // Filtering
-//! let filter = AttrFilter::new("status", FilterOp::Eq, AttrValue::Enum("Done".into()));
-//! if filter.matches(&pad.metadata) { ... }
-//! ```
+//! ### Why Not a Full ORM/Schema System?
+//!
+//! Padz is a simple note-taking app. A full schema migration system or SQL-like
+//! query language would be over-engineering. The attribute system is intentionally
+//! minimal: it provides structure without framework overhead.
+//!
+//! ### Why Keep the Flat Metadata Struct?
+//!
+//! The `Metadata` struct remains flat with individual fields rather than a
+//! `HashMap<String, AttrValue>` for several reasons:
+//!
+//! - **Type safety**: Compile-time field access catches typos
+//! - **Serde compatibility**: JSON serialization stays simple and backwards-compatible
+//! - **Performance**: No runtime lookups for field access
+//! - **Gradual migration**: Commands can transition incrementally
+//!
+//! The `get_attr()`/`set_attr()` methods are a façade over the flat struct, not
+//! a replacement for it.
+//!
+//! ### Why AttrSideEffect Instead of Automatic Propagation?
+//!
+//! When `set_attr("status", ...)` is called, the system could automatically
+//! propagate the change to parent pads. Instead, it returns `AttrSideEffect::PropagateStatusUp`
+//! and lets the caller handle it. This is intentional:
+//!
+//! - **Store access**: Propagation requires loading/saving other pads, which needs
+//!   store access that `set_attr()` (a method on Metadata) doesn't have
+//! - **Transaction boundaries**: The caller controls when propagation happens
+//! - **Testability**: Side effects are explicit and can be verified
+//!
+//! ### Display Index Filtering vs Attribute Filtering
+//!
+//! `PadStatusFilter` (Active/Deleted/Pinned) operates on display indexes, not
+//! metadata attributes. A "pinned" pad has `DisplayIndex::Pinned(n)`, which is
+//! a view concern, not a data concern. This is why `filter_tree()` remains
+//! separate from `apply_attr_filters()`.
+//!
+//! ## Module Structure
+//!
+//! - [`spec`]: Attribute specifications and the `ATTRIBUTES` registry
+//! - [`value`]: Runtime value types (`AttrValue`) and side effects
+//! - [`filter`]: Filter predicates for querying by attribute
 
 mod filter;
 mod spec;
