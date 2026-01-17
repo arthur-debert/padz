@@ -1,3 +1,4 @@
+use crate::attributes::{AttrFilter, AttrValue};
 use crate::commands::CmdResult;
 use crate::error::Result;
 use crate::index::{index_pads, DisplayIndex, DisplayPad, MatchSegment, SearchMatch};
@@ -89,49 +90,31 @@ fn filter_children_under_deleted(mut dp: DisplayPad) -> DisplayPad {
     dp
 }
 
-/// Recursively filters the tree based on todo status.
-/// Returns pads that match the specified todo status, preserving hierarchy.
-fn filter_by_todo_status(pads: Vec<DisplayPad>, todo_status: TodoStatus) -> Vec<DisplayPad> {
-    pads.into_iter()
-        .filter_map(|dp| filter_pad_by_todo_status(dp, todo_status))
-        .collect()
-}
-
-fn filter_pad_by_todo_status(mut dp: DisplayPad, todo_status: TodoStatus) -> Option<DisplayPad> {
-    // First, recursively filter children
-    dp.children = dp
-        .children
-        .into_iter()
-        .filter_map(|child| filter_pad_by_todo_status(child, todo_status))
-        .collect();
-
-    // Include this pad if it matches the todo status
-    if dp.pad.metadata.status == todo_status {
-        Some(dp)
-    } else {
-        None
+/// Recursively filters the tree based on attribute filters.
+/// Returns pads that match ALL specified filters (AND logic), preserving hierarchy.
+///
+/// This is the unified filtering function that can replace the separate
+/// `filter_by_todo_status` and `filter_by_tags` functions.
+fn apply_attr_filters(pads: Vec<DisplayPad>, filters: &[AttrFilter]) -> Vec<DisplayPad> {
+    if filters.is_empty() {
+        return pads;
     }
-}
-
-/// Recursively filters the tree based on tags.
-/// Returns pads that have ALL specified tags (AND logic), preserving hierarchy.
-fn filter_by_tags(pads: Vec<DisplayPad>, tags: &[String]) -> Vec<DisplayPad> {
     pads.into_iter()
-        .filter_map(|dp| filter_pad_by_tags(dp, tags))
+        .filter_map(|dp| filter_pad_by_attrs(dp, filters))
         .collect()
 }
 
-fn filter_pad_by_tags(mut dp: DisplayPad, tags: &[String]) -> Option<DisplayPad> {
+fn filter_pad_by_attrs(mut dp: DisplayPad, filters: &[AttrFilter]) -> Option<DisplayPad> {
     // First, recursively filter children
     dp.children = dp
         .children
         .into_iter()
-        .filter_map(|child| filter_pad_by_tags(child, tags))
+        .filter_map(|child| filter_pad_by_attrs(child, filters))
         .collect();
 
-    // Include this pad if it has ALL the specified tags (AND logic)
-    let has_all_tags = tags.iter().all(|tag| dp.pad.metadata.tags.contains(tag));
-    if has_all_tags {
+    // Include this pad if it matches ALL filters (AND logic)
+    let matches_all = filters.iter().all(|f| f.matches(&dp.pad.metadata));
+    if matches_all {
         Some(dp)
     } else {
         None
@@ -152,19 +135,27 @@ pub fn run<S: DataStore>(store: &S, scope: Scope, filter: PadFilter) -> Result<C
     let indexed = index_pads(pads);
 
     // 1. Filter by deletion status (Active/Deleted/Pinned)
+    // This operates on display indexes, not metadata attributes
     let mut filtered: Vec<DisplayPad> = filter_tree(indexed, filter.status);
 
-    // 2. Filter by todo status if specified
+    // 2. Build attribute filters from filter options
+    let mut attr_filters: Vec<AttrFilter> = Vec::new();
+
+    // Convert todo_status to AttrFilter
     if let Some(todo_status) = filter.todo_status {
-        filtered = filter_by_todo_status(filtered, todo_status);
+        let status_str = format!("{:?}", todo_status);
+        attr_filters.push(AttrFilter::eq("status", AttrValue::Enum(status_str)));
     }
 
-    // 3. Filter by tags if specified (AND logic - must have all tags)
+    // Convert tags to AttrFilter (AND logic - must have all tags)
     if let Some(ref tags) = filter.tags {
         if !tags.is_empty() {
-            filtered = filter_by_tags(filtered, tags);
+            attr_filters.push(AttrFilter::contains_all("tags", tags.clone()));
         }
     }
+
+    // 3. Apply unified attribute filters
+    filtered = apply_attr_filters(filtered, &attr_filters);
 
     // 4. Apply search if needed
     if let Some(term) = &filter.search_term {

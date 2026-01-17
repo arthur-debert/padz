@@ -5,6 +5,7 @@
 //! - `remove_tags`: Remove specific tags from pads
 //! - `clear_tags`: Remove all tags from pads
 
+use crate::attributes::AttrValue;
 use crate::commands::helpers::{indexed_pads, resolve_selectors};
 use crate::commands::{CmdMessage, CmdResult};
 use crate::error::{PadzError, Result};
@@ -44,18 +45,27 @@ pub fn add_tags<S: DataStore>(
 
     for (display_index, uuid) in resolved {
         let mut pad = store.get_pad(&uuid, scope)?;
-        let original_count = pad.metadata.tags.len();
+
+        // Get current tags via attribute API
+        let current_tags = pad
+            .metadata
+            .get_attr("tags")
+            .and_then(|v| v.as_list().map(|l| l.to_vec()))
+            .unwrap_or_default();
+        let original_count = current_tags.len();
 
         // Add tags that aren't already present
+        let mut new_tags = current_tags;
         for tag in tags {
-            if !pad.metadata.tags.contains(tag) {
-                pad.metadata.tags.push(tag.clone());
+            if !new_tags.contains(tag) {
+                new_tags.push(tag.clone());
             }
         }
 
         // Sort and save if changed
-        if pad.metadata.tags.len() > original_count {
-            pad.metadata.tags.sort();
+        if new_tags.len() > original_count {
+            new_tags.sort();
+            pad.metadata.set_attr("tags", AttrValue::List(new_tags));
             store.save_pad(&pad, scope)?;
             modified_count += 1;
         }
@@ -114,13 +124,24 @@ pub fn remove_tags<S: DataStore>(
 
     for (display_index, uuid) in resolved {
         let mut pad = store.get_pad(&uuid, scope)?;
-        let original_count = pad.metadata.tags.len();
+
+        // Get current tags via attribute API
+        let current_tags = pad
+            .metadata
+            .get_attr("tags")
+            .and_then(|v| v.as_list().map(|l| l.to_vec()))
+            .unwrap_or_default();
+        let original_count = current_tags.len();
 
         // Remove specified tags
-        pad.metadata.tags.retain(|t| !tags.contains(t));
+        let new_tags: Vec<String> = current_tags
+            .into_iter()
+            .filter(|t| !tags.contains(t))
+            .collect();
 
         // Save if changed
-        if pad.metadata.tags.len() < original_count {
+        if new_tags.len() < original_count {
+            pad.metadata.set_attr("tags", AttrValue::List(new_tags));
             store.save_pad(&pad, scope)?;
             modified_count += 1;
         }
@@ -173,8 +194,15 @@ pub fn clear_tags<S: DataStore>(
     for (display_index, uuid) in resolved {
         let mut pad = store.get_pad(&uuid, scope)?;
 
-        if !pad.metadata.tags.is_empty() {
-            pad.metadata.tags.clear();
+        // Get current tags via attribute API
+        let current_tags = pad
+            .metadata
+            .get_attr("tags")
+            .and_then(|v| v.as_list().map(|l| l.to_vec()))
+            .unwrap_or_default();
+
+        if !current_tags.is_empty() {
+            pad.metadata.set_attr("tags", AttrValue::List(Vec::new()));
             store.save_pad(&pad, scope)?;
             modified_count += 1;
         }

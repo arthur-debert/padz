@@ -1,9 +1,9 @@
+use crate::attributes::AttrValue;
 use crate::commands::CmdResult;
 use crate::error::Result;
 use crate::index::{DisplayPad, PadSelector};
 use crate::model::Scope;
 use crate::store::DataStore;
-use chrono::Utc;
 use uuid::Uuid;
 
 use super::helpers::{indexed_pads, resolve_selectors};
@@ -20,8 +20,9 @@ pub fn run<S: DataStore>(
     let mut deleted_uuids: Vec<Uuid> = Vec::new();
     for (_display_index, uuid) in resolved {
         let mut pad = store.get_pad(&uuid, scope)?;
-        pad.metadata.is_deleted = true;
-        pad.metadata.deleted_at = Some(Utc::now());
+
+        // Use the attribute API - this sets is_deleted and deleted_at
+        pad.metadata.set_attr("deleted", AttrValue::Bool(true));
         store.save_pad(&pad, scope)?;
 
         // Propagate status change to parent (deleted child no longer affects status)

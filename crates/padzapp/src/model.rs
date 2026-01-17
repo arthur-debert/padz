@@ -53,6 +53,8 @@ use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
+use crate::attributes::{AttrSideEffect, AttrValue};
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum Scope {
     Project,
@@ -156,6 +158,127 @@ impl Metadata {
             title,
             status: TodoStatus::Planned,
             tags: Vec::new(),
+        }
+    }
+
+    /// Get an attribute value by name.
+    ///
+    /// Returns `None` if the attribute name is not recognized.
+    /// For known attributes, returns the current value wrapped in [`AttrValue`].
+    ///
+    /// # Supported Attributes
+    ///
+    /// | Name | Type | Description |
+    /// |------|------|-------------|
+    /// | `"pinned"` | `BoolWithTimestamp` | Pin state and when it was set |
+    /// | `"deleted"` | `BoolWithTimestamp` | Deletion state and when deleted |
+    /// | `"protected"` | `Bool` | Delete protection flag |
+    /// | `"status"` | `Enum` | Todo status (Planned/InProgress/Done) |
+    /// | `"tags"` | `List` | Assigned tag names |
+    /// | `"parent"` | `Ref` | Parent pad UUID |
+    ///
+    /// # Example
+    ///
+    /// ```ignore
+    /// let meta = Metadata::new("Test".into());
+    /// assert_eq!(meta.get_attr("pinned").unwrap().as_bool(), Some(false));
+    /// ```
+    pub fn get_attr(&self, name: &str) -> Option<AttrValue> {
+        match name {
+            "pinned" => Some(AttrValue::BoolWithTimestamp {
+                value: self.is_pinned,
+                timestamp: self.pinned_at,
+            }),
+            "deleted" => Some(AttrValue::BoolWithTimestamp {
+                value: self.is_deleted,
+                timestamp: self.deleted_at,
+            }),
+            "protected" => Some(AttrValue::Bool(self.delete_protected)),
+            "status" => Some(AttrValue::Enum(format!("{:?}", self.status))),
+            "tags" => Some(AttrValue::List(self.tags.clone())),
+            "parent" => Some(AttrValue::Ref(self.parent_id)),
+            _ => None,
+        }
+    }
+
+    /// Set an attribute value by name.
+    ///
+    /// Returns `None` if the attribute name is not recognized or the value type
+    /// doesn't match. Returns `Some(AttrSideEffect)` indicating what action the
+    /// caller should take after setting the attribute.
+    ///
+    /// # Coupled Attributes
+    ///
+    /// Some attributes have coupled behavior:
+    /// - `"pinned"`: Also sets `delete_protected` to the same value
+    ///
+    /// # Side Effects
+    ///
+    /// The returned [`AttrSideEffect`] indicates what the caller should do:
+    /// - `None`: No action needed
+    /// - `PropagateStatusUp`: Call `propagate_status_change()` with `parent_id`
+    /// - `ValidateTags(tags)`: Validate that the tags exist in the registry
+    ///
+    /// # Example
+    ///
+    /// ```ignore
+    /// let mut meta = Metadata::new("Test".into());
+    ///
+    /// // Set pinned (also sets delete_protected)
+    /// meta.set_attr("pinned", AttrValue::Bool(true));
+    /// assert!(meta.is_pinned);
+    /// assert!(meta.delete_protected);
+    ///
+    /// // Set status (returns PropagateStatusUp)
+    /// let effect = meta.set_attr("status", AttrValue::Enum("Done".into()));
+    /// assert_eq!(effect, Some(AttrSideEffect::PropagateStatusUp));
+    /// ```
+    pub fn set_attr(&mut self, name: &str, value: AttrValue) -> Option<AttrSideEffect> {
+        match name {
+            "pinned" => {
+                let flag = value.as_bool()?;
+                self.is_pinned = flag;
+                self.pinned_at = if flag { Some(Utc::now()) } else { None };
+                // Coupled: pinned also controls delete_protected
+                self.delete_protected = flag;
+                Some(AttrSideEffect::None)
+            }
+            "deleted" => {
+                let flag = value.as_bool()?;
+                self.is_deleted = flag;
+                self.deleted_at = if flag { Some(Utc::now()) } else { None };
+                // Note: deletion has its own side effect (status propagation)
+                // but that's handled by the caller, not as a formal side effect here
+                Some(AttrSideEffect::PropagateStatusUp)
+            }
+            "protected" => {
+                let flag = value.as_bool()?;
+                self.delete_protected = flag;
+                Some(AttrSideEffect::None)
+            }
+            "status" => {
+                let status_str = value.as_enum()?;
+                self.status = match status_str {
+                    "Planned" => TodoStatus::Planned,
+                    "InProgress" => TodoStatus::InProgress,
+                    "Done" => TodoStatus::Done,
+                    _ => return None, // Invalid status value
+                };
+                Some(AttrSideEffect::PropagateStatusUp)
+            }
+            "tags" => {
+                let tags = value.as_list()?.to_vec();
+                let tags_for_validation = tags.clone();
+                self.tags = tags;
+                Some(AttrSideEffect::ValidateTags(tags_for_validation))
+            }
+            "parent" => {
+                let parent_id = value.as_ref()?;
+                self.parent_id = parent_id;
+                // Changing parent triggers status propagation to both old and new parent
+                Some(AttrSideEffect::PropagateStatusUp)
+            }
+            _ => None,
         }
     }
 }
@@ -472,5 +595,299 @@ mod tests {
     fn test_new_metadata_has_empty_tags() {
         let meta = Metadata::new("New Pad".to_string());
         assert!(meta.tags.is_empty());
+    }
+
+    // --- get_attr tests ---
+
+    #[test]
+    fn test_get_attr_pinned_default() {
+        let meta = Metadata::new("Test".into());
+        let value = meta.get_attr("pinned").unwrap();
+        match value {
+            crate::attributes::AttrValue::BoolWithTimestamp { value, timestamp } => {
+                assert!(!value);
+                assert!(timestamp.is_none());
+            }
+            _ => panic!("Expected BoolWithTimestamp"),
+        }
+    }
+
+    #[test]
+    fn test_get_attr_pinned_when_set() {
+        let mut meta = Metadata::new("Test".into());
+        meta.is_pinned = true;
+        meta.pinned_at = Some(Utc::now());
+
+        let value = meta.get_attr("pinned").unwrap();
+        match value {
+            crate::attributes::AttrValue::BoolWithTimestamp { value, timestamp } => {
+                assert!(value);
+                assert!(timestamp.is_some());
+            }
+            _ => panic!("Expected BoolWithTimestamp"),
+        }
+    }
+
+    #[test]
+    fn test_get_attr_deleted_default() {
+        let meta = Metadata::new("Test".into());
+        let value = meta.get_attr("deleted").unwrap();
+        assert_eq!(value.as_bool(), Some(false));
+    }
+
+    #[test]
+    fn test_get_attr_protected_default() {
+        let meta = Metadata::new("Test".into());
+        let value = meta.get_attr("protected").unwrap();
+        assert_eq!(value.as_bool(), Some(false));
+    }
+
+    #[test]
+    fn test_get_attr_protected_when_set() {
+        let mut meta = Metadata::new("Test".into());
+        meta.delete_protected = true;
+
+        let value = meta.get_attr("protected").unwrap();
+        assert_eq!(value.as_bool(), Some(true));
+    }
+
+    #[test]
+    fn test_get_attr_status_default() {
+        let meta = Metadata::new("Test".into());
+        let value = meta.get_attr("status").unwrap();
+        assert_eq!(value.as_enum(), Some("Planned"));
+    }
+
+    #[test]
+    fn test_get_attr_status_variants() {
+        let mut meta = Metadata::new("Test".into());
+
+        meta.status = TodoStatus::InProgress;
+        assert_eq!(
+            meta.get_attr("status").unwrap().as_enum(),
+            Some("InProgress")
+        );
+
+        meta.status = TodoStatus::Done;
+        assert_eq!(meta.get_attr("status").unwrap().as_enum(), Some("Done"));
+    }
+
+    #[test]
+    fn test_get_attr_tags_empty() {
+        let meta = Metadata::new("Test".into());
+        let value = meta.get_attr("tags").unwrap();
+        assert_eq!(value.as_list(), Some(&[][..]));
+    }
+
+    #[test]
+    fn test_get_attr_tags_with_values() {
+        let mut meta = Metadata::new("Test".into());
+        meta.tags = vec!["work".into(), "rust".into()];
+
+        let value = meta.get_attr("tags").unwrap();
+        let expected: Vec<String> = vec!["work".into(), "rust".into()];
+        assert_eq!(value.as_list(), Some(expected.as_slice()));
+    }
+
+    #[test]
+    fn test_get_attr_parent_none() {
+        let meta = Metadata::new("Test".into());
+        let value = meta.get_attr("parent").unwrap();
+        assert_eq!(value.as_ref(), Some(None));
+    }
+
+    #[test]
+    fn test_get_attr_parent_some() {
+        let mut meta = Metadata::new("Test".into());
+        let parent_id = Uuid::new_v4();
+        meta.parent_id = Some(parent_id);
+
+        let value = meta.get_attr("parent").unwrap();
+        assert_eq!(value.as_ref(), Some(Some(parent_id)));
+    }
+
+    #[test]
+    fn test_get_attr_unknown_returns_none() {
+        let meta = Metadata::new("Test".into());
+        assert!(meta.get_attr("unknown").is_none());
+        assert!(meta.get_attr("").is_none());
+        assert!(meta.get_attr("is_pinned").is_none()); // Uses field name, not attr name
+    }
+
+    // --- set_attr tests ---
+
+    #[test]
+    fn test_set_attr_pinned_true() {
+        let mut meta = Metadata::new("Test".into());
+
+        let effect = meta
+            .set_attr("pinned", crate::attributes::AttrValue::Bool(true))
+            .unwrap();
+
+        assert!(meta.is_pinned);
+        assert!(meta.pinned_at.is_some());
+        assert!(meta.delete_protected); // Coupled
+        assert_eq!(effect, crate::attributes::AttrSideEffect::None);
+    }
+
+    #[test]
+    fn test_set_attr_pinned_false() {
+        let mut meta = Metadata::new("Test".into());
+        meta.is_pinned = true;
+        meta.pinned_at = Some(Utc::now());
+        meta.delete_protected = true;
+
+        let effect = meta
+            .set_attr("pinned", crate::attributes::AttrValue::Bool(false))
+            .unwrap();
+
+        assert!(!meta.is_pinned);
+        assert!(meta.pinned_at.is_none());
+        assert!(!meta.delete_protected); // Coupled
+        assert_eq!(effect, crate::attributes::AttrSideEffect::None);
+    }
+
+    #[test]
+    fn test_set_attr_deleted_true() {
+        let mut meta = Metadata::new("Test".into());
+
+        let effect = meta
+            .set_attr("deleted", crate::attributes::AttrValue::Bool(true))
+            .unwrap();
+
+        assert!(meta.is_deleted);
+        assert!(meta.deleted_at.is_some());
+        assert_eq!(effect, crate::attributes::AttrSideEffect::PropagateStatusUp);
+    }
+
+    #[test]
+    fn test_set_attr_deleted_false() {
+        let mut meta = Metadata::new("Test".into());
+        meta.is_deleted = true;
+        meta.deleted_at = Some(Utc::now());
+
+        let effect = meta
+            .set_attr("deleted", crate::attributes::AttrValue::Bool(false))
+            .unwrap();
+
+        assert!(!meta.is_deleted);
+        assert!(meta.deleted_at.is_none());
+        assert_eq!(effect, crate::attributes::AttrSideEffect::PropagateStatusUp);
+    }
+
+    #[test]
+    fn test_set_attr_protected() {
+        let mut meta = Metadata::new("Test".into());
+
+        meta.set_attr("protected", crate::attributes::AttrValue::Bool(true))
+            .unwrap();
+        assert!(meta.delete_protected);
+
+        meta.set_attr("protected", crate::attributes::AttrValue::Bool(false))
+            .unwrap();
+        assert!(!meta.delete_protected);
+    }
+
+    #[test]
+    fn test_set_attr_status_all_variants() {
+        let mut meta = Metadata::new("Test".into());
+
+        let effect = meta
+            .set_attr("status", crate::attributes::AttrValue::Enum("Done".into()))
+            .unwrap();
+        assert_eq!(meta.status, TodoStatus::Done);
+        assert_eq!(effect, crate::attributes::AttrSideEffect::PropagateStatusUp);
+
+        meta.set_attr(
+            "status",
+            crate::attributes::AttrValue::Enum("InProgress".into()),
+        )
+        .unwrap();
+        assert_eq!(meta.status, TodoStatus::InProgress);
+
+        meta.set_attr(
+            "status",
+            crate::attributes::AttrValue::Enum("Planned".into()),
+        )
+        .unwrap();
+        assert_eq!(meta.status, TodoStatus::Planned);
+    }
+
+    #[test]
+    fn test_set_attr_status_invalid() {
+        let mut meta = Metadata::new("Test".into());
+
+        let result = meta.set_attr(
+            "status",
+            crate::attributes::AttrValue::Enum("Invalid".into()),
+        );
+        assert!(result.is_none());
+        assert_eq!(meta.status, TodoStatus::Planned); // Unchanged
+    }
+
+    #[test]
+    fn test_set_attr_tags() {
+        let mut meta = Metadata::new("Test".into());
+        let tags = vec!["work".to_string(), "rust".to_string()];
+
+        let effect = meta
+            .set_attr("tags", crate::attributes::AttrValue::List(tags.clone()))
+            .unwrap();
+
+        assert_eq!(meta.tags, tags);
+        match effect {
+            crate::attributes::AttrSideEffect::ValidateTags(t) => {
+                assert_eq!(t, vec!["work".to_string(), "rust".to_string()]);
+            }
+            _ => panic!("Expected ValidateTags"),
+        }
+    }
+
+    #[test]
+    fn test_set_attr_parent() {
+        let mut meta = Metadata::new("Test".into());
+        let parent_id = Uuid::new_v4();
+
+        let effect = meta
+            .set_attr("parent", crate::attributes::AttrValue::Ref(Some(parent_id)))
+            .unwrap();
+
+        assert_eq!(meta.parent_id, Some(parent_id));
+        assert_eq!(effect, crate::attributes::AttrSideEffect::PropagateStatusUp);
+    }
+
+    #[test]
+    fn test_set_attr_parent_none() {
+        let mut meta = Metadata::new("Test".into());
+        meta.parent_id = Some(Uuid::new_v4());
+
+        let effect = meta
+            .set_attr("parent", crate::attributes::AttrValue::Ref(None))
+            .unwrap();
+
+        assert_eq!(meta.parent_id, None);
+        assert_eq!(effect, crate::attributes::AttrSideEffect::PropagateStatusUp);
+    }
+
+    #[test]
+    fn test_set_attr_unknown_returns_none() {
+        let mut meta = Metadata::new("Test".into());
+        let result = meta.set_attr("unknown", crate::attributes::AttrValue::Bool(true));
+        assert!(result.is_none());
+    }
+
+    #[test]
+    fn test_set_attr_wrong_type_returns_none() {
+        let mut meta = Metadata::new("Test".into());
+
+        // Try to set pinned with an Enum value
+        let result = meta.set_attr("pinned", crate::attributes::AttrValue::Enum("yes".into()));
+        assert!(result.is_none());
+        assert!(!meta.is_pinned); // Unchanged
+
+        // Try to set status with a Bool value
+        let result = meta.set_attr("status", crate::attributes::AttrValue::Bool(true));
+        assert!(result.is_none());
+        assert_eq!(meta.status, TodoStatus::Planned); // Unchanged
     }
 }

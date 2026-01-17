@@ -1,9 +1,9 @@
+use crate::attributes::AttrValue;
 use crate::commands::{CmdMessage, CmdResult};
 use crate::error::Result;
 use crate::index::{DisplayIndex, DisplayPad, PadSelector};
 use crate::model::Scope;
 use crate::store::DataStore;
-use chrono::Utc;
 use uuid::Uuid;
 
 use super::helpers::{indexed_pads, resolve_selectors};
@@ -39,9 +39,8 @@ fn pin_state<S: DataStore>(
         let mut pad = store.get_pad(&uuid, scope)?;
         let was_already_pinned = pad.metadata.is_pinned; // Capture original state
 
-        pad.metadata.is_pinned = is_pinned;
-        pad.metadata.pinned_at = if is_pinned { Some(Utc::now()) } else { None };
-        pad.metadata.delete_protected = is_pinned;
+        // Use the attribute API - this sets is_pinned, pinned_at, and delete_protected
+        pad.metadata.set_attr("pinned", AttrValue::Bool(is_pinned));
         store.save_pad(&pad, scope)?;
 
         // Only add info messages for no-op cases; success cases are shown via pad list
