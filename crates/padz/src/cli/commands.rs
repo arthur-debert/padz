@@ -169,7 +169,18 @@ pub fn run() -> Result<()> {
             MiscCommands::Init => handle_init(&ctx),
             MiscCommands::Completions { shell } => handle_completions(shell),
         },
-        None => handle_list(&mut ctx, None, false, false, false, false, false, vec![]),
+        None => {
+            // Naked invocation: check for piped input
+            // `cat file.txt | padz` expands to `padz create` with piped content
+            // `padz` (no pipe) expands to `padz list`
+            if !std::io::stdin().is_terminal() {
+                // Piped input detected - expand to create
+                handle_create(&mut ctx, None, false, None)
+            } else {
+                // No piped input - default to list
+                handle_list(&mut ctx, None, false, false, false, false, false, vec![])
+            }
+        }
     }
 }
 
@@ -345,8 +356,33 @@ fn handle_edit(ctx: &mut AppContext, indexes: Vec<String>) -> Result<()> {
 }
 
 fn handle_open(ctx: &mut AppContext, indexes: Vec<String>) -> Result<()> {
-    // Open behaves exactly like edit now - just open the file.
-    // The "sync only if changed" logic is handled by the lazy reconciler (padz list).
+    // Check for piped input - if present, update pad content instead of opening editor
+    if !std::io::stdin().is_terminal() {
+        let mut buffer = String::new();
+        if std::io::stdin().read_to_string(&mut buffer).is_ok() {
+            if buffer.trim().is_empty() {
+                // Piped input detected but empty - this is an error
+                return Err(padzapp::error::PadzError::Api(
+                    "Piped content is empty".to_string(),
+                ));
+            }
+            // Update the pad(s) with the piped content
+            let result = ctx
+                .api
+                .update_pads_from_content(ctx.scope, &indexes, &buffer)?;
+
+            let output = render_modification_result(
+                "Updated",
+                &result.affected_pads,
+                &result.messages,
+                ctx.output_mode,
+            );
+            print!("{}", output);
+            return Ok(());
+        }
+    }
+
+    // No piped input - behave like edit (open the file in editor)
     handle_edit(ctx, indexes)
 }
 

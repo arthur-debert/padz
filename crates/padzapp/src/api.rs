@@ -176,6 +176,20 @@ impl<S: DataStore> PadzApi<S> {
         commands::update::run(&mut self.store, scope, updates)
     }
 
+    /// Updates pads with raw content (e.g., from piped stdin).
+    ///
+    /// Parses the raw content to extract title and body, then updates
+    /// the pads matching the given selectors.
+    pub fn update_pads_from_content<I: AsRef<str>>(
+        &mut self,
+        scope: Scope,
+        indexes: &[I],
+        raw_content: &str,
+    ) -> Result<commands::CmdResult> {
+        let selectors = parse_selectors(indexes)?;
+        commands::update::run_from_content(&mut self.store, scope, &selectors, raw_content)
+    }
+
     pub fn move_pads<I: AsRef<str>>(
         &mut self,
         scope: Scope,

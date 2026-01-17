@@ -7,6 +7,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 ## [Unreleased]
 
 - **Added**
+  - **Piped content support** - Create and update pads from shell pipelines:
+    - `cat file.txt | padz create` - Create pad with piped content
+    - `cat file.txt | padz open <id>` - Update existing pad with piped content
+    - `cat file.txt | padz` - Naked invocation with pipe expands to create
+  - **PADZ_GLOBAL_DATA environment variable** - Override global data directory (useful for testing)
   - **Tag support** - Organize pads with tags. Create tags with `padz tags create`, assign with `padz add-tag`, filter lists with `--tag`. Tags are scoped (project or global) and displayed inline in list views.
   - **Attribute abstraction layer** - Unified system for metadata attributes (pinned, deleted, status, tags). Provides `get_attr()`/`set_attr()` methods on Metadata with automatic handling of coupled fields (e.g., pinning sets both `is_pinned` and `delete_protected`). Includes `AttrFilter` for generic filtering, replacing separate filter functions.
 

@@ -11,8 +11,13 @@
 //!
 //! ### Naked Execution (`padz`)
 //!
-//! Running `padz` with no arguments defaults to `padz list`.
+//! Behavior depends on whether stdin has piped content:
+//!
+//! - **With pipe**: `cat file.txt | padz` expands to `padz create` with piped content
+//! - **Without pipe**: `padz` expands to `padz list`
+//!
 //! The "Read" operation is 90% of usage—it should be the path of least resistance.
+//! Piped content takes precedence, enabling quick note capture from shell pipelines.
 //!
 //! ### Smart Create (`padz create`)
 //!

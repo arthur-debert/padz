@@ -1,7 +1,7 @@
 use crate::commands::{CmdMessage, CmdResult, PadUpdate};
-use crate::error::Result;
+use crate::error::{PadzError, Result};
 use crate::index::{DisplayPad, PadSelector};
-use crate::model::Scope;
+use crate::model::{parse_pad_content, Scope};
 use crate::store::DataStore;
 use chrono::Utc;
 
@@ -57,6 +57,61 @@ pub fn run<S: DataStore>(store: &mut S, scope: Scope, updates: &[PadUpdate]) -> 
             .last()
             .cloned()
             .unwrap_or(update.index.clone());
+        result.affected_pads.push(DisplayPad {
+            pad,
+            index: local_index,
+            matches: None,
+            children: Vec::new(),
+        });
+    }
+
+    Ok(result)
+}
+
+/// Updates pads from raw content (e.g., from piped stdin).
+///
+/// This function takes raw content, parses it to extract title and body,
+/// then applies the same content to all matching pads. Useful for pipe workflows
+/// like: `cat content.md | padz open 1`
+pub fn run_from_content<S: DataStore>(
+    store: &mut S,
+    scope: Scope,
+    selectors: &[PadSelector],
+    raw_content: &str,
+) -> Result<CmdResult> {
+    // Parse raw content to get title and normalized content
+    let (title, full_content) = parse_pad_content(raw_content)
+        .ok_or_else(|| PadzError::Api("Piped content is empty or invalid".to_string()))?;
+
+    // Resolve selectors to UUIDs
+    let resolved = resolve_selectors(store, scope, selectors, false)?;
+
+    let mut result = CmdResult::default();
+
+    for (display_index, uuid) in resolved {
+        let mut pad = store.get_pad(&uuid, scope)?;
+
+        // Update the pad with the new content
+        pad.metadata.title = title.clone();
+        pad.metadata.updated_at = Utc::now();
+        pad.content = full_content.clone();
+
+        let parent_id = pad.metadata.parent_id;
+        store.save_pad(&pad, scope)?;
+
+        // Propagate status change to parent
+        crate::todos::propagate_status_change(store, scope, parent_id)?;
+
+        result.add_message(CmdMessage::success(format!(
+            "Updated ({}): {}",
+            super::helpers::fmt_path(&display_index),
+            pad.metadata.title
+        )));
+
+        let local_index = display_index
+            .last()
+            .cloned()
+            .unwrap_or(display_index[0].clone());
         result.affected_pads.push(DisplayPad {
             pad,
             index: local_index,
@@ -352,5 +407,131 @@ mod tests {
             .find(|p| p.metadata.title == "Parent")
             .unwrap();
         assert_eq!(parent_after.metadata.status, crate::model::TodoStatus::Done);
+    }
+
+    // --- run_from_content tests (piped content updates) ---
+
+    #[test]
+    fn run_from_content_updates_single_pad() {
+        let mut store = InMemoryStore::new();
+        create::run(
+            &mut store,
+            Scope::Project,
+            "Original Title".into(),
+            "Original body".into(),
+            None,
+        )
+        .unwrap();
+
+        let raw_content = "New Title From Pipe\n\nNew body content from piped input.";
+        let selectors = vec![PadSelector::Path(vec![DisplayIndex::Regular(1)])];
+
+        let result = run_from_content(&mut store, Scope::Project, &selectors, raw_content).unwrap();
+
+        assert_eq!(result.affected_pads.len(), 1);
+        assert_eq!(
+            result.affected_pads[0].pad.metadata.title,
+            "New Title From Pipe"
+        );
+        assert_eq!(
+            result.affected_pads[0].pad.content,
+            "New Title From Pipe\n\nNew body content from piped input."
+        );
+    }
+
+    #[test]
+    fn run_from_content_updates_multiple_pads() {
+        let mut store = InMemoryStore::new();
+        create::run(&mut store, Scope::Project, "Pad A".into(), "".into(), None).unwrap();
+        create::run(&mut store, Scope::Project, "Pad B".into(), "".into(), None).unwrap();
+
+        let raw_content = "Shared New Title\n\nShared content for all selected pads.";
+        let selectors = vec![
+            PadSelector::Path(vec![DisplayIndex::Regular(1)]),
+            PadSelector::Path(vec![DisplayIndex::Regular(2)]),
+        ];
+
+        let result = run_from_content(&mut store, Scope::Project, &selectors, raw_content).unwrap();
+
+        assert_eq!(result.affected_pads.len(), 2);
+        for dp in &result.affected_pads {
+            assert_eq!(dp.pad.metadata.title, "Shared New Title");
+            assert_eq!(
+                dp.pad.content,
+                "Shared New Title\n\nShared content for all selected pads."
+            );
+        }
+    }
+
+    #[test]
+    fn run_from_content_empty_content_fails() {
+        let mut store = InMemoryStore::new();
+        create::run(&mut store, Scope::Project, "Test".into(), "".into(), None).unwrap();
+
+        let raw_content = "   \n\n   "; // Only whitespace
+        let selectors = vec![PadSelector::Path(vec![DisplayIndex::Regular(1)])];
+
+        let result = run_from_content(&mut store, Scope::Project, &selectors, raw_content);
+
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("empty or invalid"));
+    }
+
+    #[test]
+    fn run_from_content_preserves_metadata() {
+        let mut store = InMemoryStore::new();
+        create::run(&mut store, Scope::Project, "Title".into(), "".into(), None).unwrap();
+
+        let pads_before = store.list_pads(Scope::Project).unwrap();
+        let original_id = pads_before[0].metadata.id;
+        let original_created_at = pads_before[0].metadata.created_at;
+
+        std::thread::sleep(std::time::Duration::from_millis(10));
+
+        let raw_content = "New Title\n\nNew content";
+        let selectors = vec![PadSelector::Path(vec![DisplayIndex::Regular(1)])];
+        run_from_content(&mut store, Scope::Project, &selectors, raw_content).unwrap();
+
+        let pads_after = store.list_pads(Scope::Project).unwrap();
+        // ID should NOT change
+        assert_eq!(pads_after[0].metadata.id, original_id);
+        // Created_at should NOT change
+        assert_eq!(pads_after[0].metadata.created_at, original_created_at);
+        // Updated_at SHOULD change
+        assert!(pads_after[0].metadata.updated_at > original_created_at);
+    }
+
+    #[test]
+    fn run_from_content_title_only() {
+        let mut store = InMemoryStore::new();
+        create::run(
+            &mut store,
+            Scope::Project,
+            "Original".into(),
+            "Original body".into(),
+            None,
+        )
+        .unwrap();
+
+        // Content with just a title, no body
+        let raw_content = "Title Only";
+        let selectors = vec![PadSelector::Path(vec![DisplayIndex::Regular(1)])];
+
+        let result = run_from_content(&mut store, Scope::Project, &selectors, raw_content).unwrap();
+
+        assert_eq!(result.affected_pads[0].pad.metadata.title, "Title Only");
+        assert_eq!(result.affected_pads[0].pad.content, "Title Only");
+    }
+
+    #[test]
+    fn run_from_content_nonexistent_pad_fails() {
+        let mut store = InMemoryStore::new();
+        create::run(&mut store, Scope::Project, "Test".into(), "".into(), None).unwrap();
+
+        let raw_content = "New Content\n\nBody";
+        let selectors = vec![PadSelector::Path(vec![DisplayIndex::Regular(99)])];
+
+        let result = run_from_content(&mut store, Scope::Project, &selectors, raw_content);
+        assert!(result.is_err());
     }
 }
