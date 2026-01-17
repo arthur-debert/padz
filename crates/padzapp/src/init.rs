@@ -121,6 +121,11 @@ pub fn find_project_root(cwd: &Path) -> Option<PathBuf> {
 ///   - If path ends with `.padz`, it's used as the data directory directly
 ///   - Otherwise, `.padz` is appended to the path
 ///
+/// # Environment Variables
+///
+/// * `PADZ_GLOBAL_DATA` - If set, overrides the default global data directory.
+///   This is primarily used for testing to isolate global state.
+///
 /// # Examples
 ///
 /// ```ignore
@@ -156,9 +161,17 @@ pub fn initialize(cwd: &Path, use_global: bool, data_override: Option<PathBuf>) 
             .unwrap_or_else(|| cwd.join(".padz")),
     };
 
-    let proj_dirs =
-        ProjectDirs::from("com", "padz", "padz").expect("Could not determine config dir");
-    let global_data_dir = proj_dirs.data_dir().to_path_buf();
+    // Determine global data directory:
+    // 1. Check PADZ_GLOBAL_DATA environment variable (primarily for testing)
+    // 2. Fall back to OS-appropriate data directory via directories crate
+    let global_data_dir = std::env::var("PADZ_GLOBAL_DATA")
+        .ok()
+        .map(PathBuf::from)
+        .unwrap_or_else(|| {
+            let proj_dirs =
+                ProjectDirs::from("com", "padz", "padz").expect("Could not determine config dir");
+            proj_dirs.data_dir().to_path_buf()
+        });
 
     let scope = if use_global {
         Scope::Global
