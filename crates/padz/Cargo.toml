@@ -4,8 +4,8 @@ version.workspace = true
 edition.workspace = true
 license.workspace = true
 repository.workspace = true
-description = "A fast, project-aware scratch pad for the command line"
-keywords = ["cli", "notes", "scratchpad", "productivity"]
+description = "An ergonomic, context-aware scratch pad for the terminal — a good Unix citizen"
+keywords = ["cli", "notes", "scratchpad", "productivity", "terminal"]
 categories = ["command-line-utilities"]
 readme = "README.md"
 

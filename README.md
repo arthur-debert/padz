@@ -1,6 +1,12 @@
 # padz
 
-A fast, project-aware scratch pad for the command line.
+A terminal app for creating and managing scratch notes that is a good Unix citizen, using your `$EDITOR` and keeping its data in plain text files.
+
+Designed for maximum ergonomics with a clever ID system for less typing, advanced completion for IDs and titles, batch editing, import/export, nested notes, soft delete, search, tags, and file type (txt, markdown) support.
+
+Context-aware: automatically separates global pads (in your data dir) from project pads (in Git repos), providing sensible project-related and general notes.
+
+Sports a smart-looking UI with dark/light mode awareness.
 
 ## Installation
 
@@ -68,12 +74,13 @@ Completions include:
 
 ## Features
 
-- Project-aware: pads are stored per-project by default
-- Global pads: use `-g` flag for cross-project notes
-- Pin important pads for quick access
-- Tags: organize pads with scoped tags
-- Full-text search across all pads
-- Dynamic shell completion with pad titles
+- **Unix-friendly**: uses your `$EDITOR`, stores data as plain text files
+- **Context-aware**: project pads (in Git repos) and global pads (in data dir)
+- **Ergonomic**: clever ID system, advanced completion for IDs and titles
+- **Organized**: tags, pinning, nested notes, soft delete
+- **Powerful**: full-text search, batch editing, import/export
+- **File types**: supports txt and markdown
+- **Smart UI**: dark/light mode awareness
 
 ## License
 

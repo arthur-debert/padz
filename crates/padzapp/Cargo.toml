@@ -4,8 +4,8 @@ version.workspace = true
 edition.workspace = true
 license.workspace = true
 repository.workspace = true
-description = "A fast, project-aware scratch pad library"
-keywords = ["notes", "scratchpad", "productivity"]
+description = "An ergonomic, context-aware scratch pad library with plain text storage"
+keywords = ["notes", "scratchpad", "productivity", "plaintext"]
 categories = ["development-tools"]
 readme = "README.md"
 
