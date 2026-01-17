@@ -33,8 +33,10 @@
 //! if filter.matches(&pad.metadata) { ... }
 //! ```
 
+mod filter;
 mod spec;
 mod value;
 
+pub use filter::{AttrFilter, FilterOp};
 pub use spec::{filterable_attrs, get_spec, AttributeKind, AttributeSpec, ATTRIBUTES};
 pub use value::{AttrSideEffect, AttrValue};
