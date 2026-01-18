@@ -40,12 +40,12 @@
 //! - `print_*()`: Output formatting functions
 
 use super::render::{
-    print_messages, render_full_pads, render_modification_result, render_pad_list,
-    render_pad_list_deleted, render_text_list,
+    build_modification_result_value, print_messages, render_full_pads, render_modification_result,
+    render_pad_list, render_pad_list_deleted, render_text_list,
 };
 use super::setup::{
-    parse_cli, Cli, Commands, CompletionShell, CoreCommands, DataCommands, MiscCommands,
-    PadCommands, TagsCommands,
+    build_command, parse_cli, Cli, Commands, CompletionShell, CoreCommands, DataCommands,
+    MiscCommands, PadCommands, TagsCommands,
 };
 use padzapp::api::{ConfigAction, PadFilter, PadStatusFilter, PadzApi, TodoStatus};
 use padzapp::clipboard::{copy_to_clipboard, format_for_clipboard, get_from_clipboard};
@@ -55,9 +55,13 @@ use padzapp::init::initialize;
 use padzapp::model::Scope;
 use padzapp::model::{extract_title_and_body, parse_pad_content};
 use padzapp::store::fs::FileStore;
+use standout::cli::handler::RunResult;
+use standout::cli::{LocalApp, Output};
 use standout::OutputMode;
+use std::cell::RefCell;
 use std::io::{IsTerminal, Read};
 use std::path::{Path, PathBuf};
+use std::rc::Rc;
 
 /// Helper to read a pad file and copy its content to the system clipboard.
 /// Silently ignores errors (clipboard operations are best-effort).
@@ -88,7 +92,93 @@ pub fn run() -> Result<()> {
         return handle_completions(*shell);
     }
 
-    let mut ctx = init_context(&cli, output_mode)?;
+    let ctx = init_context(&cli, output_mode)?;
+
+    // Wrap API in Rc<RefCell> for sharing between LocalApp handlers and fallback code
+    let api = Rc::new(RefCell::new(ctx.api));
+    let scope = ctx.scope;
+    let output_mode_val = ctx.output_mode;
+    let import_extensions = ctx.import_extensions;
+
+    // Scope LocalApp so it's dropped before fallback unwrap
+    // This ensures the Rc clones captured by closures are released
+    {
+        let api_for_complete = api.clone();
+
+        let mut local_app = LocalApp::builder()
+            .command(
+                "complete",
+                move |matches, cmd_ctx| {
+                    let indexes: Vec<String> = matches
+                        .get_many::<String>("indexes")
+                        .map(|v| v.cloned().collect())
+                        .unwrap_or_default();
+
+                    let mut api_ref = api_for_complete.borrow_mut();
+                    let result = api_ref
+                        .complete_pads(scope, &indexes)
+                        .map_err(|e| anyhow::anyhow!("{}", e))?;
+
+                    // Build template data appropriate for the output mode
+                    let data = build_modification_result_value(
+                        "Completed",
+                        &result.affected_pads,
+                        &result.messages,
+                        cmd_ctx.output_mode,
+                    );
+
+                    Ok(Output::Render(data))
+                },
+                // Inline template - can't use {% include %} with LocalApp's inline templates
+                // This is a simplified version for the POC
+                r#"{%- if start_message -%}
+[info]{{ start_message }}[/info]
+{% endif -%}
+{%- for pad in pads -%}
+{{ pad.left_pin | col(2) }}{{ pad.status_icon | col(2) }}{{ pad.index | col(4) }}{{ pad.title | col(pad.title_width) }}{{ pad.right_pin | col(2) }}{{ pad.time_ago | col(14, align="right") }}
+{% endfor -%}
+{%- for msg in trailing_messages -%}
+{{ msg.content | style_as(msg.style) }}
+{% endfor -%}"#,
+            )
+            .build()
+            .map_err(|e| padzapp::error::PadzError::Api(e.to_string()))?;
+
+        // Try LocalApp dispatch first
+        let dispatch_result = local_app.dispatch_from(build_command(), std::env::args());
+
+        match dispatch_result {
+            RunResult::Handled(output) => {
+                if !output.is_empty() {
+                    println!("{}", output);
+                }
+                return Ok(());
+            }
+            RunResult::Binary(bytes, filename) => {
+                std::fs::write(&filename, &bytes)?;
+                eprintln!("Wrote {} bytes to {}", bytes.len(), filename);
+                return Ok(());
+            }
+            RunResult::NoMatch(_) => {
+                // Fall through to fallback dispatch
+            }
+        }
+    } // LocalApp and api_for_complete dropped here
+
+    // Fallback dispatch for non-migrated commands
+    // Now safe to unwrap the Rc since LocalApp released its clone
+    let mut ctx = AppContext {
+        api: Rc::try_unwrap(api)
+            .map_err(|_| {
+                padzapp::error::PadzError::Api(
+                    "BUG: API Rc should have single owner after LocalApp drop".to_string(),
+                )
+            })?
+            .into_inner(),
+        scope,
+        import_extensions,
+        output_mode: output_mode_val,
+    };
 
     match cli.command {
         Some(Commands::Core(cmd)) => match cmd {

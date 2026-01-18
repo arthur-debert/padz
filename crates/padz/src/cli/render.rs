@@ -39,7 +39,7 @@ use standout::{embed_styles, truncate_to_width, OutputMode, Renderer, Stylesheet
 /// All templates embedded at compile time.
 /// Main templates are registered by name (e.g., "list"), partials include the extension
 /// for {% include %} directives (e.g., "_pad_line.jinja").
-const TEMPLATES: &[(&str, &str)] = &[
+pub const TEMPLATES: &[(&str, &str)] = &[
     // Main templates (referenced by name in render calls)
     ("list", include_str!("templates/list.jinja")),
     ("full_pad", include_str!("templates/full_pad.jinja")),
@@ -793,6 +793,135 @@ pub fn render_modification_result(
 
     render_template("modification_result", &data, output_mode)
         .unwrap_or_else(|e| format!("Render error: {}\n", e))
+}
+
+/// Builds modification result data as serde_json::Value for LocalApp handlers.
+///
+/// This function creates the appropriate data structure based on output mode:
+/// - For structured modes (JSON, YAML): Clean API-friendly format with just action, pads, messages
+/// - For terminal modes: Full template-ready format with column widths and transformed pad data
+///
+/// Used by LocalApp handlers that need to return data for standout's rendering pipeline.
+pub fn build_modification_result_value(
+    action_verb: &str,
+    pads: &[DisplayPad],
+    trailing_messages: &[CmdMessage],
+    output_mode: OutputMode,
+) -> serde_json::Value {
+    use serde_json::json;
+
+    // For structured modes, return clean API format
+    if output_mode.is_structured() {
+        return json!({
+            "action": action_verb,
+            "pads": pads,
+            "messages": trailing_messages,
+        });
+    }
+
+    // For terminal modes, build full template data
+    let count = pads.len();
+    let start_message = if count == 0 {
+        String::new()
+    } else {
+        let pad_word = if count == 1 { "pad" } else { "pads" };
+        format!("{} {} {}...", action_verb, count, pad_word)
+    };
+
+    // Convert pads to PadLineData
+    let pad_lines: Vec<serde_json::Value> = pads
+        .iter()
+        .map(|dp| {
+            let is_pinned_section = matches!(dp.index, DisplayIndex::Pinned(_));
+            let is_deleted = matches!(dp.index, DisplayIndex::Deleted(_));
+            let show_right_pin = dp.pad.metadata.is_pinned && !is_pinned_section;
+
+            let local_idx_str = match &dp.index {
+                DisplayIndex::Pinned(n) => format!("p{}", n),
+                DisplayIndex::Regular(n) => format!("{:2}", n),
+                DisplayIndex::Deleted(n) => format!("d{}", n),
+            };
+            let full_idx_str = format!("{}.", local_idx_str);
+
+            let status_icon = match dp.pad.metadata.status {
+                TodoStatus::Planned => STATUS_PLANNED,
+                TodoStatus::InProgress => STATUS_IN_PROGRESS,
+                TodoStatus::Done => STATUS_DONE,
+            };
+
+            let left_pin = if is_pinned_section {
+                PIN_MARKER.to_string()
+            } else {
+                String::new()
+            };
+            let right_pin = if show_right_pin {
+                PIN_MARKER.to_string()
+            } else {
+                String::new()
+            };
+
+            // Calculate tags display width
+            let tags_width = if dp.pad.metadata.tags.is_empty() {
+                0
+            } else {
+                use unicode_width::UnicodeWidthStr;
+                let tag_chars: usize = dp.pad.metadata.tags.iter().map(|t| t.width()).sum();
+                let spaces = dp.pad.metadata.tags.len().saturating_sub(1);
+                tag_chars + spaces + 1
+            };
+
+            let fixed_columns = COL_LEFT_PIN + COL_STATUS + COL_INDEX + COL_RIGHT_PIN + COL_TIME;
+            let title_width = LINE_WIDTH.saturating_sub(fixed_columns + COL_LEFT_PIN + tags_width);
+
+            json!({
+                "indent": "",
+                "left_pin": left_pin,
+                "status_icon": status_icon,
+                "index": full_idx_str,
+                "title": dp.pad.metadata.title,
+                "title_width": title_width,
+                "tags": dp.pad.metadata.tags,
+                "right_pin": right_pin,
+                "time_ago": format_time_ago(dp.pad.metadata.created_at),
+                "is_pinned_section": is_pinned_section,
+                "is_deleted": is_deleted,
+                "is_separator": false,
+                "matches": [],
+                "more_matches_count": 0,
+                "peek": serde_json::Value::Null,
+            })
+        })
+        .collect();
+
+    // Convert trailing messages
+    let trailing_data: Vec<serde_json::Value> = trailing_messages
+        .iter()
+        .map(|msg| {
+            let style = match msg.level {
+                MessageLevel::Info => "info",
+                MessageLevel::Success => "success",
+                MessageLevel::Warning => "warning",
+                MessageLevel::Error => "error",
+            };
+            json!({
+                "content": msg.content,
+                "style": style,
+            })
+        })
+        .collect();
+
+    json!({
+        "start_message": start_message,
+        "pads": pad_lines,
+        "trailing_messages": trailing_data,
+        "peek": false,
+        "pin_marker": PIN_MARKER,
+        "col_left_pin": COL_LEFT_PIN,
+        "col_status": COL_STATUS,
+        "col_index": COL_INDEX,
+        "col_right_pin": COL_RIGHT_PIN,
+        "col_time": COL_TIME,
+    })
 }
 
 fn format_time_ago(timestamp: DateTime<Utc>) -> String {
