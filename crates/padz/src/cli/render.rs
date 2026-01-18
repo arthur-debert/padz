@@ -36,6 +36,35 @@ use padzapp::peek::{format_as_peek, PeekResult};
 use serde::Serialize;
 use standout::{embed_styles, truncate_to_width, OutputMode, Renderer, StylesheetRegistry};
 
+/// All templates embedded at compile time.
+/// Main templates are registered by name (e.g., "list"), partials include the extension
+/// for {% include %} directives (e.g., "_pad_line.jinja").
+const TEMPLATES: &[(&str, &str)] = &[
+    // Main templates (referenced by name in render calls)
+    ("list", include_str!("templates/list.jinja")),
+    ("full_pad", include_str!("templates/full_pad.jinja")),
+    ("text_list", include_str!("templates/text_list.jinja")),
+    ("messages", include_str!("templates/messages.jinja")),
+    (
+        "modification_result",
+        include_str!("templates/modification_result.jinja"),
+    ),
+    // Partial templates (referenced with extension in {% include %} directives)
+    ("_pad_line.jinja", include_str!("templates/_pad_line.jinja")),
+    (
+        "_match_lines.jinja",
+        include_str!("templates/_match_lines.jinja"),
+    ),
+    (
+        "_peek_content.jinja",
+        include_str!("templates/_peek_content.jinja"),
+    ),
+    (
+        "_deleted_help.jinja",
+        include_str!("templates/_deleted_help.jinja"),
+    ),
+];
+
 /// Helper to create a renderer with all templates loaded for a given output mode.
 fn create_renderer(mode: OutputMode) -> Renderer {
     let styles = embed_styles!("src/styles");
@@ -44,46 +73,9 @@ fn create_renderer(mode: OutputMode) -> Renderer {
 
     let mut renderer = Renderer::with_output(theme, mode).expect("Failed to create Renderer");
 
-    // Add all templates including includes
-    renderer
-        .add_template("list", include_str!("templates/list.jinja"))
-        .unwrap();
-    renderer
-        .add_template("full_pad", include_str!("templates/full_pad.jinja"))
-        .unwrap();
-    renderer
-        .add_template("text_list", include_str!("templates/text_list.jinja"))
-        .unwrap();
-    renderer
-        .add_template("messages", include_str!("templates/messages.jinja"))
-        .unwrap();
-    renderer
-        .add_template(
-            "modification_result",
-            include_str!("templates/modification_result.jinja"),
-        )
-        .unwrap();
-    renderer
-        .add_template("_pad_line.jinja", include_str!("templates/_pad_line.jinja"))
-        .unwrap();
-    renderer
-        .add_template(
-            "_match_lines.jinja",
-            include_str!("templates/_match_lines.jinja"),
-        )
-        .unwrap();
-    renderer
-        .add_template(
-            "_peek_content.jinja",
-            include_str!("templates/_peek_content.jinja"),
-        )
-        .unwrap();
-    renderer
-        .add_template(
-            "_deleted_help.jinja",
-            include_str!("templates/_deleted_help.jinja"),
-        )
-        .unwrap();
+    for (name, content) in TEMPLATES {
+        renderer.add_template(name, content).unwrap();
+    }
 
     renderer
 }
