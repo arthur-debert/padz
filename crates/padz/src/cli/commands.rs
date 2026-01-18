@@ -47,7 +47,6 @@ use super::setup::{
     parse_cli, Cli, Commands, CompletionShell, CoreCommands, DataCommands, MiscCommands,
     PadCommands, TagsCommands,
 };
-use outstanding::OutputMode;
 use padzapp::api::{ConfigAction, PadFilter, PadStatusFilter, PadzApi, TodoStatus};
 use padzapp::clipboard::{copy_to_clipboard, format_for_clipboard, get_from_clipboard};
 use padzapp::editor::open_in_editor;
@@ -56,6 +55,7 @@ use padzapp::init::initialize;
 use padzapp::model::Scope;
 use padzapp::model::{extract_title_and_body, parse_pad_content};
 use padzapp::store::fs::FileStore;
+use standout::OutputMode;
 use std::io::{IsTerminal, Read};
 use std::path::{Path, PathBuf};
 
@@ -78,7 +78,7 @@ struct AppContext {
 }
 
 pub fn run() -> Result<()> {
-    // parse_cli() uses outstanding-clap's Outstanding which handles
+    // parse_cli() uses standout's App which handles
     // help display (including topics) and errors automatically.
     // It also extracts the output mode from the --output flag.
     let (cli, output_mode) = parse_cli();
@@ -304,7 +304,7 @@ fn handle_list(
 
     let result = ctx.api.get_pads(ctx.scope, filter)?;
 
-    // Use outstanding-based rendering
+    // Use standout-based rendering
     let output = if deleted {
         render_pad_list_deleted(&result.listed_pads, peek, ctx.output_mode)
     } else {

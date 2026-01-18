@@ -1,5 +1,5 @@
-{#- Single pad line rendering -#}
-{#- Expects: pad (PadLineData), pin_marker, peek (bool), col_* (column widths) -#}
+{#- Single pad line rendering using Tabular -#}
+{#- Expects: pad (PadLineData), peek (bool), col_* (column widths) -#}
 
 {#- Determine index style based on section type -#}
 {%- set index_style = "list-index" -%}
@@ -17,13 +17,31 @@
   {%- set title_style = "title" -%}
 {%- endif -%}
 
-{#- Render the pad line using col() filter for layout -#}
-{#- Layout: indent | left_pin(2) | status(2) | index(4) | title(fill) | tags | right_pin(2) | time(14) -#}
+{#- Build tags string -#}
+{%- set tags_str = "" -%}
+{%- for tag in pad.tags -%}
+  {%- set tags_str = tags_str ~ " [tag]" ~ tag ~ "[/tag]" -%}
+{%- endfor -%}
+
+{#- Define tabular layout with styles at column level -#}
+{%- set t = tabular([
+    {"name": "left_pin", "width": col_left_pin, "style": "pinned"},
+    {"name": "status", "width": col_status, "style": "status-icon"},
+    {"name": "index", "width": col_index, "style": index_style},
+    {"name": "title", "width": pad.title_width, "overflow": "truncate", "style": title_style},
+    {"name": "right_pin", "width": col_right_pin, "style": "pinned"},
+    {"name": "time", "width": col_time, "align": "right", "style": "time"}
+]) -%}
+
+{#- Render the row with indent prefix -#}
+{#- Note: tags are appended after title column since they have variable count -#}
 {{- pad.indent -}}
-{{- pad.left_pin | col(col_left_pin) | style("pinned") -}}
-{{- pad.status_icon | col(col_status) | style("status-icon") -}}
-{{- pad.index | col(col_index) | style(index_style) -}}
-{{- pad.title | col(pad.title_width) | style(title_style) -}}
-{% if pad.tags %} {% endif %}{%- for tag in pad.tags -%}{{ tag | style("tag") }}{% if not loop.last %} {% endif %}{%- endfor -%}
-{{- pad.right_pin | col(col_right_pin) | style("pinned") -}}
-{{- pad.time_ago | col(col_time, align='right') | style("time") | nl -}}
+{{- t.row([
+    pad.left_pin,
+    pad.status_icon,
+    pad.index,
+    pad.title ~ tags_str,
+    pad.right_pin,
+    pad.time_ago
+]) -}}
+{{ "" | nl -}}

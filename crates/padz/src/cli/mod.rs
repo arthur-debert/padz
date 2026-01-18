@@ -54,7 +54,7 @@
 //! ## Module Structure
 //!
 //! - `commands`: Per-command handlers that call API and format output
-//! - `render`: Output formatting using outstanding's `OutstandingApp` (styles and templates embedded at compile time)
+//! - `render`: Output formatting using standout's `App` (styles and templates embedded at compile time)
 //! - `setup`: Argument parsing via clap, help text
 
 mod commands;

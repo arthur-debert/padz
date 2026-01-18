@@ -1,19 +1,19 @@
 {%- if empty -%}
-{{- "No pads yet, create one with `padz create`" | style("empty-message") | nl -}}
+[empty-message]No pads yet, create one with `padz create`[/empty-message]{{ "" | nl -}}
 {{ help_text }}
 {%- else -%}
 {%- for pad in pads -%}
 {%- if pad.is_separator -%}
 {{- "" | nl -}}
 {%- else -%}
-{%- include "_pad_line" -%}
-{%- include "_match_lines" -%}
+{%- include "_pad_line.jinja" -%}
+{%- include "_match_lines.jinja" -%}
 {%- if pad.peek -%}
-{%- include "_peek_content" -%}
+{%- include "_peek_content.jinja" -%}
 {%- endif -%}
 {%- endif -%}
 {%- endfor -%}
 {%- endif -%}
 {%- if deleted_help -%}
-{%- include "_deleted_help" -%}
+{%- include "_deleted_help.jinja" -%}
 {%- endif -%}

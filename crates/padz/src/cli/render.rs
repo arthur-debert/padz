@@ -1,6 +1,6 @@
 //! # Rendering Module
 //!
-//! This module provides styled terminal output using the `outstanding` crate. The core padzapp API
+//! This module provides styled terminal output using the `standout` crate. The core padzapp API
 //! returns regular result data objects, and the CLI layer handles rendering.
 //!
 //! Rendering is template-based using minijinja templates, with stylesheets controlling formatted
@@ -9,7 +9,7 @@
 //!
 //! ## Architecture
 //!
-//! Uses `OutstandingApp` for all rendering:
+//! Uses standout's `App` for all rendering:
 //! - Templates and styles are embedded at compile time via `embed_*!` macros
 //! - Debug builds hot-reload from disk; release uses embedded content
 //! - Structured output modes (JSON, YAML, XML, CSV) are handled automatically
@@ -17,7 +17,7 @@
 //!
 //! ## Table Layout
 //!
-//! The list view uses outstanding's `col()` filter for declarative column layout. Each row has:
+//! The list view uses standout's `col()` filter for declarative column layout. Each row has:
 //! - `left_pin` (2 chars): Pin marker or empty
 //! - `status_icon` (2 chars): Todo status indicator
 //! - `index` (4 chars): Display index (p1., 1., d1.)
@@ -30,37 +30,87 @@
 //!
 use super::setup::get_grouped_help;
 use chrono::{DateTime, Utc};
-use once_cell::sync::Lazy;
-use outstanding::{
-    embed_styles, embed_templates, truncate_to_width, OutputMode, OutstandingApp, RenderSetup,
-};
 use padzapp::api::{CmdMessage, MessageLevel, TodoStatus};
 use padzapp::index::{DisplayIndex, DisplayPad};
 use padzapp::peek::{format_as_peek, PeekResult};
 use serde::Serialize;
+use standout::{embed_styles, truncate_to_width, OutputMode, Renderer, StylesheetRegistry};
 
-/// The configured Outstanding application for all rendering.
-///
-/// This static holds the pre-configured renderer with:
-/// - Embedded templates (with hot-reload in debug mode)
-/// - Embedded styles with the "default" theme
-/// - All templates pre-loaded for `{% include %}` support
-///
-/// Uses `&self` rendering - no mutex or interior mutability needed.
-static APP: Lazy<OutstandingApp> = Lazy::new(|| {
-    RenderSetup::new()
-        .templates(embed_templates!("src/cli/templates"))
-        .styles(embed_styles!("src/styles"))
-        .default_theme("default")
-        .build()
-        .expect("Failed to build Outstanding app - check templates and styles")
-});
+/// Helper to create a renderer with all templates loaded for a given output mode.
+fn create_renderer(mode: OutputMode) -> Renderer {
+    let styles = embed_styles!("src/styles");
+    let mut registry: StylesheetRegistry = styles.into();
+    let theme = registry.get("default").expect("default theme must exist");
+
+    let mut renderer = Renderer::with_output(theme, mode).expect("Failed to create Renderer");
+
+    // Add all templates including includes
+    renderer
+        .add_template("list", include_str!("templates/list.jinja"))
+        .unwrap();
+    renderer
+        .add_template("full_pad", include_str!("templates/full_pad.jinja"))
+        .unwrap();
+    renderer
+        .add_template("text_list", include_str!("templates/text_list.jinja"))
+        .unwrap();
+    renderer
+        .add_template("messages", include_str!("templates/messages.jinja"))
+        .unwrap();
+    renderer
+        .add_template(
+            "modification_result",
+            include_str!("templates/modification_result.jinja"),
+        )
+        .unwrap();
+    renderer
+        .add_template("_pad_line.jinja", include_str!("templates/_pad_line.jinja"))
+        .unwrap();
+    renderer
+        .add_template(
+            "_match_lines.jinja",
+            include_str!("templates/_match_lines.jinja"),
+        )
+        .unwrap();
+    renderer
+        .add_template(
+            "_peek_content.jinja",
+            include_str!("templates/_peek_content.jinja"),
+        )
+        .unwrap();
+    renderer
+        .add_template(
+            "_deleted_help.jinja",
+            include_str!("templates/_deleted_help.jinja"),
+        )
+        .unwrap();
+
+    renderer
+}
+
+/// Render a template with the given data and output mode.
+/// For structured modes (JSON, YAML), serializes directly without template processing.
+fn render_template<T: Serialize>(name: &str, data: &T, mode: OutputMode) -> Result<String, String> {
+    // Handle structured modes by direct serialization
+    if mode.is_structured() {
+        return match mode {
+            OutputMode::Json => serde_json::to_string_pretty(data).map_err(|e| e.to_string()),
+            OutputMode::Yaml => serde_yaml::to_string(data).map_err(|e| e.to_string()),
+            _ => Err("Unsupported structured mode".to_string()),
+        };
+    }
+
+    let mut renderer = create_renderer(mode);
+    renderer.render(name, data).map_err(|e| e.to_string())
+}
+
+// Re-export serde for serialization in structured modes
 
 /// Configuration for list rendering.
 pub const LINE_WIDTH: usize = 100;
 pub const PIN_MARKER: &str = "⚲";
 
-/// Column widths for list layout (used by outstanding's `col()` filter)
+/// Column widths for list layout (used by standout's `col()` filter)
 pub const COL_LEFT_PIN: usize = 2; // Pin marker or empty ("⚲ " or "  ")
 pub const COL_STATUS: usize = 2; // Status icon + space
 pub const COL_INDEX: usize = 4; // "p1.", " 1.", "d1."
@@ -87,7 +137,7 @@ struct MatchLineData {
 /// Semantic pad data for template rendering.
 ///
 /// Contains raw values and semantic flags for template-driven styling.
-/// Layout is handled declaratively in templates using outstanding's `col()` filter.
+/// Layout is handled declaratively in templates using standout's `col()` filter.
 ///
 /// ## Column Layout
 ///
@@ -131,7 +181,7 @@ struct ListData {
     help_text: String,
     deleted_help: bool,
     peek: bool,
-    // Column widths for outstanding's `col()` filter
+    // Column widths for standout's `col()` filter
     col_left_pin: usize,
     col_status: usize,
     col_index: usize,
@@ -202,8 +252,7 @@ fn render_pad_list_internal(
         let json_data = JsonPadList {
             pads: pads.to_vec(),
         };
-        return APP
-            .render("list", &json_data, mode)
+        return render_template("list", &json_data, mode)
             .unwrap_or_else(|_| "{\"pads\":[]}".to_string());
     }
 
@@ -222,8 +271,7 @@ fn render_pad_list_internal(
     };
 
     if pads.is_empty() {
-        return APP
-            .render("list", &empty_data, mode)
+        return render_template("list", &empty_data, mode)
             .unwrap_or_else(|_| "No pads found.\n".to_string());
     }
 
@@ -443,8 +491,7 @@ fn render_pad_list_internal(
         col_time: COL_TIME,
     };
 
-    APP.render("list", &data, mode)
-        .unwrap_or_else(|e| format!("Render error: {}\n", e))
+    render_template("list", &data, mode).unwrap_or_else(|e| format!("Render error: {}\n", e))
 }
 
 fn truncate_match_segments(
@@ -492,8 +539,7 @@ fn render_full_pads_internal(pads: &[DisplayPad], output_mode: Option<OutputMode
         let json_data = JsonPadList {
             pads: pads.to_vec(),
         };
-        return APP
-            .render("full_pad", &json_data, mode)
+        return render_template("full_pad", &json_data, mode)
             .unwrap_or_else(|_| "{\"pads\":[]}".to_string());
     }
 
@@ -515,8 +561,7 @@ fn render_full_pads_internal(pads: &[DisplayPad], output_mode: Option<OutputMode
 
     let data = FullPadData { pads: entries };
 
-    APP.render("full_pad", &data, mode)
-        .unwrap_or_else(|e| format!("Render error: {}\n", e))
+    render_template("full_pad", &data, mode).unwrap_or_else(|e| format!("Render error: {}\n", e))
 }
 
 pub fn render_text_list(lines: &[String], empty_message: &str, output_mode: OutputMode) -> String {
@@ -535,9 +580,8 @@ fn render_text_list_internal(
         empty_message: empty_message.to_string(),
     };
 
-    // OutstandingApp handles structured modes (JSON, YAML, etc.) automatically
-    APP.render("text_list", &data, mode)
-        .unwrap_or_else(|_| format!("{}\n", empty_message))
+    // Standout's App handles structured modes (JSON, YAML, etc.) automatically
+    render_template("text_list", &data, mode).unwrap_or_else(|_| format!("{}\n", empty_message))
 }
 
 /// JSON-serializable wrapper for command messages.
@@ -559,8 +603,7 @@ pub fn render_messages(messages: &[CmdMessage], output_mode: OutputMode) -> Stri
         let json_data = JsonMessages {
             messages: messages.to_vec(),
         };
-        return APP
-            .render("messages", &json_data, output_mode)
+        return render_template("messages", &json_data, output_mode)
             .unwrap_or_else(|_| "{}".to_string());
     }
 
@@ -585,13 +628,12 @@ pub fn render_messages(messages: &[CmdMessage], output_mode: OutputMode) -> Stri
         messages: message_data,
     };
 
-    APP.render("messages", &data, output_mode)
-        .unwrap_or_else(|_| {
-            messages
-                .iter()
-                .map(|m| format!("{}\n", m.content))
-                .collect()
-        })
+    render_template("messages", &data, output_mode).unwrap_or_else(|_| {
+        messages
+            .iter()
+            .map(|m| format!("{}\n", m.content))
+            .collect()
+    })
 }
 
 /// Prints command messages to stdout using the template system.
@@ -611,7 +653,7 @@ struct ModificationResultData {
     trailing_messages: Vec<MessageData>,
     peek: bool,
     pin_marker: String,
-    // Column widths for outstanding's `col()` filter
+    // Column widths for standout's `col()` filter
     col_left_pin: usize,
     col_status: usize,
     col_index: usize,
@@ -644,8 +686,7 @@ pub fn render_modification_result(
             pads,
             messages: trailing_messages,
         };
-        return APP
-            .render("modification_result", &json_data, output_mode)
+        return render_template("modification_result", &json_data, output_mode)
             .unwrap_or_else(|_| "{}".to_string());
     }
 
@@ -758,7 +799,7 @@ pub fn render_modification_result(
         col_time: COL_TIME,
     };
 
-    APP.render("modification_result", &data, output_mode)
+    render_template("modification_result", &data, output_mode)
         .unwrap_or_else(|e| format!("Render error: {}\n", e))
 }
 
@@ -815,7 +856,11 @@ mod tests {
     fn test_render_empty_list() {
         let output = render_pad_list_internal(&[], Some(OutputMode::Text), false, false);
         // Should show the "no pads yet" message with help text
-        assert!(output.contains("No pads yet, create one with `padz create`"));
+        assert!(
+            output.contains("No pads yet, create one with `padz create`"),
+            "Expected 'No pads yet' message, got: {:?}",
+            output
+        );
     }
 
     #[test]
