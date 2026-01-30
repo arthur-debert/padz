@@ -57,7 +57,7 @@ use padzapp::model::{extract_title_and_body, parse_pad_content};
 use padzapp::store::fs::FileStore;
 use standout::cli::handler::RunResult;
 use standout::cli::{LocalApp, Output};
-use standout::OutputMode;
+use standout::{embed_styles, embed_templates, OutputMode};
 use std::cell::RefCell;
 use std::io::{IsTerminal, Read};
 use std::path::{Path, PathBuf};
@@ -123,6 +123,7 @@ pub fn run() -> Result<()> {
         let api_for_move = api.clone();
         let api_for_add_tag = api.clone();
         let api_for_remove_tag = api.clone();
+        let api_for_view = api.clone();
         let api_for_edit = api.clone();
         let api_for_open = api.clone();
         let api_for_path = api.clone();
@@ -139,6 +140,9 @@ pub fn run() -> Result<()> {
         let import_extensions_clone = import_extensions.clone();
 
         let local_app = LocalApp::builder()
+            .templates(embed_templates!("src/cli/templates"))
+            .styles(embed_styles!("src/styles"))
+            .default_theme("default")
             .command(
                 "complete",
                 move |matches, _cmd_ctx| {
@@ -797,6 +801,66 @@ pub fn run() -> Result<()> {
                 r#"{%- for msg in messages -%}
 {{ msg.content | style_as(msg.style) }}
 {% endfor -%}"#,
+            )
+            .map_err(|e| padzapp::error::PadzError::Api(e.to_string()))?
+            // --- view command ---
+            .command(
+                "view",
+                move |matches, _cmd_ctx| {
+                    let indexes: Vec<String> = matches
+                        .get_many::<String>("indexes")
+                        .map(|v| v.cloned().collect())
+                        .unwrap_or_default();
+                    let peek = matches.get_flag("peek");
+
+                    let api_ref = api_for_view.borrow();
+                    let result = api_ref
+                        .view_pads(scope, &indexes)
+                        .map_err(|e| anyhow::anyhow!("{}", e))?;
+
+                    // Build template data
+                    use padzapp::index::DisplayIndex;
+                    let pads: Vec<serde_json::Value> = result
+                        .listed_pads
+                        .iter()
+                        .map(|dp| {
+                            let is_pinned = matches!(dp.index, DisplayIndex::Pinned(_));
+                            let is_deleted = matches!(dp.index, DisplayIndex::Deleted(_));
+                            serde_json::json!({
+                                "index": format!("{}", dp.index),
+                                "title": dp.pad.metadata.title,
+                                "content": dp.pad.content,
+                                "is_pinned": is_pinned,
+                                "is_deleted": is_deleted,
+                            })
+                        })
+                        .collect();
+
+                    // Copy viewed pads to clipboard (side effect)
+                    if !result.listed_pads.is_empty() {
+                        let clipboard_text: String = result
+                            .listed_pads
+                            .iter()
+                            .map(|dp| dp.pad.content.clone())
+                            .collect::<Vec<_>>()
+                            .join("\n\n---\n\n");
+                        let _ = copy_to_clipboard(&clipboard_text);
+                    }
+
+                    // If peek mode, return list-style data instead
+                    if peek {
+                        // For peek, we use a simpler format - just show titles
+                        return Ok(Output::Render(serde_json::json!({
+                            "pads": pads,
+                            "peek": true,
+                        })));
+                    }
+
+                    Ok(Output::Render(serde_json::json!({
+                        "pads": pads,
+                    })))
+                },
+                "full_pad.jinja", // Use registered template
             )
             .map_err(|e| padzapp::error::PadzError::Api(e.to_string()))?
             .build()
