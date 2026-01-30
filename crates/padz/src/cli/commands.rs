@@ -100,10 +100,29 @@ pub fn run() -> Result<()> {
     let output_mode_val = ctx.output_mode;
     let import_extensions = ctx.import_extensions;
 
+    // Shared inline template for modification results
+    const MODIFICATION_TEMPLATE: &str = r#"{%- if start_message -%}
+[info]{{ start_message }}[/info]
+{% endif -%}
+{%- for pad in pads -%}
+{{ pad.left_pin | col(2) }}{{ pad.status_icon | col(2) }}{{ pad.index | col(4) }}{{ pad.title | col(pad.title_width) }}{{ pad.right_pin | col(2) }}{{ pad.time_ago | col(14, align="right") }}
+{% endfor -%}
+{%- for msg in trailing_messages -%}
+{{ msg.content | style_as(msg.style) }}
+{% endfor -%}"#;
+
     // Scope LocalApp so it's dropped before fallback unwrap
     // This ensures the Rc clones captured by closures are released
     {
         let api_for_complete = api.clone();
+        let api_for_reopen = api.clone();
+        let api_for_pin = api.clone();
+        let api_for_unpin = api.clone();
+        let api_for_delete = api.clone();
+        let api_for_restore = api.clone();
+        let api_for_move = api.clone();
+        let api_for_add_tag = api.clone();
+        let api_for_remove_tag = api.clone();
 
         let local_app = LocalApp::builder()
             .command(
@@ -119,8 +138,6 @@ pub fn run() -> Result<()> {
                         .complete_pads(scope, &indexes)
                         .map_err(|e| anyhow::anyhow!("{}", e))?;
 
-                    // Build template data - always use Term format since standout handles
-                    // structured output (JSON/YAML) by serializing the data directly
                     let data = build_modification_result_value(
                         "Completed",
                         &result.affected_pads,
@@ -130,17 +147,275 @@ pub fn run() -> Result<()> {
 
                     Ok(Output::Render(data))
                 },
-                // Inline template - can't use {% include %} with LocalApp's inline templates
-                // This is a simplified version for the POC
-                r#"{%- if start_message -%}
-[info]{{ start_message }}[/info]
-{% endif -%}
-{%- for pad in pads -%}
-{{ pad.left_pin | col(2) }}{{ pad.status_icon | col(2) }}{{ pad.index | col(4) }}{{ pad.title | col(pad.title_width) }}{{ pad.right_pin | col(2) }}{{ pad.time_ago | col(14, align="right") }}
-{% endfor -%}
-{%- for msg in trailing_messages -%}
-{{ msg.content | style_as(msg.style) }}
-{% endfor -%}"#,
+                MODIFICATION_TEMPLATE,
+            )
+            .map_err(|e| padzapp::error::PadzError::Api(e.to_string()))?
+            .command(
+                "reopen",
+                move |matches, _cmd_ctx| {
+                    let indexes: Vec<String> = matches
+                        .get_many::<String>("indexes")
+                        .map(|v| v.cloned().collect())
+                        .unwrap_or_default();
+
+                    let mut api_ref = api_for_reopen.borrow_mut();
+                    let result = api_ref
+                        .reopen_pads(scope, &indexes)
+                        .map_err(|e| anyhow::anyhow!("{}", e))?;
+
+                    let data = build_modification_result_value(
+                        "Reopened",
+                        &result.affected_pads,
+                        &result.messages,
+                        OutputMode::Term,
+                    );
+
+                    Ok(Output::Render(data))
+                },
+                MODIFICATION_TEMPLATE,
+            )
+            .map_err(|e| padzapp::error::PadzError::Api(e.to_string()))?
+            .command(
+                "pin",
+                move |matches, _cmd_ctx| {
+                    let indexes: Vec<String> = matches
+                        .get_many::<String>("indexes")
+                        .map(|v| v.cloned().collect())
+                        .unwrap_or_default();
+
+                    let mut api_ref = api_for_pin.borrow_mut();
+                    let result = api_ref
+                        .pin_pads(scope, &indexes)
+                        .map_err(|e| anyhow::anyhow!("{}", e))?;
+
+                    let data = build_modification_result_value(
+                        "Pinned",
+                        &result.affected_pads,
+                        &result.messages,
+                        OutputMode::Term,
+                    );
+
+                    Ok(Output::Render(data))
+                },
+                MODIFICATION_TEMPLATE,
+            )
+            .map_err(|e| padzapp::error::PadzError::Api(e.to_string()))?
+            .command(
+                "unpin",
+                move |matches, _cmd_ctx| {
+                    let indexes: Vec<String> = matches
+                        .get_many::<String>("indexes")
+                        .map(|v| v.cloned().collect())
+                        .unwrap_or_default();
+
+                    let mut api_ref = api_for_unpin.borrow_mut();
+                    let result = api_ref
+                        .unpin_pads(scope, &indexes)
+                        .map_err(|e| anyhow::anyhow!("{}", e))?;
+
+                    let data = build_modification_result_value(
+                        "Unpinned",
+                        &result.affected_pads,
+                        &result.messages,
+                        OutputMode::Term,
+                    );
+
+                    Ok(Output::Render(data))
+                },
+                MODIFICATION_TEMPLATE,
+            )
+            .map_err(|e| padzapp::error::PadzError::Api(e.to_string()))?
+            .command(
+                "delete",
+                move |matches, _cmd_ctx| {
+                    let indexes: Vec<String> = matches
+                        .get_many::<String>("indexes")
+                        .map(|v| v.cloned().collect())
+                        .unwrap_or_default();
+                    let done_status = matches.get_flag("done_status");
+
+                    let mut api_ref = api_for_delete.borrow_mut();
+
+                    if done_status {
+                        // Delete all pads with Done status
+                        let filter = PadFilter {
+                            status: PadStatusFilter::Active,
+                            search_term: None,
+                            todo_status: Some(TodoStatus::Done),
+                            tags: None,
+                        };
+                        let pads = api_ref
+                            .get_pads(scope, filter)
+                            .map_err(|e| anyhow::anyhow!("{}", e))?;
+
+                        if pads.listed_pads.is_empty() {
+                            return Ok(Output::Render(serde_json::json!({
+                                "start_message": "",
+                                "pads": [],
+                                "trailing_messages": [{"content": "No done pads to delete.", "style": "info"}]
+                            })));
+                        }
+
+                        let done_indexes: Vec<String> = pads
+                            .listed_pads
+                            .iter()
+                            .map(|dp| dp.index.to_string())
+                            .collect();
+
+                        let result = api_ref
+                            .delete_pads(scope, &done_indexes)
+                            .map_err(|e| anyhow::anyhow!("{}", e))?;
+
+                        let data = build_modification_result_value(
+                            "Deleted",
+                            &result.affected_pads,
+                            &result.messages,
+                            OutputMode::Term,
+                        );
+
+                        Ok(Output::Render(data))
+                    } else {
+                        let result = api_ref
+                            .delete_pads(scope, &indexes)
+                            .map_err(|e| anyhow::anyhow!("{}", e))?;
+
+                        let data = build_modification_result_value(
+                            "Deleted",
+                            &result.affected_pads,
+                            &result.messages,
+                            OutputMode::Term,
+                        );
+
+                        Ok(Output::Render(data))
+                    }
+                },
+                MODIFICATION_TEMPLATE,
+            )
+            .map_err(|e| padzapp::error::PadzError::Api(e.to_string()))?
+            .command(
+                "restore",
+                move |matches, _cmd_ctx| {
+                    let indexes: Vec<String> = matches
+                        .get_many::<String>("indexes")
+                        .map(|v| v.cloned().collect())
+                        .unwrap_or_default();
+
+                    let mut api_ref = api_for_restore.borrow_mut();
+                    let result = api_ref
+                        .restore_pads(scope, &indexes)
+                        .map_err(|e| anyhow::anyhow!("{}", e))?;
+
+                    let data = build_modification_result_value(
+                        "Restored",
+                        &result.affected_pads,
+                        &result.messages,
+                        OutputMode::Term,
+                    );
+
+                    Ok(Output::Render(data))
+                },
+                MODIFICATION_TEMPLATE,
+            )
+            .map_err(|e| padzapp::error::PadzError::Api(e.to_string()))?
+            .command(
+                "move",
+                move |matches, _cmd_ctx| {
+                    let mut indexes: Vec<String> = matches
+                        .get_many::<String>("indexes")
+                        .map(|v| v.cloned().collect())
+                        .unwrap_or_default();
+                    let root = matches.get_flag("root");
+
+                    let destination = if root {
+                        None
+                    } else {
+                        if indexes.len() < 2 {
+                            return Err(anyhow::anyhow!(
+                                "Missing destination. Use `padz move <SOURCE>... <DEST>` or `padz move <SOURCE>... --root`"
+                            ));
+                        }
+                        Some(indexes.pop().unwrap())
+                    };
+
+                    let mut api_ref = api_for_move.borrow_mut();
+                    let result = api_ref
+                        .move_pads(scope, &indexes, destination.as_deref())
+                        .map_err(|e| anyhow::anyhow!("{}", e))?;
+
+                    let data = build_modification_result_value(
+                        "Moved",
+                        &result.affected_pads,
+                        &result.messages,
+                        OutputMode::Term,
+                    );
+
+                    Ok(Output::Render(data))
+                },
+                MODIFICATION_TEMPLATE,
+            )
+            .map_err(|e| padzapp::error::PadzError::Api(e.to_string()))?
+            .command(
+                "add-tag",
+                move |matches, _cmd_ctx| {
+                    let indexes: Vec<String> = matches
+                        .get_many::<String>("indexes")
+                        .map(|v| v.cloned().collect())
+                        .unwrap_or_default();
+                    let tags: Vec<String> = matches
+                        .get_many::<String>("tags")
+                        .map(|v| v.cloned().collect())
+                        .unwrap_or_default();
+
+                    let mut api_ref = api_for_add_tag.borrow_mut();
+                    let result = api_ref
+                        .add_tags_to_pads(scope, &indexes, &tags)
+                        .map_err(|e| anyhow::anyhow!("{}", e))?;
+
+                    let data = build_modification_result_value(
+                        "Tagged",
+                        &result.affected_pads,
+                        &result.messages,
+                        OutputMode::Term,
+                    );
+
+                    Ok(Output::Render(data))
+                },
+                MODIFICATION_TEMPLATE,
+            )
+            .map_err(|e| padzapp::error::PadzError::Api(e.to_string()))?
+            .command(
+                "remove-tag",
+                move |matches, _cmd_ctx| {
+                    let indexes: Vec<String> = matches
+                        .get_many::<String>("indexes")
+                        .map(|v| v.cloned().collect())
+                        .unwrap_or_default();
+                    let tags: Vec<String> = matches
+                        .get_many::<String>("tags")
+                        .map(|v| v.cloned().collect())
+                        .unwrap_or_default();
+
+                    let mut api_ref = api_for_remove_tag.borrow_mut();
+                    let result = if tags.is_empty() {
+                        api_ref
+                            .clear_tags_from_pads(scope, &indexes)
+                            .map_err(|e| anyhow::anyhow!("{}", e))?
+                    } else {
+                        api_ref
+                            .remove_tags_from_pads(scope, &indexes, &tags)
+                            .map_err(|e| anyhow::anyhow!("{}", e))?
+                    };
+
+                    let data = build_modification_result_value(
+                        "Untagged",
+                        &result.affected_pads,
+                        &result.messages,
+                        OutputMode::Term,
+                    );
+
+                    Ok(Output::Render(data))
+                },
+                MODIFICATION_TEMPLATE,
             )
             .map_err(|e| padzapp::error::PadzError::Api(e.to_string()))?
             .build()
