@@ -59,6 +59,7 @@
 
 mod commands;
 mod complete;
+pub mod handlers;
 mod render;
 pub mod setup;
 

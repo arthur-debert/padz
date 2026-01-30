@@ -1219,6 +1219,7 @@ dependencies = [
 name = "padz"
 version = "0.14.0"
 dependencies = [
+ "anyhow",
  "assert_cmd",
  "chrono",
  "clap",
@@ -1755,11 +1756,63 @@ dependencies = [
 
 [[package]]
 name = "standout"
-version = "1.0.0"
-source = "git+https://github.com/arthur-debert/standout.git?rev=b1644edc139dab254e95d722e4e52702cab49dcb#b1644edc139dab254e95d722e4e52702cab49dcb"
+version = "3.2.0"
+source = "git+https://github.com/arthur-debert/standout.git?tag=standout-v3.2.0#e81fb35a10a430f3ddfc089ab0c81481cfb27fdc"
 dependencies = [
  "anyhow",
  "clap",
+ "console",
+ "csv",
+ "deunicode",
+ "minijinja",
+ "quick-xml",
+ "serde",
+ "serde_json",
+ "serde_yaml",
+ "standout-bbparser",
+ "standout-dispatch",
+ "standout-macros",
+ "standout-render",
+ "standout-seeker",
+ "terminal_size",
+ "thiserror 2.0.17",
+]
+
+[[package]]
+name = "standout-bbparser"
+version = "3.2.0"
+source = "git+https://github.com/arthur-debert/standout.git?tag=standout-v3.2.0#e81fb35a10a430f3ddfc089ab0c81481cfb27fdc"
+dependencies = [
+ "console",
+]
+
+[[package]]
+name = "standout-dispatch"
+version = "3.2.0"
+source = "git+https://github.com/arthur-debert/standout.git?tag=standout-v3.2.0#e81fb35a10a430f3ddfc089ab0c81481cfb27fdc"
+dependencies = [
+ "anyhow",
+ "clap",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.17",
+]
+
+[[package]]
+name = "standout-macros"
+version = "3.2.0"
+source = "git+https://github.com/arthur-debert/standout.git?tag=standout-v3.2.0#e81fb35a10a430f3ddfc089ab0c81481cfb27fdc"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn 2.0.111",
+]
+
+[[package]]
+name = "standout-render"
+version = "3.2.0"
+source = "git+https://github.com/arthur-debert/standout.git?tag=standout-v3.2.0#e81fb35a10a430f3ddfc089ab0c81481cfb27fdc"
+dependencies = [
  "console",
  "cssparser",
  "csv",
@@ -1772,28 +1825,16 @@ dependencies = [
  "serde_json",
  "serde_yaml",
  "standout-bbparser",
- "standout-macros",
- "terminal_size",
- "thiserror 2.0.17",
  "unicode-width",
 ]
 
 [[package]]
-name = "standout-bbparser"
-version = "1.0.0"
-source = "git+https://github.com/arthur-debert/standout.git?rev=b1644edc139dab254e95d722e4e52702cab49dcb#b1644edc139dab254e95d722e4e52702cab49dcb"
+name = "standout-seeker"
+version = "3.2.0"
+source = "git+https://github.com/arthur-debert/standout.git?tag=standout-v3.2.0#e81fb35a10a430f3ddfc089ab0c81481cfb27fdc"
 dependencies = [
- "console",
-]
-
-[[package]]
-name = "standout-macros"
-version = "1.0.0"
-source = "git+https://github.com/arthur-debert/standout.git?rev=b1644edc139dab254e95d722e4e52702cab49dcb#b1644edc139dab254e95d722e4e52702cab49dcb"
-dependencies = [
- "proc-macro2",
- "quote",
- "syn 2.0.111",
+ "regex",
+ "thiserror 2.0.17",
 ]
 
 [[package]]
