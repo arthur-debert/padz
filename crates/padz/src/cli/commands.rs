@@ -123,6 +123,20 @@ pub fn run() -> Result<()> {
         let api_for_move = api.clone();
         let api_for_add_tag = api.clone();
         let api_for_remove_tag = api.clone();
+        let api_for_edit = api.clone();
+        let api_for_open = api.clone();
+        let api_for_path = api.clone();
+        let api_for_purge = api.clone();
+        let api_for_export = api.clone();
+        let api_for_import = api.clone();
+        let api_for_tags_list = api.clone();
+        let api_for_tags_create = api.clone();
+        let api_for_tags_delete = api.clone();
+        let api_for_tags_rename = api.clone();
+        let api_for_doctor = api.clone();
+        let api_for_config = api.clone();
+        let api_for_init = api.clone();
+        let import_extensions_clone = import_extensions.clone();
 
         let local_app = LocalApp::builder()
             .command(
@@ -416,6 +430,373 @@ pub fn run() -> Result<()> {
                     Ok(Output::Render(data))
                 },
                 MODIFICATION_TEMPLATE,
+            )
+            .map_err(|e| padzapp::error::PadzError::Api(e.to_string()))?
+            // --- path command ---
+            .command(
+                "path",
+                move |matches, _cmd_ctx| {
+                    let indexes: Vec<String> = matches
+                        .get_many::<String>("indexes")
+                        .map(|v| v.cloned().collect())
+                        .unwrap_or_default();
+
+                    let api_ref = api_for_path.borrow();
+                    let result = api_ref
+                        .pad_paths(scope, &indexes)
+                        .map_err(|e| anyhow::anyhow!("{}", e))?;
+
+                    let lines: Vec<String> = result
+                        .pad_paths
+                        .iter()
+                        .map(|path| path.display().to_string())
+                        .collect();
+
+                    Ok(Output::Render(serde_json::json!({
+                        "lines": lines,
+                        "empty_message": "No pad paths found.",
+                        "messages": result.messages,
+                    })))
+                },
+                // text_list template
+                r#"{%- if lines -%}
+{%- for line in lines -%}
+{{ line }}
+{% endfor -%}
+{%- else -%}
+{{ empty_message }}
+{% endif -%}
+{%- for msg in messages -%}
+{{ msg.content | style_as(msg.style) }}
+{% endfor -%}"#,
+            )
+            .map_err(|e| padzapp::error::PadzError::Api(e.to_string()))?
+            // --- edit command (no output, just opens editor) ---
+            .command(
+                "edit",
+                move |matches, _cmd_ctx| {
+                    let indexes: Vec<String> = matches
+                        .get_many::<String>("indexes")
+                        .map(|v| v.cloned().collect())
+                        .unwrap_or_default();
+
+                    let api_ref = api_for_edit.borrow();
+                    let result = api_ref
+                        .view_pads(scope, &indexes)
+                        .map_err(|e| anyhow::anyhow!("{}", e))?;
+
+                    // Side effects: open in editor and copy to clipboard
+                    for path in &result.pad_paths {
+                        open_in_editor(path).map_err(|e| anyhow::anyhow!("{}", e))?;
+                        copy_pad_to_clipboard(path);
+                    }
+
+                    Ok(Output::<serde_json::Value>::Silent)
+                },
+                "", // No template needed for Silent output
+            )
+            .map_err(|e| padzapp::error::PadzError::Api(e.to_string()))?
+            // --- open command (piped input updates pad, otherwise like edit) ---
+            .command(
+                "open",
+                move |matches, _cmd_ctx| {
+                    let indexes: Vec<String> = matches
+                        .get_many::<String>("indexes")
+                        .map(|v| v.cloned().collect())
+                        .unwrap_or_default();
+
+                    // Check for piped input
+                    if !std::io::stdin().is_terminal() {
+                        let mut buffer = String::new();
+                        if std::io::stdin().read_to_string(&mut buffer).is_ok() {
+                            if buffer.trim().is_empty() {
+                                return Err(anyhow::anyhow!("Piped content is empty"));
+                            }
+                            // Update the pad(s) with the piped content
+                            let mut api_ref = api_for_open.borrow_mut();
+                            let result = api_ref
+                                .update_pads_from_content(scope, &indexes, &buffer)
+                                .map_err(|e| anyhow::anyhow!("{}", e))?;
+
+                            let data = build_modification_result_value(
+                                "Updated",
+                                &result.affected_pads,
+                                &result.messages,
+                                OutputMode::Term,
+                            );
+
+                            return Ok(Output::Render(data));
+                        }
+                    }
+
+                    // No piped input - behave like edit (open the file in editor)
+                    let api_ref = api_for_open.borrow();
+                    let result = api_ref
+                        .view_pads(scope, &indexes)
+                        .map_err(|e| anyhow::anyhow!("{}", e))?;
+
+                    for path in &result.pad_paths {
+                        open_in_editor(path).map_err(|e| anyhow::anyhow!("{}", e))?;
+                        copy_pad_to_clipboard(path);
+                    }
+
+                    Ok(Output::<serde_json::Value>::Silent)
+                },
+                MODIFICATION_TEMPLATE, // Used when piped input updates pad
+            )
+            .map_err(|e| padzapp::error::PadzError::Api(e.to_string()))?
+            // --- purge command ---
+            .command(
+                "purge",
+                move |matches, _cmd_ctx| {
+                    let indexes: Vec<String> = matches
+                        .get_many::<String>("indexes")
+                        .map(|v| v.cloned().collect())
+                        .unwrap_or_default();
+                    let yes = matches.get_flag("yes");
+                    let recursive = matches.get_flag("recursive");
+
+                    let mut api_ref = api_for_purge.borrow_mut();
+                    let result = api_ref
+                        .purge_pads(scope, &indexes, recursive, yes)
+                        .map_err(|e| anyhow::anyhow!("{}", e))?;
+
+                    Ok(Output::Render(serde_json::json!({
+                        "messages": result.messages,
+                    })))
+                },
+                // messages-only template
+                r#"{%- for msg in messages -%}
+{{ msg.content | style_as(msg.style) }}
+{% endfor -%}"#,
+            )
+            .map_err(|e| padzapp::error::PadzError::Api(e.to_string()))?
+            // --- export command ---
+            .command(
+                "export",
+                move |matches, _cmd_ctx| {
+                    let indexes: Vec<String> = matches
+                        .get_many::<String>("indexes")
+                        .map(|v| v.cloned().collect())
+                        .unwrap_or_default();
+                    let single_file: Option<String> = matches
+                        .get_one::<String>("single_file")
+                        .cloned();
+
+                    let api_ref = api_for_export.borrow();
+                    let result = if let Some(title) = single_file {
+                        api_ref
+                            .export_pads_single_file(scope, &indexes, &title)
+                            .map_err(|e| anyhow::anyhow!("{}", e))?
+                    } else {
+                        api_ref
+                            .export_pads(scope, &indexes)
+                            .map_err(|e| anyhow::anyhow!("{}", e))?
+                    };
+
+                    Ok(Output::Render(serde_json::json!({
+                        "messages": result.messages,
+                    })))
+                },
+                r#"{%- for msg in messages -%}
+{{ msg.content | style_as(msg.style) }}
+{% endfor -%}"#,
+            )
+            .map_err(|e| padzapp::error::PadzError::Api(e.to_string()))?
+            // --- import command ---
+            .command(
+                "import",
+                move |matches, _cmd_ctx| {
+                    let paths: Vec<String> = matches
+                        .get_many::<String>("paths")
+                        .map(|v| v.cloned().collect())
+                        .unwrap_or_default();
+                    let paths: Vec<PathBuf> = paths.iter().map(PathBuf::from).collect();
+
+                    let mut api_ref = api_for_import.borrow_mut();
+                    let result = api_ref
+                        .import_pads(scope, paths, &import_extensions_clone)
+                        .map_err(|e| anyhow::anyhow!("{}", e))?;
+
+                    Ok(Output::Render(serde_json::json!({
+                        "messages": result.messages,
+                    })))
+                },
+                r#"{%- for msg in messages -%}
+{{ msg.content | style_as(msg.style) }}
+{% endfor -%}"#,
+            )
+            .map_err(|e| padzapp::error::PadzError::Api(e.to_string()))?
+            // --- tags list command ---
+            .command(
+                "tags list",
+                move |_matches, _cmd_ctx| {
+                    let api_ref = api_for_tags_list.borrow();
+                    let result = api_ref
+                        .list_tags(scope)
+                        .map_err(|e| anyhow::anyhow!("{}", e))?;
+
+                    Ok(Output::Render(serde_json::json!({
+                        "messages": result.messages,
+                    })))
+                },
+                r#"{%- for msg in messages -%}
+{{ msg.content | style_as(msg.style) }}
+{% endfor -%}"#,
+            )
+            .map_err(|e| padzapp::error::PadzError::Api(e.to_string()))?
+            // --- tags create command ---
+            .command(
+                "tags create",
+                move |matches, _cmd_ctx| {
+                    let name: String = matches
+                        .get_one::<String>("name")
+                        .cloned()
+                        .unwrap_or_default();
+
+                    let mut api_ref = api_for_tags_create.borrow_mut();
+                    let result = api_ref
+                        .create_tag(scope, &name)
+                        .map_err(|e| anyhow::anyhow!("{}", e))?;
+
+                    Ok(Output::Render(serde_json::json!({
+                        "messages": result.messages,
+                    })))
+                },
+                r#"{%- for msg in messages -%}
+{{ msg.content | style_as(msg.style) }}
+{% endfor -%}"#,
+            )
+            .map_err(|e| padzapp::error::PadzError::Api(e.to_string()))?
+            // --- tags delete command ---
+            .command(
+                "tags delete",
+                move |matches, _cmd_ctx| {
+                    let name: String = matches
+                        .get_one::<String>("name")
+                        .cloned()
+                        .unwrap_or_default();
+
+                    let mut api_ref = api_for_tags_delete.borrow_mut();
+                    let result = api_ref
+                        .delete_tag(scope, &name)
+                        .map_err(|e| anyhow::anyhow!("{}", e))?;
+
+                    Ok(Output::Render(serde_json::json!({
+                        "messages": result.messages,
+                    })))
+                },
+                r#"{%- for msg in messages -%}
+{{ msg.content | style_as(msg.style) }}
+{% endfor -%}"#,
+            )
+            .map_err(|e| padzapp::error::PadzError::Api(e.to_string()))?
+            // --- tags rename command ---
+            .command(
+                "tags rename",
+                move |matches, _cmd_ctx| {
+                    let old_name: String = matches
+                        .get_one::<String>("old_name")
+                        .cloned()
+                        .unwrap_or_default();
+                    let new_name: String = matches
+                        .get_one::<String>("new_name")
+                        .cloned()
+                        .unwrap_or_default();
+
+                    let mut api_ref = api_for_tags_rename.borrow_mut();
+                    let result = api_ref
+                        .rename_tag(scope, &old_name, &new_name)
+                        .map_err(|e| anyhow::anyhow!("{}", e))?;
+
+                    Ok(Output::Render(serde_json::json!({
+                        "messages": result.messages,
+                    })))
+                },
+                r#"{%- for msg in messages -%}
+{{ msg.content | style_as(msg.style) }}
+{% endfor -%}"#,
+            )
+            .map_err(|e| padzapp::error::PadzError::Api(e.to_string()))?
+            // --- doctor command ---
+            .command(
+                "doctor",
+                move |_matches, _cmd_ctx| {
+                    let mut api_ref = api_for_doctor.borrow_mut();
+                    let result = api_ref
+                        .doctor(scope)
+                        .map_err(|e| anyhow::anyhow!("{}", e))?;
+
+                    Ok(Output::Render(serde_json::json!({
+                        "messages": result.messages,
+                    })))
+                },
+                r#"{%- for msg in messages -%}
+{{ msg.content | style_as(msg.style) }}
+{% endfor -%}"#,
+            )
+            .map_err(|e| padzapp::error::PadzError::Api(e.to_string()))?
+            // --- config command ---
+            .command(
+                "config",
+                move |matches, _cmd_ctx| {
+                    let key: Option<String> = matches.get_one::<String>("key").cloned();
+                    let value: Option<String> = matches.get_one::<String>("value").cloned();
+
+                    let action = match (key.clone(), value) {
+                        (None, _) => ConfigAction::ShowAll,
+                        (Some(k), None) => ConfigAction::ShowKey(k),
+                        (Some(k), Some(v)) => ConfigAction::Set(k, v),
+                    };
+
+                    let api_ref = api_for_config.borrow_mut();
+                    let result = api_ref
+                        .config(scope, action)
+                        .map_err(|e| anyhow::anyhow!("{}", e))?;
+
+                    let mut lines = Vec::new();
+                    if let Some(config) = &result.config {
+                        if key.is_none() {
+                            for (k, v) in config.list_all() {
+                                lines.push(format!("{} = {}", k, v));
+                            }
+                        }
+                    }
+
+                    Ok(Output::Render(serde_json::json!({
+                        "lines": lines,
+                        "empty_message": "No configuration values.",
+                        "messages": result.messages,
+                    })))
+                },
+                r#"{%- if lines -%}
+{%- for line in lines -%}
+{{ line }}
+{% endfor -%}
+{%- else -%}
+{{ empty_message }}
+{% endif -%}
+{%- for msg in messages -%}
+{{ msg.content | style_as(msg.style) }}
+{% endfor -%}"#,
+            )
+            .map_err(|e| padzapp::error::PadzError::Api(e.to_string()))?
+            // --- init command ---
+            .command(
+                "init",
+                move |_matches, _cmd_ctx| {
+                    let api_ref = api_for_init.borrow();
+                    let result = api_ref
+                        .init(scope)
+                        .map_err(|e| anyhow::anyhow!("{}", e))?;
+
+                    Ok(Output::Render(serde_json::json!({
+                        "messages": result.messages,
+                    })))
+                },
+                r#"{%- for msg in messages -%}
+{{ msg.content | style_as(msg.style) }}
+{% endfor -%}"#,
             )
             .map_err(|e| padzapp::error::PadzError::Api(e.to_string()))?
             .build()
