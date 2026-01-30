@@ -1,9 +1,12 @@
 use super::complete::{active_pads_completer, all_pads_completer, deleted_pads_completer};
 use clap::{CommandFactory, FromArgMatches, Parser, Subcommand, ValueEnum};
 use once_cell::sync::Lazy;
-use standout::cli::{render_help_with_topics, App, ThreadSafe};
+use standout::cli::{render_help_with_topics, App, Dispatch, ThreadSafe};
 use standout::topics::TopicRegistry;
 use standout::OutputMode;
+
+// Import handlers module
+use super::handlers;
 
 #[derive(Copy, Clone, Debug, ValueEnum)]
 pub enum CompletionShell {
@@ -153,27 +156,11 @@ pub fn get_grouped_help() -> String {
     })
 }
 
-#[derive(Subcommand, Debug)]
+/// All padz commands in a flat enum with Dispatch derive for automatic handler routing
+#[derive(Subcommand, Dispatch, Debug)]
+#[dispatch(handlers = handlers)]
 pub enum Commands {
-    #[command(flatten)]
-    Core(CoreCommands),
-
-    #[command(flatten)]
-    Pad(PadCommands),
-
-    #[command(flatten)]
-    Data(DataCommands),
-
-    /// Manage tags
-    #[command(subcommand, display_order = 25)]
-    Tags(TagsCommands),
-
-    #[command(flatten)]
-    Misc(MiscCommands),
-}
-
-#[derive(Subcommand, Debug)]
-pub enum CoreCommands {
+    // --- Core commands ---
     /// Create a new pad
     #[command(alias = "n", display_order = 1)]
     Create {
@@ -232,10 +219,8 @@ pub enum CoreCommands {
         #[arg(long = "tag", short = 't', num_args = 1..)]
         tags: Vec<String>,
     },
-}
 
-#[derive(Subcommand, Debug)]
-pub enum PadCommands {
+    // --- Pad operations ---
     /// View one or more pads
     #[command(alias = "v", display_order = 10)]
     View {
@@ -302,6 +287,7 @@ pub enum PadCommands {
 
     /// Move one or more pads to a new parent
     #[command(alias = "mv", display_order = 13)]
+    #[dispatch(handler = handlers::move_pads)]
     Move {
         /// Indexes of the pads (e.g. 1 2)
         /// If --root is NOT specified, the last argument is the destination.
@@ -360,10 +346,8 @@ pub enum PadCommands {
         #[arg(long = "tag", short = 't', num_args = 1..)]
         tags: Vec<String>,
     },
-}
 
-#[derive(Subcommand, Debug)]
-pub enum DataCommands {
+    // --- Data operations ---
     /// Permanently delete pads
     #[command(display_order = 20)]
     Purge {
@@ -399,9 +383,45 @@ pub enum DataCommands {
         #[arg(required = true, num_args = 1..)]
         paths: Vec<String>,
     },
+
+    // --- Tags (nested subcommand) ---
+    /// Manage tags
+    #[command(subcommand, display_order = 25)]
+    #[dispatch(nested)]
+    Tags(TagsCommands),
+
+    // --- Misc commands ---
+    /// Check and fix data inconsistencies
+    #[command(display_order = 30)]
+    Doctor,
+
+    /// Get or set configuration
+    #[command(display_order = 31)]
+    Config {
+        /// Configuration key (e.g., file-ext)
+        key: Option<String>,
+
+        /// Value to set (if omitted, prints current value)
+        value: Option<String>,
+    },
+
+    /// Initialize the store (optional utility)
+    #[command(display_order = 32)]
+    Init,
+
+    /// Generate shell completions
+    #[command(display_order = 34)]
+    #[dispatch(skip)]
+    Completions {
+        /// Shell to generate completions for
+        #[arg(value_enum)]
+        shell: CompletionShell,
+    },
 }
 
-#[derive(Subcommand, Debug)]
+/// Tags subcommands
+#[derive(Subcommand, Dispatch, Debug)]
+#[dispatch(handlers = handlers::tags)]
 pub enum TagsCommands {
     /// List all defined tags
     #[command(alias = "ls", display_order = 25)]
@@ -431,35 +451,6 @@ pub enum TagsCommands {
     },
 }
 
-#[derive(Subcommand, Debug)]
-pub enum MiscCommands {
-    /// Check and fix data inconsistencies
-    #[command(display_order = 30)]
-    Doctor,
-
-    /// Get or set configuration
-    #[command(display_order = 31)]
-    Config {
-        /// Configuration key (e.g., file-ext)
-        key: Option<String>,
-
-        /// Value to set (if omitted, prints current value)
-        value: Option<String>,
-    },
-
-    /// Initialize the store (optional utility)
-    #[command(display_order = 32)]
-    Init,
-
-    /// Generate shell completions
-    #[command(display_order = 34)]
-    Completions {
-        /// Shell to generate completions for
-        #[arg(value_enum)]
-        shell: CompletionShell,
-    },
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -482,10 +473,7 @@ mod tests {
     fn test_data_option_before_command() {
         let cli = Cli::try_parse_from(["padz", "--data", "/tmp/.padz", "create", "test"]).unwrap();
         assert_eq!(cli.data, Some("/tmp/.padz".to_string()));
-        assert!(matches!(
-            cli.command,
-            Some(Commands::Core(CoreCommands::Create { .. }))
-        ));
+        assert!(matches!(cli.command, Some(Commands::Create { .. })));
     }
 
     #[test]
