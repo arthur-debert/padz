@@ -105,10 +105,10 @@ pub fn run() -> Result<()> {
     {
         let api_for_complete = api.clone();
 
-        let mut local_app = LocalApp::builder()
+        let local_app = LocalApp::builder()
             .command(
                 "complete",
-                move |matches, cmd_ctx| {
+                move |matches, _cmd_ctx| {
                     let indexes: Vec<String> = matches
                         .get_many::<String>("indexes")
                         .map(|v| v.cloned().collect())
@@ -119,12 +119,13 @@ pub fn run() -> Result<()> {
                         .complete_pads(scope, &indexes)
                         .map_err(|e| anyhow::anyhow!("{}", e))?;
 
-                    // Build template data appropriate for the output mode
+                    // Build template data - always use Term format since standout handles
+                    // structured output (JSON/YAML) by serializing the data directly
                     let data = build_modification_result_value(
                         "Completed",
                         &result.affected_pads,
                         &result.messages,
-                        cmd_ctx.output_mode,
+                        OutputMode::Term,
                     );
 
                     Ok(Output::Render(data))
@@ -141,6 +142,7 @@ pub fn run() -> Result<()> {
 {{ msg.content | style_as(msg.style) }}
 {% endfor -%}"#,
             )
+            .map_err(|e| padzapp::error::PadzError::Api(e.to_string()))?
             .build()
             .map_err(|e| padzapp::error::PadzError::Api(e.to_string()))?;
 
@@ -157,6 +159,9 @@ pub fn run() -> Result<()> {
             RunResult::Binary(bytes, filename) => {
                 std::fs::write(&filename, &bytes)?;
                 eprintln!("Wrote {} bytes to {}", bytes.len(), filename);
+                return Ok(());
+            }
+            RunResult::Silent => {
                 return Ok(());
             }
             RunResult::NoMatch(_) => {
