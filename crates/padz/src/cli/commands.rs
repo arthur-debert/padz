@@ -40,12 +40,11 @@
 //! - `print_*()`: Output formatting functions
 
 use super::render::{
-    build_modification_result_value, print_messages, render_full_pads, render_modification_result,
-    render_pad_list, render_pad_list_deleted, render_text_list,
+    build_modification_result_value, print_messages, render_modification_result, render_pad_list,
+    render_pad_list_deleted,
 };
 use super::setup::{
-    build_command, parse_cli, Cli, Commands, CompletionShell, CoreCommands, DataCommands,
-    MiscCommands, PadCommands, TagsCommands,
+    build_command, parse_cli, Cli, Commands, CompletionShell, CoreCommands, MiscCommands,
 };
 use padzapp::api::{ConfigAction, PadFilter, PadStatusFilter, PadzApi, TodoStatus};
 use padzapp::clipboard::{copy_to_clipboard, format_for_clipboard, get_from_clipboard};
@@ -633,7 +632,7 @@ pub fn run() -> Result<()> {
             .map_err(|e| padzapp::error::PadzError::Api(e.to_string()))?
             // --- tags list command ---
             .command(
-                "tags list",
+                "tags.list",
                 move |_matches, _cmd_ctx| {
                     let api_ref = api_for_tags_list.borrow();
                     let result = api_ref
@@ -651,7 +650,7 @@ pub fn run() -> Result<()> {
             .map_err(|e| padzapp::error::PadzError::Api(e.to_string()))?
             // --- tags create command ---
             .command(
-                "tags create",
+                "tags.create",
                 move |matches, _cmd_ctx| {
                     let name: String = matches
                         .get_one::<String>("name")
@@ -674,7 +673,7 @@ pub fn run() -> Result<()> {
             .map_err(|e| padzapp::error::PadzError::Api(e.to_string()))?
             // --- tags delete command ---
             .command(
-                "tags delete",
+                "tags.delete",
                 move |matches, _cmd_ctx| {
                     let name: String = matches
                         .get_one::<String>("name")
@@ -697,7 +696,7 @@ pub fn run() -> Result<()> {
             .map_err(|e| padzapp::error::PadzError::Api(e.to_string()))?
             // --- tags rename command ---
             .command(
-                "tags rename",
+                "tags.rename",
                 move |matches, _cmd_ctx| {
                     let old_name: String = matches
                         .get_one::<String>("old_name")
@@ -905,6 +904,10 @@ pub fn run() -> Result<()> {
         output_mode: output_mode_val,
     };
 
+    // Fallback dispatch handles only commands not yet migrated to LocalApp:
+    // - CoreCommands (list, search, create) - complex rendering/input handling
+    // - None case (naked invocation defaults to list or create)
+    // All other commands are handled by LocalApp above.
     match cli.command {
         Some(Commands::Core(cmd)) => match cmd {
             CoreCommands::Create {
@@ -912,7 +915,6 @@ pub fn run() -> Result<()> {
                 no_editor,
                 inside,
             } => {
-                // Join all title words with spaces
                 let title = if title.is_empty() {
                     None
                 } else {
@@ -940,62 +942,18 @@ pub fn run() -> Result<()> {
             ),
             CoreCommands::Search { term, tags } => handle_search(&mut ctx, term, tags),
         },
-        Some(Commands::Pad(cmd)) => match cmd {
-            PadCommands::View { indexes, peek } => handle_view(&mut ctx, indexes, peek),
-            PadCommands::Edit { indexes } => handle_edit(&mut ctx, indexes),
-            PadCommands::Open { indexes } => handle_open(&mut ctx, indexes),
-            PadCommands::Delete {
-                indexes,
-                done_status,
-            } => handle_delete(&mut ctx, indexes, done_status),
-            PadCommands::Restore { indexes } => handle_restore(&mut ctx, indexes),
-            PadCommands::Pin { indexes } => handle_pin(&mut ctx, indexes),
-            PadCommands::Unpin { indexes } => handle_unpin(&mut ctx, indexes),
-            PadCommands::Path { indexes } => handle_paths(&mut ctx, indexes),
-            PadCommands::Complete { indexes } => handle_complete(&mut ctx, indexes),
-            PadCommands::Reopen { indexes } => handle_reopen(&mut ctx, indexes),
-            PadCommands::Move { indexes, root } => handle_move(&mut ctx, indexes, root),
-            PadCommands::AddTag { indexes, tags } => handle_add_tag(&mut ctx, indexes, tags),
-            PadCommands::RemoveTag { indexes, tags } => handle_remove_tag(&mut ctx, indexes, tags),
-        },
-        Some(Commands::Data(cmd)) => match cmd {
-            DataCommands::Purge {
-                indexes,
-                yes,
-                recursive,
-            } => handle_purge(&mut ctx, indexes, yes, recursive),
-            DataCommands::Export {
-                single_file,
-                indexes,
-            } => handle_export(&mut ctx, indexes, single_file),
-            DataCommands::Import { paths } => handle_import(&mut ctx, paths),
-        },
-        Some(Commands::Tags(cmd)) => match cmd {
-            TagsCommands::List => handle_tags_list(&mut ctx),
-            TagsCommands::Create { name } => handle_tags_create(&mut ctx, name),
-            TagsCommands::Delete { name } => handle_tags_delete(&mut ctx, name),
-            TagsCommands::Rename { old_name, new_name } => {
-                handle_tags_rename(&mut ctx, old_name, new_name)
-            }
-        },
-        Some(Commands::Misc(cmd)) => match cmd {
-            MiscCommands::Doctor => handle_doctor(&mut ctx),
-            MiscCommands::Config { key, value } => handle_config(&mut ctx, key, value),
-            MiscCommands::Init => handle_init(&ctx),
-            MiscCommands::Completions { shell } => handle_completions(shell),
-        },
         None => {
             // Naked invocation: check for piped input
             // `cat file.txt | padz` expands to `padz create` with piped content
             // `padz` (no pipe) expands to `padz list`
             if !std::io::stdin().is_terminal() {
-                // Piped input detected - expand to create
                 handle_create(&mut ctx, None, false, None)
             } else {
-                // No piped input - default to list
                 handle_list(&mut ctx, None, false, false, false, false, false, vec![])
             }
         }
+        // All other commands are handled by LocalApp - this branch should never be reached
+        _ => unreachable!("Command should have been handled by LocalApp"),
     }
 }
 
@@ -1131,210 +1089,6 @@ fn handle_list(
     Ok(())
 }
 
-fn handle_view(ctx: &mut AppContext, indexes: Vec<String>, peek: bool) -> Result<()> {
-    let result = ctx.api.view_pads(ctx.scope, &indexes)?;
-    let output = if peek {
-        // Reuse list rendering for peek view
-        render_pad_list(&result.listed_pads, true, ctx.output_mode)
-    } else {
-        render_full_pads(&result.listed_pads, ctx.output_mode)
-    };
-    print!("{}", output);
-    print_messages(&result.messages, ctx.output_mode);
-
-    // Copy viewed pads to clipboard
-    // Note: dp.pad.content already includes the title as the first line
-    if !result.listed_pads.is_empty() {
-        let clipboard_text: String = result
-            .listed_pads
-            .iter()
-            .map(|dp| dp.pad.content.clone())
-            .collect::<Vec<_>>()
-            .join("\n\n---\n\n");
-        let _ = copy_to_clipboard(&clipboard_text);
-    }
-
-    Ok(())
-}
-
-fn handle_edit(ctx: &mut AppContext, indexes: Vec<String>) -> Result<()> {
-    // === Dispatch: Call API (view returns paths) ===
-    let result = ctx.api.view_pads(ctx.scope, &indexes)?;
-
-    // === Post-dispatch: Editor and clipboard side effects ===
-    for path in &result.pad_paths {
-        open_in_editor(path)?;
-        copy_pad_to_clipboard(path);
-    }
-
-    Ok(())
-}
-
-fn handle_open(ctx: &mut AppContext, indexes: Vec<String>) -> Result<()> {
-    // Check for piped input - if present, update pad content instead of opening editor
-    if !std::io::stdin().is_terminal() {
-        let mut buffer = String::new();
-        if std::io::stdin().read_to_string(&mut buffer).is_ok() {
-            if buffer.trim().is_empty() {
-                // Piped input detected but empty - this is an error
-                return Err(padzapp::error::PadzError::Api(
-                    "Piped content is empty".to_string(),
-                ));
-            }
-            // Update the pad(s) with the piped content
-            let result = ctx
-                .api
-                .update_pads_from_content(ctx.scope, &indexes, &buffer)?;
-
-            let output = render_modification_result(
-                "Updated",
-                &result.affected_pads,
-                &result.messages,
-                ctx.output_mode,
-            );
-            print!("{}", output);
-            return Ok(());
-        }
-    }
-
-    // No piped input - behave like edit (open the file in editor)
-    handle_edit(ctx, indexes)
-}
-
-fn handle_delete(ctx: &mut AppContext, indexes: Vec<String>, done_status: bool) -> Result<()> {
-    if done_status {
-        // Delete all pads with Done status
-        let filter = PadFilter {
-            status: PadStatusFilter::Active,
-            search_term: None,
-            todo_status: Some(TodoStatus::Done),
-            tags: None,
-        };
-        let pads = ctx.api.get_pads(ctx.scope, filter)?;
-
-        if pads.listed_pads.is_empty() {
-            println!("No done pads to delete.");
-            return Ok(());
-        }
-
-        // Collect indexes of done pads
-        let done_indexes: Vec<String> = pads
-            .listed_pads
-            .iter()
-            .map(|dp| dp.index.to_string())
-            .collect();
-
-        let result = ctx.api.delete_pads(ctx.scope, &done_indexes)?;
-        let output = render_modification_result(
-            "Deleted",
-            &result.affected_pads,
-            &result.messages,
-            ctx.output_mode,
-        );
-        print!("{}", output);
-    } else {
-        let result = ctx.api.delete_pads(ctx.scope, &indexes)?;
-        let output = render_modification_result(
-            "Deleted",
-            &result.affected_pads,
-            &result.messages,
-            ctx.output_mode,
-        );
-        print!("{}", output);
-    }
-    Ok(())
-}
-
-fn handle_restore(ctx: &mut AppContext, indexes: Vec<String>) -> Result<()> {
-    let result = ctx.api.restore_pads(ctx.scope, &indexes)?;
-    let output = render_modification_result(
-        "Restored",
-        &result.affected_pads,
-        &result.messages,
-        ctx.output_mode,
-    );
-    print!("{}", output);
-    Ok(())
-}
-
-fn handle_pin(ctx: &mut AppContext, indexes: Vec<String>) -> Result<()> {
-    let result = ctx.api.pin_pads(ctx.scope, &indexes)?;
-    let output = render_modification_result(
-        "Pinned",
-        &result.affected_pads,
-        &result.messages,
-        ctx.output_mode,
-    );
-    print!("{}", output);
-    Ok(())
-}
-
-fn handle_unpin(ctx: &mut AppContext, indexes: Vec<String>) -> Result<()> {
-    let result = ctx.api.unpin_pads(ctx.scope, &indexes)?;
-    let output = render_modification_result(
-        "Unpinned",
-        &result.affected_pads,
-        &result.messages,
-        ctx.output_mode,
-    );
-    print!("{}", output);
-    Ok(())
-}
-
-fn handle_complete(ctx: &mut AppContext, indexes: Vec<String>) -> Result<()> {
-    let result = ctx.api.complete_pads(ctx.scope, &indexes)?;
-    let output = render_modification_result(
-        "Completed",
-        &result.affected_pads,
-        &result.messages,
-        ctx.output_mode,
-    );
-    print!("{}", output);
-    Ok(())
-}
-
-fn handle_move(ctx: &mut AppContext, mut indexes: Vec<String>, root: bool) -> Result<()> {
-    let destination = if root {
-        // If moving to root, all indexes are sources
-        None
-    } else {
-        // Otherwise, last index is destination
-        if indexes.len() < 2 {
-            // Need at least source and dest
-            // Actually, if indexes.len() == 1 and user expects "move 1 to root" they must use --root
-            // We should clarify this in error message
-            return Err(padzapp::error::PadzError::Api(
-                "Missing destination. Use `padz move <SOURCE>... <DEST>` or `padz move <SOURCE>... --root`".to_string()
-            ));
-        }
-        Some(indexes.pop().unwrap())
-    };
-
-    let result = ctx
-        .api
-        .move_pads(ctx.scope, &indexes, destination.as_deref())?;
-    let output = render_modification_result(
-        "Moved",
-        &result.affected_pads,
-        &result.messages,
-        ctx.output_mode,
-    );
-    print!("{}", output);
-    Ok(())
-}
-
-fn handle_reopen(ctx: &mut AppContext, indexes: Vec<String>) -> Result<()> {
-    let result = ctx.api.reopen_pads(ctx.scope, &indexes)?;
-    let output = render_modification_result(
-        "Reopened",
-        &result.affected_pads,
-        &result.messages,
-        ctx.output_mode,
-    );
-    print!("{}", output);
-    Ok(())
-}
-
 fn handle_search(ctx: &mut AppContext, term: String, tags: Vec<String>) -> Result<()> {
     let filter = PadFilter {
         status: PadStatusFilter::Active,
@@ -1345,99 +1099,6 @@ fn handle_search(ctx: &mut AppContext, term: String, tags: Vec<String>) -> Resul
     let result = ctx.api.get_pads(ctx.scope, filter)?;
     let output = render_pad_list(&result.listed_pads, false, ctx.output_mode);
     print!("{}", output);
-    print_messages(&result.messages, ctx.output_mode);
-    Ok(())
-}
-
-fn handle_paths(ctx: &mut AppContext, indexes: Vec<String>) -> Result<()> {
-    let result = ctx.api.pad_paths(ctx.scope, &indexes)?;
-    let lines: Vec<String> = result
-        .pad_paths
-        .iter()
-        .map(|path| path.display().to_string())
-        .collect();
-    let output = render_text_list(&lines, "No pad paths found.", ctx.output_mode);
-    print!("{}", output);
-    print_messages(&result.messages, ctx.output_mode);
-    Ok(())
-}
-
-fn handle_purge(
-    ctx: &mut AppContext,
-    indexes: Vec<String>,
-    yes: bool,
-    recursive: bool,
-) -> Result<()> {
-    // Pass confirmation flag directly to API
-    // If not confirmed, API returns an error with a message about using --yes/-y
-    let result = ctx.api.purge_pads(ctx.scope, &indexes, recursive, yes)?;
-    print_messages(&result.messages, ctx.output_mode);
-    Ok(())
-}
-
-fn handle_export(
-    ctx: &mut AppContext,
-    indexes: Vec<String>,
-    single_file: Option<String>,
-) -> Result<()> {
-    let result = if let Some(title) = single_file {
-        ctx.api
-            .export_pads_single_file(ctx.scope, &indexes, &title)?
-    } else {
-        ctx.api.export_pads(ctx.scope, &indexes)?
-    };
-    print_messages(&result.messages, ctx.output_mode);
-    Ok(())
-}
-
-fn handle_import(ctx: &mut AppContext, paths: Vec<String>) -> Result<()> {
-    let paths: Vec<PathBuf> = paths.iter().map(PathBuf::from).collect();
-    let result = ctx
-        .api
-        .import_pads(ctx.scope, paths, &ctx.import_extensions)?;
-    print_messages(&result.messages, ctx.output_mode);
-    Ok(())
-}
-
-fn handle_doctor(ctx: &mut AppContext) -> Result<()> {
-    let result = ctx.api.doctor(ctx.scope)?;
-    print_messages(&result.messages, ctx.output_mode);
-    Ok(())
-}
-
-fn handle_config(ctx: &mut AppContext, key: Option<String>, value: Option<String>) -> Result<()> {
-    let action = match (key.clone(), value) {
-        (None, _) => ConfigAction::ShowAll,
-        (Some(k), None) => ConfigAction::ShowKey(k),
-        (Some(k), Some(v)) => ConfigAction::Set(k, v),
-    };
-
-    let result = ctx.api.config(ctx.scope, action)?;
-    let mut lines = Vec::new();
-
-    // If showing all, we need to iterate available keys manually since we don't have an iterator yet.
-    // Or we just show known keys.
-    if let Some(config) = &result.config {
-        // If specific key was requested, show just that (handled by messages mostly,
-        // but let's see what result.config has).
-        // If action was ShowAll, we show everything.
-        // If action was ShowKey, API might return config but messages have the info.
-
-        if key.is_none() {
-            // Show all known keys
-            for (k, v) in config.list_all() {
-                lines.push(format!("{} = {}", k, v));
-            }
-        }
-    }
-    let output = render_text_list(&lines, "No configuration values.", ctx.output_mode);
-    print!("{}", output);
-    print_messages(&result.messages, ctx.output_mode);
-    Ok(())
-}
-
-fn handle_init(ctx: &AppContext) -> Result<()> {
-    let result = ctx.api.init(ctx.scope)?;
     print_messages(&result.messages, ctx.output_mode);
     Ok(())
 }
@@ -1482,63 +1143,5 @@ fn handle_completions(shell: CompletionShell) -> Result<()> {
     // Suppress unused variable warning
     let _ = completer;
 
-    Ok(())
-}
-
-// --- Tag management commands ---
-
-fn handle_tags_list(ctx: &mut AppContext) -> Result<()> {
-    let result = ctx.api.list_tags(ctx.scope)?;
-    print_messages(&result.messages, ctx.output_mode);
-    Ok(())
-}
-
-fn handle_tags_create(ctx: &mut AppContext, name: String) -> Result<()> {
-    let result = ctx.api.create_tag(ctx.scope, &name)?;
-    print_messages(&result.messages, ctx.output_mode);
-    Ok(())
-}
-
-fn handle_tags_delete(ctx: &mut AppContext, name: String) -> Result<()> {
-    let result = ctx.api.delete_tag(ctx.scope, &name)?;
-    print_messages(&result.messages, ctx.output_mode);
-    Ok(())
-}
-
-fn handle_tags_rename(ctx: &mut AppContext, old_name: String, new_name: String) -> Result<()> {
-    let result = ctx.api.rename_tag(ctx.scope, &old_name, &new_name)?;
-    print_messages(&result.messages, ctx.output_mode);
-    Ok(())
-}
-
-// --- Pad tagging commands ---
-
-fn handle_add_tag(ctx: &mut AppContext, indexes: Vec<String>, tags: Vec<String>) -> Result<()> {
-    let result = ctx.api.add_tags_to_pads(ctx.scope, &indexes, &tags)?;
-    let output = render_modification_result(
-        "Tagged",
-        &result.affected_pads,
-        &result.messages,
-        ctx.output_mode,
-    );
-    print!("{}", output);
-    Ok(())
-}
-
-fn handle_remove_tag(ctx: &mut AppContext, indexes: Vec<String>, tags: Vec<String>) -> Result<()> {
-    let result = if tags.is_empty() {
-        // If no tags specified, clear all tags from pads
-        ctx.api.clear_tags_from_pads(ctx.scope, &indexes)?
-    } else {
-        // Remove specific tags
-        ctx.api.remove_tags_from_pads(ctx.scope, &indexes, &tags)?
-    };
-    let output = render_modification_result(
-        "Untagged",
-        &result.affected_pads,
-        &result.messages,
-        ctx.output_mode,
-    );
-    print!("{}", output);
     Ok(())
 }

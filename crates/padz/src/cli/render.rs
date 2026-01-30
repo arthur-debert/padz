@@ -181,28 +181,6 @@ struct ListData {
     col_time: usize,
 }
 
-#[derive(Serialize)]
-struct FullPadData {
-    pads: Vec<FullPadEntry>,
-}
-
-/// Full pad data with semantic flags for template-driven styling.
-#[derive(Serialize)]
-struct FullPadEntry {
-    index: String,
-    title: String,
-    content: String,
-    // Semantic flags for style selection in template
-    is_pinned: bool,
-    is_deleted: bool,
-}
-
-#[derive(Serialize)]
-struct TextListData {
-    lines: Vec<String>,
-    empty_message: String,
-}
-
 /// JSON-serializable wrapper for pad list output.
 /// Used for --output=json mode to provide machine-readable pad data.
 #[derive(Serialize)]
@@ -519,63 +497,6 @@ fn truncate_match_segments(
 }
 
 /// Renders full pad contents similar to the legacy `print_full_pads` output.
-pub fn render_full_pads(pads: &[DisplayPad], output_mode: OutputMode) -> String {
-    render_full_pads_internal(pads, Some(output_mode))
-}
-
-fn render_full_pads_internal(pads: &[DisplayPad], output_mode: Option<OutputMode>) -> String {
-    let mode = output_mode.unwrap_or(OutputMode::Auto);
-
-    // For structured modes, serialize the pads directly
-    if mode.is_structured() {
-        let json_data = JsonPadList {
-            pads: pads.to_vec(),
-        };
-        return render_template("full_pad", &json_data, mode)
-            .unwrap_or_else(|_| "{\"pads\":[]}".to_string());
-    }
-
-    let entries = pads
-        .iter()
-        .map(|dp| {
-            let is_pinned = matches!(dp.index, DisplayIndex::Pinned(_));
-            let is_deleted = matches!(dp.index, DisplayIndex::Deleted(_));
-
-            FullPadEntry {
-                index: format!("{}", dp.index),
-                title: dp.pad.metadata.title.clone(),
-                content: dp.pad.content.clone(),
-                is_pinned,
-                is_deleted,
-            }
-        })
-        .collect();
-
-    let data = FullPadData { pads: entries };
-
-    render_template("full_pad", &data, mode).unwrap_or_else(|e| format!("Render error: {}\n", e))
-}
-
-pub fn render_text_list(lines: &[String], empty_message: &str, output_mode: OutputMode) -> String {
-    render_text_list_internal(lines, empty_message, Some(output_mode))
-}
-
-fn render_text_list_internal(
-    lines: &[String],
-    empty_message: &str,
-    output_mode: Option<OutputMode>,
-) -> String {
-    let mode = output_mode.unwrap_or(OutputMode::Auto);
-
-    let data = TextListData {
-        lines: lines.to_vec(),
-        empty_message: empty_message.to_string(),
-    };
-
-    // Standout's App handles structured modes (JSON, YAML, etc.) automatically
-    render_template("text_list", &data, mode).unwrap_or_else(|_| format!("{}\n", empty_message))
-}
-
 /// JSON-serializable wrapper for command messages.
 /// Used for --output=json mode to provide machine-readable output.
 #[derive(Serialize)]
@@ -1097,56 +1018,6 @@ mod tests {
         assert!(output.contains("Search Result"));
         // Check indentation of match line (should have padding)
         assert!(output.contains("    02 Found match here"));
-    }
-
-    #[test]
-    fn test_render_full_pads_empty() {
-        let output = render_full_pads_internal(&[], Some(OutputMode::Text));
-        assert!(output.contains("No pads found."));
-    }
-
-    #[test]
-    fn test_render_full_pads_single() {
-        let pad = make_pad("Full Pad", false, false);
-        let dp = make_display_pad(pad, DisplayIndex::Regular(3));
-
-        let output = render_full_pads_internal(&[dp], Some(OutputMode::Text));
-
-        assert!(output.contains("3 Full Pad"));
-        assert!(output.contains("some content"));
-
-        let lines: Vec<&str> = output.lines().collect();
-        let header_index = lines
-            .iter()
-            .position(|line| line.contains("3 Full Pad"))
-            .expect("header line missing");
-        let spacer = lines.get(header_index + 1).copied().unwrap_or_default();
-        assert!(
-            spacer.trim().is_empty(),
-            "expected blank separator line between title and content, got: {:?}",
-            spacer
-        );
-        let body_section = &lines[(header_index + 2).min(lines.len())..];
-        assert!(
-            body_section
-                .iter()
-                .any(|line| line.contains("some content")),
-            "expected rendered body to include pad content"
-        );
-    }
-
-    #[test]
-    fn test_render_text_list_empty() {
-        let output = render_text_list_internal(&[], "Nothing here.", Some(OutputMode::Text));
-        assert!(output.contains("Nothing here."));
-    }
-
-    #[test]
-    fn test_render_text_list_lines() {
-        let lines = vec!["first".to_string(), "second".to_string()];
-        let output = render_text_list_internal(&lines, "", Some(OutputMode::Text));
-        assert!(output.contains("first"));
-        assert!(output.contains("second"));
     }
 
     #[test]
