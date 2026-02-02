@@ -39,69 +39,41 @@ pub fn run() -> Result<()> {
     let handler_ctx = init_context(&cli, output_mode)?;
     handlers::init_context(handler_ctx);
 
-    // Handle naked invocation (no command specified)
-    if cli.command.is_none() {
+    // Determine effective args: handle naked invocation by injecting synthetic command
+    let args: Vec<String> = if cli.command.is_none() {
         // Naked padz: list if interactive, create if piped
-        if !std::io::stdin().is_terminal() {
-            // Piped input -> create
-            return run_dispatch("create", output_mode);
+        let synthetic_cmd = if !std::io::stdin().is_terminal() {
+            "create"
         } else {
-            // Interactive -> list
-            return run_dispatch("list", output_mode);
-        }
-    }
+            "list"
+        };
+        vec!["padz".to_string(), synthetic_cmd.to_string()]
+    } else {
+        std::env::args().collect()
+    };
 
-    // Build and run the app with dispatch configuration
-    let app = App::builder()
-        .templates(embed_templates!("src/cli/templates"))
-        .styles(embed_styles!("src/styles"))
-        .default_theme("default")
-        .commands(Commands::dispatch_config())
-        .expect("Failed to configure commands")
-        .build()
-        .expect("Failed to build app");
-
-    // Parse and dispatch
-    let cmd = build_command();
-    let matches = app.parse_from(cmd, std::env::args());
-
-    match app.dispatch(matches, output_mode) {
-        RunResult::Handled(output) => {
-            print!("{}", output);
-        }
-        RunResult::Binary(data, filename) => {
-            // Write binary output to file
-            std::fs::write(&filename, &data)
-                .map_err(|e| padzapp::error::PadzError::Api(e.to_string()))?;
-            println!("Exported to {}", filename);
-        }
-        RunResult::Silent => {}
-        RunResult::NoMatch(_) => {
-            // Should not happen with our setup
-            eprintln!("Error: Unknown command");
-        }
-    }
-
-    Ok(())
-}
-
-/// Run dispatch for a specific command (used for naked invocation)
-fn run_dispatch(command: &str, output_mode: OutputMode) -> Result<()> {
-    let app = App::builder()
-        .templates(embed_templates!("src/cli/templates"))
-        .styles(embed_styles!("src/styles"))
-        .default_theme("default")
-        .commands(Commands::dispatch_config())
-        .expect("Failed to configure commands")
-        .build()
-        .expect("Failed to build app");
-
-    // Build args with the command inserted
-    let args = vec!["padz".to_string(), command.to_string()];
+    // Build app, parse, and dispatch through unified path
+    let app = build_dispatch_app();
     let cmd = build_command();
     let matches = app.parse_from(cmd, args);
+    handle_dispatch_result(app.dispatch(matches, output_mode))
+}
 
-    match app.dispatch(matches, output_mode) {
+/// Build the dispatch-ready App with templates, styles, and command configuration
+fn build_dispatch_app() -> App {
+    App::builder()
+        .templates(embed_templates!("src/cli/templates"))
+        .styles(embed_styles!("src/styles"))
+        .default_theme("default")
+        .commands(Commands::dispatch_config())
+        .expect("Failed to configure commands")
+        .build()
+        .expect("Failed to build app")
+}
+
+/// Handle the result of a dispatch operation
+fn handle_dispatch_result(result: RunResult) -> Result<()> {
+    match result {
         RunResult::Handled(output) => {
             print!("{}", output);
         }
@@ -115,7 +87,6 @@ fn run_dispatch(command: &str, output_mode: OutputMode) -> Result<()> {
             eprintln!("Error: Unknown command");
         }
     }
-
     Ok(())
 }
 
