@@ -252,34 +252,19 @@ pub fn view(matches: &ArgMatches, _ctx: &CommandContext) -> HandlerResult<Value>
             .view_pads(ctx.scope, &indexes)
             .map_err(|e| anyhow::anyhow!("{}", e))?;
 
-        // Print each pad's content
-        for (i, dp) in result.listed_pads.iter().enumerate() {
-            if i > 0 {
-                println!("---");
-            }
-            // Print index and title
-            println!("{} {}", dp.index, dp.pad.metadata.title);
-            // Print content if available
-            if !dp.pad.content.is_empty() {
-                println!("{}", dp.pad.content);
-            }
-        }
-
-        // Copy to clipboard (best effort)
-        if !result.listed_pads.is_empty() {
-            let content: Vec<String> = result
-                .listed_pads
-                .iter()
-                .map(|dp| {
-                    let title = &dp.pad.metadata.title;
-                    let body = &dp.pad.content;
-                    format_for_clipboard(title, body)
+        // Build data for template rendering
+        let pads: Vec<serde_json::Value> = result
+            .listed_pads
+            .iter()
+            .map(|dp| {
+                serde_json::json!({
+                    "title": dp.pad.metadata.title,
+                    "content": dp.pad.content,
                 })
-                .collect();
-            let _ = copy_to_clipboard(&content.join("\n---\n"));
-        }
+            })
+            .collect();
 
-        Ok(Output::<Value>::Silent)
+        Ok(Output::Render(serde_json::json!({ "pads": pads })))
     })
 }
 
