@@ -20,7 +20,7 @@ use super::handlers::{self, HandlerContext};
 use super::setup::{build_command, parse_cli, Cli, Commands, CompletionShell};
 use padzapp::error::Result;
 use padzapp::init::initialize;
-use standout::cli::{App, RunResult, ThreadSafe};
+use standout::cli::{App, RunResult};
 use standout::{embed_styles, embed_templates, OutputMode};
 use std::io::IsTerminal;
 
@@ -52,7 +52,7 @@ pub fn run() -> Result<()> {
     }
 
     // Build and run the app with dispatch configuration
-    let app = App::<ThreadSafe>::builder()
+    let app = App::builder()
         .templates(embed_templates!("src/cli/templates"))
         .styles(embed_styles!("src/styles"))
         .default_theme("default")
@@ -87,7 +87,7 @@ pub fn run() -> Result<()> {
 
 /// Run dispatch for a specific command (used for naked invocation)
 fn run_dispatch(command: &str, output_mode: OutputMode) -> Result<()> {
-    let app = App::<ThreadSafe>::builder()
+    let app = App::builder()
         .templates(embed_templates!("src/cli/templates"))
         .styles(embed_styles!("src/styles"))
         .default_theme("default")

@@ -1,7 +1,7 @@
 use super::complete::{active_pads_completer, all_pads_completer, deleted_pads_completer};
 use clap::{CommandFactory, FromArgMatches, Parser, Subcommand, ValueEnum};
 use once_cell::sync::Lazy;
-use standout::cli::{render_help_with_topics, App, Dispatch, ThreadSafe};
+use standout::cli::{render_help_with_topics, App, Dispatch};
 use standout::topics::TopicRegistry;
 use standout::OutputMode;
 
@@ -128,7 +128,7 @@ pub fn build_command() -> clap::Command {
 /// It also adds the --output flag for output mode control (auto, term, text, term-debug).
 /// Returns the parsed CLI and the output mode extracted from the matches.
 pub fn parse_cli() -> (Cli, OutputMode) {
-    let app: App<ThreadSafe> = App::with_registry(HELP_TOPICS.clone());
+    let app: App = App::with_registry(HELP_TOPICS.clone());
     let matches = app.parse_with(Cli::command());
 
     // Extract output mode from the matches (standout adds this as _output_mode)
