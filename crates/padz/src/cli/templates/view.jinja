@@ -1,0 +1,15 @@
+{#- View template - clipboard-friendly output -#}
+{#- Outputs title + blank line + content, suitable for pasting -#}
+
+{% if pads | length == 0 -%}
+[empty-message]No pads found.[/empty-message]
+{% else -%}
+{% for pad in pads -%}
+{%- if not loop.first %}
+---
+{% endif -%}
+{{ pad.title }}
+
+{{ pad.content }}
+{%- endfor %}
+{% endif %}
