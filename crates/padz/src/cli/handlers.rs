@@ -277,6 +277,41 @@ impl<'a> ScopedApi<'a> {
         let result = self.call(|api, scope| api.rename_tag(scope, old_name, new_name))?;
         self.messages(result)
     }
+
+    // --- List operations ---
+
+    pub fn list_pads(
+        &self,
+        filter: PadFilter,
+        peek: bool,
+        show_deleted_help: bool,
+    ) -> HandlerResult<Value> {
+        let result = self.call(|api, scope| api.get_pads(scope, filter))?;
+        Ok(Output::Render(build_list_result_value(
+            &result.listed_pads,
+            peek,
+            show_deleted_help,
+            &result.messages,
+            self.state.output_mode,
+        )))
+    }
+
+    // --- View operations ---
+
+    pub fn view_pads(&self, indexes: &[String]) -> HandlerResult<Value> {
+        let result = self.call(|api, scope| api.view_pads(scope, indexes))?;
+        let pads: Vec<serde_json::Value> = result
+            .listed_pads
+            .iter()
+            .map(|dp| {
+                serde_json::json!({
+                    "title": dp.pad.metadata.title,
+                    "content": dp.pad.content,
+                })
+            })
+            .collect();
+        Ok(Output::Render(serde_json::json!({ "pads": pads })))
+    }
 }
 
 /// Get a scoped API accessor from the command context
@@ -408,8 +443,6 @@ pub fn list(
     #[flag(name = "in-progress")] in_progress: bool,
     #[arg] tags: Vec<String>,
 ) -> HandlerResult<Value> {
-    let state = get_state(ctx);
-
     let todo_status = if planned {
         Some(TodoStatus::Planned)
     } else if done {
@@ -431,18 +464,7 @@ pub fn list(
         tags: if tags.is_empty() { None } else { Some(tags) },
     };
 
-    let result = state.with_api(|api| {
-        api.get_pads(state.scope, filter)
-            .map_err(|e| anyhow::anyhow!("{}", e))
-    })?;
-
-    Ok(Output::Render(build_list_result_value(
-        &result.listed_pads,
-        peek,
-        deleted,
-        &result.messages,
-        state.output_mode,
-    )))
+    api(ctx).list_pads(filter, peek, deleted)
 }
 
 #[handler]
@@ -451,7 +473,6 @@ pub fn search(
     #[arg] term: String,
     #[arg] tags: Vec<String>,
 ) -> HandlerResult<Value> {
-    let state = get_state(ctx);
     let filter = PadFilter {
         status: PadStatusFilter::Active,
         search_term: Some(term),
@@ -459,18 +480,7 @@ pub fn search(
         tags: if tags.is_empty() { None } else { Some(tags) },
     };
 
-    let result = state.with_api(|api| {
-        api.get_pads(state.scope, filter)
-            .map_err(|e| anyhow::anyhow!("{}", e))
-    })?;
-
-    Ok(Output::Render(build_list_result_value(
-        &result.listed_pads,
-        false, // peek
-        false, // show_deleted_help
-        &result.messages,
-        state.output_mode,
-    )))
+    api(ctx).list_pads(filter, false, false)
 }
 
 // =============================================================================
@@ -483,25 +493,7 @@ pub fn view(
     #[arg] indexes: Vec<String>,
     #[flag] _peek: bool, // Reserved for future use
 ) -> HandlerResult<Value> {
-    let state = get_state(ctx);
-    let result = state.with_api(|api| {
-        api.view_pads(state.scope, &indexes)
-            .map_err(|e| anyhow::anyhow!("{}", e))
-    })?;
-
-    // Build data for template rendering
-    let pads: Vec<serde_json::Value> = result
-        .listed_pads
-        .iter()
-        .map(|dp| {
-            serde_json::json!({
-                "title": dp.pad.metadata.title,
-                "content": dp.pad.content,
-            })
-        })
-        .collect();
-
-    Ok(Output::Render(serde_json::json!({ "pads": pads })))
+    api(ctx).view_pads(&indexes)
 }
 
 #[handler]
