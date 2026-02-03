@@ -17,3 +17,7 @@
 {%- if deleted_help -%}
 {%- include "_deleted_help.jinja" -%}
 {%- endif -%}
+{#- Trailing messages (info, warnings, errors from API) -#}
+{%- for msg in trailing_messages -%}
+{{ msg.content | style_as(msg.style) }}{{ "" | nl }}
+{%- endfor -%}

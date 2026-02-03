@@ -11,12 +11,12 @@
 //! ## Responsibilities
 //!
 //! 1. **Argument Parsing**: Convert shell arguments into typed commands via clap
-//! 2. **Context Setup**: Initialize handler context with API, scope, and configuration
+//! 2. **Context Setup**: Initialize app state with API, scope, and configuration
 //! 3. **Dispatch**: Route commands to handlers via standout's App
 //! 4. **Output Formatting**: Use standout templates for rendering
 //! 5. **Error Handling**: Convert errors to user-friendly messages and exit codes
 
-use super::handlers::{self, HandlerContext};
+use super::handlers::AppState;
 use super::setup::{build_command, parse_cli, Cli, Commands, CompletionShell};
 use padzapp::error::Result;
 use padzapp::init::initialize;
@@ -35,9 +35,8 @@ pub fn run() -> Result<()> {
         return handle_completions(*shell);
     }
 
-    // Initialize handler context (thread-local storage for handlers)
-    let handler_ctx = init_context(&cli, output_mode)?;
-    handlers::init_context(handler_ctx);
+    // Initialize app state for handlers
+    let app_state = create_app_state(&cli, output_mode)?;
 
     // Determine effective args: handle naked invocation by injecting synthetic command
     let args: Vec<String> = if cli.command.is_none() {
@@ -52,16 +51,17 @@ pub fn run() -> Result<()> {
         std::env::args().collect()
     };
 
-    // Build app, parse, and dispatch through unified path
-    let app = build_dispatch_app();
+    // Build app with injected state, parse, and dispatch through unified path
+    let app = build_dispatch_app(app_state);
     let cmd = build_command();
     let matches = app.parse_from(cmd, args);
     handle_dispatch_result(app.dispatch(matches, output_mode))
 }
 
-/// Build the dispatch-ready App with templates, styles, and command configuration
-fn build_dispatch_app() -> App {
+/// Build the dispatch-ready App with templates, styles, command configuration, and app state
+fn build_dispatch_app(app_state: AppState) -> App {
     App::builder()
+        .app_state(app_state)
         .templates(embed_templates!("src/cli/templates"))
         .styles(embed_styles!("src/styles"))
         .default_theme("default")
@@ -90,7 +90,8 @@ fn handle_dispatch_result(result: RunResult) -> Result<()> {
     Ok(())
 }
 
-fn init_context(cli: &Cli, output_mode: OutputMode) -> Result<HandlerContext> {
+/// Create app state containing API, scope, and configuration for handlers
+fn create_app_state(cli: &Cli, output_mode: OutputMode) -> Result<AppState> {
     let cwd = std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from("."));
     let data_override = cli.data.as_ref().map(std::path::PathBuf::from);
 
@@ -101,12 +102,12 @@ fn init_context(cli: &Cli, output_mode: OutputMode) -> Result<HandlerContext> {
         padzapp::model::Scope::Project
     };
 
-    Ok(HandlerContext {
-        api: padz_ctx.api,
+    Ok(AppState::new(
+        padz_ctx.api,
         scope,
-        import_extensions: padz_ctx.config.import_extensions.clone(),
+        padz_ctx.config.import_extensions.clone(),
         output_mode,
-    })
+    ))
 }
 
 fn handle_completions(shell: CompletionShell) -> Result<()> {
