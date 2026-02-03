@@ -665,6 +665,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "either"
+version = "1.15.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "48c757948c5ede0e46177b7add2e67155f70e33c07fea8284df6576da70b3719"
+
+[[package]]
 name = "encode_unicode"
 version = "1.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -690,6 +696,12 @@ dependencies = [
  "quote",
  "syn 2.0.111",
 ]
+
+[[package]]
+name = "env_home"
+version = "0.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "c7f84e12ccf0a7ddc17a6c41c93326024c42920d7ee630d04950e6926645c0fe"
 
 [[package]]
 name = "equivalent"
@@ -1234,6 +1246,7 @@ dependencies = [
  "serde_yaml",
  "standout",
  "standout-dispatch",
+ "standout-input",
  "standout-macros",
  "timeago",
  "unicode-width",
@@ -1708,6 +1721,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "shell-words"
+version = "1.1.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "dc6fe69c597f9c37bfeeeeeb33da3530379845f10be461a66d16d03eca2ded77"
+
+[[package]]
 name = "shlex"
 version = "1.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1758,9 +1777,9 @@ dependencies = [
 
 [[package]]
 name = "standout"
-version = "4.0.0"
+version = "5.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ae60bbd2004cb9358bfc6c8311e1dadfaf9d633bacb9c99244d9d1daf8a144b5"
+checksum = "931fedb72bc27a6153742661b50258c85636957e49976f2be9490f471b13d3b9"
 dependencies = [
  "anyhow",
  "clap",
@@ -1784,18 +1803,18 @@ dependencies = [
 
 [[package]]
 name = "standout-bbparser"
-version = "4.0.0"
+version = "5.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "20d37378be509609c01636a5c06c1b7c3b4bbeb1f3f6280cfab36cb745b3d515"
+checksum = "f51feda3cc4f858e094af802b346869c4a3a42177b00f7a05a1a0041c266fd5d"
 dependencies = [
  "console",
 ]
 
 [[package]]
 name = "standout-dispatch"
-version = "4.0.0"
+version = "5.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "76a8e66977387fb45f7c2d20d8a7aac40dc5b4552547c36dd4a86dacf31405c3"
+checksum = "e1ade72d3eb960e42032a5924987311f8666cf79f88163e45fe015bda68bd311"
 dependencies = [
  "anyhow",
  "clap",
@@ -1805,10 +1824,23 @@ dependencies = [
 ]
 
 [[package]]
-name = "standout-macros"
-version = "4.0.0"
+name = "standout-input"
+version = "5.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e37cef1bf76eda5fbedbc1862c90761fe1c3efc97bae512d42b7f8282c8f7e1a"
+checksum = "f5d5c89c9ef3b02c1ef087882ad00006f8804a47456d947e180f9dff240fd0c7"
+dependencies = [
+ "clap",
+ "shell-words",
+ "tempfile",
+ "thiserror 2.0.17",
+ "which",
+]
+
+[[package]]
+name = "standout-macros"
+version = "5.0.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "6dcff2c3e609b6d65e5c520dddaf89a81cd4d134fe707251bc802d4e12bed3b2"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -1817,9 +1849,9 @@ dependencies = [
 
 [[package]]
 name = "standout-pipe"
-version = "4.0.0"
+version = "5.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1657e51cba2f5413b089482d16d12d7b538bf0b763c0e1b76c10c8d1cd868ad5"
+checksum = "ae4abad80e48e3fa645128d4fa47ca4097275b1c1eef99ec34c6003b36c971e2"
 dependencies = [
  "thiserror 2.0.17",
  "wait-timeout",
@@ -1827,9 +1859,9 @@ dependencies = [
 
 [[package]]
 name = "standout-render"
-version = "4.0.0"
+version = "5.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "32b81a8dc2b35e43f3504bd3c850d4524bea6d3fd11fbddd83437e04321bc709"
+checksum = "dfe0a94306b3ae8aa8c8ee0f741bf5fe3e09ad7efe521766d4c64c92b3d392ee"
 dependencies = [
  "console",
  "cssparser",
@@ -1848,9 +1880,9 @@ dependencies = [
 
 [[package]]
 name = "standout-seeker"
-version = "4.0.0"
+version = "5.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7d1aa1c45e8e19096a2aad21850c5b09d598543828f5a3749432787ea46591e8"
+checksum = "fc6bb24a57d56ff1a2c7a8a9a204b630768046ac8503935a35a49f0bad8fba07"
 dependencies = [
  "regex",
  "thiserror 2.0.17",
@@ -2179,6 +2211,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "which"
+version = "7.0.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "24d643ce3fd3e5b54854602a080f34fb10ab75e0b813ee32d00ca2b44fa74762"
+dependencies = [
+ "either",
+ "env_home",
+ "rustix 1.1.2",
+ "winsafe",
+]
+
+[[package]]
 name = "winapi"
 version = "0.3.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2498,6 +2542,12 @@ checksum = "80d0f4e272c85def139476380b12f9ac60926689dd2e01d4923222f40580869d"
 dependencies = [
  "winapi",
 ]
+
+[[package]]
+name = "winsafe"
+version = "0.0.19"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d135d17ab770252ad95e9a872d365cf3090e3be864a34ab46f48555993efc904"
 
 [[package]]
 name = "wit-bindgen"
