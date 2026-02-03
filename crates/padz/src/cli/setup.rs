@@ -163,6 +163,7 @@ pub enum Commands {
     // --- Core commands ---
     /// Create a new pad
     #[command(alias = "n", display_order = 1)]
+    #[dispatch(pure)]
     Create {
         /// Skip opening the editor
         #[arg(long)]
@@ -212,6 +213,7 @@ pub enum Commands {
 
     /// Search pads (dedicated command)
     #[command(display_order = 3)]
+    #[dispatch(pure)]
     Search {
         /// Search term
         term: String,
@@ -224,7 +226,7 @@ pub enum Commands {
     // --- Pad operations ---
     /// View one or more pads
     #[command(alias = "v", display_order = 10)]
-    #[dispatch(template = "view", pipe_to_clipboard)]
+    #[dispatch(pure, template = "view", pipe_to_clipboard)]
     View {
         /// Indexes of the pads (e.g. 1 p1 d1)
         #[arg(required = true, num_args = 1.., add = all_pads_completer())]
@@ -237,6 +239,7 @@ pub enum Commands {
 
     /// Edit a pad in the editor
     #[command(alias = "e", display_order = 11)]
+    #[dispatch(pure)]
     Edit {
         /// Indexes of the pads (e.g. 1 p1 d1)
         #[arg(required = true, num_args = 1.., add = active_pads_completer())]
@@ -245,6 +248,7 @@ pub enum Commands {
 
     /// Open a pad in the editor (copies to clipboard on exit)
     #[command(alias = "o", display_order = 12)]
+    #[dispatch(pure)]
     Open {
         /// Indexes of the pads (e.g. 1 p1 d1)
         #[arg(required = true, num_args = 1.., add = all_pads_completer())]
@@ -253,6 +257,7 @@ pub enum Commands {
 
     /// Delete one or more pads (protected pads must be unpinned first)
     #[command(alias = "rm", display_order = 13)]
+    #[dispatch(pure)]
     Delete {
         /// Indexes of the pads (e.g. 1 3 5)
         #[arg(num_args = 1.., add = active_pads_completer(), required_unless_present = "done_status")]
@@ -265,6 +270,7 @@ pub enum Commands {
 
     /// Restore deleted pads
     #[command(display_order = 14)]
+    #[dispatch(pure)]
     Restore {
         /// Indexes of deleted pads (e.g. d1 d2 or just 1 2)
         #[arg(required = true, num_args = 1.., add = deleted_pads_completer())]
@@ -282,6 +288,7 @@ pub enum Commands {
 
     /// Unpin one or more pads
     #[command(alias = "u", display_order = 16)]
+    #[dispatch(pure)]
     Unpin {
         /// Indexes of the pads (e.g. p1 p2 p3)
         #[arg(required = true, num_args = 1.., add = active_pads_completer())]
@@ -290,7 +297,7 @@ pub enum Commands {
 
     /// Move one or more pads to a new parent
     #[command(alias = "mv", display_order = 13)]
-    #[dispatch(handler = handlers::move_pads)]
+    #[dispatch(pure, handler = handlers::move_pads__handler)]
     Move {
         /// Indexes of the pads (e.g. 1 2)
         /// If --root is NOT specified, the last argument is the destination.
@@ -304,6 +311,7 @@ pub enum Commands {
 
     /// Print the file path to one or more pads
     #[command(display_order = 17)]
+    #[dispatch(pure)]
     Path {
         /// Indexes of the pads (e.g. 1 p1 d1)
         #[arg(required = true, num_args = 1.., add = all_pads_completer())]
@@ -312,6 +320,7 @@ pub enum Commands {
 
     /// Mark pads as done (completed)
     #[command(alias = "done", display_order = 18)]
+    #[dispatch(pure)]
     Complete {
         /// Indexes of the pads (e.g. 1 3 5 or 1-5)
         #[arg(required = true, num_args = 1.., add = active_pads_completer())]
@@ -320,6 +329,7 @@ pub enum Commands {
 
     /// Reopen pads (set back to planned)
     #[command(display_order = 19)]
+    #[dispatch(pure)]
     Reopen {
         /// Indexes of the pads (e.g. 1 3 5 or 1-5)
         #[arg(required = true, num_args = 1.., add = active_pads_completer())]
@@ -328,6 +338,7 @@ pub enum Commands {
 
     /// Add tags to pads
     #[command(name = "add-tag", display_order = 23)]
+    #[dispatch(pure)]
     AddTag {
         /// Indexes of the pads (e.g. 1 3 5 or 1-5)
         #[arg(required = true, num_args = 1.., add = active_pads_completer())]
@@ -340,6 +351,7 @@ pub enum Commands {
 
     /// Remove tags from pads
     #[command(name = "remove-tag", display_order = 24)]
+    #[dispatch(pure)]
     RemoveTag {
         /// Indexes of the pads (e.g. 1 3 5 or 1-5)
         #[arg(required = true, num_args = 1.., add = active_pads_completer())]
@@ -353,6 +365,7 @@ pub enum Commands {
     // --- Data operations ---
     /// Permanently delete pads
     #[command(display_order = 20)]
+    #[dispatch(pure)]
     Purge {
         /// Indexes of the pads (e.g. d1 d2) - if omitted, purges all deleted pads
         #[arg(required = false, num_args = 0.., add = deleted_pads_completer())]
@@ -369,6 +382,7 @@ pub enum Commands {
 
     /// Export pads to a tar.gz archive (or single file with --single-file)
     #[command(display_order = 21)]
+    #[dispatch(pure)]
     Export {
         /// Export all pads to a single file with this title (format detected from extension: .md for markdown, otherwise text)
         #[arg(long, value_name = "TITLE")]
@@ -381,6 +395,7 @@ pub enum Commands {
 
     /// Import files as pads
     #[command(display_order = 22)]
+    #[dispatch(pure)]
     Import {
         /// Paths to files or directories to import
         #[arg(required = true, num_args = 1..)]
@@ -396,10 +411,12 @@ pub enum Commands {
     // --- Misc commands ---
     /// Check and fix data inconsistencies
     #[command(display_order = 30)]
+    #[dispatch(pure)]
     Doctor,
 
     /// Get or set configuration
     #[command(display_order = 31)]
+    #[dispatch(pure)]
     Config {
         /// Configuration key (e.g., file-ext)
         key: Option<String>,
@@ -410,6 +427,7 @@ pub enum Commands {
 
     /// Initialize the store (optional utility)
     #[command(display_order = 32)]
+    #[dispatch(pure)]
     Init,
 
     /// Generate shell completions
@@ -428,10 +446,12 @@ pub enum Commands {
 pub enum TagsCommands {
     /// List all defined tags
     #[command(alias = "ls", display_order = 25)]
+    #[dispatch(pure)]
     List,
 
     /// Create a new tag
     #[command(display_order = 26)]
+    #[dispatch(pure)]
     Create {
         /// Name of the tag to create
         name: String,
@@ -439,6 +459,7 @@ pub enum TagsCommands {
 
     /// Delete a tag (removes from all pads)
     #[command(alias = "rm", display_order = 27)]
+    #[dispatch(pure)]
     Delete {
         /// Name of the tag to delete
         name: String,
@@ -446,6 +467,7 @@ pub enum TagsCommands {
 
     /// Rename a tag (updates all pads)
     #[command(alias = "mv", display_order = 28)]
+    #[dispatch(pure)]
     Rename {
         /// Current name of the tag
         old_name: String,

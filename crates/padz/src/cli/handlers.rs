@@ -1,20 +1,19 @@
 //! Command handlers for padz CLI.
 //!
-//! These handlers follow the standout contract:
-//! `fn handler_name(matches: &ArgMatches, ctx: &CommandContext) -> HandlerResult<T>`
+//! All handlers use the `#[handler]` proc macro from `standout_macros` which auto-extracts
+//! CLI arguments from clap's ArgMatches. The handler signature uses annotations:
+//! - `#[ctx]` - CommandContext reference
+//! - `#[arg]` / `#[arg(name = "x")]` - Positional/named arguments
+//! - `#[flag]` / `#[flag(name = "x")]` - Boolean flags
+//!
+//! Each handler with `#[handler]` generates a `{name}__handler` wrapper function
+//! (non-snake-case by design) that dispatch calls via `#[dispatch(pure)]` in setup.rs.
 //!
 //! State is accessed via standout's app_state mechanism, injected at app build time.
-//!
-//! ## Handler Migration
-//!
-//! Handlers are being migrated to use the `#[handler]` macro for reduced boilerplate.
-//! Pure handlers use `#[handler]` attribute and have `#[dispatch(pure)]` in setup.rs.
-//! The generated `__handler` wrapper functions have non-snake-case names by design.
 
 // Allow non_snake_case for macro-generated __handler wrapper functions
 #![allow(non_snake_case)]
 
-use clap::ArgMatches;
 use padzapp::api::{ConfigAction, PadFilter, PadStatusFilter, PadzApi, TodoStatus};
 use padzapp::clipboard::{copy_to_clipboard, format_for_clipboard};
 use padzapp::editor::open_in_editor;
@@ -91,20 +90,21 @@ fn copy_pad_to_clipboard(path: &Path) {
 // Core commands
 // =============================================================================
 
-pub fn create(matches: &ArgMatches, ctx: &CommandContext) -> HandlerResult<Value> {
+#[handler]
+pub fn create(
+    #[ctx] ctx: &CommandContext,
+    #[flag] no_editor: bool,
+    #[arg] inside: Option<String>,
+    #[arg] title: Vec<String>,
+) -> HandlerResult<Value> {
     let state = get_state(ctx);
-    let no_editor = matches.get_flag("no_editor");
-    let inside: Option<&str> = matches.get_one::<String>("inside").map(|s| s.as_str());
-    let title_words: Vec<String> = matches
-        .get_many::<String>("title")
-        .map(|v| v.cloned().collect())
-        .unwrap_or_default();
 
-    let title_arg = if title_words.is_empty() {
+    let title_arg = if title.is_empty() {
         None
     } else {
-        Some(title_words.join(" "))
+        Some(title.join(" "))
     };
+    let inside = inside.as_deref();
 
     // Check for piped input
     use std::io::{IsTerminal, Read};
@@ -233,17 +233,13 @@ pub fn list(
     )))
 }
 
-pub fn search(matches: &ArgMatches, ctx: &CommandContext) -> HandlerResult<Value> {
+#[handler]
+pub fn search(
+    #[ctx] ctx: &CommandContext,
+    #[arg] term: String,
+    #[arg] tags: Vec<String>,
+) -> HandlerResult<Value> {
     let state = get_state(ctx);
-    let term: String = matches
-        .get_one::<String>("term")
-        .cloned()
-        .unwrap_or_default();
-    let tags: Vec<String> = matches
-        .get_many::<String>("tags")
-        .map(|v| v.cloned().collect())
-        .unwrap_or_default();
-
     let filter = PadFilter {
         status: PadStatusFilter::Active,
         search_term: Some(term),
@@ -256,28 +252,26 @@ pub fn search(matches: &ArgMatches, ctx: &CommandContext) -> HandlerResult<Value
             .map_err(|e| anyhow::anyhow!("{}", e))
     })?;
 
-    let data = build_list_result_value(
+    Ok(Output::Render(build_list_result_value(
         &result.listed_pads,
         false, // peek
         false, // show_deleted_help
         &result.messages,
         state.output_mode,
-    );
-    Ok(Output::Render(data))
+    )))
 }
 
 // =============================================================================
 // Pad operations
 // =============================================================================
 
-pub fn view(matches: &ArgMatches, ctx: &CommandContext) -> HandlerResult<Value> {
+#[handler]
+pub fn view(
+    #[ctx] ctx: &CommandContext,
+    #[arg] indexes: Vec<String>,
+    #[flag] _peek: bool, // Reserved for future use
+) -> HandlerResult<Value> {
     let state = get_state(ctx);
-    let indexes: Vec<String> = matches
-        .get_many::<String>("indexes")
-        .map(|v| v.cloned().collect())
-        .unwrap_or_default();
-    let _peek = matches.get_flag("peek");
-
     let result = state.with_api(|api| {
         api.view_pads(state.scope, &indexes)
             .map_err(|e| anyhow::anyhow!("{}", e))
@@ -298,12 +292,9 @@ pub fn view(matches: &ArgMatches, ctx: &CommandContext) -> HandlerResult<Value> 
     Ok(Output::Render(serde_json::json!({ "pads": pads })))
 }
 
-pub fn edit(matches: &ArgMatches, ctx: &CommandContext) -> HandlerResult<Value> {
+#[handler]
+pub fn edit(#[ctx] ctx: &CommandContext, #[arg] indexes: Vec<String>) -> HandlerResult<Value> {
     let state = get_state(ctx);
-    let indexes: Vec<String> = matches
-        .get_many::<String>("indexes")
-        .map(|v| v.cloned().collect())
-        .unwrap_or_default();
 
     // Check for piped input
     use std::io::{IsTerminal, Read};
@@ -349,12 +340,9 @@ pub fn edit(matches: &ArgMatches, ctx: &CommandContext) -> HandlerResult<Value> 
     }
 }
 
-pub fn open(matches: &ArgMatches, ctx: &CommandContext) -> HandlerResult<Value> {
+#[handler]
+pub fn open(#[ctx] ctx: &CommandContext, #[arg] indexes: Vec<String>) -> HandlerResult<Value> {
     let state = get_state(ctx);
-    let indexes: Vec<String> = matches
-        .get_many::<String>("indexes")
-        .map(|v| v.cloned().collect())
-        .unwrap_or_default();
 
     // Check for piped input
     use std::io::{IsTerminal, Read};
@@ -401,13 +389,13 @@ pub fn open(matches: &ArgMatches, ctx: &CommandContext) -> HandlerResult<Value> 
     }
 }
 
-pub fn delete(matches: &ArgMatches, ctx: &CommandContext) -> HandlerResult<Value> {
+#[handler]
+pub fn delete(
+    #[ctx] ctx: &CommandContext,
+    #[arg] indexes: Vec<String>,
+    #[flag] done_status: bool,
+) -> HandlerResult<Value> {
     let state = get_state(ctx);
-    let indexes: Vec<String> = matches
-        .get_many::<String>("indexes")
-        .map(|v| v.cloned().collect())
-        .unwrap_or_default();
-    let done_status = matches.get_flag("done_status");
 
     if done_status {
         // Delete all pads with Done status
@@ -464,25 +452,20 @@ pub fn delete(matches: &ArgMatches, ctx: &CommandContext) -> HandlerResult<Value
     }
 }
 
-pub fn restore(matches: &ArgMatches, ctx: &CommandContext) -> HandlerResult<Value> {
+#[handler]
+pub fn restore(#[ctx] ctx: &CommandContext, #[arg] indexes: Vec<String>) -> HandlerResult<Value> {
     let state = get_state(ctx);
-    let indexes: Vec<String> = matches
-        .get_many::<String>("indexes")
-        .map(|v| v.cloned().collect())
-        .unwrap_or_default();
-
     let result = state.with_api(|api| {
         api.restore_pads(state.scope, &indexes)
             .map_err(|e| anyhow::anyhow!("{}", e))
     })?;
 
-    let data = build_modification_result_value(
+    Ok(Output::Render(build_modification_result_value(
         "Restored",
         &result.affected_pads,
         &result.messages,
         state.output_mode,
-    );
-    Ok(Output::Render(data))
+    )))
 }
 
 /// Pin pads to the top of the list.
@@ -504,35 +487,29 @@ pub fn pin(#[ctx] ctx: &CommandContext, #[arg] indexes: Vec<String>) -> HandlerR
     )))
 }
 
-pub fn unpin(matches: &ArgMatches, ctx: &CommandContext) -> HandlerResult<Value> {
+#[handler]
+pub fn unpin(#[ctx] ctx: &CommandContext, #[arg] indexes: Vec<String>) -> HandlerResult<Value> {
     let state = get_state(ctx);
-    let indexes: Vec<String> = matches
-        .get_many::<String>("indexes")
-        .map(|v| v.cloned().collect())
-        .unwrap_or_default();
-
     let result = state.with_api(|api| {
         api.unpin_pads(state.scope, &indexes)
             .map_err(|e| anyhow::anyhow!("{}", e))
     })?;
 
-    let data = build_modification_result_value(
+    Ok(Output::Render(build_modification_result_value(
         "Unpinned",
         &result.affected_pads,
         &result.messages,
         state.output_mode,
-    );
-    Ok(Output::Render(data))
+    )))
 }
 
-pub fn move_pads(matches: &ArgMatches, ctx: &CommandContext) -> HandlerResult<Value> {
+#[handler]
+pub fn move_pads(
+    #[ctx] ctx: &CommandContext,
+    #[arg] indexes: Vec<String>,
+    #[flag] root: bool,
+) -> HandlerResult<Value> {
     let state = get_state(ctx);
-    let indexes: Vec<String> = matches
-        .get_many::<String>("indexes")
-        .map(|v| v.cloned().collect())
-        .unwrap_or_default();
-    let root = matches.get_flag("root");
-
     let result = if root {
         state.with_api(|api| {
             api.move_pads(state.scope, &indexes, None)
@@ -552,22 +529,18 @@ pub fn move_pads(matches: &ArgMatches, ctx: &CommandContext) -> HandlerResult<Va
         })?
     };
 
-    let data = build_modification_result_value(
+    Ok(Output::Render(build_modification_result_value(
         "Moved",
         &result.affected_pads,
         &result.messages,
         state.output_mode,
-    );
-    Ok(Output::Render(data))
+    )))
 }
 
-pub fn path(matches: &ArgMatches, ctx: &CommandContext) -> HandlerResult<Value> {
+/// Returns pad file paths - outputs directly and returns Silent.
+#[handler]
+pub fn path(#[ctx] ctx: &CommandContext, #[arg] indexes: Vec<String>) -> Result<(), anyhow::Error> {
     let state = get_state(ctx);
-    let indexes: Vec<String> = matches
-        .get_many::<String>("indexes")
-        .map(|v| v.cloned().collect())
-        .unwrap_or_default();
-
     let result = state.with_api(|api| {
         api.pad_paths(state.scope, &indexes)
             .map_err(|e| anyhow::anyhow!("{}", e))
@@ -576,87 +549,68 @@ pub fn path(matches: &ArgMatches, ctx: &CommandContext) -> HandlerResult<Value> 
     for path in &result.pad_paths {
         println!("{}", path.display());
     }
-    Ok(Output::<Value>::Silent)
+    Ok(())
 }
 
-pub fn complete(matches: &ArgMatches, ctx: &CommandContext) -> HandlerResult<Value> {
+#[handler]
+pub fn complete(#[ctx] ctx: &CommandContext, #[arg] indexes: Vec<String>) -> HandlerResult<Value> {
     let state = get_state(ctx);
-    let indexes: Vec<String> = matches
-        .get_many::<String>("indexes")
-        .map(|v| v.cloned().collect())
-        .unwrap_or_default();
-
     let result = state.with_api(|api| {
         api.complete_pads(state.scope, &indexes)
             .map_err(|e| anyhow::anyhow!("{}", e))
     })?;
 
-    let data = build_modification_result_value(
+    Ok(Output::Render(build_modification_result_value(
         "Completed",
         &result.affected_pads,
         &result.messages,
         state.output_mode,
-    );
-    Ok(Output::Render(data))
+    )))
 }
 
-pub fn reopen(matches: &ArgMatches, ctx: &CommandContext) -> HandlerResult<Value> {
+#[handler]
+pub fn reopen(#[ctx] ctx: &CommandContext, #[arg] indexes: Vec<String>) -> HandlerResult<Value> {
     let state = get_state(ctx);
-    let indexes: Vec<String> = matches
-        .get_many::<String>("indexes")
-        .map(|v| v.cloned().collect())
-        .unwrap_or_default();
-
     let result = state.with_api(|api| {
         api.reopen_pads(state.scope, &indexes)
             .map_err(|e| anyhow::anyhow!("{}", e))
     })?;
 
-    let data = build_modification_result_value(
+    Ok(Output::Render(build_modification_result_value(
         "Reopened",
         &result.affected_pads,
         &result.messages,
         state.output_mode,
-    );
-    Ok(Output::Render(data))
+    )))
 }
 
-pub fn add_tag(matches: &ArgMatches, ctx: &CommandContext) -> HandlerResult<Value> {
+#[handler]
+pub fn add_tag(
+    #[ctx] ctx: &CommandContext,
+    #[arg] indexes: Vec<String>,
+    #[arg] tags: Vec<String>,
+) -> HandlerResult<Value> {
     let state = get_state(ctx);
-    let indexes: Vec<String> = matches
-        .get_many::<String>("indexes")
-        .map(|v| v.cloned().collect())
-        .unwrap_or_default();
-    let tags: Vec<String> = matches
-        .get_many::<String>("tags")
-        .map(|v| v.cloned().collect())
-        .unwrap_or_default();
-
     let result = state.with_api(|api| {
         api.add_tags_to_pads(state.scope, &indexes, &tags)
             .map_err(|e| anyhow::anyhow!("{}", e))
     })?;
 
-    let data = build_modification_result_value(
+    Ok(Output::Render(build_modification_result_value(
         "Tagged",
         &result.affected_pads,
         &result.messages,
         state.output_mode,
-    );
-    Ok(Output::Render(data))
+    )))
 }
 
-pub fn remove_tag(matches: &ArgMatches, ctx: &CommandContext) -> HandlerResult<Value> {
+#[handler]
+pub fn remove_tag(
+    #[ctx] ctx: &CommandContext,
+    #[arg] indexes: Vec<String>,
+    #[arg] tags: Vec<String>,
+) -> HandlerResult<Value> {
     let state = get_state(ctx);
-    let indexes: Vec<String> = matches
-        .get_many::<String>("indexes")
-        .map(|v| v.cloned().collect())
-        .unwrap_or_default();
-    let tags: Vec<String> = matches
-        .get_many::<String>("tags")
-        .map(|v| v.cloned().collect())
-        .unwrap_or_default();
-
     let result = if tags.is_empty() {
         state.with_api(|api| {
             api.clear_tags_from_pads(state.scope, &indexes)
@@ -669,28 +623,26 @@ pub fn remove_tag(matches: &ArgMatches, ctx: &CommandContext) -> HandlerResult<V
         })?
     };
 
-    let data = build_modification_result_value(
+    Ok(Output::Render(build_modification_result_value(
         "Untagged",
         &result.affected_pads,
         &result.messages,
         state.output_mode,
-    );
-    Ok(Output::Render(data))
+    )))
 }
 
 // =============================================================================
 // Data operations
 // =============================================================================
 
-pub fn purge(matches: &ArgMatches, ctx: &CommandContext) -> HandlerResult<Value> {
+#[handler]
+pub fn purge(
+    #[ctx] ctx: &CommandContext,
+    #[arg] indexes: Vec<String>,
+    #[flag] yes: bool,
+    #[flag] recursive: bool,
+) -> HandlerResult<Value> {
     let state = get_state(ctx);
-    let indexes: Vec<String> = matches
-        .get_many::<String>("indexes")
-        .map(|v| v.cloned().collect())
-        .unwrap_or_default();
-    let yes = matches.get_flag("yes");
-    let recursive = matches.get_flag("recursive");
-
     let result = state.with_api(|api| {
         api.purge_pads(state.scope, &indexes, yes, recursive)
             .map_err(|e| anyhow::anyhow!("{}", e))
@@ -701,14 +653,13 @@ pub fn purge(matches: &ArgMatches, ctx: &CommandContext) -> HandlerResult<Value>
     })))
 }
 
-pub fn export(matches: &ArgMatches, ctx: &CommandContext) -> HandlerResult<Value> {
+#[handler]
+pub fn export(
+    #[ctx] ctx: &CommandContext,
+    #[arg(name = "single-file")] single_file: Option<String>,
+    #[arg] indexes: Vec<String>,
+) -> HandlerResult<Value> {
     let state = get_state(ctx);
-    let single_file: Option<String> = matches.get_one::<String>("single_file").cloned();
-    let indexes: Vec<String> = matches
-        .get_many::<String>("indexes")
-        .map(|v| v.cloned().collect())
-        .unwrap_or_default();
-
     let result = if let Some(title) = single_file {
         // Single-file export (writes directly to file)
         state.with_api(|api| {
@@ -728,12 +679,10 @@ pub fn export(matches: &ArgMatches, ctx: &CommandContext) -> HandlerResult<Value
     })))
 }
 
-pub fn import(matches: &ArgMatches, ctx: &CommandContext) -> HandlerResult<Value> {
+#[handler]
+pub fn import(#[ctx] ctx: &CommandContext, #[arg] paths: Vec<String>) -> HandlerResult<Value> {
     let state = get_state(ctx);
-    let paths: Vec<std::path::PathBuf> = matches
-        .get_many::<String>("paths")
-        .map(|v| v.map(std::path::PathBuf::from).collect())
-        .unwrap_or_default();
+    let paths: Vec<std::path::PathBuf> = paths.into_iter().map(std::path::PathBuf::from).collect();
 
     let result = state.with_api(|api| {
         api.import_pads(state.scope, paths, &state.import_extensions.0)
@@ -749,7 +698,8 @@ pub fn import(matches: &ArgMatches, ctx: &CommandContext) -> HandlerResult<Value
 // Misc commands
 // =============================================================================
 
-pub fn doctor(_matches: &ArgMatches, ctx: &CommandContext) -> HandlerResult<Value> {
+#[handler]
+pub fn doctor(#[ctx] ctx: &CommandContext) -> HandlerResult<Value> {
     let state = get_state(ctx);
     let result = state.with_api(|api| {
         api.doctor(state.scope)
@@ -761,11 +711,13 @@ pub fn doctor(_matches: &ArgMatches, ctx: &CommandContext) -> HandlerResult<Valu
     })))
 }
 
-pub fn config(matches: &ArgMatches, ctx: &CommandContext) -> HandlerResult<Value> {
+#[handler]
+pub fn config(
+    #[ctx] ctx: &CommandContext,
+    #[arg] key: Option<String>,
+    #[arg] value: Option<String>,
+) -> HandlerResult<Value> {
     let state = get_state(ctx);
-    let key: Option<String> = matches.get_one::<String>("key").cloned();
-    let value: Option<String> = matches.get_one::<String>("value").cloned();
-
     let action = match (key.clone(), value) {
         (None, _) => ConfigAction::ShowAll,
         (Some(k), None) => ConfigAction::ShowKey(k),
@@ -793,7 +745,8 @@ pub fn config(matches: &ArgMatches, ctx: &CommandContext) -> HandlerResult<Value
     })))
 }
 
-pub fn init(_matches: &ArgMatches, ctx: &CommandContext) -> HandlerResult<Value> {
+#[handler]
+pub fn init(#[ctx] ctx: &CommandContext) -> HandlerResult<Value> {
     let state = get_state(ctx);
     let result =
         state.with_api(|api| api.init(state.scope).map_err(|e| anyhow::anyhow!("{}", e)))?;
@@ -810,7 +763,8 @@ pub fn init(_matches: &ArgMatches, ctx: &CommandContext) -> HandlerResult<Value>
 pub mod tags {
     use super::*;
 
-    pub fn list(_matches: &ArgMatches, ctx: &CommandContext) -> HandlerResult<Value> {
+    #[handler]
+    pub fn list(#[ctx] ctx: &CommandContext) -> HandlerResult<Value> {
         let state = get_state(ctx);
         let result = state.with_api(|api| {
             api.list_tags(state.scope)
@@ -822,13 +776,9 @@ pub mod tags {
         })))
     }
 
-    pub fn create(matches: &ArgMatches, ctx: &CommandContext) -> HandlerResult<Value> {
+    #[handler]
+    pub fn create(#[ctx] ctx: &CommandContext, #[arg] name: String) -> HandlerResult<Value> {
         let state = get_state(ctx);
-        let name: String = matches
-            .get_one::<String>("name")
-            .cloned()
-            .unwrap_or_default();
-
         let result = state.with_api(|api| {
             api.create_tag(state.scope, &name)
                 .map_err(|e| anyhow::anyhow!("{}", e))
@@ -839,13 +789,9 @@ pub mod tags {
         })))
     }
 
-    pub fn delete(matches: &ArgMatches, ctx: &CommandContext) -> HandlerResult<Value> {
+    #[handler]
+    pub fn delete(#[ctx] ctx: &CommandContext, #[arg] name: String) -> HandlerResult<Value> {
         let state = get_state(ctx);
-        let name: String = matches
-            .get_one::<String>("name")
-            .cloned()
-            .unwrap_or_default();
-
         let result = state.with_api(|api| {
             api.delete_tag(state.scope, &name)
                 .map_err(|e| anyhow::anyhow!("{}", e))
@@ -856,17 +802,13 @@ pub mod tags {
         })))
     }
 
-    pub fn rename(matches: &ArgMatches, ctx: &CommandContext) -> HandlerResult<Value> {
+    #[handler]
+    pub fn rename(
+        #[ctx] ctx: &CommandContext,
+        #[arg(name = "old-name")] old_name: String,
+        #[arg(name = "new-name")] new_name: String,
+    ) -> HandlerResult<Value> {
         let state = get_state(ctx);
-        let old_name: String = matches
-            .get_one::<String>("old_name")
-            .cloned()
-            .unwrap_or_default();
-        let new_name: String = matches
-            .get_one::<String>("new_name")
-            .cloned()
-            .unwrap_or_default();
-
         let result = state.with_api(|api| {
             api.rename_tag(state.scope, &old_name, &new_name)
                 .map_err(|e| anyhow::anyhow!("{}", e))
