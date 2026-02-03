@@ -16,7 +16,9 @@
 
 use padzapp::api::{ConfigAction, PadFilter, PadStatusFilter, PadzApi, TodoStatus};
 use padzapp::clipboard::{copy_to_clipboard, format_for_clipboard};
+use padzapp::commands::CmdResult;
 use padzapp::editor::open_in_editor;
+use padzapp::error::PadzError;
 use padzapp::model::{extract_title_and_body, parse_pad_content, Scope};
 use padzapp::store::fs::FileStore;
 use serde_json::Value;
@@ -74,6 +76,64 @@ fn get_state(ctx: &CommandContext) -> &AppState {
     ctx.app_state
         .get::<AppState>()
         .expect("AppState not initialized in app_state")
+}
+
+// =============================================================================
+// Scoped API - eliminates handler boilerplate
+// =============================================================================
+
+/// Scoped API accessor that binds scope and handles error conversion + rendering.
+///
+/// This wrapper eliminates the repetitive boilerplate pattern:
+/// ```ignore
+/// let state = get_state(ctx);
+/// let result = state.with_api(|api| {
+///     api.method(state.scope, &args).map_err(|e| anyhow::anyhow!("{}", e))
+/// })?;
+/// Ok(Output::Render(build_modification_result_value(...)))
+/// ```
+///
+/// With ScopedApi, handlers become one-liners:
+/// ```ignore
+/// api(ctx).pin_pads(&indexes)
+/// ```
+pub struct ScopedApi<'a> {
+    state: &'a AppState,
+}
+
+impl<'a> ScopedApi<'a> {
+    /// Execute an API call with scope bound and error conversion
+    fn call<T, F>(&self, f: F) -> Result<T, anyhow::Error>
+    where
+        F: FnOnce(&mut PadzApi<FileStore>, Scope) -> Result<T, PadzError>,
+    {
+        self.state
+            .with_api(|api| f(api, self.state.scope).map_err(|e| anyhow::anyhow!("{}", e)))
+    }
+
+    /// Wrap a CmdResult (modification) into rendered output
+    fn modification(&self, action: &str, result: CmdResult) -> HandlerResult<Value> {
+        Ok(Output::Render(build_modification_result_value(
+            action,
+            &result.affected_pads,
+            &result.messages,
+            self.state.output_mode,
+        )))
+    }
+
+    // --- Modification operations ---
+
+    pub fn pin_pads(&self, indexes: &[String]) -> HandlerResult<Value> {
+        let result = self.call(|api, scope| api.pin_pads(scope, indexes))?;
+        self.modification("Pinned", result)
+    }
+}
+
+/// Get a scoped API accessor from the command context
+fn api(ctx: &CommandContext) -> ScopedApi<'_> {
+    ScopedApi {
+        state: get_state(ctx),
+    }
 }
 
 /// Helper to copy pad content to clipboard
@@ -469,22 +529,9 @@ pub fn restore(#[ctx] ctx: &CommandContext, #[arg] indexes: Vec<String>) -> Hand
 }
 
 /// Pin pads to the top of the list.
-///
-/// Uses `#[handler]` macro - requires `#[dispatch(pure)]` in setup.rs.
 #[handler]
 pub fn pin(#[ctx] ctx: &CommandContext, #[arg] indexes: Vec<String>) -> HandlerResult<Value> {
-    let state = get_state(ctx);
-    let result = state.with_api(|api| {
-        api.pin_pads(state.scope, &indexes)
-            .map_err(|e| anyhow::anyhow!("{}", e))
-    })?;
-
-    Ok(Output::Render(build_modification_result_value(
-        "Pinned",
-        &result.affected_pads,
-        &result.messages,
-        state.output_mode,
-    )))
+    api(ctx).pin_pads(&indexes)
 }
 
 #[handler]
