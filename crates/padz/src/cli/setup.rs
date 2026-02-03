@@ -179,6 +179,7 @@ pub enum Commands {
 
     /// List pads
     #[command(alias = "ls", display_order = 2)]
+    #[dispatch(pure)]
     List {
         /// Search term
         #[arg(short, long)]
@@ -272,6 +273,7 @@ pub enum Commands {
 
     /// Pin one or more pads (makes them delete-protected)
     #[command(alias = "p", display_order = 15)]
+    #[dispatch(pure)]
     Pin {
         /// Indexes of the pads (e.g. 1 3 5)
         #[arg(required = true, num_args = 1.., add = active_pads_completer())]

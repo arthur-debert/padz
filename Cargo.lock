@@ -1233,6 +1233,8 @@ dependencies = [
  "serde_json",
  "serde_yaml",
  "standout",
+ "standout-dispatch",
+ "standout-macros",
  "timeago",
  "unicode-width",
 ]

@@ -4,6 +4,15 @@
 //! `fn handler_name(matches: &ArgMatches, ctx: &CommandContext) -> HandlerResult<T>`
 //!
 //! State is accessed via standout's app_state mechanism, injected at app build time.
+//!
+//! ## Handler Migration
+//!
+//! Handlers are being migrated to use the `#[handler]` macro for reduced boilerplate.
+//! Pure handlers use `#[handler]` attribute and have `#[dispatch(pure)]` in setup.rs.
+//! The generated `__handler` wrapper functions have non-snake-case names by design.
+
+// Allow non_snake_case for macro-generated __handler wrapper functions
+#![allow(non_snake_case)]
 
 use clap::ArgMatches;
 use padzapp::api::{ConfigAction, PadFilter, PadStatusFilter, PadzApi, TodoStatus};
@@ -14,6 +23,7 @@ use padzapp::store::fs::FileStore;
 use serde_json::Value;
 use standout::cli::{CommandContext, HandlerResult, Output};
 use standout::OutputMode;
+use standout_macros::handler;
 use std::cell::RefCell;
 use std::path::Path;
 
@@ -171,18 +181,22 @@ pub fn create(matches: &ArgMatches, ctx: &CommandContext) -> HandlerResult<Value
     Ok(Output::Render(data))
 }
 
-pub fn list(matches: &ArgMatches, ctx: &CommandContext) -> HandlerResult<Value> {
+/// List all pads with optional filtering.
+///
+/// Uses `#[handler]` macro - requires `#[dispatch(pure)]` in setup.rs.
+#[allow(clippy::too_many_arguments)]
+#[handler]
+pub fn list(
+    #[ctx] ctx: &CommandContext,
+    #[arg] search: Option<String>,
+    #[flag] deleted: bool,
+    #[flag] peek: bool,
+    #[flag] planned: bool,
+    #[flag] done: bool,
+    #[flag(name = "in-progress")] in_progress: bool,
+    #[arg] tags: Vec<String>,
+) -> HandlerResult<Value> {
     let state = get_state(ctx);
-    let search: Option<String> = matches.get_one::<String>("search").cloned();
-    let deleted = matches.get_flag("deleted");
-    let peek = matches.get_flag("peek");
-    let planned = matches.get_flag("planned");
-    let done = matches.get_flag("done");
-    let in_progress = matches.get_flag("in_progress");
-    let tags: Vec<String> = matches
-        .get_many::<String>("tags")
-        .map(|v| v.cloned().collect())
-        .unwrap_or_default();
 
     let todo_status = if planned {
         Some(TodoStatus::Planned)
@@ -210,14 +224,13 @@ pub fn list(matches: &ArgMatches, ctx: &CommandContext) -> HandlerResult<Value> 
             .map_err(|e| anyhow::anyhow!("{}", e))
     })?;
 
-    let data = build_list_result_value(
+    Ok(Output::Render(build_list_result_value(
         &result.listed_pads,
         peek,
         deleted,
         &result.messages,
         state.output_mode,
-    );
-    Ok(Output::Render(data))
+    )))
 }
 
 pub fn search(matches: &ArgMatches, ctx: &CommandContext) -> HandlerResult<Value> {
@@ -472,25 +485,23 @@ pub fn restore(matches: &ArgMatches, ctx: &CommandContext) -> HandlerResult<Valu
     Ok(Output::Render(data))
 }
 
-pub fn pin(matches: &ArgMatches, ctx: &CommandContext) -> HandlerResult<Value> {
+/// Pin pads to the top of the list.
+///
+/// Uses `#[handler]` macro - requires `#[dispatch(pure)]` in setup.rs.
+#[handler]
+pub fn pin(#[ctx] ctx: &CommandContext, #[arg] indexes: Vec<String>) -> HandlerResult<Value> {
     let state = get_state(ctx);
-    let indexes: Vec<String> = matches
-        .get_many::<String>("indexes")
-        .map(|v| v.cloned().collect())
-        .unwrap_or_default();
-
     let result = state.with_api(|api| {
         api.pin_pads(state.scope, &indexes)
             .map_err(|e| anyhow::anyhow!("{}", e))
     })?;
 
-    let data = build_modification_result_value(
+    Ok(Output::Render(build_modification_result_value(
         "Pinned",
         &result.affected_pads,
         &result.messages,
         state.output_mode,
-    );
-    Ok(Output::Render(data))
+    )))
 }
 
 pub fn unpin(matches: &ArgMatches, ctx: &CommandContext) -> HandlerResult<Value> {
