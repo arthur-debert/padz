@@ -296,6 +296,21 @@ fn copy_pad_to_clipboard(path: &Path) {
     }
 }
 
+/// Read content from piped stdin, if available
+fn read_piped_input() -> Option<String> {
+    use std::io::{IsTerminal, Read};
+    if !std::io::stdin().is_terminal() {
+        let mut buffer = String::new();
+        std::io::stdin()
+            .read_to_string(&mut buffer)
+            .ok()
+            .filter(|_| !buffer.trim().is_empty())
+            .map(|_| buffer)
+    } else {
+        None
+    }
+}
+
 // =============================================================================
 // Core commands
 // =============================================================================
@@ -316,20 +331,7 @@ pub fn create(
     };
     let inside = inside.as_deref();
 
-    // Check for piped input
-    use std::io::{IsTerminal, Read};
-    let piped_content = if !std::io::stdin().is_terminal() {
-        let mut buffer = String::new();
-        std::io::stdin()
-            .read_to_string(&mut buffer)
-            .ok()
-            .filter(|_| !buffer.trim().is_empty())
-            .map(|_| buffer)
-    } else {
-        None
-    };
-
-    let result = if let Some(piped) = piped_content {
+    let result = if let Some(piped) = read_piped_input() {
         // Create from piped content - parse to get title and body
         let (title, body) = parse_pad_content(&piped)
             .ok_or_else(|| anyhow::anyhow!("Invalid content: could not extract title"))?;
@@ -507,17 +509,7 @@ pub fn edit(#[ctx] ctx: &CommandContext, #[arg] indexes: Vec<String>) -> Handler
     let state = get_state(ctx);
 
     // Check for piped input
-    use std::io::{IsTerminal, Read};
-    let piped_content = if !std::io::stdin().is_terminal() {
-        let mut buffer = String::new();
-        std::io::stdin()
-            .read_to_string(&mut buffer)
-            .ok()
-            .filter(|_| !buffer.trim().is_empty())
-            .map(|_| buffer)
-    } else {
-        None
-    };
+    let piped_content = read_piped_input();
 
     if let Some(content) = piped_content {
         // Update from piped content
@@ -534,7 +526,7 @@ pub fn edit(#[ctx] ctx: &CommandContext, #[arg] indexes: Vec<String>) -> Handler
         );
         Ok(Output::Render(data))
     } else {
-        // Interactive editor - get pad paths and open each one
+        // Interactive editor - open pad files and copy to clipboard on exit
         let view_result = state.with_api(|api| {
             api.view_pads(state.scope, &indexes)
                 .map_err(|e| anyhow::anyhow!("{}", e))
@@ -542,56 +534,6 @@ pub fn edit(#[ctx] ctx: &CommandContext, #[arg] indexes: Vec<String>) -> Handler
 
         for path in &view_result.pad_paths {
             open_in_editor(path).map_err(|e| anyhow::anyhow!("{}", e))?;
-        }
-
-        Ok(Output::Render(serde_json::json!({
-            "messages": [{"content": format!("Edited {} pad(s)", view_result.pad_paths.len()), "style": "success"}]
-        })))
-    }
-}
-
-#[handler]
-pub fn open(#[ctx] ctx: &CommandContext, #[arg] indexes: Vec<String>) -> HandlerResult<Value> {
-    let state = get_state(ctx);
-
-    // Check for piped input
-    use std::io::{IsTerminal, Read};
-    let piped_content = if !std::io::stdin().is_terminal() {
-        let mut buffer = String::new();
-        std::io::stdin()
-            .read_to_string(&mut buffer)
-            .ok()
-            .filter(|_| !buffer.trim().is_empty())
-            .map(|_| buffer)
-    } else {
-        None
-    };
-
-    if let Some(content) = piped_content {
-        // Update from piped content (same as edit)
-        let result = state.with_api(|api| {
-            api.update_pads_from_content(state.scope, &indexes, &content)
-                .map_err(|e| anyhow::anyhow!("{}", e))
-        })?;
-
-        let data = build_modification_result_value(
-            "Updated",
-            &result.affected_pads,
-            &result.messages,
-            state.output_mode,
-        );
-        Ok(Output::Render(data))
-    } else {
-        // Open in editor and copy to clipboard on exit
-        let view_result = state.with_api(|api| {
-            api.view_pads(state.scope, &indexes)
-                .map_err(|e| anyhow::anyhow!("{}", e))
-        })?;
-
-        // Open each pad's file in editor
-        for path in &view_result.pad_paths {
-            open_in_editor(path).map_err(|e| anyhow::anyhow!("{}", e))?;
-            // Copy to clipboard after editing
             copy_pad_to_clipboard(path);
         }
 

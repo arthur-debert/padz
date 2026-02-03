@@ -246,9 +246,9 @@ pub enum Commands {
         indexes: Vec<String>,
     },
 
-    /// Open a pad in the editor (copies to clipboard on exit)
+    /// Open a pad in the editor (alias for edit)
     #[command(alias = "o", display_order = 12)]
-    #[dispatch(pure)]
+    #[dispatch(pure, handler = handlers::edit__handler)]
     Open {
         /// Indexes of the pads (e.g. 1 p1 d1)
         #[arg(required = true, num_args = 1.., add = all_pads_completer())]
