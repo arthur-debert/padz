@@ -121,11 +121,161 @@ impl<'a> ScopedApi<'a> {
         )))
     }
 
+    /// Wrap a CmdResult (messages only) into rendered output
+    fn messages(&self, result: CmdResult) -> HandlerResult<Value> {
+        Ok(Output::Render(serde_json::json!({
+            "messages": result.messages,
+        })))
+    }
+
     // --- Modification operations ---
 
     pub fn pin_pads(&self, indexes: &[String]) -> HandlerResult<Value> {
         let result = self.call(|api, scope| api.pin_pads(scope, indexes))?;
         self.modification("Pinned", result)
+    }
+
+    pub fn unpin_pads(&self, indexes: &[String]) -> HandlerResult<Value> {
+        let result = self.call(|api, scope| api.unpin_pads(scope, indexes))?;
+        self.modification("Unpinned", result)
+    }
+
+    pub fn delete_pads(&self, indexes: &[String]) -> HandlerResult<Value> {
+        let result = self.call(|api, scope| api.delete_pads(scope, indexes))?;
+        self.modification("Deleted", result)
+    }
+
+    pub fn delete_done_pads(&self) -> HandlerResult<Value> {
+        let filter = PadFilter {
+            status: PadStatusFilter::Active,
+            search_term: None,
+            todo_status: Some(TodoStatus::Done),
+            tags: None,
+        };
+        let pads = self.call(|api, scope| api.get_pads(scope, filter))?;
+
+        if pads.listed_pads.is_empty() {
+            return Ok(Output::Render(serde_json::json!({
+                "start_message": "",
+                "pads": [],
+                "trailing_messages": [{"content": "No done pads to delete.", "style": "info"}]
+            })));
+        }
+
+        let done_indexes: Vec<String> = pads
+            .listed_pads
+            .iter()
+            .map(|dp| dp.index.to_string())
+            .collect();
+
+        self.delete_pads(&done_indexes)
+    }
+
+    pub fn restore_pads(&self, indexes: &[String]) -> HandlerResult<Value> {
+        let result = self.call(|api, scope| api.restore_pads(scope, indexes))?;
+        self.modification("Restored", result)
+    }
+
+    pub fn complete_pads(&self, indexes: &[String]) -> HandlerResult<Value> {
+        let result = self.call(|api, scope| api.complete_pads(scope, indexes))?;
+        self.modification("Completed", result)
+    }
+
+    pub fn reopen_pads(&self, indexes: &[String]) -> HandlerResult<Value> {
+        let result = self.call(|api, scope| api.reopen_pads(scope, indexes))?;
+        self.modification("Reopened", result)
+    }
+
+    pub fn add_tags(&self, indexes: &[String], tags: &[String]) -> HandlerResult<Value> {
+        let result = self.call(|api, scope| api.add_tags_to_pads(scope, indexes, tags))?;
+        self.modification("Tagged", result)
+    }
+
+    pub fn remove_tags(&self, indexes: &[String], tags: &[String]) -> HandlerResult<Value> {
+        let result = if tags.is_empty() {
+            self.call(|api, scope| api.clear_tags_from_pads(scope, indexes))?
+        } else {
+            self.call(|api, scope| api.remove_tags_from_pads(scope, indexes, tags))?
+        };
+        self.modification("Untagged", result)
+    }
+
+    pub fn move_pads(&self, indexes: &[String], to_root: bool) -> HandlerResult<Value> {
+        let result = if to_root {
+            self.call(|api, scope| api.move_pads(scope, indexes, None))?
+        } else {
+            if indexes.len() < 2 {
+                return Err(anyhow::anyhow!(
+                    "Move requires at least 2 arguments (source and destination) or --root flag"
+                ));
+            }
+            let (sources, dest) = indexes.split_at(indexes.len() - 1);
+            self.call(|api, scope| api.move_pads(scope, sources, Some(dest[0].as_str())))?
+        };
+        self.modification("Moved", result)
+    }
+
+    // --- Message-only operations ---
+
+    pub fn purge_pads(
+        &self,
+        indexes: &[String],
+        yes: bool,
+        recursive: bool,
+    ) -> HandlerResult<Value> {
+        let result = self.call(|api, scope| api.purge_pads(scope, indexes, yes, recursive))?;
+        self.messages(result)
+    }
+
+    pub fn doctor(&self) -> HandlerResult<Value> {
+        let result = self.call(|api, scope| api.doctor(scope))?;
+        self.messages(result)
+    }
+
+    pub fn init(&self) -> HandlerResult<Value> {
+        let result = self.call(|api, scope| api.init(scope))?;
+        self.messages(result)
+    }
+
+    pub fn export_pads(
+        &self,
+        indexes: &[String],
+        single_file: Option<&str>,
+    ) -> HandlerResult<Value> {
+        let result = if let Some(title) = single_file {
+            self.call(|api, scope| api.export_pads_single_file(scope, indexes, title))?
+        } else {
+            self.call(|api, scope| api.export_pads(scope, indexes))?
+        };
+        self.messages(result)
+    }
+
+    pub fn import_pads(&self, paths: Vec<std::path::PathBuf>) -> HandlerResult<Value> {
+        let extensions = &self.state.import_extensions.0;
+        let result = self.call(|api, scope| api.import_pads(scope, paths.clone(), extensions))?;
+        self.messages(result)
+    }
+
+    // --- Tags subcommand operations ---
+
+    pub fn list_tags(&self) -> HandlerResult<Value> {
+        let result = self.call(|api, scope| api.list_tags(scope))?;
+        self.messages(result)
+    }
+
+    pub fn create_tag(&self, name: &str) -> HandlerResult<Value> {
+        let result = self.call(|api, scope| api.create_tag(scope, name))?;
+        self.messages(result)
+    }
+
+    pub fn delete_tag(&self, name: &str) -> HandlerResult<Value> {
+        let result = self.call(|api, scope| api.delete_tag(scope, name))?;
+        self.messages(result)
+    }
+
+    pub fn rename_tag(&self, old_name: &str, new_name: &str) -> HandlerResult<Value> {
+        let result = self.call(|api, scope| api.rename_tag(scope, old_name, new_name))?;
+        self.messages(result)
     }
 }
 
@@ -455,77 +605,16 @@ pub fn delete(
     #[arg] indexes: Vec<String>,
     #[flag] done_status: bool,
 ) -> HandlerResult<Value> {
-    let state = get_state(ctx);
-
     if done_status {
-        // Delete all pads with Done status
-        let filter = PadFilter {
-            status: PadStatusFilter::Active,
-            search_term: None,
-            todo_status: Some(TodoStatus::Done),
-            tags: None,
-        };
-        let pads = state.with_api(|api| {
-            api.get_pads(state.scope, filter)
-                .map_err(|e| anyhow::anyhow!("{}", e))
-        })?;
-
-        if pads.listed_pads.is_empty() {
-            return Ok(Output::Render(serde_json::json!({
-                "start_message": "",
-                "pads": [],
-                "trailing_messages": [{"content": "No done pads to delete.", "style": "info"}]
-            })));
-        }
-
-        let done_indexes: Vec<String> = pads
-            .listed_pads
-            .iter()
-            .map(|dp| dp.index.to_string())
-            .collect();
-
-        let result = state.with_api(|api| {
-            api.delete_pads(state.scope, &done_indexes)
-                .map_err(|e| anyhow::anyhow!("{}", e))
-        })?;
-
-        let data = build_modification_result_value(
-            "Deleted",
-            &result.affected_pads,
-            &result.messages,
-            state.output_mode,
-        );
-        Ok(Output::Render(data))
+        api(ctx).delete_done_pads()
     } else {
-        let result = state.with_api(|api| {
-            api.delete_pads(state.scope, &indexes)
-                .map_err(|e| anyhow::anyhow!("{}", e))
-        })?;
-
-        let data = build_modification_result_value(
-            "Deleted",
-            &result.affected_pads,
-            &result.messages,
-            state.output_mode,
-        );
-        Ok(Output::Render(data))
+        api(ctx).delete_pads(&indexes)
     }
 }
 
 #[handler]
 pub fn restore(#[ctx] ctx: &CommandContext, #[arg] indexes: Vec<String>) -> HandlerResult<Value> {
-    let state = get_state(ctx);
-    let result = state.with_api(|api| {
-        api.restore_pads(state.scope, &indexes)
-            .map_err(|e| anyhow::anyhow!("{}", e))
-    })?;
-
-    Ok(Output::Render(build_modification_result_value(
-        "Restored",
-        &result.affected_pads,
-        &result.messages,
-        state.output_mode,
-    )))
+    api(ctx).restore_pads(&indexes)
 }
 
 /// Pin pads to the top of the list.
@@ -536,18 +625,7 @@ pub fn pin(#[ctx] ctx: &CommandContext, #[arg] indexes: Vec<String>) -> HandlerR
 
 #[handler]
 pub fn unpin(#[ctx] ctx: &CommandContext, #[arg] indexes: Vec<String>) -> HandlerResult<Value> {
-    let state = get_state(ctx);
-    let result = state.with_api(|api| {
-        api.unpin_pads(state.scope, &indexes)
-            .map_err(|e| anyhow::anyhow!("{}", e))
-    })?;
-
-    Ok(Output::Render(build_modification_result_value(
-        "Unpinned",
-        &result.affected_pads,
-        &result.messages,
-        state.output_mode,
-    )))
+    api(ctx).unpin_pads(&indexes)
 }
 
 #[handler]
@@ -556,32 +634,7 @@ pub fn move_pads(
     #[arg] indexes: Vec<String>,
     #[flag] root: bool,
 ) -> HandlerResult<Value> {
-    let state = get_state(ctx);
-    let result = if root {
-        state.with_api(|api| {
-            api.move_pads(state.scope, &indexes, None)
-                .map_err(|e| anyhow::anyhow!("{}", e))
-        })?
-    } else {
-        // Last index is destination
-        if indexes.len() < 2 {
-            return Err(anyhow::anyhow!(
-                "Move requires at least 2 arguments (source and destination) or --root flag"
-            ));
-        }
-        let (sources, dest) = indexes.split_at(indexes.len() - 1);
-        state.with_api(|api| {
-            api.move_pads(state.scope, sources, Some(dest[0].as_str()))
-                .map_err(|e| anyhow::anyhow!("{}", e))
-        })?
-    };
-
-    Ok(Output::Render(build_modification_result_value(
-        "Moved",
-        &result.affected_pads,
-        &result.messages,
-        state.output_mode,
-    )))
+    api(ctx).move_pads(&indexes, root)
 }
 
 /// Returns pad file paths - outputs directly and returns Silent.
@@ -601,34 +654,12 @@ pub fn path(#[ctx] ctx: &CommandContext, #[arg] indexes: Vec<String>) -> Result<
 
 #[handler]
 pub fn complete(#[ctx] ctx: &CommandContext, #[arg] indexes: Vec<String>) -> HandlerResult<Value> {
-    let state = get_state(ctx);
-    let result = state.with_api(|api| {
-        api.complete_pads(state.scope, &indexes)
-            .map_err(|e| anyhow::anyhow!("{}", e))
-    })?;
-
-    Ok(Output::Render(build_modification_result_value(
-        "Completed",
-        &result.affected_pads,
-        &result.messages,
-        state.output_mode,
-    )))
+    api(ctx).complete_pads(&indexes)
 }
 
 #[handler]
 pub fn reopen(#[ctx] ctx: &CommandContext, #[arg] indexes: Vec<String>) -> HandlerResult<Value> {
-    let state = get_state(ctx);
-    let result = state.with_api(|api| {
-        api.reopen_pads(state.scope, &indexes)
-            .map_err(|e| anyhow::anyhow!("{}", e))
-    })?;
-
-    Ok(Output::Render(build_modification_result_value(
-        "Reopened",
-        &result.affected_pads,
-        &result.messages,
-        state.output_mode,
-    )))
+    api(ctx).reopen_pads(&indexes)
 }
 
 #[handler]
@@ -637,18 +668,7 @@ pub fn add_tag(
     #[arg] indexes: Vec<String>,
     #[arg] tags: Vec<String>,
 ) -> HandlerResult<Value> {
-    let state = get_state(ctx);
-    let result = state.with_api(|api| {
-        api.add_tags_to_pads(state.scope, &indexes, &tags)
-            .map_err(|e| anyhow::anyhow!("{}", e))
-    })?;
-
-    Ok(Output::Render(build_modification_result_value(
-        "Tagged",
-        &result.affected_pads,
-        &result.messages,
-        state.output_mode,
-    )))
+    api(ctx).add_tags(&indexes, &tags)
 }
 
 #[handler]
@@ -657,25 +677,7 @@ pub fn remove_tag(
     #[arg] indexes: Vec<String>,
     #[arg] tags: Vec<String>,
 ) -> HandlerResult<Value> {
-    let state = get_state(ctx);
-    let result = if tags.is_empty() {
-        state.with_api(|api| {
-            api.clear_tags_from_pads(state.scope, &indexes)
-                .map_err(|e| anyhow::anyhow!("{}", e))
-        })?
-    } else {
-        state.with_api(|api| {
-            api.remove_tags_from_pads(state.scope, &indexes, &tags)
-                .map_err(|e| anyhow::anyhow!("{}", e))
-        })?
-    };
-
-    Ok(Output::Render(build_modification_result_value(
-        "Untagged",
-        &result.affected_pads,
-        &result.messages,
-        state.output_mode,
-    )))
+    api(ctx).remove_tags(&indexes, &tags)
 }
 
 // =============================================================================
@@ -689,15 +691,7 @@ pub fn purge(
     #[flag] yes: bool,
     #[flag] recursive: bool,
 ) -> HandlerResult<Value> {
-    let state = get_state(ctx);
-    let result = state.with_api(|api| {
-        api.purge_pads(state.scope, &indexes, yes, recursive)
-            .map_err(|e| anyhow::anyhow!("{}", e))
-    })?;
-
-    Ok(Output::Render(serde_json::json!({
-        "messages": result.messages,
-    })))
+    api(ctx).purge_pads(&indexes, yes, recursive)
 }
 
 #[handler]
@@ -706,39 +700,13 @@ pub fn export(
     #[arg(name = "single-file")] single_file: Option<String>,
     #[arg] indexes: Vec<String>,
 ) -> HandlerResult<Value> {
-    let state = get_state(ctx);
-    let result = if let Some(title) = single_file {
-        // Single-file export (writes directly to file)
-        state.with_api(|api| {
-            api.export_pads_single_file(state.scope, &indexes, &title)
-                .map_err(|e| anyhow::anyhow!("{}", e))
-        })?
-    } else {
-        // Tar.gz export (writes directly to file)
-        state.with_api(|api| {
-            api.export_pads(state.scope, &indexes)
-                .map_err(|e| anyhow::anyhow!("{}", e))
-        })?
-    };
-
-    Ok(Output::Render(serde_json::json!({
-        "messages": result.messages,
-    })))
+    api(ctx).export_pads(&indexes, single_file.as_deref())
 }
 
 #[handler]
 pub fn import(#[ctx] ctx: &CommandContext, #[arg] paths: Vec<String>) -> HandlerResult<Value> {
-    let state = get_state(ctx);
     let paths: Vec<std::path::PathBuf> = paths.into_iter().map(std::path::PathBuf::from).collect();
-
-    let result = state.with_api(|api| {
-        api.import_pads(state.scope, paths, &state.import_extensions.0)
-            .map_err(|e| anyhow::anyhow!("{}", e))
-    })?;
-
-    Ok(Output::Render(serde_json::json!({
-        "messages": result.messages,
-    })))
+    api(ctx).import_pads(paths)
 }
 
 // =============================================================================
@@ -747,15 +715,7 @@ pub fn import(#[ctx] ctx: &CommandContext, #[arg] paths: Vec<String>) -> Handler
 
 #[handler]
 pub fn doctor(#[ctx] ctx: &CommandContext) -> HandlerResult<Value> {
-    let state = get_state(ctx);
-    let result = state.with_api(|api| {
-        api.doctor(state.scope)
-            .map_err(|e| anyhow::anyhow!("{}", e))
-    })?;
-
-    Ok(Output::Render(serde_json::json!({
-        "messages": result.messages,
-    })))
+    api(ctx).doctor()
 }
 
 #[handler]
@@ -794,13 +754,7 @@ pub fn config(
 
 #[handler]
 pub fn init(#[ctx] ctx: &CommandContext) -> HandlerResult<Value> {
-    let state = get_state(ctx);
-    let result =
-        state.with_api(|api| api.init(state.scope).map_err(|e| anyhow::anyhow!("{}", e)))?;
-
-    Ok(Output::Render(serde_json::json!({
-        "messages": result.messages,
-    })))
+    api(ctx).init()
 }
 
 // =============================================================================
@@ -812,41 +766,17 @@ pub mod tags {
 
     #[handler]
     pub fn list(#[ctx] ctx: &CommandContext) -> HandlerResult<Value> {
-        let state = get_state(ctx);
-        let result = state.with_api(|api| {
-            api.list_tags(state.scope)
-                .map_err(|e| anyhow::anyhow!("{}", e))
-        })?;
-
-        Ok(Output::Render(serde_json::json!({
-            "messages": result.messages,
-        })))
+        api(ctx).list_tags()
     }
 
     #[handler]
     pub fn create(#[ctx] ctx: &CommandContext, #[arg] name: String) -> HandlerResult<Value> {
-        let state = get_state(ctx);
-        let result = state.with_api(|api| {
-            api.create_tag(state.scope, &name)
-                .map_err(|e| anyhow::anyhow!("{}", e))
-        })?;
-
-        Ok(Output::Render(serde_json::json!({
-            "messages": result.messages,
-        })))
+        api(ctx).create_tag(&name)
     }
 
     #[handler]
     pub fn delete(#[ctx] ctx: &CommandContext, #[arg] name: String) -> HandlerResult<Value> {
-        let state = get_state(ctx);
-        let result = state.with_api(|api| {
-            api.delete_tag(state.scope, &name)
-                .map_err(|e| anyhow::anyhow!("{}", e))
-        })?;
-
-        Ok(Output::Render(serde_json::json!({
-            "messages": result.messages,
-        })))
+        api(ctx).delete_tag(&name)
     }
 
     #[handler]
@@ -855,14 +785,6 @@ pub mod tags {
         #[arg(name = "old-name")] old_name: String,
         #[arg(name = "new-name")] new_name: String,
     ) -> HandlerResult<Value> {
-        let state = get_state(ctx);
-        let result = state.with_api(|api| {
-            api.rename_tag(state.scope, &old_name, &new_name)
-                .map_err(|e| anyhow::anyhow!("{}", e))
-        })?;
-
-        Ok(Output::Render(serde_json::json!({
-            "messages": result.messages,
-        })))
+        api(ctx).rename_tag(&old_name, &new_name)
     }
 }
