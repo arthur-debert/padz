@@ -63,6 +63,7 @@ fn build_dispatch_app(app_state: AppState) -> App {
     App::builder()
         .app_state(app_state)
         .templates(embed_templates!("src/cli/templates"))
+        .template_ext(".jinja")
         .styles(embed_styles!("src/styles"))
         .default_theme("default")
         .commands(Commands::dispatch_config())
