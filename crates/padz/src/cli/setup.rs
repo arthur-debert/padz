@@ -226,7 +226,7 @@ pub enum Commands {
     // --- Pad operations ---
     /// View one or more pads
     #[command(alias = "v", display_order = 10)]
-    #[dispatch(pure, template = "view", pipe_to_clipboard)]
+    #[dispatch(pure, template = "view")]
     View {
         /// Indexes of the pads (e.g. 1 p1 d1)
         #[arg(required = true, num_args = 1.., add = all_pads_completer())]

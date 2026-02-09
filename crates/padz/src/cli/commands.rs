@@ -76,6 +76,11 @@ fn build_dispatch_app(app_state: AppState) -> App {
 fn handle_dispatch_result(result: RunResult) -> Result<()> {
     match result {
         RunResult::Handled(output) => {
+            if output.starts_with("Error:") {
+                return Err(padzapp::error::PadzError::Api(
+                    output.trim_start_matches("Error: ").to_string(),
+                ));
+            }
             print!("{}", output);
         }
         RunResult::Binary(data, filename) => {

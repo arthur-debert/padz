@@ -27,6 +27,7 @@ use standout::OutputMode;
 use standout_input::{EditorSource, InputChain, StdinSource};
 use standout_macros::handler;
 use std::cell::RefCell;
+use std::io::IsTerminal;
 
 use super::render::{build_list_result_value, build_modification_result_value};
 
@@ -323,6 +324,13 @@ impl<'a> ScopedApi<'a> {
 
     pub fn view_pads(&self, indexes: &[String]) -> Result<Output<Value>, anyhow::Error> {
         let result = self.call(|api, scope| api.view_pads(scope, indexes))?;
+
+        // Copy content to clipboard
+        for dp in &result.listed_pads {
+            let clipboard_text = format_for_clipboard(&dp.pad.metadata.title, &dp.pad.content);
+            let _ = copy_to_clipboard(&clipboard_text);
+        }
+
         let pads: Vec<serde_json::Value> = result
             .listed_pads
             .iter()
@@ -412,8 +420,8 @@ pub fn create(
                 let parsed = padzapp::editor::EditorContent::from_buffer(&raw);
                 // Determine title: title_arg override > parsed title > "Untitled"
                 let final_title = match (&title_arg, parsed.title.is_empty()) {
-                    (Some(t), true) => t.clone(), // title_arg provided, parsed empty
-                    (_, false) => parsed.title,   // parsed has title
+                    (Some(t), _) => t.clone(),  // CLI title always wins
+                    (_, false) => parsed.title, // parsed has title, no CLI override
                     (None, true) => "Untitled".to_string(),
                 };
                 state.with_api(|api| {
@@ -557,10 +565,10 @@ pub fn edit(
             );
             Ok(Output::Render(data))
         }
-        _ => {
-            // Empty or no content - no changes
-            Ok(Output::<Value>::Silent)
+        Some(_) | None if !std::io::stdin().is_terminal() => {
+            Err(anyhow::anyhow!("Aborted: empty content"))
         }
+        _ => Ok(Output::<Value>::Silent),
     }
 }
 
