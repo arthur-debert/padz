@@ -359,7 +359,7 @@ fn collect_content(
 #[handler]
 pub fn create(
     #[ctx] ctx: &CommandContext,
-    #[flag] no_editor: bool,
+    #[flag(name = "no_editor")] no_editor: bool,
     #[arg] inside: Option<String>,
     #[arg] title: Vec<String>,
     #[matches] matches: &ArgMatches,
@@ -429,7 +429,7 @@ pub fn list(
     #[flag] peek: bool,
     #[flag] planned: bool,
     #[flag] done: bool,
-    #[flag(name = "in-progress")] in_progress: bool,
+    #[flag(name = "in_progress")] in_progress: bool,
     #[arg] tags: Vec<String>,
 ) -> HandlerResult<Value> {
     let todo_status = if planned {
@@ -545,7 +545,7 @@ pub fn edit(
 pub fn delete(
     #[ctx] ctx: &CommandContext,
     #[arg] indexes: Vec<String>,
-    #[flag] done_status: bool,
+    #[flag(name = "done_status")] done_status: bool,
 ) -> HandlerResult<Value> {
     if done_status {
         api(ctx).delete_done_pads()
@@ -639,7 +639,7 @@ pub fn purge(
 #[handler]
 pub fn export(
     #[ctx] ctx: &CommandContext,
-    #[arg(name = "single-file")] single_file: Option<String>,
+    #[arg(name = "single_file")] single_file: Option<String>,
     #[arg] indexes: Vec<String>,
 ) -> HandlerResult<Value> {
     api(ctx).export_pads(&indexes, single_file.as_deref())
@@ -724,8 +724,8 @@ pub mod tags {
     #[handler]
     pub fn rename(
         #[ctx] ctx: &CommandContext,
-        #[arg(name = "old-name")] old_name: String,
-        #[arg(name = "new-name")] new_name: String,
+        #[arg(name = "old_name")] old_name: String,
+        #[arg(name = "new_name")] new_name: String,
     ) -> HandlerResult<Value> {
         api(ctx).rename_tag(&old_name, &new_name)
     }
