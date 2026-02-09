@@ -1,258 +1,336 @@
 //! Command handlers for padz CLI.
 //!
-//! These handlers follow the standout contract:
-//! `fn handler_name(matches: &ArgMatches, ctx: &CommandContext) -> HandlerResult<T>`
+//! All handlers use the `#[handler]` proc macro from `standout_macros` which auto-extracts
+//! CLI arguments from clap's ArgMatches. The handler signature uses annotations:
+//! - `#[ctx]` - CommandContext reference
+//! - `#[arg]` / `#[arg(name = "x")]` - Positional/named arguments
+//! - `#[flag]` / `#[flag(name = "x")]` - Boolean flags
 //!
-//! State (API, scope, etc.) is accessed via thread-local storage set by the main run() function.
+//! Each handler with `#[handler]` generates a `{name}__handler` wrapper function
+//! (non-snake-case by design) that dispatch calls via `#[dispatch(pure)]` in setup.rs.
+//!
+//! State is accessed via standout's app_state mechanism, injected at app build time.
+
+// Allow non_snake_case for macro-generated __handler wrapper functions
+#![allow(non_snake_case)]
 
 use clap::ArgMatches;
 use padzapp::api::{ConfigAction, PadFilter, PadStatusFilter, PadzApi, TodoStatus};
 use padzapp::clipboard::{copy_to_clipboard, format_for_clipboard};
-use padzapp::editor::open_in_editor;
-use padzapp::model::{extract_title_and_body, parse_pad_content, Scope};
+use padzapp::commands::CmdResult;
+use padzapp::error::PadzError;
+use padzapp::model::{extract_title_and_body, Scope};
 use padzapp::store::fs::FileStore;
 use serde_json::Value;
-use standout::cli::{CommandContext, HandlerResult, Output};
+use standout::cli::{CommandContext, Output};
 use standout::OutputMode;
+use standout_input::{EditorSource, InputChain, StdinSource};
+use standout_macros::handler;
 use std::cell::RefCell;
-use std::path::Path;
+use std::io::IsTerminal;
 
-use super::render::{build_modification_result_value, render_pad_list, render_pad_list_deleted};
+use super::render::{build_list_result_value, build_modification_result_value};
 
-// Thread-local context for handler state
-thread_local! {
-    static HANDLER_CONTEXT: RefCell<Option<HandlerContext>> = const { RefCell::new(None) };
-}
+// =============================================================================
+// App State Types (for standout's type-based app_state lookup)
+// =============================================================================
 
-/// Context shared by all handlers (set by run() before dispatch)
-pub struct HandlerContext {
-    pub api: PadzApi<FileStore>,
+/// Wrapper for import extensions list (needed for type-based lookup)
+#[derive(Clone)]
+pub struct ImportExtensions(pub Vec<String>);
+
+/// Shared application state injected via app_state
+/// Contains the API instance wrapped in RefCell for interior mutability
+pub struct AppState {
+    api: RefCell<PadzApi<FileStore>>,
     pub scope: Scope,
-    pub import_extensions: Vec<String>,
+    pub import_extensions: ImportExtensions,
     pub output_mode: OutputMode,
 }
 
-/// Initialize handler context (called by run() before dispatch)
-pub fn init_context(ctx: HandlerContext) {
-    HANDLER_CONTEXT.with(|c| {
-        *c.borrow_mut() = Some(ctx);
-    });
-}
-
-/// Access handler context (panics if not initialized)
-fn with_context<F, R>(f: F) -> R
-where
-    F: FnOnce(&mut HandlerContext) -> R,
-{
-    HANDLER_CONTEXT.with(|c| {
-        let mut ctx = c.borrow_mut();
-        let ctx = ctx.as_mut().expect("Handler context not initialized");
-        f(ctx)
-    })
-}
-
-/// Helper to copy pad content to clipboard
-fn copy_pad_to_clipboard(path: &Path) {
-    if let Ok(content) = std::fs::read_to_string(path) {
-        if let Some((title, body)) = extract_title_and_body(&content) {
-            let clipboard_text = format_for_clipboard(&title, &body);
-            let _ = copy_to_clipboard(&clipboard_text);
+impl AppState {
+    pub fn new(
+        api: PadzApi<FileStore>,
+        scope: Scope,
+        import_extensions: Vec<String>,
+        output_mode: OutputMode,
+    ) -> Self {
+        Self {
+            api: RefCell::new(api),
+            scope,
+            import_extensions: ImportExtensions(import_extensions),
+            output_mode,
         }
+    }
+
+    /// Access the API with mutable borrow
+    pub fn with_api<F, R>(&self, f: F) -> R
+    where
+        F: FnOnce(&mut PadzApi<FileStore>) -> R,
+    {
+        f(&mut self.api.borrow_mut())
     }
 }
 
+/// Helper to get AppState from CommandContext
+fn get_state(ctx: &CommandContext) -> &AppState {
+    ctx.app_state
+        .get::<AppState>()
+        .expect("AppState not initialized in app_state")
+}
+
 // =============================================================================
-// Core commands
+// Scoped API - eliminates handler boilerplate
 // =============================================================================
 
-pub fn create(matches: &ArgMatches, _ctx: &CommandContext) -> HandlerResult<Value> {
-    with_context(|ctx| {
-        let no_editor = matches.get_flag("no_editor");
-        let inside: Option<&str> = matches.get_one::<String>("inside").map(|s| s.as_str());
-        let title_words: Vec<String> = matches
-            .get_many::<String>("title")
-            .map(|v| v.cloned().collect())
-            .unwrap_or_default();
+/// Scoped API accessor that binds scope and handles error conversion + rendering.
+///
+/// This wrapper eliminates the repetitive boilerplate pattern:
+/// ```ignore
+/// let state = get_state(ctx);
+/// let result = state.with_api(|api| {
+///     api.method(state.scope, &args).map_err(|e| anyhow::anyhow!("{}", e))
+/// })?;
+/// Ok(Output::Render(build_modification_result_value(...)))
+/// ```
+///
+/// With ScopedApi, handlers become one-liners:
+/// ```ignore
+/// api(ctx).pin_pads(&indexes)
+/// ```
+pub struct ScopedApi<'a> {
+    state: &'a AppState,
+}
 
-        let title_arg = if title_words.is_empty() {
-            None
-        } else {
-            Some(title_words.join(" "))
-        };
+impl<'a> ScopedApi<'a> {
+    /// Execute an API call with scope bound and error conversion
+    fn call<T, F>(&self, f: F) -> Result<T, anyhow::Error>
+    where
+        F: FnOnce(&mut PadzApi<FileStore>, Scope) -> Result<T, PadzError>,
+    {
+        self.state
+            .with_api(|api| f(api, self.state.scope).map_err(|e| anyhow::anyhow!("{}", e)))
+    }
 
-        // Check for piped input
-        use std::io::{IsTerminal, Read};
-        let piped_content = if !std::io::stdin().is_terminal() {
-            let mut buffer = String::new();
-            std::io::stdin()
-                .read_to_string(&mut buffer)
-                .ok()
-                .filter(|_| !buffer.trim().is_empty())
-                .map(|_| buffer)
-        } else {
-            None
-        };
-
-        let result = if let Some(piped) = piped_content {
-            // Create from piped content - parse to get title and body
-            let (title, body) = parse_pad_content(&piped)
-                .ok_or_else(|| anyhow::anyhow!("Invalid content: could not extract title"))?;
-            // If title_arg provided, use it as title override
-            let final_title = title_arg.unwrap_or(title);
-            ctx.api
-                .create_pad(ctx.scope, final_title, body, inside)
-                .map_err(|e| anyhow::anyhow!("{}", e))?
-        } else if no_editor {
-            // Create with title only (no editor)
-            let title = title_arg.unwrap_or_else(|| "Untitled".to_string());
-            ctx.api
-                .create_pad(ctx.scope, title, String::new(), inside)
-                .map_err(|e| anyhow::anyhow!("{}", e))?
-        } else {
-            // Interactive editor creation - use temp file
-            let initial_title = title_arg.unwrap_or_default();
-            let editor_content = padzapp::editor::EditorContent::new(initial_title, String::new());
-
-            // Create temp file
-            let temp_dir = std::env::temp_dir();
-            let temp_path = temp_dir.join(format!("padz-{}.txt", std::process::id()));
-            std::fs::write(&temp_path, editor_content.to_buffer())
-                .map_err(|e| anyhow::anyhow!("Failed to create temp file: {}", e))?;
-
-            // Open in editor
-            open_in_editor(&temp_path).map_err(|e| anyhow::anyhow!("Editor error: {}", e))?;
-
-            // Read result
-            let edited = std::fs::read_to_string(&temp_path)
-                .map_err(|e| anyhow::anyhow!("Failed to read temp file: {}", e))?;
-
-            // Clean up temp file
-            let _ = std::fs::remove_file(&temp_path);
-
-            if edited.trim().is_empty() {
-                return Ok(Output::Render(serde_json::json!({
-                    "start_message": "",
-                    "pads": [],
-                    "trailing_messages": [{"content": "Aborted: empty content", "style": "warning"}]
-                })));
-            }
-
-            let parsed = padzapp::editor::EditorContent::from_buffer(&edited);
-            ctx.api
-                .create_pad(ctx.scope, parsed.title, parsed.content, inside)
-                .map_err(|e| anyhow::anyhow!("{}", e))?
-        };
-
-        let data = build_modification_result_value(
-            "Created",
+    /// Wrap a CmdResult (modification) into rendered output
+    fn modification(
+        &self,
+        action: &str,
+        result: CmdResult,
+    ) -> Result<Output<Value>, anyhow::Error> {
+        Ok(Output::Render(build_modification_result_value(
+            action,
             &result.affected_pads,
             &result.messages,
-            ctx.output_mode,
-        );
-        Ok(Output::Render(data))
-    })
-}
+            self.state.output_mode,
+        )))
+    }
 
-pub fn list(matches: &ArgMatches, _ctx: &CommandContext) -> HandlerResult<Value> {
-    with_context(|ctx| {
-        let search: Option<String> = matches.get_one::<String>("search").cloned();
-        let deleted = matches.get_flag("deleted");
-        let peek = matches.get_flag("peek");
-        let planned = matches.get_flag("planned");
-        let done = matches.get_flag("done");
-        let in_progress = matches.get_flag("in_progress");
-        let tags: Vec<String> = matches
-            .get_many::<String>("tags")
-            .map(|v| v.cloned().collect())
-            .unwrap_or_default();
+    /// Wrap a CmdResult (messages only) into rendered output
+    fn messages(&self, result: CmdResult) -> Result<Output<Value>, anyhow::Error> {
+        Ok(Output::Render(serde_json::json!({
+            "messages": result.messages,
+        })))
+    }
 
-        let todo_status = if planned {
-            Some(TodoStatus::Planned)
-        } else if done {
-            Some(TodoStatus::Done)
-        } else if in_progress {
-            Some(TodoStatus::InProgress)
-        } else {
-            None
-        };
+    // --- Modification operations ---
 
-        let filter = PadFilter {
-            status: if deleted {
-                PadStatusFilter::Deleted
-            } else {
-                PadStatusFilter::Active
-            },
-            search_term: search,
-            todo_status,
-            tags: if tags.is_empty() { None } else { Some(tags) },
-        };
+    pub fn pin_pads(&self, indexes: &[String]) -> Result<Output<Value>, anyhow::Error> {
+        let result = self.call(|api, scope| api.pin_pads(scope, indexes))?;
+        self.modification("Pinned", result)
+    }
 
-        let result = ctx
-            .api
-            .get_pads(ctx.scope, filter)
-            .map_err(|e| anyhow::anyhow!("{}", e))?;
+    pub fn unpin_pads(&self, indexes: &[String]) -> Result<Output<Value>, anyhow::Error> {
+        let result = self.call(|api, scope| api.unpin_pads(scope, indexes))?;
+        self.modification("Unpinned", result)
+    }
 
-        let output = if deleted {
-            render_pad_list_deleted(&result.listed_pads, peek, ctx.output_mode)
-        } else {
-            render_pad_list(&result.listed_pads, peek, ctx.output_mode)
-        };
+    pub fn delete_pads(&self, indexes: &[String]) -> Result<Output<Value>, anyhow::Error> {
+        let result = self.call(|api, scope| api.delete_pads(scope, indexes))?;
+        self.modification("Deleted", result)
+    }
 
-        // For list, we print directly and return silent (complex rendering)
-        print!("{}", output);
-        super::render::print_messages(&result.messages, ctx.output_mode);
-        Ok(Output::<Value>::Silent)
-    })
-}
-
-pub fn search(matches: &ArgMatches, _ctx: &CommandContext) -> HandlerResult<Value> {
-    with_context(|ctx| {
-        let term: String = matches
-            .get_one::<String>("term")
-            .cloned()
-            .unwrap_or_default();
-        let tags: Vec<String> = matches
-            .get_many::<String>("tags")
-            .map(|v| v.cloned().collect())
-            .unwrap_or_default();
-
+    pub fn delete_done_pads(&self) -> Result<Output<Value>, anyhow::Error> {
         let filter = PadFilter {
             status: PadStatusFilter::Active,
-            search_term: Some(term),
-            todo_status: None,
-            tags: if tags.is_empty() { None } else { Some(tags) },
+            search_term: None,
+            todo_status: Some(TodoStatus::Done),
+            tags: None,
         };
+        let pads = self.call(|api, scope| api.get_pads(scope, filter))?;
 
-        let result = ctx
-            .api
-            .get_pads(ctx.scope, filter)
-            .map_err(|e| anyhow::anyhow!("{}", e))?;
+        if pads.listed_pads.is_empty() {
+            return Ok(Output::Render(serde_json::json!({
+                "start_message": "",
+                "pads": [],
+                "trailing_messages": [{"content": "No done pads to delete.", "style": "info"}]
+            })));
+        }
 
-        let output = render_pad_list(&result.listed_pads, false, ctx.output_mode);
-        print!("{}", output);
-        super::render::print_messages(&result.messages, ctx.output_mode);
-        Ok(Output::<Value>::Silent)
-    })
-}
+        let done_indexes: Vec<String> = pads
+            .listed_pads
+            .iter()
+            .map(|dp| dp.index.to_string())
+            .collect();
 
-// =============================================================================
-// Pad operations
-// =============================================================================
+        self.delete_pads(&done_indexes)
+    }
 
-pub fn view(matches: &ArgMatches, _ctx: &CommandContext) -> HandlerResult<Value> {
-    with_context(|ctx| {
-        let indexes: Vec<String> = matches
-            .get_many::<String>("indexes")
-            .map(|v| v.cloned().collect())
-            .unwrap_or_default();
-        let _peek = matches.get_flag("peek");
+    pub fn restore_pads(&self, indexes: &[String]) -> Result<Output<Value>, anyhow::Error> {
+        let result = self.call(|api, scope| api.restore_pads(scope, indexes))?;
+        self.modification("Restored", result)
+    }
 
-        let result = ctx
-            .api
-            .view_pads(ctx.scope, &indexes)
-            .map_err(|e| anyhow::anyhow!("{}", e))?;
+    pub fn complete_pads(&self, indexes: &[String]) -> Result<Output<Value>, anyhow::Error> {
+        let result = self.call(|api, scope| api.complete_pads(scope, indexes))?;
+        self.modification("Completed", result)
+    }
 
-        // Build data for template rendering
+    pub fn reopen_pads(&self, indexes: &[String]) -> Result<Output<Value>, anyhow::Error> {
+        let result = self.call(|api, scope| api.reopen_pads(scope, indexes))?;
+        self.modification("Reopened", result)
+    }
+
+    pub fn add_tags(
+        &self,
+        indexes: &[String],
+        tags: &[String],
+    ) -> Result<Output<Value>, anyhow::Error> {
+        let result = self.call(|api, scope| api.add_tags_to_pads(scope, indexes, tags))?;
+        self.modification("Tagged", result)
+    }
+
+    pub fn remove_tags(
+        &self,
+        indexes: &[String],
+        tags: &[String],
+    ) -> Result<Output<Value>, anyhow::Error> {
+        let result = if tags.is_empty() {
+            self.call(|api, scope| api.clear_tags_from_pads(scope, indexes))?
+        } else {
+            self.call(|api, scope| api.remove_tags_from_pads(scope, indexes, tags))?
+        };
+        self.modification("Untagged", result)
+    }
+
+    pub fn move_pads(
+        &self,
+        indexes: &[String],
+        to_root: bool,
+    ) -> Result<Output<Value>, anyhow::Error> {
+        let result = if to_root {
+            self.call(|api, scope| api.move_pads(scope, indexes, None))?
+        } else {
+            if indexes.len() < 2 {
+                return Err(anyhow::anyhow!(
+                    "Move requires at least 2 arguments (source and destination) or --root flag"
+                ));
+            }
+            let (sources, dest) = indexes.split_at(indexes.len() - 1);
+            self.call(|api, scope| api.move_pads(scope, sources, Some(dest[0].as_str())))?
+        };
+        self.modification("Moved", result)
+    }
+
+    // --- Message-only operations ---
+
+    pub fn purge_pads(
+        &self,
+        indexes: &[String],
+        yes: bool,
+        recursive: bool,
+    ) -> Result<Output<Value>, anyhow::Error> {
+        let result = self.call(|api, scope| api.purge_pads(scope, indexes, yes, recursive))?;
+        self.messages(result)
+    }
+
+    pub fn doctor(&self) -> Result<Output<Value>, anyhow::Error> {
+        let result = self.call(|api, scope| api.doctor(scope))?;
+        self.messages(result)
+    }
+
+    pub fn init(&self) -> Result<Output<Value>, anyhow::Error> {
+        let result = self.call(|api, scope| api.init(scope))?;
+        self.messages(result)
+    }
+
+    pub fn export_pads(
+        &self,
+        indexes: &[String],
+        single_file: Option<&str>,
+    ) -> Result<Output<Value>, anyhow::Error> {
+        let result = if let Some(title) = single_file {
+            self.call(|api, scope| api.export_pads_single_file(scope, indexes, title))?
+        } else {
+            self.call(|api, scope| api.export_pads(scope, indexes))?
+        };
+        self.messages(result)
+    }
+
+    pub fn import_pads(
+        &self,
+        paths: Vec<std::path::PathBuf>,
+    ) -> Result<Output<Value>, anyhow::Error> {
+        let extensions = &self.state.import_extensions.0;
+        let result = self.call(|api, scope| api.import_pads(scope, paths.clone(), extensions))?;
+        self.messages(result)
+    }
+
+    // --- Tags subcommand operations ---
+
+    pub fn list_tags(&self) -> Result<Output<Value>, anyhow::Error> {
+        let result = self.call(|api, scope| api.list_tags(scope))?;
+        self.messages(result)
+    }
+
+    pub fn create_tag(&self, name: &str) -> Result<Output<Value>, anyhow::Error> {
+        let result = self.call(|api, scope| api.create_tag(scope, name))?;
+        self.messages(result)
+    }
+
+    pub fn delete_tag(&self, name: &str) -> Result<Output<Value>, anyhow::Error> {
+        let result = self.call(|api, scope| api.delete_tag(scope, name))?;
+        self.messages(result)
+    }
+
+    pub fn rename_tag(
+        &self,
+        old_name: &str,
+        new_name: &str,
+    ) -> Result<Output<Value>, anyhow::Error> {
+        let result = self.call(|api, scope| api.rename_tag(scope, old_name, new_name))?;
+        self.messages(result)
+    }
+
+    // --- List operations ---
+
+    pub fn list_pads(
+        &self,
+        filter: PadFilter,
+        peek: bool,
+        show_deleted_help: bool,
+    ) -> Result<Output<Value>, anyhow::Error> {
+        let result = self.call(|api, scope| api.get_pads(scope, filter))?;
+        Ok(Output::Render(build_list_result_value(
+            &result.listed_pads,
+            peek,
+            show_deleted_help,
+            &result.messages,
+            self.state.output_mode,
+        )))
+    }
+
+    // --- View operations ---
+
+    pub fn view_pads(&self, indexes: &[String]) -> Result<Output<Value>, anyhow::Error> {
+        let result = self.call(|api, scope| api.view_pads(scope, indexes))?;
+
+        // Copy content to clipboard
+        for dp in &result.listed_pads {
+            let clipboard_text = format_for_clipboard(&dp.pad.metadata.title, &dp.pad.content);
+            let _ = copy_to_clipboard(&clipboard_text);
+        }
+
         let pads: Vec<serde_json::Value> = result
             .listed_pads
             .iter()
@@ -263,530 +341,411 @@ pub fn view(matches: &ArgMatches, _ctx: &CommandContext) -> HandlerResult<Value>
                 })
             })
             .collect();
-
         Ok(Output::Render(serde_json::json!({ "pads": pads })))
-    })
+    }
 }
 
-pub fn edit(matches: &ArgMatches, _ctx: &CommandContext) -> HandlerResult<Value> {
-    with_context(|ctx| {
-        let indexes: Vec<String> = matches
-            .get_many::<String>("indexes")
-            .map(|v| v.cloned().collect())
-            .unwrap_or_default();
+/// Get a scoped API accessor from the command context
+fn api(ctx: &CommandContext) -> ScopedApi<'_> {
+    ScopedApi {
+        state: get_state(ctx),
+    }
+}
 
-        // Check for piped input
-        use std::io::{IsTerminal, Read};
-        let piped_content = if !std::io::stdin().is_terminal() {
-            let mut buffer = String::new();
-            std::io::stdin()
-                .read_to_string(&mut buffer)
-                .ok()
-                .filter(|_| !buffer.trim().is_empty())
-                .map(|_| buffer)
-        } else {
-            None
-        };
+/// Helper to copy pad content to clipboard (from content string)
+fn copy_content_to_clipboard(content: &str) {
+    if let Some((title, body)) = extract_title_and_body(content) {
+        let clipboard_text = format_for_clipboard(&title, &body);
+        let _ = copy_to_clipboard(&clipboard_text);
+    }
+}
 
-        if let Some(content) = piped_content {
-            // Update from piped content
-            let result = ctx
-                .api
-                .update_pads_from_content(ctx.scope, &indexes, &content)
-                .map_err(|e| anyhow::anyhow!("{}", e))?;
+/// Build the initial editor content template for a new pad
+fn make_editor_template(title: Option<&str>) -> String {
+    let title = title.unwrap_or_default();
+    padzapp::editor::EditorContent::new(title.to_string(), String::new()).to_buffer()
+}
 
-            let data = build_modification_result_value(
-                "Updated",
-                &result.affected_pads,
-                &result.messages,
-                ctx.output_mode,
-            );
-            Ok(Output::Render(data))
-        } else {
-            // Interactive editor - get pad paths and open each one
-            let view_result = ctx
-                .api
-                .view_pads(ctx.scope, &indexes)
-                .map_err(|e| anyhow::anyhow!("{}", e))?;
+/// Collect content from stdin or editor using InputChain
+fn collect_content(
+    matches: &ArgMatches,
+    initial_content: &str,
+) -> Result<Option<String>, anyhow::Error> {
+    let result = InputChain::<String>::new()
+        .try_source(StdinSource::new())
+        .try_source(EditorSource::new().initial_content(initial_content))
+        .resolve(matches);
 
-            for path in &view_result.pad_paths {
-                open_in_editor(path).map_err(|e| anyhow::anyhow!("{}", e))?;
+    match result {
+        Ok(content) => Ok(Some(content)),
+        Err(standout_input::InputError::NoInput) => Ok(None),
+        Err(e) => Err(anyhow::anyhow!("{}", e)),
+    }
+}
+
+// =============================================================================
+// Core commands
+// =============================================================================
+
+#[handler]
+pub fn create(
+    #[ctx] ctx: &CommandContext,
+    #[flag(name = "no_editor")] no_editor: bool,
+    #[arg] inside: Option<String>,
+    #[arg] title: Vec<String>,
+    #[matches] matches: &ArgMatches,
+) -> Result<Output<Value>, anyhow::Error> {
+    let state = get_state(ctx);
+    let title_arg = if title.is_empty() {
+        None
+    } else {
+        Some(title.join(" "))
+    };
+    let inside = inside.as_deref();
+
+    let result = if no_editor {
+        // --no-editor: create with title only, no content collection
+        let title = title_arg.unwrap_or_else(|| "Untitled".to_string());
+        state.with_api(|api| {
+            api.create_pad(state.scope, title, String::new(), inside)
+                .map_err(|e| anyhow::anyhow!("{}", e))
+        })?
+    } else {
+        // Collect content via InputChain: stdin → editor
+        let template = make_editor_template(title_arg.as_deref());
+        let content = collect_content(matches, &template)?;
+
+        match content {
+            Some(raw) if !raw.trim().is_empty() => {
+                let parsed = padzapp::editor::EditorContent::from_buffer(&raw);
+                // Determine title: title_arg override > parsed title > "Untitled"
+                let final_title = match (&title_arg, parsed.title.is_empty()) {
+                    (Some(t), _) => t.clone(),  // CLI title always wins
+                    (_, false) => parsed.title, // parsed has title, no CLI override
+                    (None, true) => "Untitled".to_string(),
+                };
+                state.with_api(|api| {
+                    api.create_pad(state.scope, final_title, parsed.content, inside)
+                        .map_err(|e| anyhow::anyhow!("{}", e))
+                })?
             }
-
-            Ok(Output::Render(serde_json::json!({
-                "messages": [{"content": format!("Edited {} pad(s)", view_result.pad_paths.len()), "style": "success"}]
-            })))
-        }
-    })
-}
-
-pub fn open(matches: &ArgMatches, _ctx: &CommandContext) -> HandlerResult<Value> {
-    with_context(|ctx| {
-        let indexes: Vec<String> = matches
-            .get_many::<String>("indexes")
-            .map(|v| v.cloned().collect())
-            .unwrap_or_default();
-
-        // Check for piped input
-        use std::io::{IsTerminal, Read};
-        let piped_content = if !std::io::stdin().is_terminal() {
-            let mut buffer = String::new();
-            std::io::stdin()
-                .read_to_string(&mut buffer)
-                .ok()
-                .filter(|_| !buffer.trim().is_empty())
-                .map(|_| buffer)
-        } else {
-            None
-        };
-
-        if let Some(content) = piped_content {
-            // Update from piped content (same as edit)
-            let result = ctx
-                .api
-                .update_pads_from_content(ctx.scope, &indexes, &content)
-                .map_err(|e| anyhow::anyhow!("{}", e))?;
-
-            let data = build_modification_result_value(
-                "Updated",
-                &result.affected_pads,
-                &result.messages,
-                ctx.output_mode,
-            );
-            Ok(Output::Render(data))
-        } else {
-            // Open in editor and copy to clipboard on exit
-            let view_result = ctx
-                .api
-                .view_pads(ctx.scope, &indexes)
-                .map_err(|e| anyhow::anyhow!("{}", e))?;
-
-            // Open each pad's file in editor
-            for path in &view_result.pad_paths {
-                open_in_editor(path).map_err(|e| anyhow::anyhow!("{}", e))?;
-                // Copy to clipboard after editing
-                copy_pad_to_clipboard(path);
-            }
-
-            Ok(Output::<Value>::Silent)
-        }
-    })
-}
-
-pub fn delete(matches: &ArgMatches, _ctx: &CommandContext) -> HandlerResult<Value> {
-    with_context(|ctx| {
-        let indexes: Vec<String> = matches
-            .get_many::<String>("indexes")
-            .map(|v| v.cloned().collect())
-            .unwrap_or_default();
-        let done_status = matches.get_flag("done_status");
-
-        if done_status {
-            // Delete all pads with Done status
-            let filter = PadFilter {
-                status: PadStatusFilter::Active,
-                search_term: None,
-                todo_status: Some(TodoStatus::Done),
-                tags: None,
-            };
-            let pads = ctx
-                .api
-                .get_pads(ctx.scope, filter)
-                .map_err(|e| anyhow::anyhow!("{}", e))?;
-
-            if pads.listed_pads.is_empty() {
+            _ => {
                 return Ok(Output::Render(serde_json::json!({
                     "start_message": "",
                     "pads": [],
-                    "trailing_messages": [{"content": "No done pads to delete.", "style": "info"}]
+                    "trailing_messages": [{"content": "Aborted: empty content", "style": "warning"}]
                 })));
             }
+        }
+    };
 
-            let done_indexes: Vec<String> = pads
-                .listed_pads
-                .iter()
-                .map(|dp| dp.index.to_string())
-                .collect();
+    let data = build_modification_result_value(
+        "Created",
+        &result.affected_pads,
+        &result.messages,
+        state.output_mode,
+    );
+    Ok(Output::Render(data))
+}
 
-            let result = ctx
-                .api
-                .delete_pads(ctx.scope, &done_indexes)
-                .map_err(|e| anyhow::anyhow!("{}", e))?;
+/// List all pads with optional filtering.
+///
+/// Uses `#[handler]` macro - requires `#[dispatch(pure)]` in setup.rs.
+#[allow(clippy::too_many_arguments)]
+#[handler]
+pub fn list(
+    #[ctx] ctx: &CommandContext,
+    #[arg] search: Option<String>,
+    #[flag] deleted: bool,
+    #[flag] peek: bool,
+    #[flag] planned: bool,
+    #[flag] done: bool,
+    #[flag(name = "in_progress")] in_progress: bool,
+    #[arg] tags: Vec<String>,
+) -> Result<Output<Value>, anyhow::Error> {
+    let todo_status = if planned {
+        Some(TodoStatus::Planned)
+    } else if done {
+        Some(TodoStatus::Done)
+    } else if in_progress {
+        Some(TodoStatus::InProgress)
+    } else {
+        None
+    };
 
-            let data = build_modification_result_value(
-                "Deleted",
-                &result.affected_pads,
-                &result.messages,
-                ctx.output_mode,
-            );
-            Ok(Output::Render(data))
+    let filter = PadFilter {
+        status: if deleted {
+            PadStatusFilter::Deleted
         } else {
-            let result = ctx
-                .api
-                .delete_pads(ctx.scope, &indexes)
-                .map_err(|e| anyhow::anyhow!("{}", e))?;
+            PadStatusFilter::Active
+        },
+        search_term: search,
+        todo_status,
+        tags: if tags.is_empty() { None } else { Some(tags) },
+    };
+
+    api(ctx).list_pads(filter, peek, deleted)
+}
+
+#[handler]
+pub fn search(
+    #[ctx] ctx: &CommandContext,
+    #[arg] term: String,
+    #[arg] tags: Vec<String>,
+) -> Result<Output<Value>, anyhow::Error> {
+    let filter = PadFilter {
+        status: PadStatusFilter::Active,
+        search_term: Some(term),
+        todo_status: None,
+        tags: if tags.is_empty() { None } else { Some(tags) },
+    };
+
+    api(ctx).list_pads(filter, false, false)
+}
+
+// =============================================================================
+// Pad operations
+// =============================================================================
+
+#[handler]
+pub fn view(
+    #[ctx] ctx: &CommandContext,
+    #[arg] indexes: Vec<String>,
+    #[flag(name = "peek")] _peek: bool, // Reserved for future use
+) -> Result<Output<Value>, anyhow::Error> {
+    api(ctx).view_pads(&indexes)
+}
+
+#[handler]
+pub fn edit(
+    #[ctx] ctx: &CommandContext,
+    #[arg] indexes: Vec<String>,
+    #[matches] matches: &ArgMatches,
+) -> Result<Output<Value>, anyhow::Error> {
+    let state = get_state(ctx);
+
+    // Get existing pad content to use as initial editor content
+    let view_result = state.with_api(|api| {
+        api.view_pads(state.scope, &indexes)
+            .map_err(|e| anyhow::anyhow!("{}", e))
+    })?;
+
+    // For now, only support single pad edit (first pad)
+    let pad = view_result
+        .listed_pads
+        .first()
+        .ok_or_else(|| anyhow::anyhow!("No pad found"))?;
+
+    // Build editor template with existing content
+    let existing_content = padzapp::editor::EditorContent::new(
+        pad.pad.metadata.title.clone(),
+        pad.pad.content.clone(),
+    )
+    .to_buffer();
+
+    // Collect content via InputChain: stdin → editor
+    let content = collect_content(matches, &existing_content)?;
+
+    match content {
+        Some(raw) if !raw.trim().is_empty() => {
+            // Update the pad using the raw content (API parses title/body)
+            let result = state.with_api(|api| {
+                api.update_pads_from_content(state.scope, &indexes, &raw)
+                    .map_err(|e| anyhow::anyhow!("{}", e))
+            })?;
+
+            // Copy to clipboard
+            copy_content_to_clipboard(&raw);
 
             let data = build_modification_result_value(
-                "Deleted",
+                "Updated",
                 &result.affected_pads,
                 &result.messages,
-                ctx.output_mode,
+                state.output_mode,
             );
             Ok(Output::Render(data))
         }
-    })
-}
-
-pub fn restore(matches: &ArgMatches, _ctx: &CommandContext) -> HandlerResult<Value> {
-    with_context(|ctx| {
-        let indexes: Vec<String> = matches
-            .get_many::<String>("indexes")
-            .map(|v| v.cloned().collect())
-            .unwrap_or_default();
-
-        let result = ctx
-            .api
-            .restore_pads(ctx.scope, &indexes)
-            .map_err(|e| anyhow::anyhow!("{}", e))?;
-
-        let data = build_modification_result_value(
-            "Restored",
-            &result.affected_pads,
-            &result.messages,
-            ctx.output_mode,
-        );
-        Ok(Output::Render(data))
-    })
-}
-
-pub fn pin(matches: &ArgMatches, _ctx: &CommandContext) -> HandlerResult<Value> {
-    with_context(|ctx| {
-        let indexes: Vec<String> = matches
-            .get_many::<String>("indexes")
-            .map(|v| v.cloned().collect())
-            .unwrap_or_default();
-
-        let result = ctx
-            .api
-            .pin_pads(ctx.scope, &indexes)
-            .map_err(|e| anyhow::anyhow!("{}", e))?;
-
-        let data = build_modification_result_value(
-            "Pinned",
-            &result.affected_pads,
-            &result.messages,
-            ctx.output_mode,
-        );
-        Ok(Output::Render(data))
-    })
-}
-
-pub fn unpin(matches: &ArgMatches, _ctx: &CommandContext) -> HandlerResult<Value> {
-    with_context(|ctx| {
-        let indexes: Vec<String> = matches
-            .get_many::<String>("indexes")
-            .map(|v| v.cloned().collect())
-            .unwrap_or_default();
-
-        let result = ctx
-            .api
-            .unpin_pads(ctx.scope, &indexes)
-            .map_err(|e| anyhow::anyhow!("{}", e))?;
-
-        let data = build_modification_result_value(
-            "Unpinned",
-            &result.affected_pads,
-            &result.messages,
-            ctx.output_mode,
-        );
-        Ok(Output::Render(data))
-    })
-}
-
-pub fn move_pads(matches: &ArgMatches, _ctx: &CommandContext) -> HandlerResult<Value> {
-    with_context(|ctx| {
-        let indexes: Vec<String> = matches
-            .get_many::<String>("indexes")
-            .map(|v| v.cloned().collect())
-            .unwrap_or_default();
-        let root = matches.get_flag("root");
-
-        let result = if root {
-            ctx.api
-                .move_pads(ctx.scope, &indexes, None)
-                .map_err(|e| anyhow::anyhow!("{}", e))?
-        } else {
-            // Last index is destination
-            if indexes.len() < 2 {
-                return Err(anyhow::anyhow!(
-                    "Move requires at least 2 arguments (source and destination) or --root flag"
-                ));
-            }
-            let (sources, dest) = indexes.split_at(indexes.len() - 1);
-            ctx.api
-                .move_pads(ctx.scope, sources, Some(dest[0].as_str()))
-                .map_err(|e| anyhow::anyhow!("{}", e))?
-        };
-
-        let data = build_modification_result_value(
-            "Moved",
-            &result.affected_pads,
-            &result.messages,
-            ctx.output_mode,
-        );
-        Ok(Output::Render(data))
-    })
-}
-
-pub fn path(matches: &ArgMatches, _ctx: &CommandContext) -> HandlerResult<Value> {
-    with_context(|ctx| {
-        let indexes: Vec<String> = matches
-            .get_many::<String>("indexes")
-            .map(|v| v.cloned().collect())
-            .unwrap_or_default();
-
-        let result = ctx
-            .api
-            .pad_paths(ctx.scope, &indexes)
-            .map_err(|e| anyhow::anyhow!("{}", e))?;
-
-        for path in &result.pad_paths {
-            println!("{}", path.display());
+        Some(_) | None if !std::io::stdin().is_terminal() => {
+            Err(anyhow::anyhow!("Aborted: empty content"))
         }
-        Ok(Output::<Value>::Silent)
-    })
+        _ => Ok(Output::<Value>::Silent),
+    }
 }
 
-pub fn complete(matches: &ArgMatches, _ctx: &CommandContext) -> HandlerResult<Value> {
-    with_context(|ctx| {
-        let indexes: Vec<String> = matches
-            .get_many::<String>("indexes")
-            .map(|v| v.cloned().collect())
-            .unwrap_or_default();
-
-        let result = ctx
-            .api
-            .complete_pads(ctx.scope, &indexes)
-            .map_err(|e| anyhow::anyhow!("{}", e))?;
-
-        let data = build_modification_result_value(
-            "Completed",
-            &result.affected_pads,
-            &result.messages,
-            ctx.output_mode,
-        );
-        Ok(Output::Render(data))
-    })
+#[handler]
+pub fn delete(
+    #[ctx] ctx: &CommandContext,
+    #[arg] indexes: Vec<String>,
+    #[flag(name = "done_status")] done_status: bool,
+) -> Result<Output<Value>, anyhow::Error> {
+    if done_status {
+        api(ctx).delete_done_pads()
+    } else {
+        api(ctx).delete_pads(&indexes)
+    }
 }
 
-pub fn reopen(matches: &ArgMatches, _ctx: &CommandContext) -> HandlerResult<Value> {
-    with_context(|ctx| {
-        let indexes: Vec<String> = matches
-            .get_many::<String>("indexes")
-            .map(|v| v.cloned().collect())
-            .unwrap_or_default();
-
-        let result = ctx
-            .api
-            .reopen_pads(ctx.scope, &indexes)
-            .map_err(|e| anyhow::anyhow!("{}", e))?;
-
-        let data = build_modification_result_value(
-            "Reopened",
-            &result.affected_pads,
-            &result.messages,
-            ctx.output_mode,
-        );
-        Ok(Output::Render(data))
-    })
+#[handler]
+pub fn restore(
+    #[ctx] ctx: &CommandContext,
+    #[arg] indexes: Vec<String>,
+) -> Result<Output<Value>, anyhow::Error> {
+    api(ctx).restore_pads(&indexes)
 }
 
-pub fn add_tag(matches: &ArgMatches, _ctx: &CommandContext) -> HandlerResult<Value> {
-    with_context(|ctx| {
-        let indexes: Vec<String> = matches
-            .get_many::<String>("indexes")
-            .map(|v| v.cloned().collect())
-            .unwrap_or_default();
-        let tags: Vec<String> = matches
-            .get_many::<String>("tags")
-            .map(|v| v.cloned().collect())
-            .unwrap_or_default();
-
-        let result = ctx
-            .api
-            .add_tags_to_pads(ctx.scope, &indexes, &tags)
-            .map_err(|e| anyhow::anyhow!("{}", e))?;
-
-        let data = build_modification_result_value(
-            "Tagged",
-            &result.affected_pads,
-            &result.messages,
-            ctx.output_mode,
-        );
-        Ok(Output::Render(data))
-    })
+/// Pin pads to the top of the list.
+#[handler]
+pub fn pin(
+    #[ctx] ctx: &CommandContext,
+    #[arg] indexes: Vec<String>,
+) -> Result<Output<Value>, anyhow::Error> {
+    api(ctx).pin_pads(&indexes)
 }
 
-pub fn remove_tag(matches: &ArgMatches, _ctx: &CommandContext) -> HandlerResult<Value> {
-    with_context(|ctx| {
-        let indexes: Vec<String> = matches
-            .get_many::<String>("indexes")
-            .map(|v| v.cloned().collect())
-            .unwrap_or_default();
-        let tags: Vec<String> = matches
-            .get_many::<String>("tags")
-            .map(|v| v.cloned().collect())
-            .unwrap_or_default();
+#[handler]
+pub fn unpin(
+    #[ctx] ctx: &CommandContext,
+    #[arg] indexes: Vec<String>,
+) -> Result<Output<Value>, anyhow::Error> {
+    api(ctx).unpin_pads(&indexes)
+}
 
-        let result = if tags.is_empty() {
-            ctx.api
-                .clear_tags_from_pads(ctx.scope, &indexes)
-                .map_err(|e| anyhow::anyhow!("{}", e))?
-        } else {
-            ctx.api
-                .remove_tags_from_pads(ctx.scope, &indexes, &tags)
-                .map_err(|e| anyhow::anyhow!("{}", e))?
-        };
+#[handler]
+pub fn move_pads(
+    #[ctx] ctx: &CommandContext,
+    #[arg] indexes: Vec<String>,
+    #[flag] root: bool,
+) -> Result<Output<Value>, anyhow::Error> {
+    api(ctx).move_pads(&indexes, root)
+}
 
-        let data = build_modification_result_value(
-            "Untagged",
-            &result.affected_pads,
-            &result.messages,
-            ctx.output_mode,
-        );
-        Ok(Output::Render(data))
-    })
+/// Returns pad file paths - outputs directly and returns Silent.
+#[handler]
+pub fn path(#[ctx] ctx: &CommandContext, #[arg] indexes: Vec<String>) -> Result<(), anyhow::Error> {
+    let state = get_state(ctx);
+    let result = state.with_api(|api| {
+        api.pad_paths(state.scope, &indexes)
+            .map_err(|e| anyhow::anyhow!("{}", e))
+    })?;
+
+    for path in &result.pad_paths {
+        println!("{}", path.display());
+    }
+    Ok(())
+}
+
+#[handler]
+pub fn complete(
+    #[ctx] ctx: &CommandContext,
+    #[arg] indexes: Vec<String>,
+) -> Result<Output<Value>, anyhow::Error> {
+    api(ctx).complete_pads(&indexes)
+}
+
+#[handler]
+pub fn reopen(
+    #[ctx] ctx: &CommandContext,
+    #[arg] indexes: Vec<String>,
+) -> Result<Output<Value>, anyhow::Error> {
+    api(ctx).reopen_pads(&indexes)
+}
+
+#[handler]
+pub fn add_tag(
+    #[ctx] ctx: &CommandContext,
+    #[arg] indexes: Vec<String>,
+    #[arg] tags: Vec<String>,
+) -> Result<Output<Value>, anyhow::Error> {
+    api(ctx).add_tags(&indexes, &tags)
+}
+
+#[handler]
+pub fn remove_tag(
+    #[ctx] ctx: &CommandContext,
+    #[arg] indexes: Vec<String>,
+    #[arg] tags: Vec<String>,
+) -> Result<Output<Value>, anyhow::Error> {
+    api(ctx).remove_tags(&indexes, &tags)
 }
 
 // =============================================================================
 // Data operations
 // =============================================================================
 
-pub fn purge(matches: &ArgMatches, _ctx: &CommandContext) -> HandlerResult<Value> {
-    with_context(|ctx| {
-        let indexes: Vec<String> = matches
-            .get_many::<String>("indexes")
-            .map(|v| v.cloned().collect())
-            .unwrap_or_default();
-        let yes = matches.get_flag("yes");
-        let recursive = matches.get_flag("recursive");
-
-        let result = ctx
-            .api
-            .purge_pads(ctx.scope, &indexes, yes, recursive)
-            .map_err(|e| anyhow::anyhow!("{}", e))?;
-
-        Ok(Output::Render(serde_json::json!({
-            "messages": result.messages,
-        })))
-    })
+#[handler]
+pub fn purge(
+    #[ctx] ctx: &CommandContext,
+    #[arg] indexes: Vec<String>,
+    #[flag] yes: bool,
+    #[flag] recursive: bool,
+) -> Result<Output<Value>, anyhow::Error> {
+    api(ctx).purge_pads(&indexes, yes, recursive)
 }
 
-pub fn export(matches: &ArgMatches, _ctx: &CommandContext) -> HandlerResult<Value> {
-    with_context(|ctx| {
-        let single_file: Option<String> = matches.get_one::<String>("single_file").cloned();
-        let indexes: Vec<String> = matches
-            .get_many::<String>("indexes")
-            .map(|v| v.cloned().collect())
-            .unwrap_or_default();
-
-        let result = if let Some(title) = single_file {
-            // Single-file export (writes directly to file)
-            ctx.api
-                .export_pads_single_file(ctx.scope, &indexes, &title)
-                .map_err(|e| anyhow::anyhow!("{}", e))?
-        } else {
-            // Tar.gz export (writes directly to file)
-            ctx.api
-                .export_pads(ctx.scope, &indexes)
-                .map_err(|e| anyhow::anyhow!("{}", e))?
-        };
-
-        Ok(Output::Render(serde_json::json!({
-            "messages": result.messages,
-        })))
-    })
+#[handler]
+pub fn export(
+    #[ctx] ctx: &CommandContext,
+    #[arg(name = "single_file")] single_file: Option<String>,
+    #[arg] indexes: Vec<String>,
+) -> Result<Output<Value>, anyhow::Error> {
+    api(ctx).export_pads(&indexes, single_file.as_deref())
 }
 
-pub fn import(matches: &ArgMatches, _ctx: &CommandContext) -> HandlerResult<Value> {
-    with_context(|ctx| {
-        let paths: Vec<std::path::PathBuf> = matches
-            .get_many::<String>("paths")
-            .map(|v| v.map(std::path::PathBuf::from).collect())
-            .unwrap_or_default();
-
-        let result = ctx
-            .api
-            .import_pads(ctx.scope, paths, &ctx.import_extensions)
-            .map_err(|e| anyhow::anyhow!("{}", e))?;
-
-        Ok(Output::Render(serde_json::json!({
-            "messages": result.messages,
-        })))
-    })
+#[handler]
+pub fn import(
+    #[ctx] ctx: &CommandContext,
+    #[arg] paths: Vec<String>,
+) -> Result<Output<Value>, anyhow::Error> {
+    let paths: Vec<std::path::PathBuf> = paths.into_iter().map(std::path::PathBuf::from).collect();
+    api(ctx).import_pads(paths)
 }
 
 // =============================================================================
 // Misc commands
 // =============================================================================
 
-pub fn doctor(_matches: &ArgMatches, _ctx: &CommandContext) -> HandlerResult<Value> {
-    with_context(|ctx| {
-        let result = ctx
-            .api
-            .doctor(ctx.scope)
-            .map_err(|e| anyhow::anyhow!("{}", e))?;
-
-        Ok(Output::Render(serde_json::json!({
-            "messages": result.messages,
-        })))
-    })
+#[handler]
+pub fn doctor(#[ctx] ctx: &CommandContext) -> Result<Output<Value>, anyhow::Error> {
+    api(ctx).doctor()
 }
 
-pub fn config(matches: &ArgMatches, _ctx: &CommandContext) -> HandlerResult<Value> {
-    with_context(|ctx| {
-        let key: Option<String> = matches.get_one::<String>("key").cloned();
-        let value: Option<String> = matches.get_one::<String>("value").cloned();
+#[handler]
+pub fn config(
+    #[ctx] ctx: &CommandContext,
+    #[arg] key: Option<String>,
+    #[arg] value: Option<String>,
+) -> Result<Output<Value>, anyhow::Error> {
+    let state = get_state(ctx);
+    let action = match (key.clone(), value) {
+        (None, _) => ConfigAction::ShowAll,
+        (Some(k), None) => ConfigAction::ShowKey(k),
+        (Some(k), Some(v)) => ConfigAction::Set(k, v),
+    };
 
-        let action = match (key.clone(), value) {
-            (None, _) => ConfigAction::ShowAll,
-            (Some(k), None) => ConfigAction::ShowKey(k),
-            (Some(k), Some(v)) => ConfigAction::Set(k, v),
-        };
+    let result = state.with_api(|api| {
+        api.config(state.scope, action)
+            .map_err(|e| anyhow::anyhow!("{}", e))
+    })?;
 
-        let result = ctx
-            .api
-            .config(ctx.scope, action)
-            .map_err(|e| anyhow::anyhow!("{}", e))?;
-
-        let mut lines = Vec::new();
-        if let Some(config) = &result.config {
-            if key.is_none() {
-                for (k, v) in config.list_all() {
-                    lines.push(format!("{} = {}", k, v));
-                }
+    let mut lines = Vec::new();
+    if let Some(config) = &result.config {
+        if key.is_none() {
+            for (k, v) in config.list_all() {
+                lines.push(format!("{} = {}", k, v));
             }
         }
+    }
 
-        Ok(Output::Render(serde_json::json!({
-            "lines": lines,
-            "empty_message": "No configuration values.",
-            "messages": result.messages,
-        })))
-    })
+    Ok(Output::Render(serde_json::json!({
+        "lines": lines,
+        "empty_message": "No configuration values.",
+        "messages": result.messages,
+    })))
 }
 
-pub fn init(_matches: &ArgMatches, _ctx: &CommandContext) -> HandlerResult<Value> {
-    with_context(|ctx| {
-        let result = ctx
-            .api
-            .init(ctx.scope)
-            .map_err(|e| anyhow::anyhow!("{}", e))?;
-
-        Ok(Output::Render(serde_json::json!({
-            "messages": result.messages,
-        })))
-    })
+#[handler]
+pub fn init(#[ctx] ctx: &CommandContext) -> Result<Output<Value>, anyhow::Error> {
+    api(ctx).init()
 }
 
 // =============================================================================
@@ -796,74 +755,33 @@ pub fn init(_matches: &ArgMatches, _ctx: &CommandContext) -> HandlerResult<Value
 pub mod tags {
     use super::*;
 
-    pub fn list(_matches: &ArgMatches, _ctx: &CommandContext) -> HandlerResult<Value> {
-        with_context(|ctx| {
-            let result = ctx
-                .api
-                .list_tags(ctx.scope)
-                .map_err(|e| anyhow::anyhow!("{}", e))?;
-
-            Ok(Output::Render(serde_json::json!({
-                "messages": result.messages,
-            })))
-        })
+    #[handler]
+    pub fn list(#[ctx] ctx: &CommandContext) -> Result<Output<Value>, anyhow::Error> {
+        api(ctx).list_tags()
     }
 
-    pub fn create(matches: &ArgMatches, _ctx: &CommandContext) -> HandlerResult<Value> {
-        with_context(|ctx| {
-            let name: String = matches
-                .get_one::<String>("name")
-                .cloned()
-                .unwrap_or_default();
-
-            let result = ctx
-                .api
-                .create_tag(ctx.scope, &name)
-                .map_err(|e| anyhow::anyhow!("{}", e))?;
-
-            Ok(Output::Render(serde_json::json!({
-                "messages": result.messages,
-            })))
-        })
+    #[handler]
+    pub fn create(
+        #[ctx] ctx: &CommandContext,
+        #[arg] name: String,
+    ) -> Result<Output<Value>, anyhow::Error> {
+        api(ctx).create_tag(&name)
     }
 
-    pub fn delete(matches: &ArgMatches, _ctx: &CommandContext) -> HandlerResult<Value> {
-        with_context(|ctx| {
-            let name: String = matches
-                .get_one::<String>("name")
-                .cloned()
-                .unwrap_or_default();
-
-            let result = ctx
-                .api
-                .delete_tag(ctx.scope, &name)
-                .map_err(|e| anyhow::anyhow!("{}", e))?;
-
-            Ok(Output::Render(serde_json::json!({
-                "messages": result.messages,
-            })))
-        })
+    #[handler]
+    pub fn delete(
+        #[ctx] ctx: &CommandContext,
+        #[arg] name: String,
+    ) -> Result<Output<Value>, anyhow::Error> {
+        api(ctx).delete_tag(&name)
     }
 
-    pub fn rename(matches: &ArgMatches, _ctx: &CommandContext) -> HandlerResult<Value> {
-        with_context(|ctx| {
-            let old_name: String = matches
-                .get_one::<String>("old_name")
-                .cloned()
-                .unwrap_or_default();
-            let new_name: String = matches
-                .get_one::<String>("new_name")
-                .cloned()
-                .unwrap_or_default();
-
-            let result = ctx
-                .api
-                .rename_tag(ctx.scope, &old_name, &new_name)
-                .map_err(|e| anyhow::anyhow!("{}", e))?;
-
-            Ok(Output::Render(serde_json::json!({
-                "messages": result.messages,
-            })))
-        })
+    #[handler]
+    pub fn rename(
+        #[ctx] ctx: &CommandContext,
+        #[arg(name = "old_name")] old_name: String,
+        #[arg(name = "new_name")] new_name: String,
+    ) -> Result<Output<Value>, anyhow::Error> {
+        api(ctx).rename_tag(&old_name, &new_name)
     }
 }

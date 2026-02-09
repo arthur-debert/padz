@@ -1,19 +1,14 @@
 //! # Rendering Module
 //!
-//! This module provides styled terminal output using the `standout` crate. The core padzapp API
-//! returns regular result data objects, and the CLI layer handles rendering.
-//!
-//! Rendering is template-based using minijinja templates, with stylesheets controlling formatted
-//! terminal output. See the styles (`crate::cli::styles`) and templates (`crate::cli::templates`)
-//! modules for specifics and best practices.
+//! This module builds data structures for standout's template-based rendering.
+//! The CLI layer uses standout's `App` for actual rendering via templates and styles.
 //!
 //! ## Architecture
 //!
-//! Uses standout's `App` for all rendering:
-//! - Templates and styles are embedded at compile time via `embed_*!` macros
-//! - Debug builds hot-reload from disk; release uses embedded content
-//! - Structured output modes (JSON, YAML, XML, CSV) are handled automatically
-//! - All templates are pre-loaded, enabling `{% include %}` directives
+//! - Handlers call `build_*_value` functions to create `serde_json::Value` data
+//! - Handlers return `Output::Render(value)` to standout's dispatch pipeline
+//! - Standout renders using templates embedded via `embed_templates!` macro
+//! - Structured output modes (JSON, YAML) are handled automatically
 //!
 //! ## Table Layout
 //!
@@ -28,75 +23,13 @@
 //! Column widths are defined as constants and the title width is calculated per-row based on
 //! the variable prefix width (which depends on section type and nesting depth).
 //!
+
 use super::setup::get_grouped_help;
 use chrono::{DateTime, Utc};
 use padzapp::api::{CmdMessage, MessageLevel, TodoStatus};
 use padzapp::index::{DisplayIndex, DisplayPad};
-use padzapp::peek::{format_as_peek, PeekResult};
-use serde::Serialize;
-use standout::{embed_styles, truncate_to_width, OutputMode, Renderer, StylesheetRegistry};
-
-/// All templates embedded at compile time.
-/// Main templates are registered by name (e.g., "list"), partials include the extension
-/// for {% include %} directives (e.g., "_pad_line.jinja").
-pub const TEMPLATES: &[(&str, &str)] = &[
-    // Main templates (referenced by name in render calls)
-    ("list", include_str!("templates/list.jinja")),
-    ("full_pad", include_str!("templates/full_pad.jinja")),
-    ("text_list", include_str!("templates/text_list.jinja")),
-    ("messages", include_str!("templates/messages.jinja")),
-    (
-        "modification_result",
-        include_str!("templates/modification_result.jinja"),
-    ),
-    // Partial templates (referenced with extension in {% include %} directives)
-    ("_pad_line.jinja", include_str!("templates/_pad_line.jinja")),
-    (
-        "_match_lines.jinja",
-        include_str!("templates/_match_lines.jinja"),
-    ),
-    (
-        "_peek_content.jinja",
-        include_str!("templates/_peek_content.jinja"),
-    ),
-    (
-        "_deleted_help.jinja",
-        include_str!("templates/_deleted_help.jinja"),
-    ),
-];
-
-/// Helper to create a renderer with all templates loaded for a given output mode.
-fn create_renderer(mode: OutputMode) -> Renderer {
-    let styles = embed_styles!("src/styles");
-    let mut registry: StylesheetRegistry = styles.into();
-    let theme = registry.get("default").expect("default theme must exist");
-
-    let mut renderer = Renderer::with_output(theme, mode).expect("Failed to create Renderer");
-
-    for (name, content) in TEMPLATES {
-        renderer.add_template(name, content).unwrap();
-    }
-
-    renderer
-}
-
-/// Render a template with the given data and output mode.
-/// For structured modes (JSON, YAML), serializes directly without template processing.
-fn render_template<T: Serialize>(name: &str, data: &T, mode: OutputMode) -> Result<String, String> {
-    // Handle structured modes by direct serialization
-    if mode.is_structured() {
-        return match mode {
-            OutputMode::Json => serde_json::to_string_pretty(data).map_err(|e| e.to_string()),
-            OutputMode::Yaml => serde_yaml::to_string(data).map_err(|e| e.to_string()),
-            _ => Err("Unsupported structured mode".to_string()),
-        };
-    }
-
-    let mut renderer = create_renderer(mode);
-    renderer.render(name, data).map_err(|e| e.to_string())
-}
-
-// Re-export serde for serialization in structured modes
+use padzapp::peek::format_as_peek;
+use standout::{truncate_to_width, OutputMode};
 
 /// Configuration for list rendering.
 pub const LINE_WIDTH: usize = 100;
@@ -113,450 +46,6 @@ pub const COL_TIME: usize = 14; // Right-aligned timestamp
 pub const STATUS_PLANNED: &str = "⚪︎";
 pub const STATUS_IN_PROGRESS: &str = "☉︎︎";
 pub const STATUS_DONE: &str = "⚫︎";
-
-#[derive(Serialize)]
-struct MatchSegmentData {
-    text: String,
-    style: String,
-}
-
-#[derive(Serialize)]
-struct MatchLineData {
-    segments: Vec<MatchSegmentData>,
-    line_number: String,
-}
-
-/// Semantic pad data for template rendering.
-///
-/// Contains raw values and semantic flags for template-driven styling.
-/// Layout is handled declaratively in templates using standout's `col()` filter.
-///
-/// ## Column Layout
-///
-/// Templates use `col(width)` for each column:
-/// - `indent` - Depth-based indentation (variable, not a `col()` column)
-/// - `left_pin | col(2)` - Pin marker or empty
-/// - `status_icon | col(2)` - Status indicator
-/// - `index | col(4)` - Display index
-/// - `title | col(title_width)` - Truncated/padded to fill
-/// - `right_pin | col(2)` - Right-side pin marker
-/// - `time_ago | col(14, align='right')` - Timestamp
-#[derive(Serialize)]
-struct PadLineData {
-    // Layout prefix (depth-based indentation, not a col() column)
-    indent: String, // "  " per depth level + base padding for non-pinned
-    // Column values (templates handle truncation/padding via `col()` filter)
-    left_pin: String,    // "⚲" or "" (column pads to width)
-    status_icon: String, // Todo status indicator (⚪︎, ☉, ⚫︎)
-    index: String,       // "p1.", " 1.", "d1."
-    title: String,       // Raw title (template truncates via `col(title_width)`)
-    title_width: usize,  // Calculated fill width for this row
-    tags: Vec<String>,   // Tags for this pad
-    right_pin: String,   // "⚲" or "" for pinned pads in regular section
-    time_ago: String,    // Relative timestamp (template right-aligns via `col()`)
-    // Semantic flags for template-driven style selection
-    is_pinned_section: bool, // In the pinned section (p1, p2, etc.)
-    is_deleted: bool,        // In the deleted section (d1, d2, etc.)
-    is_separator: bool,      // Empty line separator between sections
-    // Search matches
-    matches: Vec<MatchLineData>,
-    more_matches_count: usize,
-    peek: Option<PeekResult>,
-}
-
-/// Data structure for the full list template.
-#[derive(Serialize)]
-struct ListData {
-    pads: Vec<PadLineData>,
-    empty: bool,
-    pin_marker: String,
-    help_text: String,
-    deleted_help: bool,
-    peek: bool,
-    // Column widths for standout's `col()` filter
-    col_left_pin: usize,
-    col_status: usize,
-    col_index: usize,
-    col_right_pin: usize,
-    col_time: usize,
-}
-
-/// JSON-serializable wrapper for pad list output.
-/// Used for --output=json mode to provide machine-readable pad data.
-#[derive(Serialize)]
-struct JsonPadList {
-    pads: Vec<DisplayPad>,
-}
-
-#[derive(Serialize)]
-struct MessageData {
-    content: String,
-    style: String,
-}
-
-#[derive(Serialize)]
-struct MessagesData {
-    messages: Vec<MessageData>,
-}
-
-/// Renders a list of pads to a string.
-pub fn render_pad_list(pads: &[DisplayPad], peek: bool, output_mode: OutputMode) -> String {
-    render_pad_list_internal(pads, Some(output_mode), false, peek)
-}
-
-/// Renders a list of pads with optional deleted help text.
-pub fn render_pad_list_deleted(pads: &[DisplayPad], peek: bool, output_mode: OutputMode) -> String {
-    render_pad_list_internal(pads, Some(output_mode), true, peek)
-}
-
-fn render_pad_list_internal(
-    pads: &[DisplayPad],
-    output_mode: Option<OutputMode>,
-    show_deleted_help: bool,
-    peek: bool,
-) -> String {
-    let mode = output_mode.unwrap_or(OutputMode::Auto);
-
-    // For structured modes (JSON, YAML, XML, CSV), serialize the pads directly
-    if mode.is_structured() {
-        let json_data = JsonPadList {
-            pads: pads.to_vec(),
-        };
-        return render_template("list", &json_data, mode)
-            .unwrap_or_else(|_| "{\"pads\":[]}".to_string());
-    }
-
-    let empty_data = ListData {
-        pads: vec![],
-        empty: true,
-        pin_marker: PIN_MARKER.to_string(),
-        help_text: get_grouped_help(),
-        deleted_help: false,
-        peek: false,
-        col_left_pin: COL_LEFT_PIN,
-        col_status: COL_STATUS,
-        col_index: COL_INDEX,
-        col_right_pin: COL_RIGHT_PIN,
-        col_time: COL_TIME,
-    };
-
-    if pads.is_empty() {
-        return render_template("list", &empty_data, mode)
-            .unwrap_or_else(|_| "No pads found.\n".to_string());
-    }
-
-    let mut pad_lines = Vec::new();
-    let mut last_was_pinned = false;
-
-    // Use a recursive helper to flatten the tree with depth/indentation
-    fn process_pad(
-        dp: &DisplayPad,
-        pad_lines: &mut Vec<PadLineData>,
-        _prefix: &str, // Previously used for hierarchical indexes, now unused
-        depth: usize,
-        is_pinned_section: bool,
-        is_deleted_root: bool,
-        peek: bool,
-    ) {
-        let is_deleted = matches!(dp.index, DisplayIndex::Deleted(_));
-        let show_right_pin = dp.pad.metadata.is_pinned && !is_pinned_section;
-
-        // Format index string - space-padded, local only (no hierarchical prefix)
-        let local_idx_str = match &dp.index {
-            DisplayIndex::Pinned(n) => format!("p{}", n),
-            DisplayIndex::Regular(n) => format!("{:2}", n), // Space-padded
-            DisplayIndex::Deleted(n) => format!("d{}", n),
-        };
-
-        // Display index: just local index with dot (no hierarchical prefix)
-        let full_idx_str = format!("{}.", local_idx_str);
-
-        // Get status icon based on pad's todo status
-        let status_icon = match dp.pad.metadata.status {
-            TodoStatus::Planned => STATUS_PLANNED,
-            TodoStatus::InProgress => STATUS_IN_PROGRESS,
-            TodoStatus::Done => STATUS_DONE,
-        }
-        .to_string();
-
-        // Indent: The left_pin column (via col(2)) provides 2 chars.
-        // Additional indent is needed for nested items.
-        //
-        // Layout for total prefix (before status icon):
-        // - Pinned depth 0: 2 (just left_pin column with "⚲")
-        // - Pinned depth 1: 2 (left_pin = "  ", no extra indent)
-        // - Pinned depth 2+: depth * 2 (extra indent before left_pin)
-        // - Regular depth 0: 2 (just left_pin column with "  ")
-        // - Regular depth 1+: 2 + depth * 2 (extra indent before left_pin)
-        //
-        // Since left_pin always contributes 2, we need:
-        // - Pinned: max(0, (depth - 1) * 2) = depth.saturating_sub(1) * 2
-        // - Regular: depth * 2
-        let indent_width = if is_pinned_section {
-            depth.saturating_sub(1) * 2
-        } else {
-            depth * 2
-        };
-        let total_indent_width = indent_width + COL_LEFT_PIN; // For title_width calculation
-        let indent = " ".repeat(indent_width);
-
-        // Column values for template's col() filter
-        // left_pin: pin marker for pinned section root items, empty otherwise
-        let left_pin = if is_pinned_section && depth == 0 {
-            PIN_MARKER.to_string()
-        } else {
-            String::new()
-        };
-
-        // right_pin: pin marker for pinned pads shown in regular section
-        let right_pin = if show_right_pin {
-            PIN_MARKER.to_string()
-        } else {
-            String::new()
-        };
-
-        // Calculate tags display width (tag names + spaces between)
-        let tags_width = if dp.pad.metadata.tags.is_empty() {
-            0
-        } else {
-            use unicode_width::UnicodeWidthStr;
-            let tag_chars: usize = dp.pad.metadata.tags.iter().map(|t| t.width()).sum();
-            let spaces = dp.pad.metadata.tags.len().saturating_sub(1); // spaces between tags
-            tag_chars + spaces + 1 // +1 for leading space before tags
-        };
-
-        // Calculate title_width (fill column)
-        // Fixed columns: left_pin(2) + status(2) + index(4) + right_pin(2) + time(14) = 24
-        // Plus the variable indent width and tags width
-        let fixed_columns = COL_LEFT_PIN + COL_STATUS + COL_INDEX + COL_RIGHT_PIN + COL_TIME;
-        let title_width =
-            LINE_WIDTH.saturating_sub(fixed_columns + total_indent_width + tags_width);
-
-        // Process matches
-        let mut match_lines = Vec::new();
-        if let Some(matches) = &dp.matches {
-            for m in matches {
-                if m.line_number == 0 {
-                    continue;
-                }
-                let segments: Vec<MatchSegmentData> = m
-                    .segments
-                    .iter()
-                    .map(|s| match s {
-                        padzapp::index::MatchSegment::Plain(t) => MatchSegmentData {
-                            text: t.clone(),
-                            style: "info".to_string(),
-                        },
-                        padzapp::index::MatchSegment::Match(t) => MatchSegmentData {
-                            text: t.clone(),
-                            style: "match".to_string(),
-                        },
-                    })
-                    .collect();
-
-                // Match lines are indented to align under the title
-                let match_indent = total_indent_width + COL_LEFT_PIN + COL_STATUS + COL_INDEX;
-                let match_available = LINE_WIDTH.saturating_sub(COL_TIME + match_indent);
-                let truncated = truncate_match_segments(segments, match_available);
-                match_lines.push(MatchLineData {
-                    line_number: format!("{:02}", m.line_number),
-                    segments: truncated,
-                });
-            }
-        }
-
-        let peek_data = if peek {
-            let body_lines: Vec<&str> = dp.pad.content.lines().skip(1).collect();
-            let body = body_lines.join("\n");
-            let result = format_as_peek(&body, 3);
-            if result.opening_lines.is_empty() {
-                None
-            } else {
-                Some(result)
-            }
-        } else {
-            None
-        };
-
-        pad_lines.push(PadLineData {
-            indent,
-            left_pin,
-            status_icon,
-            index: full_idx_str.clone(),
-            title: dp.pad.metadata.title.clone(), // Raw title - template truncates via col()
-            title_width,
-            tags: dp.pad.metadata.tags.clone(),
-            right_pin,
-            time_ago: format_time_ago(dp.pad.metadata.created_at),
-            is_pinned_section: is_pinned_section && depth == 0,
-            is_deleted: is_deleted || is_deleted_root,
-            is_separator: false,
-            matches: match_lines,
-            more_matches_count: 0,
-            peek: peek_data,
-        });
-
-        // RECURSE CHILDREN
-        for child in &dp.children {
-            process_pad(
-                child,
-                pad_lines,
-                &full_idx_str,
-                depth + 1,
-                is_pinned_section,
-                is_deleted_root,
-                peek,
-            );
-        }
-    }
-
-    for dp in pads {
-        let is_pinned_section = matches!(dp.index, DisplayIndex::Pinned(_));
-        let is_deleted_section = matches!(dp.index, DisplayIndex::Deleted(_));
-
-        // Separator between pinned and regular ROOTS
-        if last_was_pinned && !is_pinned_section {
-            pad_lines.push(PadLineData {
-                indent: String::new(),
-                left_pin: String::new(),
-                status_icon: String::new(),
-                index: String::new(),
-                title: String::new(),
-                title_width: 0,
-                tags: vec![],
-                right_pin: String::new(),
-                time_ago: String::new(),
-                is_pinned_section: false,
-                is_deleted: false,
-                is_separator: true,
-                matches: vec![],
-                more_matches_count: 0,
-                peek: None,
-            });
-        }
-        last_was_pinned = is_pinned_section;
-
-        process_pad(
-            dp,
-            &mut pad_lines,
-            "",
-            0,
-            is_pinned_section,
-            is_deleted_section,
-            peek,
-        );
-    }
-
-    let data = ListData {
-        pads: pad_lines,
-        empty: false,
-        pin_marker: PIN_MARKER.to_string(),
-        help_text: String::new(), // Not used when not empty
-        deleted_help: show_deleted_help,
-        peek,
-        col_left_pin: COL_LEFT_PIN,
-        col_status: COL_STATUS,
-        col_index: COL_INDEX,
-        col_right_pin: COL_RIGHT_PIN,
-        col_time: COL_TIME,
-    };
-
-    render_template("list", &data, mode).unwrap_or_else(|e| format!("Render error: {}\n", e))
-}
-
-fn truncate_match_segments(
-    segments: Vec<MatchSegmentData>,
-    max_width: usize,
-) -> Vec<MatchSegmentData> {
-    use unicode_width::UnicodeWidthStr;
-
-    let mut result = Vec::new();
-    let mut current_width = 0;
-    // Reserve space for ellipsis if needed
-
-    for seg in segments {
-        let w = seg.text.width();
-        if current_width + w <= max_width {
-            result.push(seg);
-            current_width += w;
-        } else {
-            // Truncate this segment
-            let remaining = max_width.saturating_sub(current_width);
-            let truncated = truncate_to_width(&seg.text, remaining);
-            // truncate_to_width adds ellipsis if needed, but we passed strictly remaining width.
-            // If truncate_to_width adds ellipsis, it fits in `remaining`.
-
-            result.push(MatchSegmentData {
-                text: truncated,
-                style: seg.style,
-            });
-            return result;
-        }
-    }
-    result
-}
-
-/// Renders full pad contents similar to the legacy `print_full_pads` output.
-/// JSON-serializable wrapper for command messages.
-/// Used for --output=json mode to provide machine-readable output.
-#[derive(Serialize)]
-struct JsonMessages {
-    messages: Vec<CmdMessage>,
-}
-
-/// Renders command messages using the template system with themed styles.
-/// Supports structured output modes (JSON, YAML, etc.) for machine-readable output.
-pub fn render_messages(messages: &[CmdMessage], output_mode: OutputMode) -> String {
-    if messages.is_empty() {
-        return String::new();
-    }
-
-    // For structured modes, serialize the messages directly
-    if output_mode.is_structured() {
-        let json_data = JsonMessages {
-            messages: messages.to_vec(),
-        };
-        return render_template("messages", &json_data, output_mode)
-            .unwrap_or_else(|_| "{}".to_string());
-    }
-
-    // For terminal modes, use template rendering with style mapping
-    let message_data: Vec<MessageData> = messages
-        .iter()
-        .map(|msg| {
-            let style = match msg.level {
-                MessageLevel::Info => "info",
-                MessageLevel::Success => "success",
-                MessageLevel::Warning => "warning",
-                MessageLevel::Error => "error",
-            };
-            MessageData {
-                content: msg.content.clone(),
-                style: style.to_string(),
-            }
-        })
-        .collect();
-
-    let data = MessagesData {
-        messages: message_data,
-    };
-
-    render_template("messages", &data, output_mode).unwrap_or_else(|_| {
-        messages
-            .iter()
-            .map(|m| format!("{}\n", m.content))
-            .collect()
-    })
-}
-
-/// Prints command messages to stdout using the template system.
-/// Supports JSON output mode for machine-readable output.
-pub fn print_messages(messages: &[CmdMessage], output_mode: OutputMode) {
-    let output = render_messages(messages, output_mode);
-    if !output.is_empty() {
-        print!("{}", output);
-    }
-}
 
 /// Builds modification result data as serde_json::Value for Dispatch handlers.
 ///
@@ -591,7 +80,7 @@ pub fn build_modification_result_value(
         format!("{} {} {}...", action_verb, count, pad_word)
     };
 
-    // Convert pads to PadLineData
+    // Convert pads to template-ready format
     let pad_lines: Vec<serde_json::Value> = pads
         .iter()
         .map(|dp| {
@@ -657,21 +146,7 @@ pub fn build_modification_result_value(
         .collect();
 
     // Convert trailing messages
-    let trailing_data: Vec<serde_json::Value> = trailing_messages
-        .iter()
-        .map(|msg| {
-            let style = match msg.level {
-                MessageLevel::Info => "info",
-                MessageLevel::Success => "success",
-                MessageLevel::Warning => "warning",
-                MessageLevel::Error => "error",
-            };
-            json!({
-                "content": msg.content,
-                "style": style,
-            })
-        })
-        .collect();
+    let trailing_data = convert_messages_to_json(trailing_messages);
 
     json!({
         "start_message": start_message,
@@ -685,6 +160,293 @@ pub fn build_modification_result_value(
         "col_right_pin": COL_RIGHT_PIN,
         "col_time": COL_TIME,
     })
+}
+
+/// Builds list result data as serde_json::Value for Dispatch handlers.
+///
+/// This function creates the appropriate data structure based on output mode:
+/// - For structured modes (JSON, YAML): Clean API-friendly format with just pads
+/// - For terminal modes: Full template-ready format with column widths and transformed pad data
+///
+/// Used by list/search handlers that need to return data for standout's rendering pipeline.
+pub fn build_list_result_value(
+    pads: &[DisplayPad],
+    peek: bool,
+    show_deleted_help: bool,
+    trailing_messages: &[CmdMessage],
+    output_mode: OutputMode,
+) -> serde_json::Value {
+    use serde_json::json;
+
+    // For structured modes, return clean API format
+    if output_mode.is_structured() {
+        return json!({
+            "pads": pads,
+            "messages": trailing_messages,
+        });
+    }
+
+    // For terminal modes, build full template data
+    let trailing_data = convert_messages_to_json(trailing_messages);
+
+    if pads.is_empty() {
+        return json!({
+            "pads": [],
+            "empty": true,
+            "pin_marker": PIN_MARKER,
+            "help_text": get_grouped_help(),
+            "deleted_help": false,
+            "peek": false,
+            "col_left_pin": COL_LEFT_PIN,
+            "col_status": COL_STATUS,
+            "col_index": COL_INDEX,
+            "col_right_pin": COL_RIGHT_PIN,
+            "col_time": COL_TIME,
+            "trailing_messages": trailing_data,
+        });
+    }
+
+    let mut pad_lines: Vec<serde_json::Value> = Vec::new();
+    let mut last_was_pinned = false;
+
+    // Recursive helper to flatten the tree with depth/indentation
+    fn process_pad_to_json(
+        dp: &DisplayPad,
+        pad_lines: &mut Vec<serde_json::Value>,
+        depth: usize,
+        is_pinned_section: bool,
+        is_deleted_root: bool,
+        peek: bool,
+    ) {
+        let is_deleted = matches!(dp.index, DisplayIndex::Deleted(_));
+        let show_right_pin = dp.pad.metadata.is_pinned && !is_pinned_section;
+
+        let local_idx_str = match &dp.index {
+            DisplayIndex::Pinned(n) => format!("p{}", n),
+            DisplayIndex::Regular(n) => format!("{:2}", n),
+            DisplayIndex::Deleted(n) => format!("d{}", n),
+        };
+        let full_idx_str = format!("{}.", local_idx_str);
+
+        let status_icon = match dp.pad.metadata.status {
+            TodoStatus::Planned => STATUS_PLANNED,
+            TodoStatus::InProgress => STATUS_IN_PROGRESS,
+            TodoStatus::Done => STATUS_DONE,
+        };
+
+        let indent_width = if is_pinned_section {
+            depth.saturating_sub(1) * 2
+        } else {
+            depth * 2
+        };
+        let total_indent_width = indent_width + COL_LEFT_PIN;
+        let indent = " ".repeat(indent_width);
+
+        let left_pin = if is_pinned_section && depth == 0 {
+            PIN_MARKER.to_string()
+        } else {
+            String::new()
+        };
+
+        let right_pin = if show_right_pin {
+            PIN_MARKER.to_string()
+        } else {
+            String::new()
+        };
+
+        // Calculate tags display width
+        let tags_width = if dp.pad.metadata.tags.is_empty() {
+            0
+        } else {
+            use unicode_width::UnicodeWidthStr;
+            let tag_chars: usize = dp.pad.metadata.tags.iter().map(|t| t.width()).sum();
+            let spaces = dp.pad.metadata.tags.len().saturating_sub(1);
+            tag_chars + spaces + 1
+        };
+
+        let fixed_columns = COL_LEFT_PIN + COL_STATUS + COL_INDEX + COL_RIGHT_PIN + COL_TIME;
+        let title_width =
+            LINE_WIDTH.saturating_sub(fixed_columns + total_indent_width + tags_width);
+
+        // Process matches
+        let mut match_lines: Vec<serde_json::Value> = Vec::new();
+        if let Some(matches) = &dp.matches {
+            for m in matches {
+                if m.line_number == 0 {
+                    continue;
+                }
+                let segments: Vec<serde_json::Value> = m
+                    .segments
+                    .iter()
+                    .map(|s| {
+                        let (text, style) = match s {
+                            padzapp::index::MatchSegment::Plain(t) => (t.clone(), "info"),
+                            padzapp::index::MatchSegment::Match(t) => (t.clone(), "match"),
+                        };
+                        serde_json::json!({ "text": text, "style": style })
+                    })
+                    .collect();
+
+                let match_indent = total_indent_width + COL_LEFT_PIN + COL_STATUS + COL_INDEX;
+                let match_available = LINE_WIDTH.saturating_sub(COL_TIME + match_indent);
+
+                // Truncate segments to available width
+                let truncated = truncate_match_segments_to_json(&segments, match_available);
+
+                match_lines.push(serde_json::json!({
+                    "line_number": format!("{:02}", m.line_number),
+                    "segments": truncated,
+                }));
+            }
+        }
+
+        let peek_data = if peek {
+            let body_lines: Vec<&str> = dp.pad.content.lines().skip(1).collect();
+            let body = body_lines.join("\n");
+            let result = format_as_peek(&body, 3);
+            if result.opening_lines.is_empty() {
+                serde_json::Value::Null
+            } else {
+                serde_json::to_value(&result).unwrap_or(serde_json::Value::Null)
+            }
+        } else {
+            serde_json::Value::Null
+        };
+
+        pad_lines.push(serde_json::json!({
+            "indent": indent,
+            "left_pin": left_pin,
+            "status_icon": status_icon,
+            "index": full_idx_str,
+            "title": dp.pad.metadata.title,
+            "title_width": title_width,
+            "tags": dp.pad.metadata.tags,
+            "right_pin": right_pin,
+            "time_ago": format_time_ago(dp.pad.metadata.created_at),
+            "is_pinned_section": is_pinned_section && depth == 0,
+            "is_deleted": is_deleted || is_deleted_root,
+            "is_separator": false,
+            "matches": match_lines,
+            "more_matches_count": 0,
+            "peek": peek_data,
+        }));
+
+        // Recurse children
+        for child in &dp.children {
+            process_pad_to_json(
+                child,
+                pad_lines,
+                depth + 1,
+                is_pinned_section,
+                is_deleted_root,
+                peek,
+            );
+        }
+    }
+
+    for dp in pads {
+        let is_pinned_section = matches!(dp.index, DisplayIndex::Pinned(_));
+        let is_deleted_section = matches!(dp.index, DisplayIndex::Deleted(_));
+
+        // Separator between pinned and regular roots
+        if last_was_pinned && !is_pinned_section {
+            pad_lines.push(serde_json::json!({
+                "indent": "",
+                "left_pin": "",
+                "status_icon": "",
+                "index": "",
+                "title": "",
+                "title_width": 0,
+                "tags": [],
+                "right_pin": "",
+                "time_ago": "",
+                "is_pinned_section": false,
+                "is_deleted": false,
+                "is_separator": true,
+                "matches": [],
+                "more_matches_count": 0,
+                "peek": serde_json::Value::Null,
+            }));
+        }
+        last_was_pinned = is_pinned_section;
+
+        process_pad_to_json(
+            dp,
+            &mut pad_lines,
+            0,
+            is_pinned_section,
+            is_deleted_section,
+            peek,
+        );
+    }
+
+    json!({
+        "pads": pad_lines,
+        "empty": false,
+        "pin_marker": PIN_MARKER,
+        "help_text": "",
+        "deleted_help": show_deleted_help,
+        "peek": peek,
+        "col_left_pin": COL_LEFT_PIN,
+        "col_status": COL_STATUS,
+        "col_index": COL_INDEX,
+        "col_right_pin": COL_RIGHT_PIN,
+        "col_time": COL_TIME,
+        "trailing_messages": trailing_data,
+    })
+}
+
+/// Helper to convert CmdMessages to JSON values for templates
+fn convert_messages_to_json(messages: &[CmdMessage]) -> Vec<serde_json::Value> {
+    messages
+        .iter()
+        .map(|msg| {
+            let style = match msg.level {
+                MessageLevel::Info => "info",
+                MessageLevel::Success => "success",
+                MessageLevel::Warning => "warning",
+                MessageLevel::Error => "error",
+            };
+            serde_json::json!({
+                "content": msg.content,
+                "style": style,
+            })
+        })
+        .collect()
+}
+
+/// Helper to truncate match segments to available width (returns JSON values)
+fn truncate_match_segments_to_json(
+    segments: &[serde_json::Value],
+    max_width: usize,
+) -> Vec<serde_json::Value> {
+    use unicode_width::UnicodeWidthStr;
+
+    let mut result = Vec::new();
+    let mut current_width = 0;
+
+    for seg in segments {
+        let text = seg.get("text").and_then(|v| v.as_str()).unwrap_or("");
+        let style = seg
+            .get("style")
+            .and_then(|v| v.as_str())
+            .unwrap_or("info")
+            .to_string();
+        let w = text.width();
+        if current_width + w <= max_width {
+            result.push(seg.clone());
+            current_width += w;
+        } else {
+            let remaining = max_width.saturating_sub(current_width);
+            let truncated = truncate_to_width(text, remaining);
+            result.push(serde_json::json!({
+                "text": truncated,
+                "style": style,
+            }));
+            return result;
+        }
+    }
+    result
 }
 
 fn format_time_ago(timestamp: DateTime<Utc>) -> String {
@@ -719,6 +481,7 @@ fn format_time_ago(timestamp: DateTime<Utc>) -> String {
 mod tests {
     use super::*;
     use padzapp::model::Pad;
+    use standout::OutputMode;
 
     fn make_pad(title: &str, pinned: bool, deleted: bool) -> Pad {
         let mut p = Pad::new(title.to_string(), "some content".to_string());
@@ -737,167 +500,170 @@ mod tests {
     }
 
     #[test]
-    fn test_render_empty_list() {
-        let output = render_pad_list_internal(&[], Some(OutputMode::Text), false, false);
-        // Should show the "no pads yet" message with help text
-        assert!(
-            output.contains("No pads yet, create one with `padz create`"),
-            "Expected 'No pads yet' message, got: {:?}",
-            output
+    fn test_build_list_empty() {
+        let data = build_list_result_value(&[], false, false, &[], OutputMode::Text);
+        assert!(data.get("empty").and_then(|v| v.as_bool()).unwrap_or(false));
+        assert!(data
+            .get("help_text")
+            .and_then(|v| v.as_str())
+            .unwrap_or("")
+            .contains("create"));
+    }
+
+    #[test]
+    fn test_build_list_single_regular_pad() {
+        let pad = make_pad("Test Note", false, false);
+        let dp = make_display_pad(pad, DisplayIndex::Regular(1));
+
+        let data = build_list_result_value(&[dp], false, false, &[], OutputMode::Text);
+
+        let pads = data.get("pads").and_then(|v| v.as_array()).unwrap();
+        assert_eq!(pads.len(), 1);
+
+        let pad_data = &pads[0];
+        assert_eq!(
+            pad_data.get("title").and_then(|v| v.as_str()),
+            Some("Test Note")
+        );
+        assert_eq!(pad_data.get("index").and_then(|v| v.as_str()), Some(" 1."));
+        assert_eq!(
+            pad_data.get("status_icon").and_then(|v| v.as_str()),
+            Some(STATUS_PLANNED)
         );
     }
 
     #[test]
-    fn test_render_single_regular_pad() {
-        let pad = make_pad("Test Note", false, false);
-        let dp = make_display_pad(pad, DisplayIndex::Regular(1));
-
-        let output = render_pad_list_internal(&[dp], Some(OutputMode::Text), false, false);
-
-        // Should contain status icon, space-padded index and title
-        assert!(output.contains(STATUS_PLANNED)); // Default status is Planned
-        assert!(output.contains(" 1."));
-        assert!(output.contains("Test Note"));
-        // Should have base padding, then status icon, then index
-        assert!(output.contains(&format!("{} ", STATUS_PLANNED)));
-        assert!(output.contains(&format!("{} {}.", STATUS_PLANNED, " 1")));
-    }
-
-    #[test]
-    fn test_render_pinned_pad() {
+    fn test_build_list_pinned_pad() {
         let pad = make_pad("Pinned Note", true, false);
         let dp = make_display_pad(pad, DisplayIndex::Pinned(1));
 
-        let output = render_pad_list_internal(&[dp], Some(OutputMode::Text), false, false);
+        let data = build_list_result_value(&[dp], false, false, &[], OutputMode::Text);
 
-        // Should contain pinned index
-        assert!(output.contains("p1."));
-        assert!(output.contains("Pinned Note"));
-        // Should have pin marker in prefix
-        assert!(output.contains(PIN_MARKER));
+        let pads = data.get("pads").and_then(|v| v.as_array()).unwrap();
+        let pad_data = &pads[0];
+
+        assert_eq!(pad_data.get("index").and_then(|v| v.as_str()), Some("p1."));
+        assert_eq!(
+            pad_data.get("left_pin").and_then(|v| v.as_str()),
+            Some(PIN_MARKER)
+        );
+        assert_eq!(
+            pad_data.get("is_pinned_section").and_then(|v| v.as_bool()),
+            Some(true)
+        );
     }
 
     #[test]
-    fn test_render_deleted_pad() {
+    fn test_build_list_deleted_pad() {
         let pad = make_pad("Deleted Note", false, true);
         let dp = make_display_pad(pad, DisplayIndex::Deleted(1));
 
-        let output = render_pad_list_internal(&[dp], Some(OutputMode::Text), false, false);
+        let data = build_list_result_value(&[dp], false, true, &[], OutputMode::Text);
 
-        // Should contain deleted index
-        assert!(output.contains("d1."));
-        assert!(output.contains("Deleted Note"));
+        let pads = data.get("pads").and_then(|v| v.as_array()).unwrap();
+        let pad_data = &pads[0];
+
+        assert_eq!(pad_data.get("index").and_then(|v| v.as_str()), Some("d1."));
+        assert_eq!(
+            pad_data.get("is_deleted").and_then(|v| v.as_bool()),
+            Some(true)
+        );
+        assert_eq!(
+            data.get("deleted_help").and_then(|v| v.as_bool()),
+            Some(true)
+        );
     }
 
     #[test]
-    fn test_render_mixed_pinned_and_regular() {
+    fn test_build_list_mixed_pinned_and_regular() {
         let pinned = make_pad("Pinned", true, false);
         let regular = make_pad("Regular", false, false);
 
         let pads = vec![
             make_display_pad(pinned.clone(), DisplayIndex::Pinned(1)),
             make_display_pad(regular, DisplayIndex::Regular(1)),
-            make_display_pad(pinned, DisplayIndex::Regular(2)),
         ];
 
-        let output = render_pad_list_internal(&pads, Some(OutputMode::Text), false, false);
+        let data = build_list_result_value(&pads, false, false, &[], OutputMode::Text);
 
-        // Should have pinned section with marker
-        assert!(output.contains("p1."));
-        // Should have separator (blank line) between pinned and regular
-        let lines: Vec<&str> = output.lines().collect();
-        // First non-empty line should be blank (leading newline for pinned section)
-        // Then pinned entry, then blank line separator, then regular entries
-        assert!(lines.iter().any(|l| l.trim().is_empty()));
+        let pad_list = data.get("pads").and_then(|v| v.as_array()).unwrap();
+        // Should have: pinned pad, separator, regular pad
+        assert_eq!(pad_list.len(), 3);
+
+        // Middle item should be separator
+        assert_eq!(
+            pad_list[1].get("is_separator").and_then(|v| v.as_bool()),
+            Some(true)
+        );
     }
 
     #[test]
-    fn test_render_pinned_marker_on_regular_entry() {
-        // A pinned pad should show pin marker when displayed in regular section
+    fn test_build_list_pinned_in_regular_section_shows_right_pin() {
+        // A pinned pad displayed in regular section should show right_pin
         let mut pad = make_pad("Pinned Note", true, false);
         pad.metadata.is_pinned = true;
 
         let dp = make_display_pad(pad, DisplayIndex::Regular(1));
 
-        let output = render_pad_list_internal(&[dp], Some(OutputMode::Text), false, false);
+        let data = build_list_result_value(&[dp], false, false, &[], OutputMode::Text);
 
-        // Should have pin marker on the right side
-        assert!(output.contains(PIN_MARKER));
+        let pads = data.get("pads").and_then(|v| v.as_array()).unwrap();
+        let pad_data = &pads[0];
+
+        assert_eq!(
+            pad_data.get("right_pin").and_then(|v| v.as_str()),
+            Some(PIN_MARKER)
+        );
     }
 
     #[test]
-    fn test_render_with_color_includes_ansi() {
+    fn test_build_list_with_messages() {
+        let pad = make_pad("Test", false, false);
+        let dp = make_display_pad(pad, DisplayIndex::Regular(1));
+        let messages = vec![CmdMessage::success("Operation completed")];
+
+        let data = build_list_result_value(&[dp], false, false, &messages, OutputMode::Text);
+
+        let trailing = data
+            .get("trailing_messages")
+            .and_then(|v| v.as_array())
+            .unwrap();
+        assert_eq!(trailing.len(), 1);
+        assert_eq!(
+            trailing[0].get("content").and_then(|v| v.as_str()),
+            Some("Operation completed")
+        );
+        assert_eq!(
+            trailing[0].get("style").and_then(|v| v.as_str()),
+            Some("success")
+        );
+    }
+
+    #[test]
+    fn test_build_list_json_mode_returns_raw_pads() {
         let pad = make_pad("Test", false, false);
         let dp = make_display_pad(pad, DisplayIndex::Regular(1));
 
-        // Force styling for test environment
-        let output = render_pad_list_internal(&[dp], Some(OutputMode::Term), false, false);
+        let data = build_list_result_value(&[dp], false, false, &[], OutputMode::Json);
 
-        // When use_color is true, should include ANSI codes (at least for time which is dimmed)
-        // Note: console crate may not emit codes in test env, so we just verify it runs
-        assert!(output.contains("Test"));
+        // In JSON mode, should return raw pads array, not processed pad lines
+        let pads = data.get("pads").and_then(|v| v.as_array()).unwrap();
+        assert_eq!(pads.len(), 1);
+        // Raw pads have "pad" field with content
+        assert!(pads[0].get("pad").is_some());
     }
 
     #[test]
-    fn test_render_search_results() {
-        use padzapp::index::{MatchSegment, SearchMatch};
+    fn test_build_modification_result() {
+        let pad = make_pad("Test", false, false);
+        let dp = make_display_pad(pad, DisplayIndex::Regular(1));
 
-        let pad = make_pad("Search Result", false, false);
-        let mut dp = make_display_pad(pad, DisplayIndex::Regular(1));
+        let data = build_modification_result_value("Created", &[dp], &[], OutputMode::Text);
 
-        dp.matches = Some(vec![SearchMatch {
-            line_number: 2,
-            segments: vec![
-                MatchSegment::Plain("Found ".to_string()),
-                MatchSegment::Match("match".to_string()),
-                MatchSegment::Plain(" here".to_string()),
-            ],
-        }]);
-
-        let output = render_pad_list_internal(&[dp], Some(OutputMode::Text), false, false);
-
-        assert!(output.contains("1."));
-        assert!(output.contains("Search Result"));
-        // Check indentation of match line (should have padding)
-        assert!(output.contains("    02 Found match here"));
-    }
-
-    #[test]
-    fn test_render_messages_empty() {
-        let output = render_messages(&[], OutputMode::Auto);
-        assert!(output.is_empty());
-    }
-
-    #[test]
-    fn test_render_messages_success() {
-        let messages = vec![CmdMessage::success("Pad created: Test")];
-        let output = render_messages(&messages, OutputMode::Auto);
-        assert!(output.contains("Pad created: Test"));
-    }
-
-    #[test]
-    fn test_render_messages_multiple() {
-        let messages = vec![
-            CmdMessage::info("Info message"),
-            CmdMessage::warning("Warning message"),
-            CmdMessage::error("Error message"),
-        ];
-        let output = render_messages(&messages, OutputMode::Auto);
-        assert!(output.contains("Info message"));
-        assert!(output.contains("Warning message"));
-        assert!(output.contains("Error message"));
-    }
-
-    #[test]
-    fn test_render_messages_json() {
-        let messages = vec![
-            CmdMessage::success("Operation completed"),
-            CmdMessage::info("Additional info"),
-        ];
-        let output = render_messages(&messages, OutputMode::Json);
-        assert!(output.contains("\"level\": \"success\""));
-        assert!(output.contains("\"content\": \"Operation completed\""));
-        assert!(output.contains("\"level\": \"info\""));
+        assert_eq!(
+            data.get("start_message").and_then(|v| v.as_str()),
+            Some("Created 1 pad...")
+        );
     }
 
     #[test]
@@ -907,8 +673,6 @@ mod tests {
 
         let now = Utc::now();
 
-        // Test that various time units are padded correctly
-        // The padded unit + " ago" should show consistent alignment
         let test_cases = [
             (Duration::seconds(30), "seconds ago"), // 7 chars - no padding
             (Duration::minutes(5), "minutes ago"),  // 7 chars - no padding
