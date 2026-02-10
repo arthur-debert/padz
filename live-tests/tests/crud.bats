@@ -139,6 +139,52 @@ load '../lib/assertions.bash'
 }
 
 # -----------------------------------------------------------------------------
+# CREATE (interactive editor)
+# -----------------------------------------------------------------------------
+
+@test "create: interactive mode creates pad (EDITOR=true)" {
+    # With EDITOR=true, the editor exits immediately, keeping the initial content
+    run "${PADZ_BIN}" -g create "Interactive Create Test"
+    assert_success
+
+    assert_pad_exists "Interactive Create Test" global
+}
+
+@test "create: interactive mode copies to clipboard" {
+    # Only test clipboard on macOS where pbpaste is available
+    command -v pbpaste >/dev/null || skip "pbpaste not available"
+
+    "${PADZ_BIN}" -g create "Clipboard Create Test" >/dev/null
+
+    local clipboard
+    clipboard=$(pbpaste)
+    [[ "${clipboard}" == *"Clipboard Create Test"* ]]
+}
+
+@test "create: --no-editor copies to clipboard" {
+    command -v pbpaste >/dev/null || skip "pbpaste not available"
+
+    "${PADZ_BIN}" -g create --no-editor "No Editor Clipboard Test" >/dev/null
+
+    local clipboard
+    clipboard=$(pbpaste)
+    [[ "${clipboard}" == *"No Editor Clipboard Test"* ]]
+}
+
+@test "create: piped content copies to clipboard" {
+    command -v pbpaste >/dev/null || skip "pbpaste not available"
+
+    echo "Piped Clipboard Title
+
+Body of piped pad." | "${PADZ_BIN}" -g create >/dev/null
+
+    local clipboard
+    clipboard=$(pbpaste)
+    [[ "${clipboard}" == *"Piped Clipboard Title"* ]]
+    [[ "${clipboard}" == *"Body of piped pad."* ]]
+}
+
+# -----------------------------------------------------------------------------
 # RESTORE
 # -----------------------------------------------------------------------------
 

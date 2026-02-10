@@ -15,7 +15,7 @@ use serde_json::Value;
 use standout::cli::{CommandContext, HandlerResult, Output};
 use standout::OutputMode;
 use std::cell::RefCell;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use super::render::{build_modification_result_value, render_pad_list, render_pad_list_deleted};
 
@@ -61,6 +61,16 @@ fn copy_pad_to_clipboard(path: &Path) {
     }
 }
 
+/// Open pad files in editor and copy each to clipboard after editing.
+/// Shared by `create` (interactive) and `open` commands.
+fn edit_and_copy_pads(paths: &[PathBuf]) -> Result<(), anyhow::Error> {
+    for path in paths {
+        open_in_editor(path).map_err(|e| anyhow::anyhow!("{}", e))?;
+        copy_pad_to_clipboard(path);
+    }
+    Ok(())
+}
+
 // =============================================================================
 // Core commands
 // =============================================================================
@@ -97,50 +107,60 @@ pub fn create(matches: &ArgMatches, _ctx: &CommandContext) -> HandlerResult<Valu
             // Create from piped content - parse to get title and body
             let (title, body) = parse_pad_content(&piped)
                 .ok_or_else(|| anyhow::anyhow!("Invalid content: could not extract title"))?;
-            // If title_arg provided, use it as title override
             let final_title = title_arg.unwrap_or(title);
-            ctx.api
+            let result = ctx
+                .api
                 .create_pad(ctx.scope, final_title, body, inside)
-                .map_err(|e| anyhow::anyhow!("{}", e))?
+                .map_err(|e| anyhow::anyhow!("{}", e))?;
+            for path in &result.pad_paths {
+                copy_pad_to_clipboard(path);
+            }
+            result
         } else if no_editor {
             // Create with title only (no editor)
             let title = title_arg.unwrap_or_else(|| "Untitled".to_string());
-            ctx.api
+            let result = ctx
+                .api
                 .create_pad(ctx.scope, title, String::new(), inside)
-                .map_err(|e| anyhow::anyhow!("{}", e))?
+                .map_err(|e| anyhow::anyhow!("{}", e))?;
+            for path in &result.pad_paths {
+                copy_pad_to_clipboard(path);
+            }
+            result
         } else {
-            // Interactive editor creation - use temp file
+            // Interactive: create pad, then open the real file in editor
+            // (same editor + clipboard flow as the `open` command)
             let initial_title = title_arg.unwrap_or_default();
-            let editor_content = padzapp::editor::EditorContent::new(initial_title, String::new());
+            let mut result = ctx
+                .api
+                .create_pad(ctx.scope, initial_title, String::new(), inside)
+                .map_err(|e| anyhow::anyhow!("{}", e))?;
 
-            // Create temp file
-            let temp_dir = std::env::temp_dir();
-            let temp_path = temp_dir.join(format!("padz-{}.txt", std::process::id()));
-            std::fs::write(&temp_path, editor_content.to_buffer())
-                .map_err(|e| anyhow::anyhow!("Failed to create temp file: {}", e))?;
+            edit_and_copy_pads(&result.pad_paths)?;
 
-            // Open in editor
-            open_in_editor(&temp_path).map_err(|e| anyhow::anyhow!("Editor error: {}", e))?;
-
-            // Read result
-            let edited = std::fs::read_to_string(&temp_path)
-                .map_err(|e| anyhow::anyhow!("Failed to read temp file: {}", e))?;
-
-            // Clean up temp file
-            let _ = std::fs::remove_file(&temp_path);
-
-            if edited.trim().is_empty() {
-                return Ok(Output::Render(serde_json::json!({
-                    "start_message": "",
-                    "pads": [],
-                    "trailing_messages": [{"content": "Aborted: empty content", "style": "warning"}]
-                })));
+            // Re-read file to pick up user's edits
+            if let Some(path) = result.pad_paths.first() {
+                let content = std::fs::read_to_string(path)
+                    .map_err(|e| anyhow::anyhow!("Failed to read pad file: {}", e))?;
+                if content.trim().is_empty() {
+                    // User aborted — remove the empty pad file (store self-heals)
+                    let _ = std::fs::remove_file(path);
+                    return Ok(Output::Render(serde_json::json!({
+                        "start_message": "",
+                        "pads": [],
+                        "trailing_messages": [{"content": "Aborted: empty content", "style": "warning"}]
+                    })));
+                }
+                // Update result metadata with the edited content
+                if let Some((title, normalized)) = parse_pad_content(&content) {
+                    if let Some(dp) = result.affected_pads.first_mut() {
+                        dp.pad.metadata.title = title;
+                        dp.pad.content = normalized;
+                    }
+                }
             }
 
-            let parsed = padzapp::editor::EditorContent::from_buffer(&edited);
-            ctx.api
-                .create_pad(ctx.scope, parsed.title, parsed.content, inside)
-                .map_err(|e| anyhow::anyhow!("{}", e))?
+            result
         };
 
         let data = build_modification_result_value(
@@ -361,12 +381,7 @@ pub fn open(matches: &ArgMatches, _ctx: &CommandContext) -> HandlerResult<Value>
                 .view_pads(ctx.scope, &indexes)
                 .map_err(|e| anyhow::anyhow!("{}", e))?;
 
-            // Open each pad's file in editor
-            for path in &view_result.pad_paths {
-                open_in_editor(path).map_err(|e| anyhow::anyhow!("{}", e))?;
-                // Copy to clipboard after editing
-                copy_pad_to_clipboard(path);
-            }
+            edit_and_copy_pads(&view_result.pad_paths)?;
 
             Ok(Output::<Value>::Silent)
         }
