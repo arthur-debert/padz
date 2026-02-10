@@ -6,6 +6,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+- **Added**
+  - **Peek command** - `padz peek` / `padz peek 2 3` shows pad listing with content previews. Shortcut for `padz list --peek`, supports ID filtering and tag filtering.
+
 ## [0.17.0] - 2026-02-10
 
 ## [0.17.0] - 2026-02-10
