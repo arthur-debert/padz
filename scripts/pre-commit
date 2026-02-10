@@ -48,4 +48,12 @@ cargo check --all-targets
 echo "🧪 Running cargo test..."
 cargo test --all
 
+# Run live integration tests (bats)
+if command -v bats &>/dev/null; then
+    echo "🧪 Running bats live-tests..."
+    "$(git rev-parse --show-toplevel)/live-tests/run-tests"
+else
+    echo "⚠️  bats not found, skipping live-tests (install with: brew install bats-core)"
+fi
+
 echo "✅ All pre-commit checks passed!"
