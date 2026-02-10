@@ -6,6 +6,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [0.18.0] - 2026-02-10
+
+## [0.18.0] - 2026-02-10
+
 - **Added**
   - **Peek command** - `padz peek` / `padz peek 2 3` shows pad listing with content previews. Shortcut for `padz list --peek`, supports ID filtering and tag filtering.
 
@@ -277,7 +281,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
   - Demo flow verification script
   - Live testing shell
 
-[Unreleased]: https://github.com/arthur-debert/padz/compare/v0.17.0...HEAD
+[Unreleased]: https://github.com/arthur-debert/padz/compare/v0.18.0...HEAD
+[0.18.0]: https://github.com/arthur-debert/padz/compare/v0.17.0...v0.18.0
+[0.18.0]: https://github.com/arthur-debert/padz/compare/v0.17.0...v0.18.0
 [0.17.0]: https://github.com/arthur-debert/padz/compare/v0.16.0...v0.17.0
 [0.17.0]: https://github.com/arthur-debert/padz/compare/v0.16.0...v0.17.0
 [0.16.0]: https://github.com/arthur-debert/padz/compare/v0.15.1...v0.16.0
