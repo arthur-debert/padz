@@ -196,4 +196,27 @@ mod tests {
         assert_eq!(pads.len(), 1);
         assert!(pads[0].metadata.parent_id.is_none());
     }
+
+    #[test]
+    fn create_returns_pad_path() {
+        let mut store = InMemoryStore::new();
+
+        let result = run(
+            &mut store,
+            Scope::Project,
+            "Path Test".into(),
+            "Body".into(),
+            None,
+        )
+        .unwrap();
+
+        // pad_paths should be populated for editor/clipboard integration
+        assert_eq!(result.pad_paths.len(), 1);
+        // Path should contain the pad's UUID
+        let pad_id = result.affected_pads[0].pad.metadata.id.to_string();
+        assert!(
+            result.pad_paths[0].to_string_lossy().contains(&pad_id),
+            "pad_path should contain the pad's UUID"
+        );
+    }
 }

@@ -139,6 +139,36 @@ load '../lib/assertions.bash'
 }
 
 # -----------------------------------------------------------------------------
+# CREATE (clipboard)
+# -----------------------------------------------------------------------------
+# NOTE: Interactive editor tests can't run in bats because InputChain's StdinSource
+# reads from the non-terminal stdin pipe, getting empty content instead of falling
+# through to the editor. The --no-editor and piped tests below cover clipboard behavior.
+
+@test "create: --no-editor copies to clipboard" {
+    command -v pbpaste >/dev/null || skip "pbpaste not available"
+
+    "${PADZ_BIN}" -g create --no-editor "No Editor Clipboard Test" >/dev/null
+
+    local clipboard
+    clipboard=$(pbpaste)
+    [[ "${clipboard}" == *"No Editor Clipboard Test"* ]]
+}
+
+@test "create: piped content copies to clipboard" {
+    command -v pbpaste >/dev/null || skip "pbpaste not available"
+
+    echo "Piped Clipboard Title
+
+Body of piped pad." | "${PADZ_BIN}" -g create >/dev/null
+
+    local clipboard
+    clipboard=$(pbpaste)
+    [[ "${clipboard}" == *"Piped Clipboard Title"* ]]
+    [[ "${clipboard}" == *"Body of piped pad."* ]]
+}
+
+# -----------------------------------------------------------------------------
 # RESTORE
 # -----------------------------------------------------------------------------
 

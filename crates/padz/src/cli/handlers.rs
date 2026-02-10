@@ -406,10 +406,14 @@ pub fn create(
     let result = if no_editor {
         // --no-editor: create with title only, no content collection
         let title = title_arg.unwrap_or_else(|| "Untitled".to_string());
-        state.with_api(|api| {
-            api.create_pad(state.scope, title, String::new(), inside)
+        let result = state.with_api(|api| {
+            api.create_pad(state.scope, title.clone(), String::new(), inside)
                 .map_err(|e| anyhow::anyhow!("{}", e))
-        })?
+        })?;
+        // Copy to clipboard
+        let clipboard_text = format_for_clipboard(&title, "");
+        let _ = copy_to_clipboard(&clipboard_text);
+        result
     } else {
         // Collect content via InputChain: stdin → editor
         let template = make_editor_template(title_arg.as_deref());
@@ -424,10 +428,13 @@ pub fn create(
                     (_, false) => parsed.title, // parsed has title, no CLI override
                     (None, true) => "Untitled".to_string(),
                 };
-                state.with_api(|api| {
+                let result = state.with_api(|api| {
                     api.create_pad(state.scope, final_title, parsed.content, inside)
                         .map_err(|e| anyhow::anyhow!("{}", e))
-                })?
+                })?;
+                // Copy to clipboard
+                copy_content_to_clipboard(&raw);
+                result
             }
             _ => {
                 return Ok(Output::Render(serde_json::json!({
