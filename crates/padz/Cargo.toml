@@ -14,7 +14,7 @@ name = "padz"
 path = "src/main.rs"
 
 [dependencies]
-padzapp = { version = "0.16.0", path = "../padzapp" }
+padzapp = { version = "0.17.0", path = "../padzapp" }
 chrono = { version = "0.4.42", features = ["serde"] }
 clap = { version = "4.5.53", features = ["derive"] }
 clap_complete = { version = "4.5", features = ["unstable-dynamic"] }
