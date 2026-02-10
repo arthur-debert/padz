@@ -497,6 +497,21 @@ pub fn list(
 }
 
 #[handler]
+pub fn peek(
+    #[ctx] ctx: &CommandContext,
+    #[arg] ids: Vec<String>,
+    #[arg] tags: Vec<String>,
+) -> Result<Output<Value>, anyhow::Error> {
+    let filter = PadFilter {
+        status: PadStatusFilter::Active,
+        search_term: None,
+        todo_status: None,
+        tags: if tags.is_empty() { None } else { Some(tags) },
+    };
+    api(ctx).list_pads(filter, true, false, &ids)
+}
+
+#[handler]
 pub fn search(
     #[ctx] ctx: &CommandContext,
     #[arg] term: String,

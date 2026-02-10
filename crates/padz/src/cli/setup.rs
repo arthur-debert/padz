@@ -227,6 +227,19 @@ pub enum Commands {
         tags: Vec<String>,
     },
 
+    /// Peek at pad content previews
+    #[command(alias = "pk", display_order = 4)]
+    #[dispatch(pure, template = "list")]
+    Peek {
+        /// Pad IDs to show (e.g. 2, 3 5, 1-3)
+        #[arg(num_args = 0..)]
+        ids: Vec<String>,
+
+        /// Filter by tag(s) (can be specified multiple times, uses AND logic)
+        #[arg(long = "tag", short = 't', num_args = 1..)]
+        tags: Vec<String>,
+    },
+
     // --- Pad operations ---
     /// View one or more pads
     #[command(alias = "v", display_order = 10)]
