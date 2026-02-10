@@ -220,7 +220,7 @@ mod tests {
         assert!(res.messages.iter().any(|m| m.content.contains("B Updated")));
 
         // Check store state
-        let pads = get::run(&store, Scope::Project, get::PadFilter::default())
+        let pads = get::run(&store, Scope::Project, get::PadFilter::default(), &[])
             .unwrap()
             .listed_pads;
         let pad_a = pads

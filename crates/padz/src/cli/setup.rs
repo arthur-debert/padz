@@ -182,6 +182,10 @@ pub enum Commands {
     #[command(alias = "ls", display_order = 2)]
     #[dispatch(pure)]
     List {
+        /// Pad IDs to show (e.g. 2, 3 5, 1-3)
+        #[arg(num_args = 0..)]
+        ids: Vec<String>,
+
         /// Search term
         #[arg(short, long)]
         search: Option<String>,

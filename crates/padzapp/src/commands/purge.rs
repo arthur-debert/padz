@@ -138,6 +138,7 @@ mod tests {
                 status: get::PadStatusFilter::Deleted,
                 ..Default::default()
             },
+            &[],
         )
         .unwrap();
         assert_eq!(deleted.listed_pads.len(), 1);
@@ -167,6 +168,7 @@ mod tests {
                 status: get::PadStatusFilter::Deleted,
                 ..Default::default()
             },
+            &[],
         )
         .unwrap();
         assert_eq!(deleted_after.listed_pads.len(), 0);
@@ -208,6 +210,7 @@ mod tests {
                 status: get::PadStatusFilter::Deleted,
                 ..Default::default()
             },
+            &[],
         )
         .unwrap();
         assert_eq!(deleted.listed_pads.len(), 1);
@@ -234,7 +237,7 @@ mod tests {
             .any(|m| m.content.contains("Purged: 1 A")));
 
         // Verify gone
-        let listed = get::run(&store, Scope::Project, get::PadFilter::default()).unwrap();
+        let listed = get::run(&store, Scope::Project, get::PadFilter::default(), &[]).unwrap();
         assert_eq!(listed.listed_pads.len(), 0);
     }
 
@@ -250,7 +253,7 @@ mod tests {
         assert!(res.messages[0].content.contains("No pads to purge"));
 
         // A still exists
-        let listed = get::run(&store, Scope::Project, get::PadFilter::default()).unwrap();
+        let listed = get::run(&store, Scope::Project, get::PadFilter::default(), &[]).unwrap();
         assert_eq!(listed.listed_pads.len(), 1);
     }
 

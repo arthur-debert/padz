@@ -113,7 +113,7 @@ mod tests {
         // Should have affected pad
         assert_eq!(result.affected_pads.len(), 1);
 
-        let pads = get::run(&store, Scope::Project, get::PadFilter::default()).unwrap();
+        let pads = get::run(&store, Scope::Project, get::PadFilter::default(), &[]).unwrap();
         assert_eq!(pads.listed_pads[0].pad.metadata.status, TodoStatus::Done);
     }
 
@@ -134,7 +134,7 @@ mod tests {
         // Should have affected pad
         assert_eq!(result.affected_pads.len(), 1);
 
-        let pads = get::run(&store, Scope::Project, get::PadFilter::default()).unwrap();
+        let pads = get::run(&store, Scope::Project, get::PadFilter::default(), &[]).unwrap();
         assert_eq!(pads.listed_pads[0].pad.metadata.status, TodoStatus::Planned);
     }
 
@@ -191,7 +191,7 @@ mod tests {
         // Should have 2 affected pads
         assert_eq!(result.affected_pads.len(), 2);
 
-        let pads = get::run(&store, Scope::Project, get::PadFilter::default()).unwrap();
+        let pads = get::run(&store, Scope::Project, get::PadFilter::default(), &[]).unwrap();
         assert!(pads
             .listed_pads
             .iter()
