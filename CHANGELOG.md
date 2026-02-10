@@ -6,6 +6,25 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+- **Added**
+  - **List command ID filtering** - `padz list 2`, `padz list 3 5`, `padz list 1-3` to constrain which pads are shown. Selected pads include their full subtree of children. Uses existing `parse_selectors` infrastructure for ID resolution (paths, ranges, titles).
+  - **Bats live-tests in CI** - Added bats live-tests to pre-commit hook and CI workflow
+
+- **Changed**
+  - **Upgraded standout to v6.0.2** - Major upgrade through 3.8.0 → 4.0.0 → 5.0.0 → 6.0.2, adopting unified single-threaded API, `#[handler]` proc macro, declarative `InputChain` for stdin/editor input, `Output::Render` for template rendering, `pipe_to_clipboard` dispatch attribute, and explicit template mappings for all commands
+  - **ScopedApi pattern** - All handlers migrated to `ScopedApi` wrapper that binds scope, handles error conversion, and wraps results. Handler bodies reduced from ~10 lines to 1-2 lines (~200+ lines of boilerplate removed)
+  - **`#[handler]` macro migration** - All handlers use standout's `#[handler]` macro with `#[dispatch(pure)]` for auto-extraction of CLI args via `#[arg]`, `#[flag]`, and `#[ctx]` annotations
+  - **Unified create/open editor flow** - Extracted shared `edit_and_copy_pads` helper; create now opens the real pad file in editor (same as open) instead of using a temp file
+  - **Consolidated edit/open handlers** - Open dispatches to edit handler; extracted `read_piped_input()` helper shared by create and edit
+  - **Normalized naked invocation** - Extracted `build_dispatch_app()` and `handle_dispatch_result()` for a unified dispatch path; naked invocation injects synthetic command and uses same flow
+  - **View uses template rendering** - View handler returns structured data for `view.jinja` template with automatic clipboard piping (ANSI stripped) instead of manual `println!` and clipboard code
+
+- **Fixed**
+  - View output no longer consumes stdout — clipboard copy is separate from terminal rendering
+  - Handler errors now propagate as non-zero exit codes
+  - Create title priority: CLI title always wins over piped content title
+  - Empty/whitespace piped content in edit returns error instead of silent success
+
 ## [0.16.0] - 2026-01-30
 
 ## [0.16.0] - 2026-01-30
