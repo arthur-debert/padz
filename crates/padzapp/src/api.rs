@@ -108,8 +108,18 @@ impl<S: DataStore> PadzApi<S> {
         commands::create::run(&mut self.store, scope, title, content, parent_selector)
     }
 
-    pub fn get_pads(&self, scope: Scope, filter: PadFilter) -> Result<commands::CmdResult> {
-        commands::get::run(&self.store, scope, filter)
+    pub fn get_pads<I: AsRef<str>>(
+        &self,
+        scope: Scope,
+        filter: PadFilter,
+        ids: &[I],
+    ) -> Result<commands::CmdResult> {
+        let selectors = if ids.is_empty() {
+            vec![]
+        } else {
+            parse_selectors(ids)?
+        };
+        commands::get::run(&self.store, scope, filter, &selectors)
     }
 
     pub fn view_pads<I: AsRef<str>>(
@@ -566,7 +576,9 @@ mod tests {
         api.create_pad(Scope::Project, "Test".into(), "".into(), None)
             .unwrap();
 
-        let result = api.get_pads(Scope::Project, PadFilter::default()).unwrap();
+        let result = api
+            .get_pads(Scope::Project, PadFilter::default(), &[] as &[String])
+            .unwrap();
 
         assert_eq!(result.listed_pads.len(), 1);
     }
@@ -669,6 +681,7 @@ mod tests {
                     todo_status: None,
                     tags: None,
                 },
+                &[] as &[String],
             )
             .unwrap();
         assert_eq!(list.listed_pads.len(), 0);
@@ -697,6 +710,7 @@ mod tests {
                     todo_status: None,
                     tags: None,
                 },
+                &[] as &[String],
             )
             .unwrap();
         assert_eq!(list.listed_pads.len(), 1);
@@ -875,7 +889,7 @@ mod tests {
 
         // Verify hierarchy
         let pads = api
-            .get_pads(Scope::Project, PadFilter::default())
+            .get_pads(Scope::Project, PadFilter::default(), &[] as &[String])
             .unwrap()
             .listed_pads;
         let pad_a = pads.iter().find(|p| p.pad.metadata.title == "A").unwrap();
@@ -902,7 +916,7 @@ mod tests {
 
         // Verify Child is now root
         let pads = api
-            .get_pads(Scope::Project, PadFilter::default())
+            .get_pads(Scope::Project, PadFilter::default(), &[] as &[String])
             .unwrap()
             .listed_pads;
         let child = pads

@@ -98,7 +98,7 @@ mod tests {
         let sel = PadSelector::Path(vec![DisplayIndex::Regular(1)]);
         pin(&mut store, Scope::Project, slice::from_ref(&sel)).unwrap();
 
-        let result = get::run(&store, Scope::Project, get::PadFilter::default()).unwrap();
+        let result = get::run(&store, Scope::Project, get::PadFilter::default(), &[]).unwrap();
         assert!(result
             .listed_pads
             .iter()
@@ -113,7 +113,7 @@ mod tests {
         pin(&mut store, Scope::Project, slice::from_ref(&sel)).unwrap();
         unpin(&mut store, Scope::Project, slice::from_ref(&sel)).unwrap();
 
-        let result = get::run(&store, Scope::Project, get::PadFilter::default()).unwrap();
+        let result = get::run(&store, Scope::Project, get::PadFilter::default(), &[]).unwrap();
         assert!(result
             .listed_pads
             .iter()
@@ -134,7 +134,7 @@ mod tests {
         .unwrap();
 
         // Check if protected
-        let pads = get::run(&store, Scope::Project, get::PadFilter::default()).unwrap();
+        let pads = get::run(&store, Scope::Project, get::PadFilter::default(), &[]).unwrap();
         assert!(pads.listed_pads[0].pad.metadata.delete_protected);
 
         // Try to delete (should fail)
@@ -155,7 +155,7 @@ mod tests {
         .unwrap();
 
         // Check is unprotected
-        let pads_after = get::run(&store, Scope::Project, get::PadFilter::default()).unwrap();
+        let pads_after = get::run(&store, Scope::Project, get::PadFilter::default(), &[]).unwrap();
         assert!(!pads_after.listed_pads[0].pad.metadata.delete_protected);
 
         // Try to delete (should succeed)
@@ -230,7 +230,7 @@ mod tests {
 
         pin(&mut store, Scope::Project, &selectors).unwrap();
 
-        let pads = get::run(&store, Scope::Project, get::PadFilter::default()).unwrap();
+        let pads = get::run(&store, Scope::Project, get::PadFilter::default(), &[]).unwrap();
         // Both pads should be pinned.
         for dp in &pads.listed_pads {
             assert!(

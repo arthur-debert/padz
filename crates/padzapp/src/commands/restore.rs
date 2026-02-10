@@ -81,6 +81,7 @@ mod tests {
                 status: get::PadStatusFilter::Deleted,
                 ..Default::default()
             },
+            &[],
         )
         .unwrap();
         assert_eq!(deleted.listed_pads.len(), 1);
@@ -109,7 +110,7 @@ mod tests {
         ));
 
         // Verify it's active again
-        let active = get::run(&store, Scope::Project, get::PadFilter::default()).unwrap();
+        let active = get::run(&store, Scope::Project, get::PadFilter::default(), &[]).unwrap();
         assert_eq!(active.listed_pads.len(), 1);
         assert!(matches!(
             active.listed_pads[0].index,
@@ -124,6 +125,7 @@ mod tests {
                 status: get::PadStatusFilter::Deleted,
                 ..Default::default()
             },
+            &[],
         )
         .unwrap();
         assert_eq!(deleted_after.listed_pads.len(), 0);
@@ -165,7 +167,7 @@ mod tests {
         assert_eq!(result.affected_pads.len(), 2);
 
         // Verify 2 active, 1 deleted
-        let active = get::run(&store, Scope::Project, get::PadFilter::default()).unwrap();
+        let active = get::run(&store, Scope::Project, get::PadFilter::default(), &[]).unwrap();
         assert_eq!(active.listed_pads.len(), 2);
 
         let deleted = get::run(
@@ -175,6 +177,7 @@ mod tests {
                 status: get::PadStatusFilter::Deleted,
                 ..Default::default()
             },
+            &[],
         )
         .unwrap();
         assert_eq!(deleted.listed_pads.len(), 1);
@@ -189,7 +192,7 @@ mod tests {
         create::run(&mut store, Scope::Project, "Newer".into(), "".into(), None).unwrap();
 
         // Get original created_at of the older pad (which is now index 2 since newest first)
-        let original = get::run(&store, Scope::Project, get::PadFilter::default()).unwrap();
+        let original = get::run(&store, Scope::Project, get::PadFilter::default(), &[]).unwrap();
         let older_pad = original
             .listed_pads
             .iter()
@@ -213,7 +216,7 @@ mod tests {
         .unwrap();
 
         // Verify created_at is preserved
-        let after = get::run(&store, Scope::Project, get::PadFilter::default()).unwrap();
+        let after = get::run(&store, Scope::Project, get::PadFilter::default(), &[]).unwrap();
         let restored_pad = after
             .listed_pads
             .iter()
@@ -249,7 +252,7 @@ mod tests {
         .unwrap();
 
         // Verify parent and child are hidden from active view
-        let active = get::run(&store, Scope::Project, get::PadFilter::default()).unwrap();
+        let active = get::run(&store, Scope::Project, get::PadFilter::default(), &[]).unwrap();
         assert_eq!(active.listed_pads.len(), 0);
 
         // Restore parent
@@ -261,7 +264,8 @@ mod tests {
         .unwrap();
 
         // Verify parent is active and child is visible again
-        let active_after = get::run(&store, Scope::Project, get::PadFilter::default()).unwrap();
+        let active_after =
+            get::run(&store, Scope::Project, get::PadFilter::default(), &[]).unwrap();
         assert_eq!(active_after.listed_pads.len(), 1);
         assert_eq!(active_after.listed_pads[0].pad.metadata.title, "Parent");
         assert_eq!(active_after.listed_pads[0].children.len(), 1);

@@ -157,7 +157,7 @@ impl<'a> ScopedApi<'a> {
             todo_status: Some(TodoStatus::Done),
             tags: None,
         };
-        let pads = self.call(|api, scope| api.get_pads(scope, filter))?;
+        let pads = self.call(|api, scope| api.get_pads(scope, filter, &[] as &[String]))?;
 
         if pads.listed_pads.is_empty() {
             return Ok(Output::Render(serde_json::json!({
@@ -309,8 +309,9 @@ impl<'a> ScopedApi<'a> {
         filter: PadFilter,
         peek: bool,
         show_deleted_help: bool,
+        ids: &[String],
     ) -> Result<Output<Value>, anyhow::Error> {
-        let result = self.call(|api, scope| api.get_pads(scope, filter))?;
+        let result = self.call(|api, scope| api.get_pads(scope, filter, ids))?;
         Ok(Output::Render(build_list_result_value(
             &result.listed_pads,
             peek,
@@ -462,6 +463,7 @@ pub fn create(
 #[handler]
 pub fn list(
     #[ctx] ctx: &CommandContext,
+    #[arg] ids: Vec<String>,
     #[arg] search: Option<String>,
     #[flag] deleted: bool,
     #[flag] peek: bool,
@@ -491,7 +493,7 @@ pub fn list(
         tags: if tags.is_empty() { None } else { Some(tags) },
     };
 
-    api(ctx).list_pads(filter, peek, deleted)
+    api(ctx).list_pads(filter, peek, deleted, &ids)
 }
 
 #[handler]
@@ -507,7 +509,7 @@ pub fn search(
         tags: if tags.is_empty() { None } else { Some(tags) },
     };
 
-    api(ctx).list_pads(filter, false, false)
+    api(ctx).list_pads(filter, false, false, &[])
 }
 
 // =============================================================================

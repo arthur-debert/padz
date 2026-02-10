@@ -75,6 +75,7 @@ mod tests {
                 status: get::PadStatusFilter::Deleted,
                 ..Default::default()
             },
+            &[],
         )
         .unwrap();
         assert_eq!(deleted.listed_pads.len(), 1);
@@ -97,7 +98,7 @@ mod tests {
         .unwrap();
 
         // Manually protect the pad (since pin command logic isn't coupled yet or might not be updated yet)
-        let pad_id = get::run(&store, Scope::Project, get::PadFilter::default())
+        let pad_id = get::run(&store, Scope::Project, get::PadFilter::default(), &[])
             .unwrap()
             .listed_pads[0]
             .pad
@@ -170,6 +171,7 @@ mod tests {
                 status: get::PadStatusFilter::Deleted,
                 ..Default::default()
             },
+            &[],
         )
         .unwrap();
         assert_eq!(deleted.listed_pads.len(), 1);
@@ -209,7 +211,7 @@ mod tests {
         assert!(result.is_ok());
 
         // Parent should still be active with no visible children
-        let active = get::run(&store, Scope::Project, get::PadFilter::default()).unwrap();
+        let active = get::run(&store, Scope::Project, get::PadFilter::default(), &[]).unwrap();
         assert_eq!(active.listed_pads.len(), 1);
         assert_eq!(active.listed_pads[0].pad.metadata.title, "Parent");
         assert_eq!(active.listed_pads[0].children.len(), 0); // child is deleted
