@@ -6,6 +6,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+- **Changed**
+  - **Compact timestamps** - List timestamps now use compact format (` 3d ⏲`, `23h ⏲`) instead of verbose (`3 days ago`), reclaiming ~9 chars for title display. Removed `timeago` dependency.
+  - **Unified pin marker position** - Pin marker `⚲` now appears in the left column (col 0) for both pinned and regular sections, instead of appearing on the right side in the regular list
+  - **Fixed pinned section indentation** - Children of pinned pads now indent correctly, matching the regular list layout. Removed the `right_pin` column.
+
 ## [0.18.0] - 2026-02-10
 
 ## [0.18.0] - 2026-02-10
