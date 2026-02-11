@@ -29,7 +29,6 @@
     {"name": "status", "width": col_status, "style": "status-icon"},
     {"name": "index", "width": col_index, "style": index_style},
     {"name": "title", "width": pad.title_width, "overflow": "truncate", "style": title_style},
-    {"name": "right_pin", "width": col_right_pin, "style": "pinned"},
     {"name": "time", "width": col_time, "align": "right", "style": "time"}
 ]) -%}
 
@@ -41,7 +40,6 @@
     pad.status_icon,
     pad.index,
     pad.title ~ tags_str,
-    pad.right_pin,
     pad.time_ago
 ]) -}}
 {{ "" | nl -}}

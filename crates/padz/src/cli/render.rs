@@ -13,11 +13,10 @@
 //! ## Table Layout
 //!
 //! The list view uses standout's `col()` filter for declarative column layout. Each row has:
-//! - `left_pin` (2 chars): Pin marker or empty
+//! - `left_pin` (2 chars): Pin marker for pinned pads (both sections) or empty
 //! - `status_icon` (2 chars): Todo status indicator
 //! - `index` (4 chars): Display index (p1., 1., d1.)
 //! - `title` (fill): Pad title, truncated to fit
-//! - `right_pin` (2 chars): Pin marker for pinned pads in regular section
 //! - `time_ago` (14 chars, right-aligned): Relative timestamp
 //!
 //! Column widths are defined as constants and the title width is calculated per-row based on
@@ -39,8 +38,7 @@ pub const PIN_MARKER: &str = "⚲";
 pub const COL_LEFT_PIN: usize = 2; // Pin marker or empty ("⚲ " or "  ")
 pub const COL_STATUS: usize = 2; // Status icon + space
 pub const COL_INDEX: usize = 4; // "p1.", " 1.", "d1."
-pub const COL_RIGHT_PIN: usize = 2; // Pin marker for pinned in regular section
-pub const COL_TIME: usize = 14; // Right-aligned timestamp
+pub const COL_TIME: usize = 5; // Compact timestamp ("34s ⏲")
 
 /// Status indicators for todo status
 pub const STATUS_PLANNED: &str = "⚪︎";
@@ -86,7 +84,6 @@ pub fn build_modification_result_value(
         .map(|dp| {
             let is_pinned_section = matches!(dp.index, DisplayIndex::Pinned(_));
             let is_deleted = matches!(dp.index, DisplayIndex::Deleted(_));
-            let show_right_pin = dp.pad.metadata.is_pinned && !is_pinned_section;
 
             let local_idx_str = match &dp.index {
                 DisplayIndex::Pinned(n) => format!("p{}", n),
@@ -101,12 +98,7 @@ pub fn build_modification_result_value(
                 TodoStatus::Done => STATUS_DONE,
             };
 
-            let left_pin = if is_pinned_section {
-                PIN_MARKER.to_string()
-            } else {
-                String::new()
-            };
-            let right_pin = if show_right_pin {
+            let left_pin = if dp.pad.metadata.is_pinned {
                 PIN_MARKER.to_string()
             } else {
                 String::new()
@@ -122,8 +114,8 @@ pub fn build_modification_result_value(
                 tag_chars + spaces + 1
             };
 
-            let fixed_columns = COL_LEFT_PIN + COL_STATUS + COL_INDEX + COL_RIGHT_PIN + COL_TIME;
-            let title_width = LINE_WIDTH.saturating_sub(fixed_columns + COL_LEFT_PIN + tags_width);
+            let fixed_columns = COL_LEFT_PIN + COL_STATUS + COL_INDEX + COL_TIME;
+            let title_width = LINE_WIDTH.saturating_sub(fixed_columns + tags_width);
 
             json!({
                 "indent": "",
@@ -133,7 +125,6 @@ pub fn build_modification_result_value(
                 "title": dp.pad.metadata.title,
                 "title_width": title_width,
                 "tags": dp.pad.metadata.tags,
-                "right_pin": right_pin,
                 "time_ago": format_time_ago(dp.pad.metadata.created_at),
                 "is_pinned_section": is_pinned_section,
                 "is_deleted": is_deleted,
@@ -157,7 +148,6 @@ pub fn build_modification_result_value(
         "col_left_pin": COL_LEFT_PIN,
         "col_status": COL_STATUS,
         "col_index": COL_INDEX,
-        "col_right_pin": COL_RIGHT_PIN,
         "col_time": COL_TIME,
     })
 }
@@ -200,7 +190,6 @@ pub fn build_list_result_value(
             "col_left_pin": COL_LEFT_PIN,
             "col_status": COL_STATUS,
             "col_index": COL_INDEX,
-            "col_right_pin": COL_RIGHT_PIN,
             "col_time": COL_TIME,
             "trailing_messages": trailing_data,
         });
@@ -219,7 +208,6 @@ pub fn build_list_result_value(
         peek: bool,
     ) {
         let is_deleted = matches!(dp.index, DisplayIndex::Deleted(_));
-        let show_right_pin = dp.pad.metadata.is_pinned && !is_pinned_section;
 
         let local_idx_str = match &dp.index {
             DisplayIndex::Pinned(n) => format!("p{}", n),
@@ -234,21 +222,10 @@ pub fn build_list_result_value(
             TodoStatus::Done => STATUS_DONE,
         };
 
-        let indent_width = if is_pinned_section {
-            depth.saturating_sub(1) * 2
-        } else {
-            depth * 2
-        };
-        let total_indent_width = indent_width + COL_LEFT_PIN;
+        let indent_width = depth * 2;
         let indent = " ".repeat(indent_width);
 
-        let left_pin = if is_pinned_section && depth == 0 {
-            PIN_MARKER.to_string()
-        } else {
-            String::new()
-        };
-
-        let right_pin = if show_right_pin {
+        let left_pin = if dp.pad.metadata.is_pinned && depth == 0 {
             PIN_MARKER.to_string()
         } else {
             String::new()
@@ -264,9 +241,8 @@ pub fn build_list_result_value(
             tag_chars + spaces + 1
         };
 
-        let fixed_columns = COL_LEFT_PIN + COL_STATUS + COL_INDEX + COL_RIGHT_PIN + COL_TIME;
-        let title_width =
-            LINE_WIDTH.saturating_sub(fixed_columns + total_indent_width + tags_width);
+        let fixed_columns = COL_LEFT_PIN + COL_STATUS + COL_INDEX + COL_TIME;
+        let title_width = LINE_WIDTH.saturating_sub(fixed_columns + indent_width + tags_width);
 
         // Process matches
         let mut match_lines: Vec<serde_json::Value> = Vec::new();
@@ -287,7 +263,7 @@ pub fn build_list_result_value(
                     })
                     .collect();
 
-                let match_indent = total_indent_width + COL_LEFT_PIN + COL_STATUS + COL_INDEX;
+                let match_indent = indent_width + COL_LEFT_PIN + COL_STATUS + COL_INDEX;
                 let match_available = LINE_WIDTH.saturating_sub(COL_TIME + match_indent);
 
                 // Truncate segments to available width
@@ -321,7 +297,6 @@ pub fn build_list_result_value(
             "title": dp.pad.metadata.title,
             "title_width": title_width,
             "tags": dp.pad.metadata.tags,
-            "right_pin": right_pin,
             "time_ago": format_time_ago(dp.pad.metadata.created_at),
             "is_pinned_section": is_pinned_section && depth == 0,
             "is_deleted": is_deleted || is_deleted_root,
@@ -358,7 +333,6 @@ pub fn build_list_result_value(
                 "title": "",
                 "title_width": 0,
                 "tags": [],
-                "right_pin": "",
                 "time_ago": "",
                 "is_pinned_section": false,
                 "is_deleted": false,
@@ -390,7 +364,6 @@ pub fn build_list_result_value(
         "col_left_pin": COL_LEFT_PIN,
         "col_status": COL_STATUS,
         "col_index": COL_INDEX,
-        "col_right_pin": COL_RIGHT_PIN,
         "col_time": COL_TIME,
         "trailing_messages": trailing_data,
     })
@@ -451,30 +424,25 @@ fn truncate_match_segments_to_json(
 
 fn format_time_ago(timestamp: DateTime<Utc>) -> String {
     let now = Utc::now();
-    let duration = now.signed_duration_since(timestamp);
+    let secs = now.signed_duration_since(timestamp).num_seconds().max(0) as u64;
 
-    let formatter = timeago::Formatter::new();
-    let time_str = formatter.convert(duration.to_std().unwrap_or_default());
+    let (value, unit) = if secs < 60 {
+        (secs, 's')
+    } else if secs < 3600 {
+        (secs / 60, 'm')
+    } else if secs < 86400 {
+        (secs / 3600, 'h')
+    } else if secs < 86400 * 7 {
+        (secs / 86400, 'd')
+    } else if secs < 86400 * 30 {
+        (secs / (86400 * 7), 'w')
+    } else if secs < 86400 * 365 {
+        (secs / (86400 * 30), 'M')
+    } else {
+        (secs / (86400 * 365), 'y')
+    };
 
-    // Left-pad time units so they align vertically with "seconds" (7 chars)
-    // This makes columns line up nicely:
-    //   3 seconds ago
-    //   1     day ago
-    //   2   hours ago
-    // Match with " ago" suffix to avoid substring issues (e.g., "hour" in "hours")
-    // Note: seconds/minutes are already 7 chars, no replacement needed
-    // The template handles right-alignment via col(col_time, align='right')
-    time_str
-        .replace("hours ago", "  hours ago") // 5 -> 7
-        .replace("hour ago", "   hour ago") // 4 -> 7
-        .replace("days ago", "   days ago") // 4 -> 7
-        .replace("day ago", "    day ago") // 3 -> 7
-        .replace("weeks ago", "  weeks ago") // 5 -> 7
-        .replace("week ago", "   week ago") // 4 -> 7
-        .replace("months ago", " months ago") // 6 -> 7
-        .replace("month ago", "  month ago") // 5 -> 7
-        .replace("years ago", "  years ago") // 5 -> 7
-        .replace("year ago", "   year ago") // 4 -> 7
+    format!("{:2}{} ⏲", value, unit)
 }
 
 #[cfg(test)]
@@ -598,8 +566,8 @@ mod tests {
     }
 
     #[test]
-    fn test_build_list_pinned_in_regular_section_shows_right_pin() {
-        // A pinned pad displayed in regular section should show right_pin
+    fn test_build_list_pinned_in_regular_section_shows_left_pin() {
+        // A pinned pad displayed in regular section should show left_pin
         let mut pad = make_pad("Pinned Note", true, false);
         pad.metadata.is_pinned = true;
 
@@ -611,7 +579,7 @@ mod tests {
         let pad_data = &pads[0];
 
         assert_eq!(
-            pad_data.get("right_pin").and_then(|v| v.as_str()),
+            pad_data.get("left_pin").and_then(|v| v.as_str()),
             Some(PIN_MARKER)
         );
     }
@@ -667,31 +635,32 @@ mod tests {
     }
 
     #[test]
-    fn test_format_time_ago_alignment() {
-        // All time units should be padded to 7 chars for vertical alignment
+    fn test_format_time_ago_compact() {
         use chrono::Duration;
 
         let now = Utc::now();
 
         let test_cases = [
-            (Duration::seconds(30), "seconds ago"), // 7 chars - no padding
-            (Duration::minutes(5), "minutes ago"),  // 7 chars - no padding
-            (Duration::hours(2), "  hours ago"),    // 5 -> 7 chars
-            (Duration::days(3), "   days ago"),     // 4 -> 7 chars
-            (Duration::weeks(1), "   week ago"),    // 4 -> 7 chars
-            (Duration::days(45), " month ago"),     // 6 -> 7 chars (singular)
-            (Duration::days(400), "   year ago"),   // 4 -> 7 chars
+            (Duration::seconds(5), " 5s ⏲"),
+            (Duration::seconds(34), "34s ⏲"),
+            (Duration::minutes(3), " 3m ⏲"),
+            (Duration::minutes(59), "59m ⏲"),
+            (Duration::hours(2), " 2h ⏲"),
+            (Duration::hours(23), "23h ⏲"),
+            (Duration::days(3), " 3d ⏲"),
+            (Duration::days(6), " 6d ⏲"),
+            (Duration::weeks(2), " 2w ⏲"),
+            (Duration::days(45), " 1M ⏲"),
+            (Duration::days(400), " 1y ⏲"),
         ];
 
-        for (duration, expected_pattern) in test_cases {
+        for (duration, expected) in test_cases {
             let timestamp = now - duration;
             let formatted = format_time_ago(timestamp);
-            assert!(
-                formatted.contains(expected_pattern),
-                "Expected '{}' to contain '{}' for duration {:?}",
-                formatted.trim(),
-                expected_pattern,
-                duration
+            assert_eq!(
+                formatted, expected,
+                "Duration {:?} should format as '{}'",
+                duration, expected
             );
         }
     }
