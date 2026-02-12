@@ -4,6 +4,7 @@ use once_cell::sync::Lazy;
 use standout::cli::{render_help_with_topics, App, CommandGroup, Dispatch, HelpConfig};
 use standout::topics::TopicRegistry;
 use standout::OutputMode;
+use std::path::PathBuf;
 
 // Import handlers module
 use super::handlers;
@@ -558,15 +559,12 @@ pub enum Commands {
     #[dispatch(pure, template = "messages")]
     Doctor,
 
-    /// Get or set configuration
+    /// Manage configuration (get, set, generate template)
     #[command(display_order = 31)]
-    #[dispatch(pure, template = "messages")]
+    #[dispatch(skip)]
     Config {
-        /// Configuration key (e.g., file-ext)
-        key: Option<String>,
-
-        /// Value to set (if omitted, prints current value)
-        value: Option<String>,
+        #[command(subcommand)]
+        action: Option<ConfigCommands>,
     },
 
     /// Initialize the store (optional utility)
@@ -620,6 +618,29 @@ pub enum TagsCommands {
         old_name: String,
         /// New name for the tag
         new_name: String,
+    },
+}
+
+/// Config subcommands
+#[derive(Subcommand, Debug)]
+pub enum ConfigCommands {
+    /// Generate a commented sample configuration file
+    Gen {
+        /// Write to a file instead of stdout
+        #[arg(short, long)]
+        output: Option<PathBuf>,
+    },
+    /// Show the resolved value for a config key
+    Get {
+        /// Config key (e.g., file_ext, import_extensions)
+        key: String,
+    },
+    /// Persist a configuration value
+    Set {
+        /// Config key (e.g., file_ext, import_extensions)
+        key: String,
+        /// Value to set
+        value: String,
     },
 }
 

@@ -17,7 +17,11 @@
 //! 5. **Error Handling**: Convert errors to user-friendly messages and exit codes
 
 use super::handlers::AppState;
-use super::setup::{build_command, parse_cli, Cli, Commands, CompletionAction, CompletionShell};
+use super::setup::{
+    build_command, parse_cli, Cli, Commands, CompletionAction, CompletionShell, ConfigCommands,
+};
+use clapfig::{Clapfig, ConfigAction, SearchPath};
+use padzapp::config::PadzConfig;
 use padzapp::error::Result;
 use padzapp::init::initialize;
 use standout::cli::{App, RunResult};
@@ -40,6 +44,11 @@ pub fn run() -> Result<()> {
 
     // Initialize app state for handlers
     let app_state = create_app_state(&cli, output_mode)?;
+
+    // Handle config subcommand directly (uses clapfig, not standout dispatch)
+    if let Some(Commands::Config { action }) = &cli.command {
+        return handle_config_command(action.as_ref(), &app_state);
+    }
 
     // Determine effective args: handle naked invocation by injecting synthetic command
     let args: Vec<String> = if cli.command.is_none() {
@@ -111,12 +120,128 @@ fn create_app_state(cli: &Cli, output_mode: OutputMode) -> Result<AppState> {
         padzapp::model::Scope::Project
     };
 
+    let paths = padz_ctx.api.paths();
+    let project_dir = paths.project.clone();
+    let global_dir = paths.global.clone();
+
     Ok(AppState::new(
         padz_ctx.api,
         scope,
         padz_ctx.config.import_extensions.clone(),
         output_mode,
+        project_dir,
+        global_dir,
     ))
+}
+
+/// Handle the `padz config` subcommand using clapfig directly.
+fn handle_config_command(action: Option<&ConfigCommands>, state: &AppState) -> Result<()> {
+    match action {
+        None => {
+            // Bare `padz config` — show all resolved values
+            let load_paths = build_load_paths(state);
+            let config: PadzConfig = Clapfig::builder()
+                .app_name("padz")
+                .file_name("padz.toml")
+                .search_paths(load_paths)
+                .no_env()
+                .strict(false)
+                .load()
+                .unwrap_or_default();
+
+            let table = toml::Value::try_from(&config)
+                .map_err(|e| padzapp::error::PadzError::Api(e.to_string()))?;
+            if let toml::Value::Table(t) = table {
+                for (k, v) in &t {
+                    println!("{} = {}", k, format_toml_value(v));
+                }
+            }
+            Ok(())
+        }
+        Some(ConfigCommands::Gen { output }) => {
+            let load_paths = build_load_paths(state);
+            let action = ConfigAction::Gen {
+                output: output.clone(),
+            };
+            let result = Clapfig::builder::<PadzConfig>()
+                .app_name("padz")
+                .file_name("padz.toml")
+                .search_paths(load_paths)
+                .no_env()
+                .strict(false)
+                .handle(&action)
+                .map_err(|e| padzapp::error::PadzError::Api(e.to_string()))?;
+            print!("{result}");
+            Ok(())
+        }
+        Some(ConfigCommands::Get { key }) => {
+            let load_paths = build_load_paths(state);
+            let action = ConfigAction::Get { key: key.clone() };
+            let result = Clapfig::builder::<PadzConfig>()
+                .app_name("padz")
+                .file_name("padz.toml")
+                .search_paths(load_paths)
+                .no_env()
+                .strict(false)
+                .handle(&action)
+                .map_err(|e| padzapp::error::PadzError::Api(e.to_string()))?;
+            println!("{result}");
+            Ok(())
+        }
+        Some(ConfigCommands::Set { key, value }) => {
+            // For set: scope-appropriate path must be first so primary_config_path writes there
+            let set_paths = build_set_paths(state);
+            let action = ConfigAction::Set {
+                key: key.clone(),
+                value: value.clone(),
+            };
+            let result = Clapfig::builder::<PadzConfig>()
+                .app_name("padz")
+                .file_name("padz.toml")
+                .search_paths(set_paths)
+                .no_env()
+                .strict(false)
+                .handle(&action)
+                .map_err(|e| padzapp::error::PadzError::Api(e.to_string()))?;
+            println!("{result}");
+            Ok(())
+        }
+    }
+}
+
+/// Build search paths for loading (global first, project overrides).
+fn build_load_paths(state: &AppState) -> Vec<SearchPath> {
+    let mut paths = vec![SearchPath::Path(state.global_dir.clone())];
+    if let Some(proj) = &state.project_dir {
+        paths.push(SearchPath::Path(proj.clone()));
+    }
+    paths
+}
+
+/// Build search paths for `config set` — scope-appropriate dir is first
+/// so `primary_config_path` writes to the correct file.
+fn build_set_paths(state: &AppState) -> Vec<SearchPath> {
+    match state.scope {
+        padzapp::model::Scope::Project => {
+            if let Some(proj) = &state.project_dir {
+                vec![SearchPath::Path(proj.clone())]
+            } else {
+                vec![SearchPath::Path(state.global_dir.clone())]
+            }
+        }
+        padzapp::model::Scope::Global => {
+            vec![SearchPath::Path(state.global_dir.clone())]
+        }
+    }
+}
+
+/// Format a TOML value for display.
+fn format_toml_value(value: &toml::Value) -> String {
+    match value {
+        toml::Value::String(s) => format!("\"{}\"", s),
+        toml::Value::Array(a) => toml::to_string(a).unwrap_or_else(|_| format!("{a:?}")),
+        other => other.to_string(),
+    }
 }
 
 fn handle_print(shell_override: Option<CompletionShell>) -> Result<()> {

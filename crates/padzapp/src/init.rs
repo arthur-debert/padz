@@ -64,6 +64,7 @@ use crate::api::{PadzApi, PadzPaths};
 use crate::config::PadzConfig;
 use crate::model::Scope;
 use crate::store::fs::FileStore;
+use clapfig::{Clapfig, SearchPath};
 use directories::{BaseDirs, ProjectDirs};
 use std::path::{Path, PathBuf};
 
@@ -179,11 +180,17 @@ pub fn initialize(cwd: &Path, use_global: bool, data_override: Option<PathBuf>) 
         Scope::Project
     };
 
-    let config_dir = match scope {
-        Scope::Project => &project_padz_dir,
-        Scope::Global => &global_data_dir,
-    };
-    let config = PadzConfig::load(config_dir).unwrap_or_default();
+    let config: PadzConfig = Clapfig::builder()
+        .app_name("padz")
+        .file_name("padz.toml")
+        .search_paths(vec![
+            SearchPath::Path(global_data_dir.clone()),
+            SearchPath::Path(project_padz_dir.clone()),
+        ])
+        .no_env()
+        .strict(false)
+        .load()
+        .unwrap_or_default();
     let file_ext = config.get_file_ext().to_string();
 
     let store = FileStore::new(Some(project_padz_dir.clone()), global_data_dir.clone())
