@@ -12,7 +12,7 @@
 @test "padz binary runs and shows help" {
     run "${PADZ_BIN}" --help
     [ "$status" -eq 0 ]
-    [[ "$output" == *"Usage:"* ]]
+    [[ "$output" == *"USAGE"* ]]
 }
 
 @test "global scope has fixture pads" {

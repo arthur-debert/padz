@@ -1,7 +1,7 @@
 use super::complete::{active_pads_completer, all_pads_completer, deleted_pads_completer};
 use clap::{CommandFactory, FromArgMatches, Parser, Subcommand, ValueEnum};
 use once_cell::sync::Lazy;
-use standout::cli::{render_help_with_topics, App, Dispatch};
+use standout::cli::{render_help_with_topics, App, CommandGroup, Dispatch, HelpConfig};
 use standout::topics::TopicRegistry;
 use standout::OutputMode;
 
@@ -42,7 +42,7 @@ fn get_version() -> &'static str {
     bin_name = "padz",
     version = get_version(),
     disable_help_subcommand = true,
-    after_help = "Enable shell completions:\n  eval \"$(padz completions bash)\"  # add to ~/.bashrc\n  eval \"$(padz completions zsh)\"   # add to ~/.zshrc"
+    after_help = "Enable shell completions:\n  padz completion install"
 )]
 #[command(about = "Context-aware command-line note-taking tool", long_about = None)]
 pub struct Cli {
@@ -50,27 +50,15 @@ pub struct Cli {
     pub command: Option<Commands>,
 
     /// Operate on global pads
-    #[arg(
-        short,
-        long,
-        global = true,
-        help_heading = "Options",
-        conflicts_with = "data"
-    )]
+    #[arg(short, long, global = true, conflicts_with = "data")]
     pub global: bool,
 
     /// Verbose output
-    #[arg(short, long, global = true, help_heading = "Options")]
+    #[arg(short, long, global = true)]
     pub verbose: bool,
 
     /// Override data directory path (e.g., for git worktrees)
-    #[arg(
-        long,
-        global = true,
-        value_name = "PATH",
-        help_heading = "Options",
-        conflicts_with = "global"
-    )]
+    #[arg(long, global = true, value_name = "PATH", conflicts_with = "global")]
     pub data: Option<String>,
 }
 
@@ -128,6 +116,12 @@ pub fn build_command() -> clap::Command {
 /// It also adds the --output flag for output mode control (auto, term, text, term-debug).
 /// Returns the parsed CLI and the output mode extracted from the matches.
 pub fn parse_cli() -> (Cli, OutputMode) {
+    // Intercept top-level help to show grouped output
+    if should_show_custom_help() {
+        println!("{}", render_custom_help());
+        std::process::exit(0);
+    }
+
     let app: App = App::with_registry(HELP_TOPICS.clone());
     let matches = app.parse_with(Cli::command());
 
@@ -149,11 +143,144 @@ pub fn parse_cli() -> (Cli, OutputMode) {
 
 /// Returns the help output as a styled string (used for empty list display).
 pub fn get_grouped_help() -> String {
-    let cmd = Cli::command();
-    render_help_with_topics(&cmd, &HELP_TOPICS, None).unwrap_or_else(|_| {
-        let version = cmd.get_version().unwrap_or("unknown");
-        format!("padz {version}\nContext-aware command-line note-taking tool\n\nUsage: padz [OPTIONS] [COMMAND]\n")
-    })
+    render_custom_help()
+}
+
+/// Checks if the current invocation is a top-level help request
+/// (not subcommand help like `padz create --help` or `padz help create`).
+fn should_show_custom_help() -> bool {
+    let args: Vec<String> = std::env::args().skip(1).collect();
+
+    let subcommands = [
+        "create",
+        "n",
+        "list",
+        "ls",
+        "search",
+        "peek",
+        "pk",
+        "view",
+        "v",
+        "edit",
+        "e",
+        "open",
+        "o",
+        "delete",
+        "rm",
+        "move",
+        "mv",
+        "restore",
+        "pin",
+        "p",
+        "unpin",
+        "u",
+        "path",
+        "complete",
+        "done",
+        "reopen",
+        "purge",
+        "export",
+        "import",
+        "add_tag",
+        "add-tag",
+        "remove_tag",
+        "remove-tag",
+        "tags",
+        "doctor",
+        "config",
+        "init",
+        "completion",
+    ];
+
+    // `padz help` with no further args
+    if args.len() == 1 && args[0] == "help" {
+        return true;
+    }
+
+    // --help/-h before any subcommand means top-level help
+    for arg in &args {
+        if arg == "--help" || arg == "-h" {
+            return true;
+        }
+        if subcommands.contains(&arg.as_str()) {
+            return false;
+        }
+    }
+
+    false
+}
+
+/// Returns the command groups for organized help display.
+fn command_groups() -> Vec<CommandGroup> {
+    vec![
+        CommandGroup {
+            title: "Commands".into(),
+            help: None,
+            commands: vec![
+                Some("init".into()),
+                Some("create".into()),
+                Some("list".into()),
+                Some("search".into()),
+            ],
+        },
+        CommandGroup {
+            title: "Per Pad(s)".into(),
+            help: Some("These commands accept one or more pad ids (<id>...)".into()),
+            commands: vec![
+                Some("open".into()),
+                Some("view".into()),
+                Some("peek".into()),
+                Some("move".into()),
+                Some("delete".into()),
+                None,
+                Some("pin".into()),
+                Some("unpin".into()),
+                Some("path".into()),
+                None,
+                Some("complete".into()),
+                Some("reopen".into()),
+                None,
+                Some("import".into()),
+                Some("export".into()),
+                None,
+                Some("tags".into()),
+                Some("add_tag".into()),
+                Some("remove_tag".into()),
+            ],
+        },
+        CommandGroup {
+            title: "Misc".into(),
+            help: None,
+            commands: vec![
+                Some("purge".into()),
+                Some("restore".into()),
+                None,
+                Some("completion".into()),
+                Some("help".into()),
+                Some("doctor".into()),
+                Some("config".into()),
+            ],
+        },
+    ]
+}
+
+/// Renders the custom grouped help output with standout styling.
+fn render_custom_help() -> String {
+    let app = App::with_registry(HELP_TOPICS.clone());
+    let cmd = app.augment_command(Cli::command());
+
+    let config = HelpConfig {
+        command_groups: Some(command_groups()),
+        ..Default::default()
+    };
+
+    let mut help = render_help_with_topics(&cmd, &HELP_TOPICS, Some(config))
+        .unwrap_or_else(|e| format!("Help rendering error: {}", e));
+
+    help.push_str("\n\nEnable shell completions:\n");
+    help.push_str("  padz completion install");
+
+    help
 }
 
 /// All padz commands in a flat enum with Dispatch derive for automatic handler routing
@@ -255,7 +382,7 @@ pub enum Commands {
     },
 
     /// Edit a pad in the editor
-    #[command(alias = "e", display_order = 11)]
+    #[command(alias = "e", display_order = 11, hide = true)]
     #[dispatch(pure, template = "modification_result")]
     Edit {
         /// Indexes of the pads (e.g. 1 p1 d1)
@@ -447,13 +574,16 @@ pub enum Commands {
     #[dispatch(pure, template = "messages")]
     Init,
 
-    /// Generate shell completions
-    #[command(display_order = 34)]
+    /// Shell completion setup
+    #[command(display_order = 34, name = "completion")]
     #[dispatch(skip)]
-    Completions {
-        /// Shell to generate completions for
-        #[arg(value_enum)]
-        shell: CompletionShell,
+    Completion {
+        /// Shell to target (auto-detected from $SHELL if omitted)
+        #[arg(long, short, value_enum)]
+        shell: Option<CompletionShell>,
+
+        #[command(subcommand)]
+        action: CompletionAction,
     },
 }
 
@@ -493,10 +623,78 @@ pub enum TagsCommands {
     },
 }
 
+/// Completion subcommands
+#[derive(Subcommand, Debug)]
+pub enum CompletionAction {
+    /// Install completion script to the standard location
+    Install,
+
+    /// Print completion script to stdout
+    Print,
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use clap::Parser;
+    use standout::cli::validate_command_groups;
+
+    #[test]
+    fn test_completion_install_no_shell() {
+        let cli = Cli::try_parse_from(["padz", "completion", "install"]).unwrap();
+        assert!(matches!(
+            cli.command,
+            Some(Commands::Completion {
+                shell: None,
+                action: CompletionAction::Install,
+            })
+        ));
+    }
+
+    #[test]
+    fn test_completion_install_with_shell() {
+        let cli =
+            Cli::try_parse_from(["padz", "completion", "--shell", "bash", "install"]).unwrap();
+        assert!(matches!(
+            cli.command,
+            Some(Commands::Completion {
+                shell: Some(CompletionShell::Bash),
+                action: CompletionAction::Install,
+            })
+        ));
+    }
+
+    #[test]
+    fn test_completion_print() {
+        let cli = Cli::try_parse_from(["padz", "completion", "print"]).unwrap();
+        assert!(matches!(
+            cli.command,
+            Some(Commands::Completion {
+                shell: None,
+                action: CompletionAction::Print,
+            })
+        ));
+    }
+
+    #[test]
+    fn test_completion_print_with_shell() {
+        let cli = Cli::try_parse_from(["padz", "completion", "--shell", "zsh", "print"]).unwrap();
+        assert!(matches!(
+            cli.command,
+            Some(Commands::Completion {
+                shell: Some(CompletionShell::Zsh),
+                action: CompletionAction::Print,
+            })
+        ));
+    }
+
+    #[test]
+    fn test_help_groups_match_commands() {
+        // Use augmented command because standout adds the `help` subcommand
+        let app = App::with_registry(HELP_TOPICS.clone());
+        let cmd = app.augment_command(Cli::command());
+        validate_command_groups(&cmd, &command_groups()).unwrap();
+    }
 
     #[test]
     fn test_data_option_parses() {
