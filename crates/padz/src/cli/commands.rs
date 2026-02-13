@@ -182,10 +182,14 @@ fn handle_config(cli: &Cli, subcommand: &Option<ConfigSubcommand>) -> Result<()>
             output: file.clone(),
         },
         Some(ConfigSubcommand::Get { key }) => ConfigAction::Get { key: key.clone() },
-        Some(ConfigSubcommand::Set { key, value }) => ConfigAction::Set {
-            key: key.clone(),
-            value: value.clone(),
-        },
+        Some(ConfigSubcommand::Set { key, value }) => {
+            // Validate enum fields before writing (clapfig doesn't validate on set yet)
+            validate_config_value(key, value)?;
+            ConfigAction::Set {
+                key: key.clone(),
+                value: value.clone(),
+            }
+        }
     };
 
     Clapfig::builder::<PadzConfig>()
@@ -197,6 +201,21 @@ fn handle_config(cli: &Cli, subcommand: &Option<ConfigSubcommand>) -> Result<()>
         .handle_and_print(&action)
         .map_err(|e| padzapp::error::PadzError::Api(e.to_string()))?;
 
+    Ok(())
+}
+
+/// Validate config values for fields with restricted choices.
+/// Workaround until clapfig validates on set (https://github.com/arthur-debert/clapfig/issues/9).
+fn validate_config_value(key: &str, value: &str) -> Result<()> {
+    if key == "mode" {
+        let json = format!("\"{}\"", value);
+        if serde_json::from_str::<padzapp::config::PadzMode>(&json).is_err() {
+            return Err(padzapp::error::PadzError::Api(format!(
+                "invalid value \"{}\" for key \"mode\". Valid values: notes, todos",
+                value
+            )));
+        }
+    }
     Ok(())
 }
 
