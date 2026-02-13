@@ -26,6 +26,7 @@
 use super::setup::get_grouped_help;
 use chrono::{DateTime, Utc};
 use padzapp::api::{CmdMessage, MessageLevel, TodoStatus};
+use padzapp::config::PadzMode;
 use padzapp::index::{DisplayIndex, DisplayPad};
 use padzapp::peek::format_as_peek;
 use standout::{truncate_to_width, OutputMode};
@@ -57,6 +58,7 @@ pub fn build_modification_result_value(
     pads: &[DisplayPad],
     trailing_messages: &[CmdMessage],
     output_mode: OutputMode,
+    mode: PadzMode,
 ) -> serde_json::Value {
     use serde_json::json;
 
@@ -68,6 +70,9 @@ pub fn build_modification_result_value(
             "messages": trailing_messages,
         });
     }
+
+    let show_status = mode == PadzMode::Todos;
+    let col_status = if show_status { COL_STATUS } else { 0 };
 
     // For terminal modes, build full template data
     let count = pads.len();
@@ -92,10 +97,14 @@ pub fn build_modification_result_value(
             };
             let full_idx_str = format!("{}.", local_idx_str);
 
-            let status_icon = match dp.pad.metadata.status {
-                TodoStatus::Planned => STATUS_PLANNED,
-                TodoStatus::InProgress => STATUS_IN_PROGRESS,
-                TodoStatus::Done => STATUS_DONE,
+            let status_icon = if show_status {
+                match dp.pad.metadata.status {
+                    TodoStatus::Planned => STATUS_PLANNED,
+                    TodoStatus::InProgress => STATUS_IN_PROGRESS,
+                    TodoStatus::Done => STATUS_DONE,
+                }
+            } else {
+                ""
             };
 
             let left_pin = if dp.pad.metadata.is_pinned {
@@ -114,7 +123,7 @@ pub fn build_modification_result_value(
                 tag_chars + spaces + 1
             };
 
-            let fixed_columns = COL_LEFT_PIN + COL_STATUS + COL_INDEX + COL_TIME;
+            let fixed_columns = COL_LEFT_PIN + col_status + COL_INDEX + COL_TIME;
             let title_width = LINE_WIDTH.saturating_sub(fixed_columns + tags_width);
 
             json!({
@@ -146,7 +155,7 @@ pub fn build_modification_result_value(
         "peek": false,
         "pin_marker": PIN_MARKER,
         "col_left_pin": COL_LEFT_PIN,
-        "col_status": COL_STATUS,
+        "col_status": col_status,
         "col_index": COL_INDEX,
         "col_time": COL_TIME,
     })
@@ -165,6 +174,7 @@ pub fn build_list_result_value(
     show_deleted_help: bool,
     trailing_messages: &[CmdMessage],
     output_mode: OutputMode,
+    mode: PadzMode,
 ) -> serde_json::Value {
     use serde_json::json;
 
@@ -175,6 +185,9 @@ pub fn build_list_result_value(
             "messages": trailing_messages,
         });
     }
+
+    let show_status = mode == PadzMode::Todos;
+    let col_status = if show_status { COL_STATUS } else { 0 };
 
     // For terminal modes, build full template data
     let trailing_data = convert_messages_to_json(trailing_messages);
@@ -188,7 +201,7 @@ pub fn build_list_result_value(
             "deleted_help": false,
             "peek": false,
             "col_left_pin": COL_LEFT_PIN,
-            "col_status": COL_STATUS,
+            "col_status": col_status,
             "col_index": COL_INDEX,
             "col_time": COL_TIME,
             "trailing_messages": trailing_data,
@@ -199,6 +212,7 @@ pub fn build_list_result_value(
     let mut last_was_pinned = false;
 
     // Recursive helper to flatten the tree with depth/indentation
+    #[allow(clippy::too_many_arguments)]
     fn process_pad_to_json(
         dp: &DisplayPad,
         pad_lines: &mut Vec<serde_json::Value>,
@@ -206,6 +220,8 @@ pub fn build_list_result_value(
         is_pinned_section: bool,
         is_deleted_root: bool,
         peek: bool,
+        show_status: bool,
+        col_status: usize,
     ) {
         let is_deleted = matches!(dp.index, DisplayIndex::Deleted(_));
 
@@ -216,10 +232,14 @@ pub fn build_list_result_value(
         };
         let full_idx_str = format!("{}.", local_idx_str);
 
-        let status_icon = match dp.pad.metadata.status {
-            TodoStatus::Planned => STATUS_PLANNED,
-            TodoStatus::InProgress => STATUS_IN_PROGRESS,
-            TodoStatus::Done => STATUS_DONE,
+        let status_icon = if show_status {
+            match dp.pad.metadata.status {
+                TodoStatus::Planned => STATUS_PLANNED,
+                TodoStatus::InProgress => STATUS_IN_PROGRESS,
+                TodoStatus::Done => STATUS_DONE,
+            }
+        } else {
+            ""
         };
 
         let indent_width = depth * 2;
@@ -241,7 +261,7 @@ pub fn build_list_result_value(
             tag_chars + spaces + 1
         };
 
-        let fixed_columns = COL_LEFT_PIN + COL_STATUS + COL_INDEX + COL_TIME;
+        let fixed_columns = COL_LEFT_PIN + col_status + COL_INDEX + COL_TIME;
         let title_width = LINE_WIDTH.saturating_sub(fixed_columns + indent_width + tags_width);
 
         // Process matches
@@ -263,7 +283,7 @@ pub fn build_list_result_value(
                     })
                     .collect();
 
-                let match_indent = indent_width + COL_LEFT_PIN + COL_STATUS + COL_INDEX;
+                let match_indent = indent_width + COL_LEFT_PIN + col_status + COL_INDEX;
                 let match_available = LINE_WIDTH.saturating_sub(COL_TIME + match_indent);
 
                 // Truncate segments to available width
@@ -315,6 +335,8 @@ pub fn build_list_result_value(
                 is_pinned_section,
                 is_deleted_root,
                 peek,
+                show_status,
+                col_status,
             );
         }
     }
@@ -351,6 +373,8 @@ pub fn build_list_result_value(
             is_pinned_section,
             is_deleted_section,
             peek,
+            show_status,
+            col_status,
         );
     }
 
@@ -362,7 +386,7 @@ pub fn build_list_result_value(
         "deleted_help": show_deleted_help,
         "peek": peek,
         "col_left_pin": COL_LEFT_PIN,
-        "col_status": COL_STATUS,
+        "col_status": col_status,
         "col_index": COL_INDEX,
         "col_time": COL_TIME,
         "trailing_messages": trailing_data,
@@ -469,7 +493,8 @@ mod tests {
 
     #[test]
     fn test_build_list_empty() {
-        let data = build_list_result_value(&[], false, false, &[], OutputMode::Text);
+        let data =
+            build_list_result_value(&[], false, false, &[], OutputMode::Text, PadzMode::Todos);
         assert!(data.get("empty").and_then(|v| v.as_bool()).unwrap_or(false));
         assert!(data
             .get("help_text")
@@ -483,7 +508,8 @@ mod tests {
         let pad = make_pad("Test Note", false, false);
         let dp = make_display_pad(pad, DisplayIndex::Regular(1));
 
-        let data = build_list_result_value(&[dp], false, false, &[], OutputMode::Text);
+        let data =
+            build_list_result_value(&[dp], false, false, &[], OutputMode::Text, PadzMode::Todos);
 
         let pads = data.get("pads").and_then(|v| v.as_array()).unwrap();
         assert_eq!(pads.len(), 1);
@@ -505,7 +531,8 @@ mod tests {
         let pad = make_pad("Pinned Note", true, false);
         let dp = make_display_pad(pad, DisplayIndex::Pinned(1));
 
-        let data = build_list_result_value(&[dp], false, false, &[], OutputMode::Text);
+        let data =
+            build_list_result_value(&[dp], false, false, &[], OutputMode::Text, PadzMode::Todos);
 
         let pads = data.get("pads").and_then(|v| v.as_array()).unwrap();
         let pad_data = &pads[0];
@@ -526,7 +553,8 @@ mod tests {
         let pad = make_pad("Deleted Note", false, true);
         let dp = make_display_pad(pad, DisplayIndex::Deleted(1));
 
-        let data = build_list_result_value(&[dp], false, true, &[], OutputMode::Text);
+        let data =
+            build_list_result_value(&[dp], false, true, &[], OutputMode::Text, PadzMode::Todos);
 
         let pads = data.get("pads").and_then(|v| v.as_array()).unwrap();
         let pad_data = &pads[0];
@@ -552,7 +580,8 @@ mod tests {
             make_display_pad(regular, DisplayIndex::Regular(1)),
         ];
 
-        let data = build_list_result_value(&pads, false, false, &[], OutputMode::Text);
+        let data =
+            build_list_result_value(&pads, false, false, &[], OutputMode::Text, PadzMode::Todos);
 
         let pad_list = data.get("pads").and_then(|v| v.as_array()).unwrap();
         // Should have: pinned pad, separator, regular pad
@@ -573,7 +602,8 @@ mod tests {
 
         let dp = make_display_pad(pad, DisplayIndex::Regular(1));
 
-        let data = build_list_result_value(&[dp], false, false, &[], OutputMode::Text);
+        let data =
+            build_list_result_value(&[dp], false, false, &[], OutputMode::Text, PadzMode::Todos);
 
         let pads = data.get("pads").and_then(|v| v.as_array()).unwrap();
         let pad_data = &pads[0];
@@ -590,7 +620,14 @@ mod tests {
         let dp = make_display_pad(pad, DisplayIndex::Regular(1));
         let messages = vec![CmdMessage::success("Operation completed")];
 
-        let data = build_list_result_value(&[dp], false, false, &messages, OutputMode::Text);
+        let data = build_list_result_value(
+            &[dp],
+            false,
+            false,
+            &messages,
+            OutputMode::Text,
+            PadzMode::Todos,
+        );
 
         let trailing = data
             .get("trailing_messages")
@@ -612,7 +649,8 @@ mod tests {
         let pad = make_pad("Test", false, false);
         let dp = make_display_pad(pad, DisplayIndex::Regular(1));
 
-        let data = build_list_result_value(&[dp], false, false, &[], OutputMode::Json);
+        let data =
+            build_list_result_value(&[dp], false, false, &[], OutputMode::Json, PadzMode::Todos);
 
         // In JSON mode, should return raw pads array, not processed pad lines
         let pads = data.get("pads").and_then(|v| v.as_array()).unwrap();
@@ -626,7 +664,13 @@ mod tests {
         let pad = make_pad("Test", false, false);
         let dp = make_display_pad(pad, DisplayIndex::Regular(1));
 
-        let data = build_modification_result_value("Created", &[dp], &[], OutputMode::Text);
+        let data = build_modification_result_value(
+            "Created",
+            &[dp],
+            &[],
+            OutputMode::Text,
+            PadzMode::Todos,
+        );
 
         assert_eq!(
             data.get("start_message").and_then(|v| v.as_str()),
@@ -663,5 +707,63 @@ mod tests {
                 duration, expected
             );
         }
+    }
+
+    #[test]
+    fn test_notes_mode_hides_status_icon() {
+        let pad = make_pad("Test Note", false, false);
+        let dp = make_display_pad(pad, DisplayIndex::Regular(1));
+
+        let data =
+            build_list_result_value(&[dp], false, false, &[], OutputMode::Text, PadzMode::Notes);
+
+        let pads = data.get("pads").and_then(|v| v.as_array()).unwrap();
+        assert_eq!(
+            pads[0].get("status_icon").and_then(|v| v.as_str()),
+            Some("")
+        );
+        assert_eq!(data.get("col_status").and_then(|v| v.as_u64()), Some(0));
+    }
+
+    #[test]
+    fn test_todos_mode_shows_status_icon() {
+        let pad = make_pad("Test Note", false, false);
+        let dp = make_display_pad(pad, DisplayIndex::Regular(1));
+
+        let data =
+            build_list_result_value(&[dp], false, false, &[], OutputMode::Text, PadzMode::Todos);
+
+        let pads = data.get("pads").and_then(|v| v.as_array()).unwrap();
+        assert_eq!(
+            pads[0].get("status_icon").and_then(|v| v.as_str()),
+            Some(STATUS_PLANNED)
+        );
+        assert_eq!(
+            data.get("col_status").and_then(|v| v.as_u64()),
+            Some(COL_STATUS as u64)
+        );
+    }
+
+    #[test]
+    fn test_notes_mode_gives_more_title_width() {
+        let pad = make_pad("Test Note", false, false);
+        let dp = make_display_pad(pad.clone(), DisplayIndex::Regular(1));
+        let dp2 = make_display_pad(pad, DisplayIndex::Regular(1));
+
+        let notes_data =
+            build_list_result_value(&[dp], false, false, &[], OutputMode::Text, PadzMode::Notes);
+        let todos_data =
+            build_list_result_value(&[dp2], false, false, &[], OutputMode::Text, PadzMode::Todos);
+
+        let notes_width = notes_data.get("pads").and_then(|v| v.as_array()).unwrap()[0]
+            .get("title_width")
+            .and_then(|v| v.as_u64())
+            .unwrap();
+        let todos_width = todos_data.get("pads").and_then(|v| v.as_array()).unwrap()[0]
+            .get("title_width")
+            .and_then(|v| v.as_u64())
+            .unwrap();
+
+        assert_eq!(notes_width - todos_width, COL_STATUS as u64);
     }
 }

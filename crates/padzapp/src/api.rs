@@ -229,9 +229,17 @@ impl<S: DataStore> PadzApi<S> {
         indexes: &[I],
         recursive: bool,
         confirmed: bool,
+        include_done: bool,
     ) -> Result<commands::CmdResult> {
         let selectors = parse_selectors(indexes)?;
-        commands::purge::run(&mut self.store, scope, &selectors, recursive, confirmed)
+        commands::purge::run(
+            &mut self.store,
+            scope,
+            &selectors,
+            recursive,
+            confirmed,
+            include_done,
+        )
     }
 
     pub fn restore_pads<I: AsRef<str>>(
@@ -663,7 +671,7 @@ mod tests {
         api.delete_pads(Scope::Project, &["1"]).unwrap();
 
         // Purge with confirmed=true should succeed
-        let result = api.purge_pads(Scope::Project, &["d1"], false, true);
+        let result = api.purge_pads(Scope::Project, &["d1"], false, true, false);
         assert!(result.is_ok());
 
         // Verify it's gone from the store
@@ -690,7 +698,7 @@ mod tests {
         api.delete_pads(Scope::Project, &["1"]).unwrap();
 
         // Purge with confirmed=false should fail
-        let result = api.purge_pads(Scope::Project, &["d1"], false, false);
+        let result = api.purge_pads(Scope::Project, &["d1"], false, false, false);
         assert!(result.is_err());
         let err = result.unwrap_err();
         assert!(err.to_string().contains("Aborted"));

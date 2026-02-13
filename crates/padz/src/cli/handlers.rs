@@ -18,6 +18,7 @@ use clap::ArgMatches;
 use padzapp::api::{PadFilter, PadStatusFilter, PadzApi, TodoStatus};
 use padzapp::clipboard::{copy_to_clipboard, format_for_clipboard};
 use padzapp::commands::CmdResult;
+use padzapp::config::PadzMode;
 use padzapp::error::PadzError;
 use padzapp::model::{extract_title_and_body, Scope};
 use padzapp::store::fs::FileStore;
@@ -46,6 +47,7 @@ pub struct AppState {
     pub scope: Scope,
     pub import_extensions: ImportExtensions,
     pub output_mode: OutputMode,
+    pub mode: PadzMode,
 }
 
 impl AppState {
@@ -54,12 +56,14 @@ impl AppState {
         scope: Scope,
         import_extensions: Vec<String>,
         output_mode: OutputMode,
+        mode: PadzMode,
     ) -> Self {
         Self {
             api: RefCell::new(api),
             scope,
             import_extensions: ImportExtensions(import_extensions),
             output_mode,
+            mode,
         }
     }
 
@@ -123,6 +127,7 @@ impl<'a> ScopedApi<'a> {
             &result.affected_pads,
             &result.messages,
             self.state.output_mode,
+            self.state.mode,
         )))
     }
 
@@ -240,7 +245,9 @@ impl<'a> ScopedApi<'a> {
         yes: bool,
         recursive: bool,
     ) -> Result<Output<Value>, anyhow::Error> {
-        let result = self.call(|api, scope| api.purge_pads(scope, indexes, yes, recursive))?;
+        let include_done = self.state.mode == PadzMode::Todos;
+        let result =
+            self.call(|api, scope| api.purge_pads(scope, indexes, recursive, yes, include_done))?;
         self.messages(result)
     }
 
@@ -318,6 +325,7 @@ impl<'a> ScopedApi<'a> {
             show_deleted_help,
             &result.messages,
             self.state.output_mode,
+            self.state.mode,
         )))
     }
 
@@ -384,6 +392,31 @@ fn collect_content(
     }
 }
 
+/// Split a list of args into index selectors and trailing content words.
+///
+/// Index patterns are: digits, pN, dN, N.N, N-N, pN-pN etc.
+/// Once an arg fails to parse as an index, everything from that point is content.
+fn split_indexes_and_content(args: &[String]) -> (Vec<String>, Vec<String>) {
+    use padzapp::index::parse_index_or_range;
+
+    let mut indexes = Vec::new();
+    let mut content = Vec::new();
+    let mut past_indexes = false;
+
+    for arg in args {
+        if past_indexes {
+            content.push(arg.clone());
+        } else if parse_index_or_range(arg).is_ok() {
+            indexes.push(arg.clone());
+        } else {
+            past_indexes = true;
+            content.push(arg.clone());
+        }
+    }
+
+    (indexes, content)
+}
+
 // =============================================================================
 // Core commands
 // =============================================================================
@@ -404,15 +437,22 @@ pub fn create(
     };
     let inside = inside.as_deref();
 
-    let result = if no_editor {
-        // --no-editor: create with title only, no content collection
-        let title = title_arg.unwrap_or_else(|| "Untitled".to_string());
+    // In todos mode, having title args implies quick-create (skip editor)
+    let skip_editor = no_editor || (state.mode == PadzMode::Todos && title_arg.is_some());
+
+    let result = if skip_editor {
+        // Quick-create: use args directly, no editor
+        let raw_text = title_arg.unwrap_or_else(|| "Untitled".to_string());
+        // Convert literal \n sequences to real newlines
+        let expanded = raw_text.replace("\\n", "\n");
+        let (title, body) = extract_title_and_body(&expanded)
+            .unwrap_or_else(|| ("Untitled".to_string(), String::new()));
         let result = state.with_api(|api| {
-            api.create_pad(state.scope, title.clone(), String::new(), inside)
+            api.create_pad(state.scope, title.clone(), body.clone(), inside)
                 .map_err(|e| anyhow::anyhow!("{}", e))
         })?;
         // Copy to clipboard
-        let clipboard_text = format_for_clipboard(&title, "");
+        let clipboard_text = format_for_clipboard(&title, &body);
         let _ = copy_to_clipboard(&clipboard_text);
         result
     } else {
@@ -452,6 +492,7 @@ pub fn create(
         &result.affected_pads,
         &result.messages,
         state.output_mode,
+        state.mode,
     );
     Ok(Output::Render(data))
 }
@@ -548,9 +589,48 @@ pub fn edit(
 ) -> Result<Output<Value>, anyhow::Error> {
     let state = get_state(ctx);
 
+    // Split args into index selectors and trailing content words.
+    // Index patterns: digits, pN, dN, N.N, N-N, pN-pN, etc.
+    let (index_args, content_words) = split_indexes_and_content(&indexes);
+
+    if index_args.is_empty() {
+        return Err(anyhow::anyhow!("No pad index provided"));
+    }
+
+    // In todos mode, trailing content words become a quick-edit (skip editor)
+    let inline_content = if !content_words.is_empty() {
+        let raw_text = content_words.join(" ");
+        let expanded = raw_text.replace("\\n", "\n");
+        Some(expanded)
+    } else {
+        None
+    };
+
+    let skip_editor = state.mode == PadzMode::Todos && inline_content.is_some();
+
+    if skip_editor {
+        let raw = inline_content.unwrap();
+        let result = state.with_api(|api| {
+            api.update_pads_from_content(state.scope, &index_args, &raw)
+                .map_err(|e| anyhow::anyhow!("{}", e))
+        })?;
+
+        let clipboard_text = raw.clone();
+        let _ = copy_to_clipboard(&clipboard_text);
+
+        let data = build_modification_result_value(
+            "Updated",
+            &result.affected_pads,
+            &result.messages,
+            state.output_mode,
+            state.mode,
+        );
+        return Ok(Output::Render(data));
+    }
+
     // Get existing pad content to use as initial editor content
     let view_result = state.with_api(|api| {
-        api.view_pads(state.scope, &indexes)
+        api.view_pads(state.scope, &index_args)
             .map_err(|e| anyhow::anyhow!("{}", e))
     })?;
 
@@ -561,20 +641,22 @@ pub fn edit(
         .ok_or_else(|| anyhow::anyhow!("No pad found"))?;
 
     // Build editor template with existing content
-    let existing_content = padzapp::editor::EditorContent::new(
-        pad.pad.metadata.title.clone(),
-        pad.pad.content.clone(),
-    )
-    .to_buffer();
+    // In notes mode with trailing content, pre-fill editor with the new text
+    let initial_content = if let Some(ref new_text) = inline_content {
+        new_text.clone()
+    } else {
+        padzapp::editor::EditorContent::new(pad.pad.metadata.title.clone(), pad.pad.content.clone())
+            .to_buffer()
+    };
 
     // Collect content via InputChain: stdin → editor
-    let content = collect_content(matches, &existing_content)?;
+    let content = collect_content(matches, &initial_content)?;
 
     match content {
         Some(raw) if !raw.trim().is_empty() => {
             // Update the pad using the raw content (API parses title/body)
             let result = state.with_api(|api| {
-                api.update_pads_from_content(state.scope, &indexes, &raw)
+                api.update_pads_from_content(state.scope, &index_args, &raw)
                     .map_err(|e| anyhow::anyhow!("{}", e))
             })?;
 
@@ -586,6 +668,7 @@ pub fn edit(
                 &result.affected_pads,
                 &result.messages,
                 state.output_mode,
+                state.mode,
             );
             Ok(Output::Render(data))
         }

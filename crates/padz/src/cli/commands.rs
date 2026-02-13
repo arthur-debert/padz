@@ -125,6 +125,7 @@ fn create_app_state(cli: &Cli, output_mode: OutputMode) -> Result<AppState> {
         scope,
         padz_ctx.config.import_extensions(),
         output_mode,
+        padz_ctx.config.mode,
     ))
 }
 
