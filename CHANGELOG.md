@@ -6,6 +6,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+- **Added**
+  - **Todo mode toggle** - New `mode` config (`notes` | `todos`, default `notes`) that adapts padz for note-taking or task management:
+    - **Display**: Todos mode shows status icons (⚪︎ ☉︎︎ ⚫︎); notes mode hides them and gives more title width
+    - **Quick-create**: In todos mode, `padz create Buy Milk` skips the editor; supports `\n` for multi-line (`padz create 'Buy Groceries\nMilk\nEggs'`)
+    - **Quick-edit**: In todos mode, `padz edit 1 Updated Title` updates directly without opening the editor
+    - **Purge**: In todos mode, `padz purge` removes both Done and Deleted pads; in notes mode only Deleted
+
 - **Changed**
   - **Compact timestamps** - List timestamps now use compact format (` 3d ⏲`, `23h ⏲`) instead of verbose (`3 days ago`), reclaiming ~9 chars for title display. Removed `timeago` dependency.
   - **Unified pin marker position** - Pin marker `⚲` now appears in the left column (col 0) for both pinned and regular sections, instead of appearing on the right side in the regular list
