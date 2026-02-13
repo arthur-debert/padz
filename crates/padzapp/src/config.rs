@@ -1,270 +1,177 @@
 //! # Configuration
 //!
-//! Padz exposes configuration as a first-class command, backed by a hierarchical lookup.
+//! Padz configuration is managed by [`clapfig`], which handles layered loading
+//! from TOML files, environment variables, and programmatic overrides.
 //!
 //! ## Storage Hierarchy
 //!
 //! Configuration is resolved in priority order:
-//! 1. **Project Config**: `.padz/config.json` — Overrides everything for this repo.
-//! 2. **Global Config**: OS-appropriate config directory (via `directories` crate).
-//! 3. **Hardcoded Defaults**: Built-in fallbacks.
+//! 1. **Environment variables**: `PADZ__FILE_EXT`, `PADZ__IMPORT_EXTENSIONS`, etc.
+//! 2. **Project Config**: `.padz/padz.toml` — Overrides everything for this repo.
+//! 3. **Global Config**: OS-appropriate config directory (via `directories` crate).
+//! 4. **Compiled Defaults**: Built-in fallbacks via `#[config(default = ...)]`.
 //!
 //! ## Available Settings
 //!
 //! | Key | Default | Description |
 //! |-----|---------|-------------|
-//! | `file-ext` | `.txt` | Extension for new pad files (e.g., `.md`, `.txt`) |
-//! | `import-extensions` | `.md, .txt, .text, .lex` | Extensions for `padz import` |
+//! | `file_ext` | `txt` | Extension for new pad files (e.g., `md`, `txt`) |
+//! | `import_extensions` | `["md", "txt", "text", "lex"]` | Extensions for `padz import` |
 //!
-//! ## Extension Behavior
+//! ## Extension Convention
 //!
-//! **`file-ext`**:
-//! - Controls the extension for *newly created* files only.
-//! - Changing this does **not** rename existing files.
-//! - When reading, the store tries the configured extension first, then falls back to `.txt`.
-//!
-//! **`import-extensions`**:
-//! - Comma-separated list of extensions.
-//! - Used by `padz import <directory>` to filter which files to import.
+//! Extensions are stored **without** leading dots (`md`, not `.md`).
+//! Dots are stripped on intake via deserialization and added back by accessor
+//! methods ([`PadzConfig::file_ext()`], [`PadzConfig::import_extensions()`]).
 //!
 //! ## CLI Usage
 //!
 //! - `padz config` — Show all configuration values.
-//! - `padz config <key>` — Get a specific value.
-//! - `padz config <key> <value>` — Set a value.
-//!
-//! ## Developer Note
-//!
-//! [`PadzConfig`] uses `serde` with `#[serde(default)]` for all fields.
-//! This ensures older config files missing new fields use defaults without errors.
+//! - `padz config get <key>` — Get a specific value.
+//! - `padz config set <key> <value>` — Set a value.
+//! - `padz config unset <key>` — Remove a persisted override.
+//! - `padz config gen` — Generate a sample `padz.toml`.
 
-use crate::error::{PadzError, Result};
-use serde::{Deserialize, Serialize};
-use std::fs;
-use std::path::Path;
+use confique::Config;
+use serde::{Deserialize, Deserializer, Serialize};
 
-const CONFIG_FILENAME: &str = "config.json";
-const DEFAULT_FILE_EXT: &str = ".txt";
-
-/// Configuration for padz, stored in .padz/config.json
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
-pub struct PadzConfig {
-    /// File extension for new pads (e.g., ".txt", ".md", ".rs")
-    #[serde(default = "default_file_ext")]
-    pub file_ext: String,
-
-    /// Extensions to look for when importing directories (e.g. ".md", ".txt")
-    #[serde(default = "default_import_ext")]
-    pub import_extensions: Vec<String>,
-}
-
-fn default_file_ext() -> String {
-    DEFAULT_FILE_EXT.to_string()
+/// Strip a leading dot from a string during deserialization.
+/// `".md"` → `"md"`, `"md"` → `"md"`.
+fn strip_leading_dot<'de, D: Deserializer<'de>>(d: D) -> Result<String, D::Error> {
+    let s = String::deserialize(d)?;
+    Ok(s.strip_prefix('.').unwrap_or(&s).to_string())
 }
 
 fn default_import_ext() -> Vec<String> {
     vec![
-        ".md".to_string(),
-        ".txt".to_string(),
-        ".text".to_string(),
-        ".lex".to_string(),
+        "md".to_string(),
+        "txt".to_string(),
+        "text".to_string(),
+        "lex".to_string(),
     ]
+}
+
+/// Configuration for padz, stored in `padz.toml`.
+#[derive(Config, Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
+pub struct PadzConfig {
+    /// Extension for new pad files (e.g., "txt", "md", "rs").
+    /// Stored without leading dot; use file_ext() for the dotted form.
+    #[config(deserialize_with = strip_leading_dot, default = "txt")]
+    #[serde(deserialize_with = "strip_leading_dot")]
+    pub file_ext: String,
+
+    /// Extensions to look for when importing directories (e.g. "md", "txt").
+    /// Stored without leading dots; use import_extensions() for the dotted form.
+    /// When absent, defaults to ["md", "txt", "text", "lex"].
+    pub import_extensions: Option<Vec<String>>,
 }
 
 impl Default for PadzConfig {
     fn default() -> Self {
         Self {
-            file_ext: DEFAULT_FILE_EXT.to_string(),
-            import_extensions: default_import_ext(),
+            file_ext: "txt".to_string(),
+            import_extensions: None,
         }
     }
 }
 
 impl PadzConfig {
-    /// Load config from the given directory, or return defaults if not found
-    pub fn load<P: AsRef<Path>>(config_dir: P) -> Result<Self> {
-        let config_path = config_dir.as_ref().join(CONFIG_FILENAME);
-
-        if !config_path.exists() {
-            return Ok(Self::default());
-        }
-
-        let content = fs::read_to_string(&config_path).map_err(PadzError::Io)?;
-        let config: PadzConfig =
-            serde_json::from_str(&content).map_err(PadzError::Serialization)?;
-        Ok(config)
+    /// Get the file extension with a leading dot (e.g., `.txt`, `.md`).
+    pub fn file_ext(&self) -> String {
+        let ext = self.file_ext.strip_prefix('.').unwrap_or(&self.file_ext);
+        format!(".{}", ext)
     }
 
-    /// Save config to the given directory
-    pub fn save<P: AsRef<Path>>(&self, config_dir: P) -> Result<()> {
-        let config_dir = config_dir.as_ref();
-
-        // Ensure directory exists
-        if !config_dir.exists() {
-            fs::create_dir_all(config_dir).map_err(PadzError::Io)?;
-        }
-
-        let config_path = config_dir.join(CONFIG_FILENAME);
-        let content = serde_json::to_string_pretty(self).map_err(PadzError::Serialization)?;
-        fs::write(config_path, content).map_err(PadzError::Io)?;
-        Ok(())
-    }
-
-    /// Get a config value by key.
-    pub fn get(&self, key: &str) -> Option<String> {
-        match key {
-            "file-ext" => Some(self.file_ext.clone()),
-            "import-extensions" => Some(self.import_extensions.join(", ")),
-            _ => None,
-        }
-    }
-
-    /// Set a config value by key. Returns Ok if successful, Err with message if invalid key/value.
-    pub fn set(&mut self, key: &str, value: &str) -> std::result::Result<(), String> {
-        match key {
-            "file-ext" => {
-                self.set_file_ext(value);
-                Ok(())
-            }
-            "import-extensions" => {
-                // simple CSV parsing for basic support
-                self.import_extensions = value
-                    .split(',')
-                    .map(|s| s.trim().to_string())
-                    .filter(|s| !s.is_empty())
-                    .collect();
-                Ok(())
-            }
-            _ => Err(format!("Unknown config key: {}", key)),
-        }
-    }
-
-    /// List all configuration keys and their values.
-    pub fn list_all(&self) -> Vec<(String, String)> {
-        vec![
-            ("file-ext".to_string(), self.file_ext.clone()),
-            (
-                "import-extensions".to_string(),
-                self.import_extensions.join(", "),
-            ),
-        ]
-    }
-
-    /// Get the file extension (ensures it starts with a dot)
-    pub fn get_file_ext(&self) -> &str {
-        &self.file_ext
-    }
-
-    /// Set the file extension (normalizes to start with a dot)
-    pub fn set_file_ext(&mut self, ext: &str) {
-        if ext.starts_with('.') {
-            self.file_ext = ext.to_string();
-        } else {
-            self.file_ext = format!(".{}", ext);
-        }
+    /// Get import extensions with leading dots (e.g., `.md`, `.txt`),
+    /// using defaults if not configured.
+    pub fn import_extensions(&self) -> Vec<String> {
+        let exts = self
+            .import_extensions
+            .clone()
+            .unwrap_or_else(default_import_ext);
+        exts.into_iter()
+            .map(|e| {
+                let bare = e.strip_prefix('.').unwrap_or(&e);
+                format!(".{}", bare)
+            })
+            .collect()
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::env;
 
     #[test]
     fn test_default_config() {
         let config = PadzConfig::default();
-        assert_eq!(config.file_ext, ".txt");
-    }
-
-    #[test]
-    fn test_set_file_ext_with_dot() {
-        let mut config = PadzConfig::default();
-        config.set_file_ext(".md");
-        assert_eq!(config.file_ext, ".md");
-    }
-
-    #[test]
-    fn test_set_file_ext_without_dot() {
-        let mut config = PadzConfig::default();
-        config.set_file_ext("rs");
-        assert_eq!(config.file_ext, ".rs");
-    }
-
-    #[test]
-    fn test_load_missing_config() {
-        let temp_dir = env::temp_dir().join("padz_test_config_missing");
-        let _ = fs::remove_dir_all(&temp_dir);
-
-        let config = PadzConfig::load(&temp_dir).unwrap();
-        assert_eq!(config, PadzConfig::default());
-    }
-
-    #[test]
-    fn test_save_and_load() {
-        let temp_dir = env::temp_dir().join("padz_test_config_save");
-        let _ = fs::remove_dir_all(&temp_dir);
-        fs::create_dir_all(&temp_dir).unwrap();
-
-        let mut config = PadzConfig::default();
-        config.set_file_ext(".md");
-        config.save(&temp_dir).unwrap();
-
-        let loaded = PadzConfig::load(&temp_dir).unwrap();
-        assert_eq!(loaded.file_ext, ".md");
-
-        // Cleanup
-        let _ = fs::remove_dir_all(&temp_dir);
-    }
-
-    #[test]
-    fn test_serialization_roundtrip() {
-        let config = PadzConfig {
-            file_ext: ".py".to_string(),
-            import_extensions: vec![".md".to_string()],
-        };
-
-        let json = serde_json::to_string(&config).unwrap();
-        let parsed: PadzConfig = serde_json::from_str(&json).unwrap();
-
-        assert_eq!(config, parsed);
-    }
-    #[test]
-    fn test_config_get_set() {
-        let mut config = PadzConfig::default();
-
-        // Get unknown
-        assert_eq!(config.get("unknown"), None);
-
-        // Get known
-        assert_eq!(config.get("file-ext"), Some(".txt".to_string()));
-
-        // Set known
-        assert!(config.set("file-ext", "md").is_ok());
-        assert_eq!(config.get("file-ext"), Some(".md".to_string()));
-        assert_eq!(config.file_ext, ".md");
-
-        // Set invalid
-        assert!(config.set("unknown", "value").is_err());
-    }
-
-    #[test]
-    fn test_import_extensions_set() {
-        let mut config = PadzConfig::default();
-        config
-            .set("import-extensions", ".rs, .toml")
-            .expect("failed to set import-extensions");
-        assert_eq!(config.import_extensions, vec![".rs", ".toml"]);
+        assert_eq!(config.file_ext, "txt");
+        assert_eq!(config.file_ext(), ".txt");
         assert_eq!(
-            config.get("import-extensions"),
-            Some(".rs, .toml".to_string())
+            config.import_extensions(),
+            vec![".md", ".txt", ".text", ".lex"]
         );
     }
+
     #[test]
-    fn test_list_all() {
+    fn test_file_ext_stored_without_dot() {
+        let config = PadzConfig {
+            file_ext: "md".to_string(),
+            ..Default::default()
+        };
+        assert_eq!(config.file_ext, "md");
+        assert_eq!(config.file_ext(), ".md");
+    }
+
+    #[test]
+    fn test_file_ext_accessor_handles_legacy_dot() {
+        // Even if a dot slips in, accessor still works correctly
+        let config = PadzConfig {
+            file_ext: ".rs".to_string(),
+            ..Default::default()
+        };
+        assert_eq!(config.file_ext(), ".rs");
+    }
+
+    #[test]
+    fn test_import_extensions_default_when_none() {
         let config = PadzConfig::default();
-        let all = config.list_all();
-        assert!(all.len() >= 2);
-        assert!(all.iter().any(|(k, v)| k == "file-ext" && v == ".txt"));
-        assert!(all.iter().any(|(k, _)| k == "import-extensions"));
+        assert_eq!(
+            config.import_extensions(),
+            vec![".md", ".txt", ".text", ".lex"]
+        );
+    }
+
+    #[test]
+    fn test_import_extensions_custom_without_dots() {
+        let config = PadzConfig {
+            import_extensions: Some(vec!["py".to_string(), "js".to_string()]),
+            ..Default::default()
+        };
+        assert_eq!(config.import_extensions(), vec![".py", ".js"]);
+    }
+
+    #[test]
+    fn test_import_extensions_handles_legacy_dots() {
+        let config = PadzConfig {
+            import_extensions: Some(vec![".py".to_string(), "js".to_string()]),
+            ..Default::default()
+        };
+        assert_eq!(config.import_extensions(), vec![".py", ".js"]);
+    }
+
+    #[test]
+    fn test_strip_leading_dot_deserializer() {
+        // Simulate what confique does: deserialize a TOML string through our normalizer
+        let toml_str = r#"file_ext = ".md""#;
+        let config: PadzConfig = toml::from_str(toml_str).unwrap();
+        assert_eq!(config.file_ext, "md");
+    }
+
+    #[test]
+    fn test_strip_leading_dot_deserializer_no_dot() {
+        let toml_str = r#"file_ext = "md""#;
+        let config: PadzConfig = toml::from_str(toml_str).unwrap();
+        assert_eq!(config.file_ext, "md");
     }
 }

@@ -64,6 +64,7 @@ use crate::api::{PadzApi, PadzPaths};
 use crate::config::PadzConfig;
 use crate::model::Scope;
 use crate::store::fs::FileStore;
+use clapfig::{Clapfig, SearchMode, SearchPath};
 use directories::{BaseDirs, ProjectDirs};
 use std::path::{Path, PathBuf};
 
@@ -179,12 +180,26 @@ pub fn initialize(cwd: &Path, use_global: bool, data_override: Option<PathBuf>) 
         Scope::Project
     };
 
-    let config_dir = match scope {
-        Scope::Project => &project_padz_dir,
-        Scope::Global => &global_data_dir,
+    // Build search paths based on scope:
+    // - Global scope: only Platform directory
+    // - Project scope: Platform (lower priority) then project dir (higher priority)
+    let search_paths = if use_global {
+        vec![SearchPath::Path(global_data_dir.clone())]
+    } else {
+        vec![
+            SearchPath::Path(global_data_dir.clone()),
+            SearchPath::Path(project_padz_dir.clone()),
+        ]
     };
-    let config = PadzConfig::load(config_dir).unwrap_or_default();
-    let file_ext = config.get_file_ext().to_string();
+
+    let config: PadzConfig = Clapfig::builder()
+        .app_name("padz")
+        .file_name("padz.toml")
+        .search_paths(search_paths)
+        .search_mode(SearchMode::FirstMatch)
+        .load()
+        .unwrap_or_default();
+    let file_ext = config.file_ext();
 
     let store = FileStore::new(Some(project_padz_dir.clone()), global_data_dir.clone())
         .with_file_ext(&file_ext);
