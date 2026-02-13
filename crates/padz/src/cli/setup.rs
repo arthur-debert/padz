@@ -558,15 +558,12 @@ pub enum Commands {
     #[dispatch(pure, template = "messages")]
     Doctor,
 
-    /// Get or set configuration
+    /// Manage configuration
     #[command(display_order = 31)]
-    #[dispatch(pure, template = "messages")]
+    #[dispatch(skip)]
     Config {
-        /// Configuration key (e.g., file-ext)
-        key: Option<String>,
-
-        /// Value to set (if omitted, prints current value)
-        value: Option<String>,
+        #[command(subcommand)]
+        action: Option<ConfigSubcommand>,
     },
 
     /// Initialize the store (optional utility)
@@ -584,6 +581,32 @@ pub enum Commands {
 
         #[command(subcommand)]
         action: CompletionAction,
+    },
+}
+
+/// Configuration subcommands (mirrors clapfig::ConfigSubcommand but avoids
+/// --output collision with standout's global --output flag).
+#[derive(Subcommand, Debug)]
+pub enum ConfigSubcommand {
+    /// Show all resolved configuration values
+    List,
+    /// Generate a commented sample padz.toml
+    Gen {
+        /// Write to a file instead of stdout
+        #[arg(short = 'o', long = "out")]
+        file: Option<std::path::PathBuf>,
+    },
+    /// Show the resolved value for a config key
+    Get {
+        /// Dotted key path (e.g. "file_ext")
+        key: String,
+    },
+    /// Set a configuration value
+    Set {
+        /// Dotted key path (e.g. "file_ext")
+        key: String,
+        /// Value to set
+        value: String,
     },
 }
 

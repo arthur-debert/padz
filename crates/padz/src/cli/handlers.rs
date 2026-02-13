@@ -15,7 +15,7 @@
 #![allow(non_snake_case)]
 
 use clap::ArgMatches;
-use padzapp::api::{ConfigAction, PadFilter, PadStatusFilter, PadzApi, TodoStatus};
+use padzapp::api::{PadFilter, PadStatusFilter, PadzApi, TodoStatus};
 use padzapp::clipboard::{copy_to_clipboard, format_for_clipboard};
 use padzapp::commands::CmdResult;
 use padzapp::error::PadzError;
@@ -731,40 +731,6 @@ pub fn import(
 #[handler]
 pub fn doctor(#[ctx] ctx: &CommandContext) -> Result<Output<Value>, anyhow::Error> {
     api(ctx).doctor()
-}
-
-#[handler]
-pub fn config(
-    #[ctx] ctx: &CommandContext,
-    #[arg] key: Option<String>,
-    #[arg] value: Option<String>,
-) -> Result<Output<Value>, anyhow::Error> {
-    let state = get_state(ctx);
-    let action = match (key.clone(), value) {
-        (None, _) => ConfigAction::ShowAll,
-        (Some(k), None) => ConfigAction::ShowKey(k),
-        (Some(k), Some(v)) => ConfigAction::Set(k, v),
-    };
-
-    let result = state.with_api(|api| {
-        api.config(state.scope, action)
-            .map_err(|e| anyhow::anyhow!("{}", e))
-    })?;
-
-    let mut lines = Vec::new();
-    if let Some(config) = &result.config {
-        if key.is_none() {
-            for (k, v) in config.list_all() {
-                lines.push(format!("{} = {}", k, v));
-            }
-        }
-    }
-
-    Ok(Output::Render(serde_json::json!({
-        "lines": lines,
-        "empty_message": "No configuration values.",
-        "messages": result.messages,
-    })))
 }
 
 #[handler]

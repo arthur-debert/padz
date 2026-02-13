@@ -26,7 +26,6 @@
 //! - `listed_pads`: Pads to display (as `DisplayPad` with current index)
 //! - `messages`: Structured messages with levels (info, success, warning, error)
 //! - `pad_paths`: File paths (for `path` command)
-//! - `config`: Configuration data (for `config` command)
 //!
 //! Both `affected_pads` and `listed_pads` use [`DisplayPad`], which pairs a [`Pad`]
 //! with its canonical [`DisplayIndex`]. This ensures consistent representation
@@ -57,19 +56,16 @@
 //! - [`export`]: Export pads to archive
 //! - [`import`]: Import pads from files
 //! - [`paths`]: Get filesystem paths to pads
-//! - [`config`]: Manage configuration
 //! - [`init`]: Initialize scope directories
 //! - [`doctor`]: Verify and fix data consistency
 //! - [`helpers`]: Shared utilities (index resolution, etc.)
 
-use crate::config::PadzConfig;
 use crate::error::{PadzError, Result};
 use crate::index::DisplayPad;
 use crate::model::Scope;
 use serde::Serialize;
 use std::path::PathBuf;
 
-pub mod config;
 pub mod create;
 pub mod delete;
 pub mod doctor;
@@ -159,7 +155,6 @@ pub struct CmdResult {
     pub affected_pads: Vec<DisplayPad>,
     pub listed_pads: Vec<DisplayPad>,
     pub pad_paths: Vec<PathBuf>,
-    pub config: Option<PadzConfig>,
     pub messages: Vec<CmdMessage>,
 }
 
@@ -180,11 +175,6 @@ impl CmdResult {
 
     pub fn with_pad_paths(mut self, paths: Vec<PathBuf>) -> Self {
         self.pad_paths = paths;
-        self
-    }
-
-    pub fn with_config(mut self, config: PadzConfig) -> Self {
-        self.config = Some(config);
         self
     }
 }

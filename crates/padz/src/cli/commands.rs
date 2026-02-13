@@ -17,7 +17,11 @@
 //! 5. **Error Handling**: Convert errors to user-friendly messages and exit codes
 
 use super::handlers::AppState;
-use super::setup::{build_command, parse_cli, Cli, Commands, CompletionAction, CompletionShell};
+use super::setup::{
+    build_command, parse_cli, Cli, Commands, CompletionAction, CompletionShell, ConfigSubcommand,
+};
+use clapfig::{Clapfig, ConfigAction, SearchMode, SearchPath};
+use padzapp::config::PadzConfig;
 use padzapp::error::Result;
 use padzapp::init::initialize;
 use standout::cli::{App, RunResult};
@@ -36,6 +40,11 @@ pub fn run() -> Result<()> {
             CompletionAction::Install => handle_install(*shell),
             CompletionAction::Print => handle_print(*shell),
         };
+    }
+
+    // Handle config via clapfig (needs paths but not full API)
+    if let Some(Commands::Config { action }) = &cli.command {
+        return handle_config(&cli, action);
     }
 
     // Initialize app state for handlers
@@ -114,9 +123,80 @@ fn create_app_state(cli: &Cli, output_mode: OutputMode) -> Result<AppState> {
     Ok(AppState::new(
         padz_ctx.api,
         scope,
-        padz_ctx.config.import_extensions.clone(),
+        padz_ctx.config.import_extensions(),
         output_mode,
     ))
+}
+
+fn handle_config(cli: &Cli, subcommand: &Option<ConfigSubcommand>) -> Result<()> {
+    let cwd = std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from("."));
+    let data_override = cli.data.as_ref().map(std::path::PathBuf::from);
+
+    // Resolve paths (lightweight version of initialize — just need dirs, not full API)
+    let project_padz_dir = match data_override {
+        Some(path) => {
+            if path.file_name().is_some_and(|name| name == ".padz") {
+                path
+            } else {
+                path.join(".padz")
+            }
+        }
+        None => padzapp::init::find_project_root(&cwd)
+            .map(|root| root.join(".padz"))
+            .unwrap_or_else(|| cwd.join(".padz")),
+    };
+
+    let global_data_dir = std::env::var("PADZ_GLOBAL_DATA")
+        .ok()
+        .map(std::path::PathBuf::from)
+        .unwrap_or_else(|| {
+            let proj_dirs = directories::ProjectDirs::from("com", "padz", "padz")
+                .expect("Could not determine config dir");
+            proj_dirs.data_dir().to_path_buf()
+        });
+
+    let use_global = cli.global;
+
+    // Build search paths and persist path based on scope
+    let (search_paths, persist_path) = if use_global {
+        (
+            vec![SearchPath::Path(global_data_dir.clone())],
+            SearchPath::Path(global_data_dir),
+        )
+    } else {
+        (
+            vec![
+                SearchPath::Path(global_data_dir),
+                SearchPath::Path(project_padz_dir.clone()),
+            ],
+            SearchPath::Path(project_padz_dir),
+        )
+    };
+
+    // Convert our ConfigSubcommand to clapfig's ConfigAction
+    let action = match subcommand {
+        None => ConfigAction::List,
+        Some(ConfigSubcommand::List) => ConfigAction::List,
+        Some(ConfigSubcommand::Gen { file }) => ConfigAction::Gen {
+            output: file.clone(),
+        },
+        Some(ConfigSubcommand::Get { key }) => ConfigAction::Get { key: key.clone() },
+        Some(ConfigSubcommand::Set { key, value }) => ConfigAction::Set {
+            key: key.clone(),
+            value: value.clone(),
+        },
+    };
+
+    Clapfig::builder::<PadzConfig>()
+        .app_name("padz")
+        .file_name("padz.toml")
+        .search_paths(search_paths)
+        .search_mode(SearchMode::FirstMatch)
+        .persist_path(persist_path)
+        .handle_and_print(&action)
+        .map_err(|e| padzapp::error::PadzError::Api(e.to_string()))?;
+
+    Ok(())
 }
 
 fn handle_print(shell_override: Option<CompletionShell>) -> Result<()> {

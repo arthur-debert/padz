@@ -289,10 +289,6 @@ impl<S: DataStore> PadzApi<S> {
         self.store.get_pad_path(&id, scope)
     }
 
-    pub fn config(&self, scope: Scope, action: ConfigAction) -> Result<commands::CmdResult> {
-        commands::config::run(&self.paths, scope, action)
-    }
-
     pub fn init(&self, scope: Scope) -> Result<commands::CmdResult> {
         commands::init::run(&self.paths, scope)
     }
@@ -454,7 +450,6 @@ fn normalize_single_to_deleted(s: &str) -> String {
 
 // parse_index_or_range and parse_path removed (imported from index.rs)
 
-pub use crate::commands::config::ConfigAction;
 pub use crate::model::TodoStatus;
 pub use commands::get::{PadFilter, PadStatusFilter};
 pub use commands::{CmdMessage, CmdResult, MessageLevel, PadUpdate, PadzPaths};
