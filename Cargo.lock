@@ -1310,6 +1310,7 @@ dependencies = [
  "tempfile",
  "thiserror 2.0.17",
  "timeago",
+ "toml 0.8.23",
  "unicode-width",
  "uuid",
 ]
