@@ -1,7 +1,7 @@
 use crate::commands::{CmdMessage, CmdResult};
 use crate::error::{PadzError, Result};
 use crate::index::{DisplayIndex, PadSelector};
-use crate::model::Scope;
+use crate::model::{Scope, TodoStatus};
 use crate::store::DataStore;
 use uuid::Uuid;
 
@@ -15,22 +15,27 @@ use super::helpers::{indexed_pads, pads_by_selectors};
 /// **Safety valve**: When purging pads that have children, the `recursive` flag must be set.
 /// This prevents accidental deletion of entire subtrees.
 ///
-/// - If `selectors` is empty, targets all deleted pads
+/// - If `selectors` is empty, targets all deleted pads (plus Done pads if `include_done` is true)
 /// - If `recursive` is false and any target has children, returns an error
 /// - If `confirmed` is false, returns an error (no pads are deleted)
+/// - `include_done`: when true and no selectors given, also purges pads with Done status
 pub fn run<S: DataStore>(
     store: &mut S,
     scope: Scope,
     selectors: &[PadSelector],
     recursive: bool,
     confirmed: bool,
+    include_done: bool,
 ) -> Result<CmdResult> {
     // 1. Resolve targets
     let pads_to_purge = if selectors.is_empty() {
         let all_pads = indexed_pads(store, scope)?;
         all_pads
             .into_iter()
-            .filter(|dp| matches!(dp.index, DisplayIndex::Deleted(_)))
+            .filter(|dp| {
+                matches!(dp.index, DisplayIndex::Deleted(_))
+                    || (include_done && dp.pad.metadata.status == TodoStatus::Done)
+            })
             .collect()
     } else {
         pads_by_selectors(store, scope, selectors, true)?
@@ -150,6 +155,7 @@ mod tests {
             &[],
             false, // recursive not needed
             true,  // confirmed
+            false, // include_done
         )
         .unwrap();
 
@@ -194,6 +200,7 @@ mod tests {
             &[],
             false, // recursive
             false, // confirmed = false
+            false, // include_done
         );
 
         assert!(result.is_err());
@@ -228,6 +235,7 @@ mod tests {
             &[PadSelector::Path(vec![DisplayIndex::Regular(1)])],
             false, // recursive
             true,  // confirmed
+            false, // include_done
         )
         .unwrap();
 
@@ -247,7 +255,7 @@ mod tests {
         create::run(&mut store, Scope::Project, "A".into(), "".into(), None).unwrap();
 
         // Purge deleted (none) - even with confirmed=true, should just say "No pads"
-        let res = run(&mut store, Scope::Project, &[], false, true).unwrap();
+        let res = run(&mut store, Scope::Project, &[], false, true, false).unwrap();
 
         assert_eq!(res.messages.len(), 1);
         assert!(res.messages[0].content.contains("No pads to purge"));
@@ -285,8 +293,9 @@ mod tests {
             &mut store,
             Scope::Project,
             &[PadSelector::Path(vec![DisplayIndex::Deleted(1)])],
-            true, // recursive = true
-            true, // confirmed = true
+            true,  // recursive = true
+            true,  // confirmed = true
+            false, // include_done
         )
         .unwrap();
 
@@ -327,6 +336,7 @@ mod tests {
             &[PadSelector::Path(vec![DisplayIndex::Regular(1)])],
             false, // recursive = false
             true,  // confirmed = true
+            false, // include_done
         );
 
         assert!(result.is_err());
@@ -363,6 +373,7 @@ mod tests {
             &[PadSelector::Path(vec![DisplayIndex::Deleted(1)])],
             false, // recursive
             true,  // confirmed
+            false, // include_done
         )
         .unwrap();
 
@@ -377,7 +388,7 @@ mod tests {
     fn purge_nothing_found() {
         let mut store = InMemoryStore::new();
         // Empty store - even with confirmed=true
-        let res = run(&mut store, Scope::Project, &[], false, true).unwrap();
+        let res = run(&mut store, Scope::Project, &[], false, true, false).unwrap();
         assert!(res.messages[0].content.contains("No pads to purge"));
     }
 
@@ -399,10 +410,133 @@ mod tests {
         .unwrap();
 
         // Purge without confirmation - error should show count
-        let result = run(&mut store, Scope::Project, &[], false, false);
+        let result = run(&mut store, Scope::Project, &[], false, false, false);
 
         assert!(result.is_err());
         let err = result.unwrap_err();
         assert!(err.to_string().contains("Purging 2 pad(s)"));
+    }
+
+    #[test]
+    fn purge_include_done_removes_completed_pads() {
+        let mut store = InMemoryStore::new();
+        create::run(
+            &mut store,
+            Scope::Project,
+            "Keep Me".into(),
+            "".into(),
+            None,
+        )
+        .unwrap();
+        create::run(
+            &mut store,
+            Scope::Project,
+            "Complete Me".into(),
+            "".into(),
+            None,
+        )
+        .unwrap();
+
+        // Newest-first: "Complete Me" = index 1, "Keep Me" = index 2
+        // Complete "Complete Me" (index 1)
+        crate::commands::status::complete(
+            &mut store,
+            Scope::Project,
+            &[PadSelector::Path(vec![DisplayIndex::Regular(1)])],
+        )
+        .unwrap();
+
+        // Purge with include_done=true (no selectors)
+        let res = run(&mut store, Scope::Project, &[], false, true, true).unwrap();
+
+        // Should purge the Done pad
+        assert!(res.messages.iter().any(|m| m.content.contains("Purging 1")));
+
+        // "Keep Me" (Planned) should still exist
+        let listed = get::run(&store, Scope::Project, get::PadFilter::default(), &[]).unwrap();
+        assert_eq!(listed.listed_pads.len(), 1);
+        assert_eq!(listed.listed_pads[0].pad.metadata.title, "Keep Me");
+    }
+
+    #[test]
+    fn purge_include_done_false_ignores_completed_pads() {
+        let mut store = InMemoryStore::new();
+        create::run(&mut store, Scope::Project, "A".into(), "".into(), None).unwrap();
+
+        // Complete pad A
+        crate::commands::status::complete(
+            &mut store,
+            Scope::Project,
+            &[PadSelector::Path(vec![DisplayIndex::Regular(1)])],
+        )
+        .unwrap();
+
+        // Purge with include_done=false (default / notes mode)
+        let res = run(&mut store, Scope::Project, &[], false, true, false).unwrap();
+
+        // No pads to purge (Done but not Deleted, and include_done is false)
+        assert!(res.messages[0].content.contains("No pads to purge"));
+
+        // A still exists
+        let listed = get::run(&store, Scope::Project, get::PadFilter::default(), &[]).unwrap();
+        assert_eq!(listed.listed_pads.len(), 1);
+    }
+
+    #[test]
+    fn purge_include_done_and_deleted_together() {
+        let mut store = InMemoryStore::new();
+        // Created in order: oldest first. Newest-first indexing means:
+        // "Active Pad" = 1 (newest), "Deleted Pad" = 2, "Done Pad" = 3 (oldest)
+        create::run(
+            &mut store,
+            Scope::Project,
+            "Done Pad".into(),
+            "".into(),
+            None,
+        )
+        .unwrap();
+        create::run(
+            &mut store,
+            Scope::Project,
+            "Deleted Pad".into(),
+            "".into(),
+            None,
+        )
+        .unwrap();
+        create::run(
+            &mut store,
+            Scope::Project,
+            "Active Pad".into(),
+            "".into(),
+            None,
+        )
+        .unwrap();
+
+        // Complete "Active Pad" (index 1, newest) - wait, we want to keep it.
+        // Complete "Done Pad" (index 3)
+        crate::commands::status::complete(
+            &mut store,
+            Scope::Project,
+            &[PadSelector::Path(vec![DisplayIndex::Regular(3)])],
+        )
+        .unwrap();
+
+        // Delete "Deleted Pad" (index 2)
+        delete::run(
+            &mut store,
+            Scope::Project,
+            &[PadSelector::Path(vec![DisplayIndex::Regular(2)])],
+        )
+        .unwrap();
+
+        // Purge with include_done=true - should get both Done and Deleted
+        let res = run(&mut store, Scope::Project, &[], false, true, true).unwrap();
+
+        assert!(res.messages.iter().any(|m| m.content.contains("Purging 2")));
+
+        // Only "Active Pad" should remain
+        let listed = get::run(&store, Scope::Project, get::PadFilter::default(), &[]).unwrap();
+        assert_eq!(listed.listed_pads.len(), 1);
+        assert_eq!(listed.listed_pads[0].pad.metadata.title, "Active Pad");
     }
 }
