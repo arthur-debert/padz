@@ -109,7 +109,15 @@ mod tests {
             MemBackend::new(),
             MemBackend::new(),
         );
-        create::run(&mut store, Scope::Project, "Task".into(), "".into(), None).unwrap();
+        create::run(
+            &mut store,
+            Scope::Project,
+            "Task".into(),
+            "".into(),
+            None,
+            Vec::new(),
+        )
+        .unwrap();
 
         let sel = PadSelector::Path(vec![DisplayIndex::Regular(1)]);
         let result = complete(&mut store, Scope::Project, slice::from_ref(&sel)).unwrap();
@@ -131,7 +139,15 @@ mod tests {
             MemBackend::new(),
             MemBackend::new(),
         );
-        create::run(&mut store, Scope::Project, "Task".into(), "".into(), None).unwrap();
+        create::run(
+            &mut store,
+            Scope::Project,
+            "Task".into(),
+            "".into(),
+            None,
+            Vec::new(),
+        )
+        .unwrap();
 
         // First complete it
         let sel = PadSelector::Path(vec![DisplayIndex::Regular(1)]);
@@ -157,7 +173,15 @@ mod tests {
             MemBackend::new(),
             MemBackend::new(),
         );
-        create::run(&mut store, Scope::Project, "Task".into(), "".into(), None).unwrap();
+        create::run(
+            &mut store,
+            Scope::Project,
+            "Task".into(),
+            "".into(),
+            None,
+            Vec::new(),
+        )
+        .unwrap();
 
         let sel = PadSelector::Path(vec![DisplayIndex::Regular(1)]);
         complete(&mut store, Scope::Project, slice::from_ref(&sel)).unwrap();
@@ -180,7 +204,15 @@ mod tests {
             MemBackend::new(),
             MemBackend::new(),
         );
-        create::run(&mut store, Scope::Project, "Task".into(), "".into(), None).unwrap();
+        create::run(
+            &mut store,
+            Scope::Project,
+            "Task".into(),
+            "".into(),
+            None,
+            Vec::new(),
+        )
+        .unwrap();
 
         let sel = PadSelector::Path(vec![DisplayIndex::Regular(1)]);
 
@@ -202,8 +234,24 @@ mod tests {
             MemBackend::new(),
             MemBackend::new(),
         );
-        create::run(&mut store, Scope::Project, "A".into(), "".into(), None).unwrap();
-        create::run(&mut store, Scope::Project, "B".into(), "".into(), None).unwrap();
+        create::run(
+            &mut store,
+            Scope::Project,
+            "A".into(),
+            "".into(),
+            None,
+            Vec::new(),
+        )
+        .unwrap();
+        create::run(
+            &mut store,
+            Scope::Project,
+            "B".into(),
+            "".into(),
+            None,
+            Vec::new(),
+        )
+        .unwrap();
 
         let selectors = vec![
             PadSelector::Path(vec![DisplayIndex::Regular(1)]),
@@ -234,7 +282,15 @@ mod tests {
         );
 
         // Create parent
-        create::run(&mut store, Scope::Project, "Parent".into(), "".into(), None).unwrap();
+        create::run(
+            &mut store,
+            Scope::Project,
+            "Parent".into(),
+            "".into(),
+            None,
+            Vec::new(),
+        )
+        .unwrap();
 
         // Create child
         create::run(
@@ -243,6 +299,7 @@ mod tests {
             "Child".into(),
             "".into(),
             Some(PadSelector::Path(vec![DisplayIndex::Regular(1)])),
+            Vec::new(),
         )
         .unwrap();
 
@@ -266,7 +323,15 @@ mod tests {
         );
 
         // Create parent
-        create::run(&mut store, Scope::Project, "Parent".into(), "".into(), None).unwrap();
+        create::run(
+            &mut store,
+            Scope::Project,
+            "Parent".into(),
+            "".into(),
+            None,
+            Vec::new(),
+        )
+        .unwrap();
 
         // Create child
         create::run(
@@ -275,6 +340,7 @@ mod tests {
             "Child".into(),
             "".into(),
             Some(PadSelector::Path(vec![DisplayIndex::Regular(1)])),
+            Vec::new(),
         )
         .unwrap();
 

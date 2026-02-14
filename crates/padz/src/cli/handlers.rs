@@ -416,6 +416,23 @@ fn split_indexes_and_content(args: &[String]) -> (Vec<String>, Vec<String>) {
     (indexes, content)
 }
 
+/// Ensure tags exist in the registry and add them to the specified pads.
+fn apply_tags(
+    state: &AppState,
+    index_args: &[String],
+    tags: &[String],
+) -> Result<(), anyhow::Error> {
+    state.with_api(|api| {
+        for tag in tags {
+            api.ensure_tag(state.scope, tag)
+                .map_err(|e| anyhow::anyhow!("{}", e))?;
+        }
+        api.add_tags_to_pads(state.scope, index_args, tags)
+            .map_err(|e| anyhow::anyhow!("{}", e))?;
+        Ok(())
+    })
+}
+
 // =============================================================================
 // Core commands
 // =============================================================================
@@ -425,6 +442,7 @@ pub fn create(
     #[ctx] ctx: &CommandContext,
     #[flag(name = "no_editor")] no_editor: bool,
     #[arg] inside: Option<String>,
+    #[arg] tags: Vec<String>,
     #[arg] title: Vec<String>,
 ) -> Result<Output<Value>, anyhow::Error> {
     let state = get_state(ctx);
@@ -446,7 +464,7 @@ pub fn create(
         let (title, body) = extract_title_and_body(&expanded)
             .unwrap_or_else(|| ("Untitled".to_string(), String::new()));
         let result = state.with_api(|api| {
-            api.create_pad(state.scope, title.clone(), body.clone(), inside)
+            api.create_pad(state.scope, title.clone(), body.clone(), inside, &tags)
                 .map_err(|e| anyhow::anyhow!("{}", e))
         })?;
         // Copy to clipboard
@@ -470,7 +488,7 @@ pub fn create(
             (None, true) => "Untitled".to_string(),
         };
         let result = state.with_api(|api| {
-            api.create_pad(state.scope, final_title, parsed.content, inside)
+            api.create_pad(state.scope, final_title, parsed.content, inside, &tags)
                 .map_err(|e| anyhow::anyhow!("{}", e))
         })?;
         // Copy to clipboard
@@ -480,7 +498,7 @@ pub fn create(
         // Interactive: create pad first, then open real file in editor
         let initial_title = title_arg.clone().unwrap_or_else(|| "Untitled".to_string());
         let create_result = state.with_api(|api| {
-            api.create_pad(state.scope, initial_title, String::new(), inside)
+            api.create_pad(state.scope, initial_title, String::new(), inside, &tags)
                 .map_err(|e| anyhow::anyhow!("{}", e))
         })?;
         let pad_path = create_result.pad_paths[0].clone();
@@ -625,6 +643,7 @@ pub fn view(
 #[handler]
 pub fn edit(
     #[ctx] ctx: &CommandContext,
+    #[arg] tags: Vec<String>,
     #[arg] indexes: Vec<String>,
 ) -> Result<Output<Value>, anyhow::Error> {
     let state = get_state(ctx);
@@ -655,6 +674,11 @@ pub fn edit(
                 .map_err(|e| anyhow::anyhow!("{}", e))
         })?;
 
+        // Apply tags if provided
+        if !tags.is_empty() {
+            apply_tags(state, &index_args, &tags)?;
+        }
+
         let clipboard_text = raw.clone();
         let _ = copy_to_clipboard(&clipboard_text);
 
@@ -677,6 +701,11 @@ pub fn edit(
             api.update_pads_from_content(state.scope, &index_args, &raw)
                 .map_err(|e| anyhow::anyhow!("{}", e))
         })?;
+
+        // Apply tags if provided
+        if !tags.is_empty() {
+            apply_tags(state, &index_args, &tags)?;
+        }
 
         copy_content_to_clipboard(&raw);
 
@@ -717,6 +746,11 @@ pub fn edit(
             .map_err(|e| anyhow::anyhow!("{}", e))
     })? {
         Some(pad) => {
+            // Apply tags if provided
+            if !tags.is_empty() {
+                apply_tags(state, &index_args, &tags)?;
+            }
+
             copy_content_to_clipboard(&pad.content);
 
             let display_pad = padzapp::index::DisplayPad {

@@ -263,13 +263,22 @@ mod tests {
             MemBackend::new(),
         );
 
-        create::run(&mut store, Scope::Project, "Parent".into(), "".into(), None).unwrap();
+        create::run(
+            &mut store,
+            Scope::Project,
+            "Parent".into(),
+            "".into(),
+            None,
+            Vec::new(),
+        )
+        .unwrap();
         create::run(
             &mut store,
             Scope::Project,
             "Child A".into(),
             "".into(),
             Some(PadSelector::Path(vec![DisplayIndex::Regular(1)])),
+            Vec::new(),
         )
         .unwrap();
         create::run(
@@ -278,6 +287,7 @@ mod tests {
             "Child B".into(),
             "".into(),
             Some(PadSelector::Path(vec![DisplayIndex::Regular(1)])),
+            Vec::new(),
         )
         .unwrap();
         create::run(
@@ -286,6 +296,7 @@ mod tests {
             "Child C".into(),
             "".into(),
             Some(PadSelector::Path(vec![DisplayIndex::Regular(1)])),
+            Vec::new(),
         )
         .unwrap();
 
@@ -322,6 +333,7 @@ mod tests {
             "Parent 1".into(),
             "".into(),
             None,
+            Vec::new(),
         )
         .unwrap();
         create::run(
@@ -330,6 +342,7 @@ mod tests {
             "Child 1".into(),
             "".into(),
             Some(PadSelector::Path(vec![DisplayIndex::Regular(1)])),
+            Vec::new(),
         )
         .unwrap();
 
@@ -340,6 +353,7 @@ mod tests {
             "Parent 2".into(),
             "".into(),
             None,
+            Vec::new(),
         )
         .unwrap();
         create::run(
@@ -348,6 +362,7 @@ mod tests {
             "Child 2".into(),
             "".into(),
             Some(PadSelector::Path(vec![DisplayIndex::Regular(1)])),
+            Vec::new(),
         )
         .unwrap();
 
@@ -382,16 +397,33 @@ mod tests {
         );
 
         // Create: Root1 -> Child1, Root2
-        create::run(&mut store, Scope::Project, "Root 1".into(), "".into(), None).unwrap();
+        create::run(
+            &mut store,
+            Scope::Project,
+            "Root 1".into(),
+            "".into(),
+            None,
+            Vec::new(),
+        )
+        .unwrap();
         create::run(
             &mut store,
             Scope::Project,
             "Child 1".into(),
             "".into(),
             Some(PadSelector::Path(vec![DisplayIndex::Regular(1)])),
+            Vec::new(),
         )
         .unwrap();
-        create::run(&mut store, Scope::Project, "Root 2".into(), "".into(), None).unwrap();
+        create::run(
+            &mut store,
+            Scope::Project,
+            "Root 2".into(),
+            "".into(),
+            None,
+            Vec::new(),
+        )
+        .unwrap();
 
         // Order (newest first): Root 2 (1), Root 1 (2) with Child 1 (2.1)
         // Linear order: 1, 2, 2.1
@@ -421,17 +453,42 @@ mod tests {
         );
 
         // Create: Root1 -> Child1, Root2, Root3
-        create::run(&mut store, Scope::Project, "Root 1".into(), "".into(), None).unwrap();
+        create::run(
+            &mut store,
+            Scope::Project,
+            "Root 1".into(),
+            "".into(),
+            None,
+            Vec::new(),
+        )
+        .unwrap();
         create::run(
             &mut store,
             Scope::Project,
             "Child 1".into(),
             "".into(),
             Some(PadSelector::Path(vec![DisplayIndex::Regular(1)])),
+            Vec::new(),
         )
         .unwrap();
-        create::run(&mut store, Scope::Project, "Root 2".into(), "".into(), None).unwrap();
-        create::run(&mut store, Scope::Project, "Root 3".into(), "".into(), None).unwrap();
+        create::run(
+            &mut store,
+            Scope::Project,
+            "Root 2".into(),
+            "".into(),
+            None,
+            Vec::new(),
+        )
+        .unwrap();
+        create::run(
+            &mut store,
+            Scope::Project,
+            "Root 3".into(),
+            "".into(),
+            None,
+            Vec::new(),
+        )
+        .unwrap();
 
         // Order (newest first): Root 3 (1), Root 2 (2), Root 1 (3) with Child 1 (3.1)
         // Linear order: 1, 2, 3, 3.1
@@ -461,13 +518,22 @@ mod tests {
         );
 
         // Create parent with pinned child
-        create::run(&mut store, Scope::Project, "Parent".into(), "".into(), None).unwrap();
+        create::run(
+            &mut store,
+            Scope::Project,
+            "Parent".into(),
+            "".into(),
+            None,
+            Vec::new(),
+        )
+        .unwrap();
         create::run(
             &mut store,
             Scope::Project,
             "Child".into(),
             "".into(),
             Some(PadSelector::Path(vec![DisplayIndex::Regular(1)])),
+            Vec::new(),
         )
         .unwrap();
 
@@ -510,8 +576,24 @@ mod tests {
             MemBackend::new(),
             MemBackend::new(),
         );
-        create::run(&mut store, Scope::Project, "Alpha".into(), "".into(), None).unwrap();
-        create::run(&mut store, Scope::Project, "Beta".into(), "".into(), None).unwrap();
+        create::run(
+            &mut store,
+            Scope::Project,
+            "Alpha".into(),
+            "".into(),
+            None,
+            Vec::new(),
+        )
+        .unwrap();
+        create::run(
+            &mut store,
+            Scope::Project,
+            "Beta".into(),
+            "".into(),
+            None,
+            Vec::new(),
+        )
+        .unwrap();
 
         let result = resolve_selectors(
             &store,
@@ -540,6 +622,7 @@ mod tests {
             "Meeting Monday".into(),
             "".into(),
             None,
+            Vec::new(),
         )
         .unwrap();
         create::run(
@@ -548,6 +631,7 @@ mod tests {
             "Meeting Tuesday".into(),
             "".into(),
             None,
+            Vec::new(),
         )
         .unwrap();
         create::run(
@@ -556,6 +640,7 @@ mod tests {
             "Meeting Wednesday".into(),
             "".into(),
             None,
+            Vec::new(),
         )
         .unwrap();
 
@@ -580,9 +665,33 @@ mod tests {
             MemBackend::new(),
             MemBackend::new(),
         );
-        create::run(&mut store, Scope::Project, "Alpha".into(), "".into(), None).unwrap();
-        create::run(&mut store, Scope::Project, "Beta".into(), "".into(), None).unwrap();
-        create::run(&mut store, Scope::Project, "Gamma".into(), "".into(), None).unwrap();
+        create::run(
+            &mut store,
+            Scope::Project,
+            "Alpha".into(),
+            "".into(),
+            None,
+            Vec::new(),
+        )
+        .unwrap();
+        create::run(
+            &mut store,
+            Scope::Project,
+            "Beta".into(),
+            "".into(),
+            None,
+            Vec::new(),
+        )
+        .unwrap();
+        create::run(
+            &mut store,
+            Scope::Project,
+            "Gamma".into(),
+            "".into(),
+            None,
+            Vec::new(),
+        )
+        .unwrap();
 
         let result = resolve_selectors(
             &store,
@@ -613,6 +722,7 @@ mod tests {
             "Shopping List".into(),
             "Buy apples and oranges".into(),
             None,
+            Vec::new(),
         )
         .unwrap();
         create::run(
@@ -621,6 +731,7 @@ mod tests {
             "Todo List".into(),
             "Call dentist".into(),
             None,
+            Vec::new(),
         )
         .unwrap();
 
@@ -665,6 +776,7 @@ mod tests {
             "UPPERCASE TITLE".into(),
             "".into(),
             None,
+            Vec::new(),
         )
         .unwrap();
 
@@ -697,6 +809,7 @@ mod tests {
             "ProtectedPad".into(),
             "".into(),
             None,
+            Vec::new(),
         )
         .unwrap();
 
@@ -735,6 +848,7 @@ mod tests {
             "ProtectedPad".into(),
             "".into(),
             None,
+            Vec::new(),
         )
         .unwrap();
 
@@ -768,9 +882,33 @@ mod tests {
         );
 
         // Create pads: newest first, so order is 1, 2, 3
-        create::run(&mut store, Scope::Project, "Pad A".into(), "".into(), None).unwrap();
-        create::run(&mut store, Scope::Project, "Pad B".into(), "".into(), None).unwrap();
-        create::run(&mut store, Scope::Project, "Pad C".into(), "".into(), None).unwrap();
+        create::run(
+            &mut store,
+            Scope::Project,
+            "Pad A".into(),
+            "".into(),
+            None,
+            Vec::new(),
+        )
+        .unwrap();
+        create::run(
+            &mut store,
+            Scope::Project,
+            "Pad B".into(),
+            "".into(),
+            None,
+            Vec::new(),
+        )
+        .unwrap();
+        create::run(
+            &mut store,
+            Scope::Project,
+            "Pad C".into(),
+            "".into(),
+            None,
+            Vec::new(),
+        )
+        .unwrap();
 
         // Try to select range 3-1 (reversed order)
         let result = resolve_selectors(
@@ -797,7 +935,15 @@ mod tests {
             MemBackend::new(),
         );
 
-        create::run(&mut store, Scope::Project, "Pad A".into(), "".into(), None).unwrap();
+        create::run(
+            &mut store,
+            Scope::Project,
+            "Pad A".into(),
+            "".into(),
+            None,
+            Vec::new(),
+        )
+        .unwrap();
 
         // Try to select range starting from nonexistent index
         let result = resolve_selectors(
@@ -825,7 +971,15 @@ mod tests {
             MemBackend::new(),
         );
 
-        create::run(&mut store, Scope::Project, "Pad A".into(), "".into(), None).unwrap();
+        create::run(
+            &mut store,
+            Scope::Project,
+            "Pad A".into(),
+            "".into(),
+            None,
+            Vec::new(),
+        )
+        .unwrap();
 
         // Try to select range ending at nonexistent index
         let result = resolve_selectors(
@@ -853,9 +1007,33 @@ mod tests {
             MemBackend::new(),
         );
 
-        create::run(&mut store, Scope::Project, "Pad A".into(), "".into(), None).unwrap();
-        create::run(&mut store, Scope::Project, "Pad B".into(), "".into(), None).unwrap();
-        create::run(&mut store, Scope::Project, "Pad C".into(), "".into(), None).unwrap();
+        create::run(
+            &mut store,
+            Scope::Project,
+            "Pad A".into(),
+            "".into(),
+            None,
+            Vec::new(),
+        )
+        .unwrap();
+        create::run(
+            &mut store,
+            Scope::Project,
+            "Pad B".into(),
+            "".into(),
+            None,
+            Vec::new(),
+        )
+        .unwrap();
+        create::run(
+            &mut store,
+            Scope::Project,
+            "Pad C".into(),
+            "".into(),
+            None,
+            Vec::new(),
+        )
+        .unwrap();
 
         // Protect the middle pad (index 2)
         let pads = store.list_pads(Scope::Project, Bucket::Active).unwrap();
@@ -894,7 +1072,15 @@ mod tests {
             MemBackend::new(),
         );
 
-        create::run(&mut store, Scope::Project, "Pad A".into(), "".into(), None).unwrap();
+        create::run(
+            &mut store,
+            Scope::Project,
+            "Pad A".into(),
+            "".into(),
+            None,
+            Vec::new(),
+        )
+        .unwrap();
 
         let result = resolve_selectors(
             &store,
@@ -917,7 +1103,15 @@ mod tests {
             MemBackend::new(),
         );
 
-        create::run(&mut store, Scope::Project, "Pad A".into(), "".into(), None).unwrap();
+        create::run(
+            &mut store,
+            Scope::Project,
+            "Pad A".into(),
+            "".into(),
+            None,
+            Vec::new(),
+        )
+        .unwrap();
 
         // Protect the pad
         let pads = store.list_pads(Scope::Project, Bucket::Active).unwrap();

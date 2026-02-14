@@ -98,8 +98,24 @@ mod tests {
             MemBackend::new(),
             MemBackend::new(),
         );
-        create::run(&mut store, Scope::Project, "A".into(), "".into(), None).unwrap();
-        create::run(&mut store, Scope::Project, "B".into(), "".into(), None).unwrap();
+        create::run(
+            &mut store,
+            Scope::Project,
+            "A".into(),
+            "".into(),
+            None,
+            Vec::new(),
+        )
+        .unwrap();
+        create::run(
+            &mut store,
+            Scope::Project,
+            "B".into(),
+            "".into(),
+            None,
+            Vec::new(),
+        )
+        .unwrap();
 
         let sel = PadSelector::Path(vec![DisplayIndex::Regular(1)]);
         pin(&mut store, Scope::Project, slice::from_ref(&sel)).unwrap();
@@ -119,7 +135,15 @@ mod tests {
             MemBackend::new(),
             MemBackend::new(),
         );
-        create::run(&mut store, Scope::Project, "A".into(), "".into(), None).unwrap();
+        create::run(
+            &mut store,
+            Scope::Project,
+            "A".into(),
+            "".into(),
+            None,
+            Vec::new(),
+        )
+        .unwrap();
         let sel = PadSelector::Path(vec![DisplayIndex::Regular(1)]);
         pin(&mut store, Scope::Project, slice::from_ref(&sel)).unwrap();
         unpin(&mut store, Scope::Project, slice::from_ref(&sel)).unwrap();
@@ -139,7 +163,15 @@ mod tests {
             MemBackend::new(),
             MemBackend::new(),
         );
-        create::run(&mut store, Scope::Project, "A".into(), "".into(), None).unwrap();
+        create::run(
+            &mut store,
+            Scope::Project,
+            "A".into(),
+            "".into(),
+            None,
+            Vec::new(),
+        )
+        .unwrap();
 
         // Pin it
         pin(
@@ -191,7 +223,15 @@ mod tests {
             MemBackend::new(),
             MemBackend::new(),
         );
-        create::run(&mut store, Scope::Project, "A".into(), "".into(), None).unwrap();
+        create::run(
+            &mut store,
+            Scope::Project,
+            "A".into(),
+            "".into(),
+            None,
+            Vec::new(),
+        )
+        .unwrap();
 
         // Pin first time
         pin(
@@ -225,7 +265,15 @@ mod tests {
             MemBackend::new(),
             MemBackend::new(),
         );
-        create::run(&mut store, Scope::Project, "A".into(), "".into(), None).unwrap();
+        create::run(
+            &mut store,
+            Scope::Project,
+            "A".into(),
+            "".into(),
+            None,
+            Vec::new(),
+        )
+        .unwrap();
 
         // Unpin unpinned
         let result = unpin(
@@ -251,8 +299,24 @@ mod tests {
             MemBackend::new(),
             MemBackend::new(),
         );
-        create::run(&mut store, Scope::Project, "A".into(), "".into(), None).unwrap();
-        create::run(&mut store, Scope::Project, "B".into(), "".into(), None).unwrap();
+        create::run(
+            &mut store,
+            Scope::Project,
+            "A".into(),
+            "".into(),
+            None,
+            Vec::new(),
+        )
+        .unwrap();
+        create::run(
+            &mut store,
+            Scope::Project,
+            "B".into(),
+            "".into(),
+            None,
+            Vec::new(),
+        )
+        .unwrap();
 
         let selectors = vec![
             PadSelector::Path(vec![DisplayIndex::Regular(1)]),

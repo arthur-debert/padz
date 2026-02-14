@@ -146,6 +146,7 @@ mod tests {
             "Title".into(),
             "Old".into(),
             None,
+            Vec::new(),
         )
         .unwrap();
         let update = PadUpdate::new(DisplayIndex::Regular(1), "Title".into(), "New".into());
@@ -187,6 +188,7 @@ mod tests {
             "Old Title".into(),
             "Content".into(),
             None,
+            Vec::new(),
         )
         .unwrap();
 
@@ -217,8 +219,24 @@ mod tests {
             MemBackend::new(),
             MemBackend::new(),
         );
-        create::run(&mut store, Scope::Project, "A".into(), "".into(), None).unwrap();
-        create::run(&mut store, Scope::Project, "B".into(), "".into(), None).unwrap();
+        create::run(
+            &mut store,
+            Scope::Project,
+            "A".into(),
+            "".into(),
+            None,
+            Vec::new(),
+        )
+        .unwrap();
+        create::run(
+            &mut store,
+            Scope::Project,
+            "B".into(),
+            "".into(),
+            None,
+            Vec::new(),
+        )
+        .unwrap();
 
         let updates = vec![
             PadUpdate::new(
@@ -265,7 +283,15 @@ mod tests {
             MemBackend::new(),
             MemBackend::new(),
         );
-        create::run(&mut store, Scope::Project, "Title".into(), "".into(), None).unwrap();
+        create::run(
+            &mut store,
+            Scope::Project,
+            "Title".into(),
+            "".into(),
+            None,
+            Vec::new(),
+        )
+        .unwrap();
 
         // Update with content that needs normalization (title not in body)
         let update = PadUpdate::new(
@@ -297,7 +323,15 @@ mod tests {
             MemBackend::new(),
             MemBackend::new(),
         );
-        create::run(&mut store, Scope::Project, "Title".into(), "".into(), None).unwrap();
+        create::run(
+            &mut store,
+            Scope::Project,
+            "Title".into(),
+            "".into(),
+            None,
+            Vec::new(),
+        )
+        .unwrap();
 
         let pads_before = store.list_pads(Scope::Project, Bucket::Active).unwrap();
         let original_updated_at = pads_before[0].metadata.updated_at;
@@ -326,7 +360,15 @@ mod tests {
             MemBackend::new(),
             MemBackend::new(),
         );
-        create::run(&mut store, Scope::Project, "Title".into(), "".into(), None).unwrap();
+        create::run(
+            &mut store,
+            Scope::Project,
+            "Title".into(),
+            "".into(),
+            None,
+            Vec::new(),
+        )
+        .unwrap();
 
         let update = PadUpdate::new(
             DisplayIndex::Regular(1),
@@ -352,7 +394,15 @@ mod tests {
             MemBackend::new(),
             MemBackend::new(),
         );
-        create::run(&mut store, Scope::Project, "Title".into(), "".into(), None).unwrap();
+        create::run(
+            &mut store,
+            Scope::Project,
+            "Title".into(),
+            "".into(),
+            None,
+            Vec::new(),
+        )
+        .unwrap();
 
         let update = PadUpdate::new(
             DisplayIndex::Regular(1),
@@ -375,7 +425,15 @@ mod tests {
             MemBackend::new(),
             MemBackend::new(),
         );
-        create::run(&mut store, Scope::Project, "Title".into(), "".into(), None).unwrap();
+        create::run(
+            &mut store,
+            Scope::Project,
+            "Title".into(),
+            "".into(),
+            None,
+            Vec::new(),
+        )
+        .unwrap();
 
         let update = PadUpdate::new(DisplayIndex::Regular(99), "Title".into(), "Content".into());
         let result = run(&mut store, Scope::Project, &[update]);
@@ -391,7 +449,15 @@ mod tests {
             MemBackend::new(),
             MemBackend::new(),
         );
-        create::run(&mut store, Scope::Project, "Title".into(), "".into(), None).unwrap();
+        create::run(
+            &mut store,
+            Scope::Project,
+            "Title".into(),
+            "".into(),
+            None,
+            Vec::new(),
+        )
+        .unwrap();
 
         let pads_before = store.list_pads(Scope::Project, Bucket::Active).unwrap();
         let original_created_at = pads_before[0].metadata.created_at;
@@ -421,7 +487,15 @@ mod tests {
         );
 
         // 1. Create a parent (initially Planned)
-        create::run(&mut store, Scope::Project, "Parent".into(), "".into(), None).unwrap();
+        create::run(
+            &mut store,
+            Scope::Project,
+            "Parent".into(),
+            "".into(),
+            None,
+            Vec::new(),
+        )
+        .unwrap();
 
         // 2. Create a child (initially Planned)
         create::run(
@@ -430,6 +504,7 @@ mod tests {
             "Child".into(),
             "".into(),
             Some(PadSelector::Path(vec![DisplayIndex::Regular(1)])),
+            Vec::new(),
         )
         .unwrap();
 
@@ -481,6 +556,7 @@ mod tests {
             "Original Title".into(),
             "Original body".into(),
             None,
+            Vec::new(),
         )
         .unwrap();
 
@@ -508,8 +584,24 @@ mod tests {
             MemBackend::new(),
             MemBackend::new(),
         );
-        create::run(&mut store, Scope::Project, "Pad A".into(), "".into(), None).unwrap();
-        create::run(&mut store, Scope::Project, "Pad B".into(), "".into(), None).unwrap();
+        create::run(
+            &mut store,
+            Scope::Project,
+            "Pad A".into(),
+            "".into(),
+            None,
+            Vec::new(),
+        )
+        .unwrap();
+        create::run(
+            &mut store,
+            Scope::Project,
+            "Pad B".into(),
+            "".into(),
+            None,
+            Vec::new(),
+        )
+        .unwrap();
 
         let raw_content = "Shared New Title\n\nShared content for all selected pads.";
         let selectors = vec![
@@ -537,7 +629,15 @@ mod tests {
             MemBackend::new(),
             MemBackend::new(),
         );
-        create::run(&mut store, Scope::Project, "Test".into(), "".into(), None).unwrap();
+        create::run(
+            &mut store,
+            Scope::Project,
+            "Test".into(),
+            "".into(),
+            None,
+            Vec::new(),
+        )
+        .unwrap();
 
         let raw_content = "   \n\n   "; // Only whitespace
         let selectors = vec![PadSelector::Path(vec![DisplayIndex::Regular(1)])];
@@ -556,7 +656,15 @@ mod tests {
             MemBackend::new(),
             MemBackend::new(),
         );
-        create::run(&mut store, Scope::Project, "Title".into(), "".into(), None).unwrap();
+        create::run(
+            &mut store,
+            Scope::Project,
+            "Title".into(),
+            "".into(),
+            None,
+            Vec::new(),
+        )
+        .unwrap();
 
         let pads_before = store.list_pads(Scope::Project, Bucket::Active).unwrap();
         let original_id = pads_before[0].metadata.id;
@@ -591,6 +699,7 @@ mod tests {
             "Original".into(),
             "Original body".into(),
             None,
+            Vec::new(),
         )
         .unwrap();
 
@@ -612,7 +721,15 @@ mod tests {
             MemBackend::new(),
             MemBackend::new(),
         );
-        create::run(&mut store, Scope::Project, "Test".into(), "".into(), None).unwrap();
+        create::run(
+            &mut store,
+            Scope::Project,
+            "Test".into(),
+            "".into(),
+            None,
+            Vec::new(),
+        )
+        .unwrap();
 
         let raw_content = "New Content\n\nBody";
         let selectors = vec![PadSelector::Path(vec![DisplayIndex::Regular(99)])];

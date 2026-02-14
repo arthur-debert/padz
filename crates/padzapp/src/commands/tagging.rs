@@ -271,7 +271,15 @@ mod tests {
     #[test]
     fn test_add_tags_single_pad() {
         let mut store = setup_store_with_tag();
-        create::run(&mut store, Scope::Project, "Test".into(), "".into(), None).unwrap();
+        create::run(
+            &mut store,
+            Scope::Project,
+            "Test".into(),
+            "".into(),
+            None,
+            Vec::new(),
+        )
+        .unwrap();
 
         let selectors = vec![PadSelector::Path(vec![DisplayIndex::Regular(1)])];
         let result = add_tags(
@@ -294,7 +302,15 @@ mod tests {
     #[test]
     fn test_add_tags_multiple_tags() {
         let mut store = setup_store_with_tag();
-        create::run(&mut store, Scope::Project, "Test".into(), "".into(), None).unwrap();
+        create::run(
+            &mut store,
+            Scope::Project,
+            "Test".into(),
+            "".into(),
+            None,
+            Vec::new(),
+        )
+        .unwrap();
 
         let selectors = vec![PadSelector::Path(vec![DisplayIndex::Regular(1)])];
         let result = add_tags(
@@ -314,7 +330,15 @@ mod tests {
     #[test]
     fn test_add_tags_nonexistent_tag() {
         let mut store = setup_store_with_tag();
-        create::run(&mut store, Scope::Project, "Test".into(), "".into(), None).unwrap();
+        create::run(
+            &mut store,
+            Scope::Project,
+            "Test".into(),
+            "".into(),
+            None,
+            Vec::new(),
+        )
+        .unwrap();
 
         let selectors = vec![PadSelector::Path(vec![DisplayIndex::Regular(1)])];
         let result = add_tags(
@@ -331,7 +355,15 @@ mod tests {
     #[test]
     fn test_add_tags_idempotent() {
         let mut store = setup_store_with_tag();
-        create::run(&mut store, Scope::Project, "Test".into(), "".into(), None).unwrap();
+        create::run(
+            &mut store,
+            Scope::Project,
+            "Test".into(),
+            "".into(),
+            None,
+            Vec::new(),
+        )
+        .unwrap();
 
         let selectors = vec![PadSelector::Path(vec![DisplayIndex::Regular(1)])];
         add_tags(
@@ -357,7 +389,15 @@ mod tests {
     #[test]
     fn test_remove_tags() {
         let mut store = setup_store_with_tag();
-        create::run(&mut store, Scope::Project, "Test".into(), "".into(), None).unwrap();
+        create::run(
+            &mut store,
+            Scope::Project,
+            "Test".into(),
+            "".into(),
+            None,
+            Vec::new(),
+        )
+        .unwrap();
 
         let selectors = vec![PadSelector::Path(vec![DisplayIndex::Regular(1)])];
         add_tags(
@@ -383,7 +423,15 @@ mod tests {
     #[test]
     fn test_remove_tags_not_present() {
         let mut store = setup_store_with_tag();
-        create::run(&mut store, Scope::Project, "Test".into(), "".into(), None).unwrap();
+        create::run(
+            &mut store,
+            Scope::Project,
+            "Test".into(),
+            "".into(),
+            None,
+            Vec::new(),
+        )
+        .unwrap();
 
         let selectors = vec![PadSelector::Path(vec![DisplayIndex::Regular(1)])];
         let result = remove_tags(
@@ -400,7 +448,15 @@ mod tests {
     #[test]
     fn test_clear_tags() {
         let mut store = setup_store_with_tag();
-        create::run(&mut store, Scope::Project, "Test".into(), "".into(), None).unwrap();
+        create::run(
+            &mut store,
+            Scope::Project,
+            "Test".into(),
+            "".into(),
+            None,
+            Vec::new(),
+        )
+        .unwrap();
 
         let selectors = vec![PadSelector::Path(vec![DisplayIndex::Regular(1)])];
         add_tags(
@@ -420,7 +476,15 @@ mod tests {
     #[test]
     fn test_clear_tags_empty() {
         let mut store = setup_store_with_tag();
-        create::run(&mut store, Scope::Project, "Test".into(), "".into(), None).unwrap();
+        create::run(
+            &mut store,
+            Scope::Project,
+            "Test".into(),
+            "".into(),
+            None,
+            Vec::new(),
+        )
+        .unwrap();
 
         let selectors = vec![PadSelector::Path(vec![DisplayIndex::Regular(1)])];
         let result = clear_tags(&mut store, Scope::Project, &selectors).unwrap();
@@ -431,7 +495,15 @@ mod tests {
     #[test]
     fn test_add_tags_no_tags_error() {
         let mut store = setup_store_with_tag();
-        create::run(&mut store, Scope::Project, "Test".into(), "".into(), None).unwrap();
+        create::run(
+            &mut store,
+            Scope::Project,
+            "Test".into(),
+            "".into(),
+            None,
+            Vec::new(),
+        )
+        .unwrap();
 
         let selectors = vec![PadSelector::Path(vec![DisplayIndex::Regular(1)])];
         let result = add_tags(&mut store, Scope::Project, &selectors, &[]);

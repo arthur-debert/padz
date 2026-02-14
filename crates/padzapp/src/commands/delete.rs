@@ -78,7 +78,15 @@ mod tests {
             MemBackend::new(),
             MemBackend::new(),
         );
-        create::run(&mut store, Scope::Project, "Title".into(), "".into(), None).unwrap();
+        create::run(
+            &mut store,
+            Scope::Project,
+            "Title".into(),
+            "".into(),
+            None,
+            Vec::new(),
+        )
+        .unwrap();
         run(
             &mut store,
             Scope::Project,
@@ -117,6 +125,7 @@ mod tests {
             "Protected".into(),
             "".into(),
             None,
+            Vec::new(),
         )
         .unwrap();
 
@@ -164,7 +173,15 @@ mod tests {
         );
 
         // Create parent
-        create::run(&mut store, Scope::Project, "Parent".into(), "".into(), None).unwrap();
+        create::run(
+            &mut store,
+            Scope::Project,
+            "Parent".into(),
+            "".into(),
+            None,
+            Vec::new(),
+        )
+        .unwrap();
 
         // Create child inside parent
         create::run(
@@ -173,6 +190,7 @@ mod tests {
             "Child".into(),
             "".into(),
             Some(PadSelector::Path(vec![DisplayIndex::Regular(1)])),
+            Vec::new(),
         )
         .unwrap();
 
@@ -223,7 +241,15 @@ mod tests {
         );
 
         // Create parent
-        create::run(&mut store, Scope::Project, "Parent".into(), "".into(), None).unwrap();
+        create::run(
+            &mut store,
+            Scope::Project,
+            "Parent".into(),
+            "".into(),
+            None,
+            Vec::new(),
+        )
+        .unwrap();
 
         // Create child inside parent
         create::run(
@@ -232,6 +258,7 @@ mod tests {
             "Child".into(),
             "".into(),
             Some(PadSelector::Path(vec![DisplayIndex::Regular(1)])),
+            Vec::new(),
         )
         .unwrap();
 

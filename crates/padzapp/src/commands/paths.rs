@@ -35,7 +35,15 @@ mod tests {
             MemBackend::new(),
             MemBackend::new(),
         );
-        create::run(&mut store, Scope::Project, "Pad A".into(), "".into(), None).unwrap();
+        create::run(
+            &mut store,
+            Scope::Project,
+            "Pad A".into(),
+            "".into(),
+            None,
+            Vec::new(),
+        )
+        .unwrap();
 
         let res = run(
             &store,
@@ -61,8 +69,24 @@ mod tests {
             MemBackend::new(),
             MemBackend::new(),
         );
-        create::run(&mut store, Scope::Project, "Pad A".into(), "".into(), None).unwrap();
-        create::run(&mut store, Scope::Project, "Pad B".into(), "".into(), None).unwrap();
+        create::run(
+            &mut store,
+            Scope::Project,
+            "Pad A".into(),
+            "".into(),
+            None,
+            Vec::new(),
+        )
+        .unwrap();
+        create::run(
+            &mut store,
+            Scope::Project,
+            "Pad B".into(),
+            "".into(),
+            None,
+            Vec::new(),
+        )
+        .unwrap();
 
         // 1 is B, 2 is A
         let res = run(

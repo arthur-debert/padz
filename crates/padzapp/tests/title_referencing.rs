@@ -23,6 +23,7 @@ fn setup() -> PadzApi<BucketedStore<MemBackend>> {
         "Groceries".to_string(),
         "Milk, Eggs".to_string(),
         None,
+        &[],
     )
     .unwrap();
     api.create_pad(
@@ -30,10 +31,17 @@ fn setup() -> PadzApi<BucketedStore<MemBackend>> {
         "Grocery List".to_string(),
         "Bread, Butter".to_string(),
         None,
+        &[],
     )
     .unwrap();
-    api.create_pad(Scope::Project, "Gold".to_string(), "Au".to_string(), None)
-        .unwrap();
+    api.create_pad(
+        Scope::Project,
+        "Gold".to_string(),
+        "Au".to_string(),
+        None,
+        &[],
+    )
+    .unwrap();
 
     api
 }

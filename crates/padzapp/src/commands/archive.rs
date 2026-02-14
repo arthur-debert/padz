@@ -78,7 +78,15 @@ mod tests {
             MemBackend::new(),
             MemBackend::new(),
         );
-        create::run(&mut store, Scope::Project, "Title".into(), "".into(), None).unwrap();
+        create::run(
+            &mut store,
+            Scope::Project,
+            "Title".into(),
+            "".into(),
+            None,
+            Vec::new(),
+        )
+        .unwrap();
         run(
             &mut store,
             Scope::Project,
@@ -116,13 +124,22 @@ mod tests {
             MemBackend::new(),
         );
 
-        create::run(&mut store, Scope::Project, "Parent".into(), "".into(), None).unwrap();
+        create::run(
+            &mut store,
+            Scope::Project,
+            "Parent".into(),
+            "".into(),
+            None,
+            Vec::new(),
+        )
+        .unwrap();
         create::run(
             &mut store,
             Scope::Project,
             "Child".into(),
             "".into(),
             Some(PadSelector::Path(vec![DisplayIndex::Regular(1)])),
+            Vec::new(),
         )
         .unwrap();
 
@@ -159,13 +176,22 @@ mod tests {
             MemBackend::new(),
         );
 
-        create::run(&mut store, Scope::Project, "Parent".into(), "".into(), None).unwrap();
+        create::run(
+            &mut store,
+            Scope::Project,
+            "Parent".into(),
+            "".into(),
+            None,
+            Vec::new(),
+        )
+        .unwrap();
         create::run(
             &mut store,
             Scope::Project,
             "Child".into(),
             "".into(),
             Some(PadSelector::Path(vec![DisplayIndex::Regular(1)])),
+            Vec::new(),
         )
         .unwrap();
 

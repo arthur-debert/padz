@@ -136,7 +136,15 @@ mod tests {
             MemBackend::new(),
             MemBackend::new(),
         );
-        create::run(&mut store, Scope::Project, "A".into(), "".into(), None).unwrap();
+        create::run(
+            &mut store,
+            Scope::Project,
+            "A".into(),
+            "".into(),
+            None,
+            Vec::new(),
+        )
+        .unwrap();
 
         // Delete it
         delete::run(
@@ -199,7 +207,15 @@ mod tests {
             MemBackend::new(),
             MemBackend::new(),
         );
-        create::run(&mut store, Scope::Project, "A".into(), "".into(), None).unwrap();
+        create::run(
+            &mut store,
+            Scope::Project,
+            "A".into(),
+            "".into(),
+            None,
+            Vec::new(),
+        )
+        .unwrap();
 
         // Delete it
         delete::run(
@@ -247,7 +263,15 @@ mod tests {
             MemBackend::new(),
             MemBackend::new(),
         );
-        create::run(&mut store, Scope::Project, "A".into(), "".into(), None).unwrap();
+        create::run(
+            &mut store,
+            Scope::Project,
+            "A".into(),
+            "".into(),
+            None,
+            Vec::new(),
+        )
+        .unwrap();
 
         // Purge active pad 1 (no children, so recursive not needed)
         let res = run(
@@ -278,7 +302,15 @@ mod tests {
             MemBackend::new(),
             MemBackend::new(),
         );
-        create::run(&mut store, Scope::Project, "A".into(), "".into(), None).unwrap();
+        create::run(
+            &mut store,
+            Scope::Project,
+            "A".into(),
+            "".into(),
+            None,
+            Vec::new(),
+        )
+        .unwrap();
 
         // Purge deleted (none) - even with confirmed=true, should just say "No pads"
         let res = run(&mut store, Scope::Project, &[], false, true, false).unwrap();
@@ -300,7 +332,15 @@ mod tests {
             MemBackend::new(),
         );
         // Create Parent
-        create::run(&mut store, Scope::Project, "Parent".into(), "".into(), None).unwrap();
+        create::run(
+            &mut store,
+            Scope::Project,
+            "Parent".into(),
+            "".into(),
+            None,
+            Vec::new(),
+        )
+        .unwrap();
         // Create Child inside Parent (id=1)
         create::run(
             &mut store,
@@ -308,6 +348,7 @@ mod tests {
             "Child".into(),
             "".into(),
             Some(PadSelector::Path(vec![DisplayIndex::Regular(1)])),
+            Vec::new(),
         )
         .unwrap();
 
@@ -366,7 +407,15 @@ mod tests {
             MemBackend::new(),
         );
         // Create Parent
-        create::run(&mut store, Scope::Project, "Parent".into(), "".into(), None).unwrap();
+        create::run(
+            &mut store,
+            Scope::Project,
+            "Parent".into(),
+            "".into(),
+            None,
+            Vec::new(),
+        )
+        .unwrap();
         // Create Child inside Parent
         create::run(
             &mut store,
@@ -374,6 +423,7 @@ mod tests {
             "Child".into(),
             "".into(),
             Some(PadSelector::Path(vec![DisplayIndex::Regular(1)])),
+            Vec::new(),
         )
         .unwrap();
 
@@ -405,8 +455,24 @@ mod tests {
             MemBackend::new(),
             MemBackend::new(),
         );
-        create::run(&mut store, Scope::Project, "A".into(), "".into(), None).unwrap();
-        create::run(&mut store, Scope::Project, "B".into(), "".into(), None).unwrap();
+        create::run(
+            &mut store,
+            Scope::Project,
+            "A".into(),
+            "".into(),
+            None,
+            Vec::new(),
+        )
+        .unwrap();
+        create::run(
+            &mut store,
+            Scope::Project,
+            "B".into(),
+            "".into(),
+            None,
+            Vec::new(),
+        )
+        .unwrap();
 
         // Delete both to make them purgeable candidates
         delete::run(
@@ -457,8 +523,24 @@ mod tests {
             MemBackend::new(),
             MemBackend::new(),
         );
-        create::run(&mut store, Scope::Project, "A".into(), "".into(), None).unwrap();
-        create::run(&mut store, Scope::Project, "B".into(), "".into(), None).unwrap();
+        create::run(
+            &mut store,
+            Scope::Project,
+            "A".into(),
+            "".into(),
+            None,
+            Vec::new(),
+        )
+        .unwrap();
+        create::run(
+            &mut store,
+            Scope::Project,
+            "B".into(),
+            "".into(),
+            None,
+            Vec::new(),
+        )
+        .unwrap();
 
         // Delete both
         delete::run(
@@ -493,6 +575,7 @@ mod tests {
             "Keep Me".into(),
             "".into(),
             None,
+            Vec::new(),
         )
         .unwrap();
         create::run(
@@ -501,6 +584,7 @@ mod tests {
             "Complete Me".into(),
             "".into(),
             None,
+            Vec::new(),
         )
         .unwrap();
 
@@ -533,7 +617,15 @@ mod tests {
             MemBackend::new(),
             MemBackend::new(),
         );
-        create::run(&mut store, Scope::Project, "A".into(), "".into(), None).unwrap();
+        create::run(
+            &mut store,
+            Scope::Project,
+            "A".into(),
+            "".into(),
+            None,
+            Vec::new(),
+        )
+        .unwrap();
 
         // Complete pad A
         crate::commands::status::complete(
@@ -570,6 +662,7 @@ mod tests {
             "Done Pad".into(),
             "".into(),
             None,
+            Vec::new(),
         )
         .unwrap();
         create::run(
@@ -578,6 +671,7 @@ mod tests {
             "Deleted Pad".into(),
             "".into(),
             None,
+            Vec::new(),
         )
         .unwrap();
         create::run(
@@ -586,6 +680,7 @@ mod tests {
             "Active Pad".into(),
             "".into(),
             None,
+            Vec::new(),
         )
         .unwrap();
 

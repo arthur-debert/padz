@@ -328,7 +328,15 @@ mod tests {
             MemBackend::new(),
             MemBackend::new(),
         );
-        create::run(&mut store, Scope::Project, "Active".into(), "".into(), None).unwrap();
+        create::run(
+            &mut store,
+            Scope::Project,
+            "Active".into(),
+            "".into(),
+            None,
+            Vec::new(),
+        )
+        .unwrap();
 
         let del_pad = crate::model::Pad::new("Deleted".into(), "".into());
         store
@@ -354,6 +362,7 @@ mod tests {
             "Test".into(),
             "Content".into(),
             None,
+            Vec::new(),
         )
         .unwrap();
         let pads = resolve_pads(&store, Scope::Project, &[]).unwrap();
@@ -564,7 +573,15 @@ mod tests {
             MemBackend::new(),
             MemBackend::new(),
         );
-        create::run(&mut store, Scope::Project, "A".into(), "".into(), None).unwrap();
+        create::run(
+            &mut store,
+            Scope::Project,
+            "A".into(),
+            "".into(),
+            None,
+            Vec::new(),
+        )
+        .unwrap();
 
         // Since run_single_file forces writing to CWD with a sanitized name,
         // we use a unique name to avoid collisions and check CWD.

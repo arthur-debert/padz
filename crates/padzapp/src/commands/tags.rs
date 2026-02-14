@@ -156,6 +156,21 @@ pub fn rename_tag<S: DataStore>(
     Ok(result)
 }
 
+/// Ensure a tag exists in the registry, creating it if needed.
+///
+/// This is idempotent: if the tag already exists, it's a no-op.
+/// Returns an error only if the tag name is invalid.
+pub fn ensure_tag<S: DataStore>(store: &mut S, scope: Scope, name: &str) -> Result<()> {
+    validate_tag_name(name).map_err(|e| PadzError::Api(e.to_string()))?;
+
+    let mut tags = store.load_tags(scope)?;
+    if !tags.iter().any(|t| t.name == name) {
+        tags.push(TagEntry::new(name.to_string()));
+        store.save_tags(scope, &tags)?;
+    }
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -266,6 +281,7 @@ mod tests {
             "Test Pad".into(),
             "".into(),
             None,
+            Vec::new(),
         )
         .unwrap();
 
@@ -365,6 +381,7 @@ mod tests {
             "Test Pad".into(),
             "".into(),
             None,
+            Vec::new(),
         )
         .unwrap();
 
@@ -397,5 +414,47 @@ mod tests {
 
         let result = list_tags(&store, Scope::Project).unwrap();
         assert!(result.messages[0].content.contains("2 tags defined"));
+    }
+
+    #[test]
+    fn test_ensure_tag_creates_new() {
+        let mut store = BucketedStore::new(
+            MemBackend::new(),
+            MemBackend::new(),
+            MemBackend::new(),
+            MemBackend::new(),
+        );
+        ensure_tag(&mut store, Scope::Project, "work").unwrap();
+
+        let tags = store.load_tags(Scope::Project).unwrap();
+        assert_eq!(tags.len(), 1);
+        assert_eq!(tags[0].name, "work");
+    }
+
+    #[test]
+    fn test_ensure_tag_idempotent() {
+        let mut store = BucketedStore::new(
+            MemBackend::new(),
+            MemBackend::new(),
+            MemBackend::new(),
+            MemBackend::new(),
+        );
+        ensure_tag(&mut store, Scope::Project, "work").unwrap();
+        ensure_tag(&mut store, Scope::Project, "work").unwrap();
+
+        let tags = store.load_tags(Scope::Project).unwrap();
+        assert_eq!(tags.len(), 1);
+    }
+
+    #[test]
+    fn test_ensure_tag_rejects_invalid() {
+        let mut store = BucketedStore::new(
+            MemBackend::new(),
+            MemBackend::new(),
+            MemBackend::new(),
+            MemBackend::new(),
+        );
+        let result = ensure_tag(&mut store, Scope::Project, "-invalid");
+        assert!(result.is_err());
     }
 }

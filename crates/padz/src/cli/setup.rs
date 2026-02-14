@@ -307,6 +307,10 @@ pub enum Commands {
         #[arg(long, short = 'i')]
         inside: Option<String>,
 
+        /// Tag the new pad (auto-creates tag if needed; repeatable)
+        #[arg(long = "add-tag", short = 't', num_args = 1..)]
+        tags: Vec<String>,
+
         /// Title words (joined with spaces, optional - opens empty editor if not provided)
         #[arg(trailing_var_arg = true)]
         title: Vec<String>,
@@ -396,6 +400,10 @@ pub enum Commands {
     #[command(alias = "e", display_order = 11, hide = true)]
     #[dispatch(pure, template = "modification_result")]
     Edit {
+        /// Tag the pad (auto-creates tag if needed; repeatable)
+        #[arg(long = "add-tag", short = 't', num_args = 1..)]
+        tags: Vec<String>,
+
         /// Indexes of the pads (e.g. 1 p1 d1)
         #[arg(required = true, num_args = 1.., add = active_pads_completer())]
         indexes: Vec<String>,
@@ -405,6 +413,10 @@ pub enum Commands {
     #[command(alias = "o", display_order = 12)]
     #[dispatch(pure, handler = handlers::edit__handler, template = "modification_result")]
     Open {
+        /// Tag the pad (auto-creates tag if needed; repeatable)
+        #[arg(long = "add-tag", short = 't', num_args = 1..)]
+        tags: Vec<String>,
+
         /// Indexes of the pads (e.g. 1 p1 d1)
         #[arg(required = true, num_args = 1.., add = all_pads_completer())]
         indexes: Vec<String>,

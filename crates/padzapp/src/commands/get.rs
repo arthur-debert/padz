@@ -513,13 +513,22 @@ mod tests {
             MemBackend::new(),
             MemBackend::new(),
         );
-        create::run(&mut store, Scope::Project, "Active".into(), "".into(), None).unwrap();
+        create::run(
+            &mut store,
+            Scope::Project,
+            "Active".into(),
+            "".into(),
+            None,
+            Vec::new(),
+        )
+        .unwrap();
         create::run(
             &mut store,
             Scope::Project,
             "Deleted".into(),
             "".into(),
             None,
+            Vec::new(),
         )
         .unwrap();
 
@@ -587,13 +596,22 @@ mod tests {
             MemBackend::new(),
             MemBackend::new(),
         );
-        create::run(&mut store, Scope::Project, "Foo".into(), "".into(), None).unwrap();
+        create::run(
+            &mut store,
+            Scope::Project,
+            "Foo".into(),
+            "".into(),
+            None,
+            Vec::new(),
+        )
+        .unwrap();
         create::run(
             &mut store,
             Scope::Project,
             "Bar".into(),
             "contains foo".into(),
             None,
+            Vec::new(),
         )
         .unwrap();
 
@@ -671,7 +689,15 @@ mod tests {
             MemBackend::new(),
         );
         // Create parent
-        create::run(&mut store, Scope::Project, "Parent".into(), "".into(), None).unwrap();
+        create::run(
+            &mut store,
+            Scope::Project,
+            "Parent".into(),
+            "".into(),
+            None,
+            Vec::new(),
+        )
+        .unwrap();
         // Create child inside parent
         create::run(
             &mut store,
@@ -679,6 +705,7 @@ mod tests {
             "Child".into(),
             "".into(),
             Some(PadSelector::Path(vec![DisplayIndex::Regular(1)])),
+            Vec::new(),
         )
         .unwrap();
 
@@ -701,7 +728,15 @@ mod tests {
             MemBackend::new(),
         );
         // Create parent
-        create::run(&mut store, Scope::Project, "Parent".into(), "".into(), None).unwrap();
+        create::run(
+            &mut store,
+            Scope::Project,
+            "Parent".into(),
+            "".into(),
+            None,
+            Vec::new(),
+        )
+        .unwrap();
         // Create two children
         create::run(
             &mut store,
@@ -709,6 +744,7 @@ mod tests {
             "Child1".into(),
             "".into(),
             Some(PadSelector::Path(vec![DisplayIndex::Regular(1)])),
+            Vec::new(),
         )
         .unwrap();
         create::run(
@@ -717,6 +753,7 @@ mod tests {
             "Child2".into(),
             "".into(),
             Some(PadSelector::Path(vec![DisplayIndex::Regular(1)])),
+            Vec::new(),
         )
         .unwrap();
 
@@ -748,13 +785,22 @@ mod tests {
             MemBackend::new(),
         );
         // Create parent with child
-        create::run(&mut store, Scope::Project, "Parent".into(), "".into(), None).unwrap();
+        create::run(
+            &mut store,
+            Scope::Project,
+            "Parent".into(),
+            "".into(),
+            None,
+            Vec::new(),
+        )
+        .unwrap();
         create::run(
             &mut store,
             Scope::Project,
             "Child".into(),
             "".into(),
             Some(PadSelector::Path(vec![DisplayIndex::Regular(1)])),
+            Vec::new(),
         )
         .unwrap();
 
@@ -797,13 +843,22 @@ mod tests {
             MemBackend::new(),
         );
         // Create parent with child
-        create::run(&mut store, Scope::Project, "Parent".into(), "".into(), None).unwrap();
+        create::run(
+            &mut store,
+            Scope::Project,
+            "Parent".into(),
+            "".into(),
+            None,
+            Vec::new(),
+        )
+        .unwrap();
         create::run(
             &mut store,
             Scope::Project,
             "Child".into(),
             "".into(),
             Some(PadSelector::Path(vec![DisplayIndex::Regular(1)])),
+            Vec::new(),
         )
         .unwrap();
 
@@ -839,6 +894,7 @@ mod tests {
             "Planned1".into(),
             "".into(),
             None,
+            Vec::new(),
         )
         .unwrap();
         create::run(
@@ -847,6 +903,7 @@ mod tests {
             "Planned2".into(),
             "".into(),
             None,
+            Vec::new(),
         )
         .unwrap();
 
@@ -888,9 +945,33 @@ mod tests {
             MemBackend::new(),
             MemBackend::new(),
         );
-        create::run(&mut store, Scope::Project, "Todo1".into(), "".into(), None).unwrap();
-        create::run(&mut store, Scope::Project, "Todo2".into(), "".into(), None).unwrap();
-        create::run(&mut store, Scope::Project, "Todo3".into(), "".into(), None).unwrap();
+        create::run(
+            &mut store,
+            Scope::Project,
+            "Todo1".into(),
+            "".into(),
+            None,
+            Vec::new(),
+        )
+        .unwrap();
+        create::run(
+            &mut store,
+            Scope::Project,
+            "Todo2".into(),
+            "".into(),
+            None,
+            Vec::new(),
+        )
+        .unwrap();
+        create::run(
+            &mut store,
+            Scope::Project,
+            "Todo3".into(),
+            "".into(),
+            None,
+            Vec::new(),
+        )
+        .unwrap();
 
         // Mark first two as Done
         let pads = store.list_pads(Scope::Project, Bucket::Active).unwrap();
@@ -938,8 +1019,24 @@ mod tests {
             MemBackend::new(),
             MemBackend::new(),
         );
-        create::run(&mut store, Scope::Project, "Task1".into(), "".into(), None).unwrap();
-        create::run(&mut store, Scope::Project, "Task2".into(), "".into(), None).unwrap();
+        create::run(
+            &mut store,
+            Scope::Project,
+            "Task1".into(),
+            "".into(),
+            None,
+            Vec::new(),
+        )
+        .unwrap();
+        create::run(
+            &mut store,
+            Scope::Project,
+            "Task2".into(),
+            "".into(),
+            None,
+            Vec::new(),
+        )
+        .unwrap();
 
         // Mark Task1 as InProgress
         let pads = store.list_pads(Scope::Project, Bucket::Active).unwrap();
@@ -985,15 +1082,25 @@ mod tests {
             "Planned".into(),
             "".into(),
             None,
+            Vec::new(),
         )
         .unwrap();
-        create::run(&mut store, Scope::Project, "Done".into(), "".into(), None).unwrap();
+        create::run(
+            &mut store,
+            Scope::Project,
+            "Done".into(),
+            "".into(),
+            None,
+            Vec::new(),
+        )
+        .unwrap();
         create::run(
             &mut store,
             Scope::Project,
             "InProgress".into(),
             "".into(),
             None,
+            Vec::new(),
         )
         .unwrap();
 
@@ -1046,9 +1153,33 @@ mod tests {
             MemBackend::new(),
             MemBackend::new(),
         );
-        create::run(&mut store, Scope::Project, "First".into(), "".into(), None).unwrap();
-        create::run(&mut store, Scope::Project, "Second".into(), "".into(), None).unwrap();
-        create::run(&mut store, Scope::Project, "Third".into(), "".into(), None).unwrap();
+        create::run(
+            &mut store,
+            Scope::Project,
+            "First".into(),
+            "".into(),
+            None,
+            Vec::new(),
+        )
+        .unwrap();
+        create::run(
+            &mut store,
+            Scope::Project,
+            "Second".into(),
+            "".into(),
+            None,
+            Vec::new(),
+        )
+        .unwrap();
+        create::run(
+            &mut store,
+            Scope::Project,
+            "Third".into(),
+            "".into(),
+            None,
+            Vec::new(),
+        )
+        .unwrap();
 
         // Pads are sorted newest first, so:
         // Third (newest) = index 1
@@ -1112,13 +1243,22 @@ mod tests {
         );
 
         // Create parent with children
-        create::run(&mut store, Scope::Project, "Parent".into(), "".into(), None).unwrap();
+        create::run(
+            &mut store,
+            Scope::Project,
+            "Parent".into(),
+            "".into(),
+            None,
+            Vec::new(),
+        )
+        .unwrap();
         create::run(
             &mut store,
             Scope::Project,
             "Child1".into(),
             "".into(),
             Some(PadSelector::Path(vec![DisplayIndex::Regular(1)])),
+            Vec::new(),
         )
         .unwrap();
         create::run(
@@ -1127,6 +1267,7 @@ mod tests {
             "Child2".into(),
             "".into(),
             Some(PadSelector::Path(vec![DisplayIndex::Regular(1)])),
+            Vec::new(),
         )
         .unwrap();
 
@@ -1179,9 +1320,33 @@ mod tests {
         tags::create_tag(&mut store, Scope::Project, "work").unwrap();
         tags::create_tag(&mut store, Scope::Project, "rust").unwrap();
 
-        create::run(&mut store, Scope::Project, "Pad1".into(), "".into(), None).unwrap();
-        create::run(&mut store, Scope::Project, "Pad2".into(), "".into(), None).unwrap();
-        create::run(&mut store, Scope::Project, "Pad3".into(), "".into(), None).unwrap();
+        create::run(
+            &mut store,
+            Scope::Project,
+            "Pad1".into(),
+            "".into(),
+            None,
+            Vec::new(),
+        )
+        .unwrap();
+        create::run(
+            &mut store,
+            Scope::Project,
+            "Pad2".into(),
+            "".into(),
+            None,
+            Vec::new(),
+        )
+        .unwrap();
+        create::run(
+            &mut store,
+            Scope::Project,
+            "Pad3".into(),
+            "".into(),
+            None,
+            Vec::new(),
+        )
+        .unwrap();
 
         // Tag Pad1 with "work"
         tagging::add_tags(
@@ -1230,8 +1395,24 @@ mod tests {
         tags::create_tag(&mut store, Scope::Project, "work").unwrap();
         tags::create_tag(&mut store, Scope::Project, "rust").unwrap();
 
-        create::run(&mut store, Scope::Project, "Pad1".into(), "".into(), None).unwrap();
-        create::run(&mut store, Scope::Project, "Pad2".into(), "".into(), None).unwrap();
+        create::run(
+            &mut store,
+            Scope::Project,
+            "Pad1".into(),
+            "".into(),
+            None,
+            Vec::new(),
+        )
+        .unwrap();
+        create::run(
+            &mut store,
+            Scope::Project,
+            "Pad2".into(),
+            "".into(),
+            None,
+            Vec::new(),
+        )
+        .unwrap();
 
         // Pad1 has both tags
         tagging::add_tags(
@@ -1280,7 +1461,15 @@ mod tests {
         );
         tags::create_tag(&mut store, Scope::Project, "work").unwrap();
 
-        create::run(&mut store, Scope::Project, "Pad1".into(), "".into(), None).unwrap();
+        create::run(
+            &mut store,
+            Scope::Project,
+            "Pad1".into(),
+            "".into(),
+            None,
+            Vec::new(),
+        )
+        .unwrap();
 
         // Filter by tag that no pad has
         let res = run(
@@ -1307,8 +1496,24 @@ mod tests {
             MemBackend::new(),
             MemBackend::new(),
         );
-        create::run(&mut store, Scope::Project, "Pad1".into(), "".into(), None).unwrap();
-        create::run(&mut store, Scope::Project, "Pad2".into(), "".into(), None).unwrap();
+        create::run(
+            &mut store,
+            Scope::Project,
+            "Pad1".into(),
+            "".into(),
+            None,
+            Vec::new(),
+        )
+        .unwrap();
+        create::run(
+            &mut store,
+            Scope::Project,
+            "Pad2".into(),
+            "".into(),
+            None,
+            Vec::new(),
+        )
+        .unwrap();
 
         // Filter with empty tags list should show all
         let res = run(
@@ -1337,9 +1542,33 @@ mod tests {
         );
         tags::create_tag(&mut store, Scope::Project, "work").unwrap();
 
-        create::run(&mut store, Scope::Project, "First".into(), "".into(), None).unwrap();
-        create::run(&mut store, Scope::Project, "Second".into(), "".into(), None).unwrap();
-        create::run(&mut store, Scope::Project, "Third".into(), "".into(), None).unwrap();
+        create::run(
+            &mut store,
+            Scope::Project,
+            "First".into(),
+            "".into(),
+            None,
+            Vec::new(),
+        )
+        .unwrap();
+        create::run(
+            &mut store,
+            Scope::Project,
+            "Second".into(),
+            "".into(),
+            None,
+            Vec::new(),
+        )
+        .unwrap();
+        create::run(
+            &mut store,
+            Scope::Project,
+            "Third".into(),
+            "".into(),
+            None,
+            Vec::new(),
+        )
+        .unwrap();
 
         // Tag only First (index 3) and Third (index 1)
         tagging::add_tags(
@@ -1398,13 +1627,22 @@ mod tests {
         );
         tags::create_tag(&mut store, Scope::Project, "work").unwrap();
 
-        create::run(&mut store, Scope::Project, "Parent".into(), "".into(), None).unwrap();
+        create::run(
+            &mut store,
+            Scope::Project,
+            "Parent".into(),
+            "".into(),
+            None,
+            Vec::new(),
+        )
+        .unwrap();
         create::run(
             &mut store,
             Scope::Project,
             "Child1".into(),
             "".into(),
             Some(PadSelector::Path(vec![DisplayIndex::Regular(1)])),
+            Vec::new(),
         )
         .unwrap();
         create::run(
@@ -1413,6 +1651,7 @@ mod tests {
             "Child2".into(),
             "".into(),
             Some(PadSelector::Path(vec![DisplayIndex::Regular(1)])),
+            Vec::new(),
         )
         .unwrap();
 
@@ -1474,6 +1713,7 @@ mod tests {
             "Rust Guide".into(),
             "".into(),
             None,
+            Vec::new(),
         )
         .unwrap();
         create::run(
@@ -1482,6 +1722,7 @@ mod tests {
             "Python Guide".into(),
             "".into(),
             None,
+            Vec::new(),
         )
         .unwrap();
         create::run(
@@ -1490,6 +1731,7 @@ mod tests {
             "Rust Notes".into(),
             "".into(),
             None,
+            Vec::new(),
         )
         .unwrap();
 
@@ -1531,9 +1773,33 @@ mod tests {
             MemBackend::new(),
             MemBackend::new(),
         );
-        create::run(&mut store, Scope::Project, "First".into(), "".into(), None).unwrap();
-        create::run(&mut store, Scope::Project, "Second".into(), "".into(), None).unwrap();
-        create::run(&mut store, Scope::Project, "Third".into(), "".into(), None).unwrap();
+        create::run(
+            &mut store,
+            Scope::Project,
+            "First".into(),
+            "".into(),
+            None,
+            Vec::new(),
+        )
+        .unwrap();
+        create::run(
+            &mut store,
+            Scope::Project,
+            "Second".into(),
+            "".into(),
+            None,
+            Vec::new(),
+        )
+        .unwrap();
+        create::run(
+            &mut store,
+            Scope::Project,
+            "Third".into(),
+            "".into(),
+            None,
+            Vec::new(),
+        )
+        .unwrap();
 
         // Select only pad 2 (Second, since newest-first: Third=1, Second=2, First=3)
         let res = run(
@@ -1556,9 +1822,33 @@ mod tests {
             MemBackend::new(),
             MemBackend::new(),
         );
-        create::run(&mut store, Scope::Project, "First".into(), "".into(), None).unwrap();
-        create::run(&mut store, Scope::Project, "Second".into(), "".into(), None).unwrap();
-        create::run(&mut store, Scope::Project, "Third".into(), "".into(), None).unwrap();
+        create::run(
+            &mut store,
+            Scope::Project,
+            "First".into(),
+            "".into(),
+            None,
+            Vec::new(),
+        )
+        .unwrap();
+        create::run(
+            &mut store,
+            Scope::Project,
+            "Second".into(),
+            "".into(),
+            None,
+            Vec::new(),
+        )
+        .unwrap();
+        create::run(
+            &mut store,
+            Scope::Project,
+            "Third".into(),
+            "".into(),
+            None,
+            Vec::new(),
+        )
+        .unwrap();
 
         // Select pads 1 and 3
         let res = run(
@@ -1597,6 +1887,7 @@ mod tests {
             "Parent1".into(),
             "".into(),
             None,
+            Vec::new(),
         )
         .unwrap();
         create::run(
@@ -1605,6 +1896,7 @@ mod tests {
             "Parent2".into(),
             "".into(),
             None,
+            Vec::new(),
         )
         .unwrap();
         create::run(
@@ -1613,6 +1905,7 @@ mod tests {
             "Child1".into(),
             "".into(),
             Some(PadSelector::Path(vec![DisplayIndex::Regular(2)])),
+            Vec::new(),
         )
         .unwrap();
         create::run(
@@ -1621,6 +1914,7 @@ mod tests {
             "Child2".into(),
             "".into(),
             Some(PadSelector::Path(vec![DisplayIndex::Regular(2)])),
+            Vec::new(),
         )
         .unwrap();
 
@@ -1646,10 +1940,42 @@ mod tests {
             MemBackend::new(),
             MemBackend::new(),
         );
-        create::run(&mut store, Scope::Project, "First".into(), "".into(), None).unwrap();
-        create::run(&mut store, Scope::Project, "Second".into(), "".into(), None).unwrap();
-        create::run(&mut store, Scope::Project, "Third".into(), "".into(), None).unwrap();
-        create::run(&mut store, Scope::Project, "Fourth".into(), "".into(), None).unwrap();
+        create::run(
+            &mut store,
+            Scope::Project,
+            "First".into(),
+            "".into(),
+            None,
+            Vec::new(),
+        )
+        .unwrap();
+        create::run(
+            &mut store,
+            Scope::Project,
+            "Second".into(),
+            "".into(),
+            None,
+            Vec::new(),
+        )
+        .unwrap();
+        create::run(
+            &mut store,
+            Scope::Project,
+            "Third".into(),
+            "".into(),
+            None,
+            Vec::new(),
+        )
+        .unwrap();
+        create::run(
+            &mut store,
+            Scope::Project,
+            "Fourth".into(),
+            "".into(),
+            None,
+            Vec::new(),
+        )
+        .unwrap();
 
         // Select range 2-3
         let res = run(
@@ -1674,7 +2000,15 @@ mod tests {
             MemBackend::new(),
             MemBackend::new(),
         );
-        create::run(&mut store, Scope::Project, "Only".into(), "".into(), None).unwrap();
+        create::run(
+            &mut store,
+            Scope::Project,
+            "Only".into(),
+            "".into(),
+            None,
+            Vec::new(),
+        )
+        .unwrap();
 
         // Try selecting non-existent pad 5
         let res = run(
@@ -1695,9 +2029,33 @@ mod tests {
             MemBackend::new(),
             MemBackend::new(),
         );
-        create::run(&mut store, Scope::Project, "First".into(), "".into(), None).unwrap();
-        create::run(&mut store, Scope::Project, "Second".into(), "".into(), None).unwrap();
-        create::run(&mut store, Scope::Project, "Third".into(), "".into(), None).unwrap();
+        create::run(
+            &mut store,
+            Scope::Project,
+            "First".into(),
+            "".into(),
+            None,
+            Vec::new(),
+        )
+        .unwrap();
+        create::run(
+            &mut store,
+            Scope::Project,
+            "Second".into(),
+            "".into(),
+            None,
+            Vec::new(),
+        )
+        .unwrap();
+        create::run(
+            &mut store,
+            Scope::Project,
+            "Third".into(),
+            "".into(),
+            None,
+            Vec::new(),
+        )
+        .unwrap();
 
         // Select only pad 3 - its index should remain 3
         let res = run(

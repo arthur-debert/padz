@@ -99,13 +99,25 @@ impl<S: DataStore> PadzApi<S> {
         title: String,
         content: String,
         parent: Option<&str>,
+        tags: &[String],
     ) -> Result<commands::CmdResult> {
+        // Ensure all tags exist in registry (auto-create if needed)
+        for tag in tags {
+            self.ensure_tag(scope, tag)?;
+        }
         let parent_selector = if let Some(p) = parent {
             Some(parse_index_or_range(p).map_err(PadzError::Api)?)
         } else {
             None
         };
-        commands::create::run(&mut self.store, scope, title, content, parent_selector)
+        commands::create::run(
+            &mut self.store,
+            scope,
+            title,
+            content,
+            parent_selector,
+            tags.to_vec(),
+        )
     }
 
     pub fn get_pads<I: AsRef<str>>(
@@ -374,6 +386,11 @@ impl<S: DataStore> PadzApi<S> {
         commands::tags::rename_tag(&mut self.store, scope, old_name, new_name)
     }
 
+    /// Ensure a tag exists in the registry, creating it if needed (idempotent).
+    pub fn ensure_tag(&mut self, scope: Scope, name: &str) -> Result<()> {
+        commands::tags::ensure_tag(&mut self.store, scope, name)
+    }
+
     // --- Pad Tagging ---
 
     /// Add tags to pads.
@@ -639,7 +656,13 @@ mod tests {
         let mut api = make_api();
 
         let result = api
-            .create_pad(Scope::Project, "Test Title".into(), "Content".into(), None)
+            .create_pad(
+                Scope::Project,
+                "Test Title".into(),
+                "Content".into(),
+                None,
+                &[],
+            )
             .unwrap();
 
         assert_eq!(result.affected_pads.len(), 1);
@@ -651,12 +674,12 @@ mod tests {
         let mut api = make_api();
 
         // Create parent first
-        api.create_pad(Scope::Project, "Parent".into(), "".into(), None)
+        api.create_pad(Scope::Project, "Parent".into(), "".into(), None, &[])
             .unwrap();
 
         // Create child with parent string
         let result = api
-            .create_pad(Scope::Project, "Child".into(), "".into(), Some("1"))
+            .create_pad(Scope::Project, "Child".into(), "".into(), Some("1"), &[])
             .unwrap();
 
         assert_eq!(result.affected_pads.len(), 1);
@@ -667,7 +690,7 @@ mod tests {
     #[test]
     fn test_api_get_pads() {
         let mut api = make_api();
-        api.create_pad(Scope::Project, "Test".into(), "".into(), None)
+        api.create_pad(Scope::Project, "Test".into(), "".into(), None, &[])
             .unwrap();
 
         let result = api
@@ -680,7 +703,7 @@ mod tests {
     #[test]
     fn test_api_view_pads() {
         let mut api = make_api();
-        api.create_pad(Scope::Project, "Test".into(), "".into(), None)
+        api.create_pad(Scope::Project, "Test".into(), "".into(), None, &[])
             .unwrap();
 
         let result = api.view_pads(Scope::Project, &["1"]).unwrap();
@@ -692,7 +715,7 @@ mod tests {
     #[test]
     fn test_api_delete_pads() {
         let mut api = make_api();
-        api.create_pad(Scope::Project, "Test".into(), "".into(), None)
+        api.create_pad(Scope::Project, "Test".into(), "".into(), None, &[])
             .unwrap();
 
         let result = api.delete_pads(Scope::Project, &["1"]).unwrap();
@@ -708,7 +731,7 @@ mod tests {
     #[test]
     fn test_api_pin_unpin_pads() {
         let mut api = make_api();
-        api.create_pad(Scope::Project, "Test".into(), "".into(), None)
+        api.create_pad(Scope::Project, "Test".into(), "".into(), None, &[])
             .unwrap();
 
         // Pin
@@ -730,6 +753,7 @@ mod tests {
             "Old Title".into(),
             "Old Content".into(),
             None,
+            &[],
         )
         .unwrap();
 
@@ -747,7 +771,7 @@ mod tests {
     #[test]
     fn test_api_restore_pads() {
         let mut api = make_api();
-        api.create_pad(Scope::Project, "Test".into(), "".into(), None)
+        api.create_pad(Scope::Project, "Test".into(), "".into(), None, &[])
             .unwrap();
         api.delete_pads(Scope::Project, &["1"]).unwrap();
 
@@ -765,7 +789,7 @@ mod tests {
     #[test]
     fn test_api_purge_pads_confirmed() {
         let mut api = make_api();
-        api.create_pad(Scope::Project, "Test".into(), "".into(), None)
+        api.create_pad(Scope::Project, "Test".into(), "".into(), None, &[])
             .unwrap();
         api.delete_pads(Scope::Project, &["1"]).unwrap();
 
@@ -792,7 +816,7 @@ mod tests {
     #[test]
     fn test_api_purge_pads_not_confirmed() {
         let mut api = make_api();
-        api.create_pad(Scope::Project, "Test".into(), "".into(), None)
+        api.create_pad(Scope::Project, "Test".into(), "".into(), None, &[])
             .unwrap();
         api.delete_pads(Scope::Project, &["1"]).unwrap();
 
@@ -970,14 +994,14 @@ mod tests {
     fn test_api_move_pads() {
         let mut api = make_api();
         // Create A (2 - Oldest)
-        api.create_pad(Scope::Project, "A".into(), "".into(), None)
+        api.create_pad(Scope::Project, "A".into(), "".into(), None, &[])
             .unwrap();
 
         // Ensure timestamp difference
         std::thread::sleep(std::time::Duration::from_millis(10));
 
         // Create B (1 - Newest)
-        api.create_pad(Scope::Project, "B".into(), "".into(), None)
+        api.create_pad(Scope::Project, "B".into(), "".into(), None, &[])
             .unwrap();
 
         // Move B (1) to A (2)
@@ -1003,10 +1027,10 @@ mod tests {
     fn test_api_move_pads_to_root() {
         let mut api = make_api();
         // Create Parent
-        api.create_pad(Scope::Project, "Parent".into(), "".into(), None)
+        api.create_pad(Scope::Project, "Parent".into(), "".into(), None, &[])
             .unwrap();
         // Create Child
-        api.create_pad(Scope::Project, "Child".into(), "".into(), Some("1"))
+        api.create_pad(Scope::Project, "Child".into(), "".into(), Some("1"), &[])
             .unwrap();
 
         // Move Child (1.1) to Root
@@ -1031,7 +1055,7 @@ mod tests {
     #[test]
     fn test_api_move_pads_cycle_error() {
         let mut api = make_api();
-        api.create_pad(Scope::Project, "A".into(), "".into(), None)
+        api.create_pad(Scope::Project, "A".into(), "".into(), None, &[])
             .unwrap();
 
         // Move 1 to 1 should fail
@@ -1090,7 +1114,7 @@ mod tests {
     #[test]
     fn test_api_add_tags_to_pads() {
         let mut api = make_api();
-        api.create_pad(Scope::Project, "Test".into(), "".into(), None)
+        api.create_pad(Scope::Project, "Test".into(), "".into(), None, &[])
             .unwrap();
         api.create_tag(Scope::Project, "work").unwrap();
 
@@ -1109,7 +1133,7 @@ mod tests {
     #[test]
     fn test_api_remove_tags_from_pads() {
         let mut api = make_api();
-        api.create_pad(Scope::Project, "Test".into(), "".into(), None)
+        api.create_pad(Scope::Project, "Test".into(), "".into(), None, &[])
             .unwrap();
         api.create_tag(Scope::Project, "work").unwrap();
         api.add_tags_to_pads(Scope::Project, &["1"], &["work".to_string()])
@@ -1126,7 +1150,7 @@ mod tests {
     #[test]
     fn test_api_clear_tags_from_pads() {
         let mut api = make_api();
-        api.create_pad(Scope::Project, "Test".into(), "".into(), None)
+        api.create_pad(Scope::Project, "Test".into(), "".into(), None, &[])
             .unwrap();
         api.create_tag(Scope::Project, "work").unwrap();
         api.create_tag(Scope::Project, "rust").unwrap();
@@ -1149,7 +1173,13 @@ mod tests {
     fn test_api_refresh_pad_updates_title() {
         let mut api = make_api();
         let result = api
-            .create_pad(Scope::Project, "Original Title".into(), "Body".into(), None)
+            .create_pad(
+                Scope::Project,
+                "Original Title".into(),
+                "Body".into(),
+                None,
+                &[],
+            )
             .unwrap();
         let pad_id = result.affected_pads[0].pad.metadata.id;
 
@@ -1171,7 +1201,7 @@ mod tests {
     fn test_api_refresh_pad_empty_deletes() {
         let mut api = make_api();
         let result = api
-            .create_pad(Scope::Project, "Will Be Empty".into(), "".into(), None)
+            .create_pad(Scope::Project, "Will Be Empty".into(), "".into(), None, &[])
             .unwrap();
         let pad_id = result.affected_pads[0].pad.metadata.id;
 
@@ -1196,7 +1226,13 @@ mod tests {
     fn test_api_remove_pad() {
         let mut api = make_api();
         let result = api
-            .create_pad(Scope::Project, "To Remove".into(), "Content".into(), None)
+            .create_pad(
+                Scope::Project,
+                "To Remove".into(),
+                "Content".into(),
+                None,
+                &[],
+            )
             .unwrap();
         let pad_id = result.affected_pads[0].pad.metadata.id;
 

@@ -164,8 +164,15 @@ mod tests {
             MemBackend::new(),
             MemBackend::new(),
         );
-        let root_res =
-            create::run(&mut store, Scope::Project, "Root".into(), "".into(), None).unwrap();
+        let root_res = create::run(
+            &mut store,
+            Scope::Project,
+            "Root".into(),
+            "".into(),
+            None,
+            Vec::new(),
+        )
+        .unwrap();
         let root_id = root_res.affected_pads[0].pad.metadata.id;
 
         let child_res = create::run(
@@ -174,6 +181,7 @@ mod tests {
             "Child".into(),
             "".into(),
             Some(PadSelector::Path(vec![DisplayIndex::Regular(1)])),
+            Vec::new(),
         )
         .unwrap();
         let child_id = child_res.affected_pads[0].pad.metadata.id; // Corrected: this is the child's ID not root's
@@ -219,9 +227,25 @@ mod tests {
             MemBackend::new(),
         );
         // Create Pad A
-        create::run(&mut store, Scope::Project, "A".into(), "".into(), None).unwrap();
+        create::run(
+            &mut store,
+            Scope::Project,
+            "A".into(),
+            "".into(),
+            None,
+            Vec::new(),
+        )
+        .unwrap();
         // Create Pad B (Index 1 - Newest)
-        create::run(&mut store, Scope::Project, "B".into(), "".into(), None).unwrap();
+        create::run(
+            &mut store,
+            Scope::Project,
+            "B".into(),
+            "".into(),
+            None,
+            Vec::new(),
+        )
+        .unwrap();
 
         // Move B (1) into A (2)
         run(
@@ -248,7 +272,15 @@ mod tests {
             MemBackend::new(),
             MemBackend::new(),
         );
-        create::run(&mut store, Scope::Project, "A".into(), "".into(), None).unwrap();
+        create::run(
+            &mut store,
+            Scope::Project,
+            "A".into(),
+            "".into(),
+            None,
+            Vec::new(),
+        )
+        .unwrap();
 
         let res = run(
             &mut store,

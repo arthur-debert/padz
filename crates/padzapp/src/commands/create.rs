@@ -10,6 +10,7 @@ pub fn run<S: DataStore>(
     title: String,
     content: String,
     parent_selector: Option<crate::index::PadSelector>,
+    tags: Vec<String>,
 ) -> Result<CmdResult> {
     let mut pad = Pad::new(title, content);
 
@@ -33,6 +34,12 @@ pub fn run<S: DataStore>(
                 ))
             }
         }
+    }
+
+    if !tags.is_empty() {
+        let mut sorted_tags = tags;
+        sorted_tags.sort();
+        pad.metadata.tags = sorted_tags;
     }
 
     store.save_pad(&pad, scope, Bucket::Active)?;
@@ -73,7 +80,15 @@ mod tests {
             MemBackend::new(),
         );
         // Create parent
-        run(&mut store, Scope::Project, "Parent".into(), "".into(), None).unwrap();
+        run(
+            &mut store,
+            Scope::Project,
+            "Parent".into(),
+            "".into(),
+            None,
+            Vec::new(),
+        )
+        .unwrap();
 
         // Create child
         let parent_sel = PadSelector::Path(vec![DisplayIndex::Regular(1)]);
@@ -83,6 +98,7 @@ mod tests {
             "Child".into(),
             "".into(),
             Some(parent_sel),
+            Vec::new(),
         )
         .unwrap();
 
@@ -110,6 +126,7 @@ mod tests {
             "Child".into(),
             "".into(),
             Some(PadSelector::Path(vec![DisplayIndex::Regular(99)])),
+            Vec::new(),
         );
 
         assert!(result.is_err());
@@ -133,6 +150,7 @@ mod tests {
             "Meeting Notes Monday".into(),
             "".into(),
             None,
+            Vec::new(),
         )
         .unwrap();
         run(
@@ -141,6 +159,7 @@ mod tests {
             "Meeting Notes Tuesday".into(),
             "".into(),
             None,
+            Vec::new(),
         )
         .unwrap();
 
@@ -151,6 +170,7 @@ mod tests {
             "Child".into(),
             "".into(),
             Some(PadSelector::Title("Meeting".to_string())),
+            Vec::new(),
         );
 
         assert!(result.is_err());
@@ -173,6 +193,7 @@ mod tests {
             "New Pad".into(),
             "Content".into(),
             None,
+            Vec::new(),
         )
         .unwrap();
 
@@ -203,6 +224,7 @@ mod tests {
             "My Title".into(),
             "Body text".into(),
             None,
+            Vec::new(),
         )
         .unwrap();
 
@@ -221,7 +243,15 @@ mod tests {
             MemBackend::new(),
         );
 
-        run(&mut store, Scope::Project, "Root".into(), "".into(), None).unwrap();
+        run(
+            &mut store,
+            Scope::Project,
+            "Root".into(),
+            "".into(),
+            None,
+            Vec::new(),
+        )
+        .unwrap();
 
         let pads = store.list_pads(Scope::Project, Bucket::Active).unwrap();
         assert_eq!(pads.len(), 1);
@@ -243,6 +273,7 @@ mod tests {
             "Path Test".into(),
             "Body".into(),
             None,
+            Vec::new(),
         )
         .unwrap();
 
@@ -254,5 +285,50 @@ mod tests {
             result.pad_paths[0].to_string_lossy().contains(&pad_id),
             "pad_path should contain the pad's UUID"
         );
+    }
+
+    #[test]
+    fn create_with_tags_sets_metadata() {
+        let mut store = BucketedStore::new(
+            MemBackend::new(),
+            MemBackend::new(),
+            MemBackend::new(),
+            MemBackend::new(),
+        );
+
+        let result = run(
+            &mut store,
+            Scope::Project,
+            "Tagged Pad".into(),
+            "".into(),
+            None,
+            vec!["work".to_string(), "rust".to_string()],
+        )
+        .unwrap();
+
+        let pad = &result.affected_pads[0].pad;
+        assert_eq!(pad.metadata.tags, vec!["rust", "work"]); // sorted
+    }
+
+    #[test]
+    fn create_without_tags_has_empty_tags() {
+        let mut store = BucketedStore::new(
+            MemBackend::new(),
+            MemBackend::new(),
+            MemBackend::new(),
+            MemBackend::new(),
+        );
+
+        let result = run(
+            &mut store,
+            Scope::Project,
+            "No Tags".into(),
+            "".into(),
+            None,
+            Vec::new(),
+        )
+        .unwrap();
+
+        assert!(result.affected_pads[0].pad.metadata.tags.is_empty());
     }
 }
