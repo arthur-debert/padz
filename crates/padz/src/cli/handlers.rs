@@ -416,6 +416,24 @@ fn split_indexes_and_content(args: &[String]) -> (Vec<String>, Vec<String>) {
     (indexes, content)
 }
 
+/// Extract a `@tag` from the first element of an args list.
+///
+/// If the first arg starts with `@` and the remainder is a valid tag name
+/// (letters, digits, hyphens, underscores; starts with a letter), it is
+/// removed from `args` and returned.
+fn extract_at_tag(args: &mut Vec<String>) -> Option<String> {
+    if let Some(first) = args.first() {
+        if let Some(tag) = first.strip_prefix('@') {
+            if !tag.is_empty() && padzapp::tags::validate_tag_name(tag).is_ok() {
+                let tag = tag.to_string();
+                args.remove(0);
+                return Some(tag);
+            }
+        }
+    }
+    None
+}
+
 /// Ensure tags exist in the registry and add them to the specified pads.
 fn apply_tags(
     state: &AppState,
@@ -446,6 +464,16 @@ pub fn create(
     #[arg] title: Vec<String>,
 ) -> Result<Output<Value>, anyhow::Error> {
     let state = get_state(ctx);
+
+    // Extract @tag shortcut from first title arg (e.g. `padz create @feature-request My Title`)
+    let mut title = title;
+    let mut tags = tags;
+    if let Some(at_tag) = extract_at_tag(&mut title) {
+        if !tags.contains(&at_tag) {
+            tags.push(at_tag);
+        }
+    }
+
     let title_arg = if title.is_empty() {
         None
     } else {
@@ -647,6 +675,15 @@ pub fn edit(
     #[arg] indexes: Vec<String>,
 ) -> Result<Output<Value>, anyhow::Error> {
     let state = get_state(ctx);
+
+    // Extract @tag shortcut from first index arg (e.g. `padz edit @feature-request 1`)
+    let mut indexes = indexes;
+    let mut tags = tags;
+    if let Some(at_tag) = extract_at_tag(&mut indexes) {
+        if !tags.contains(&at_tag) {
+            tags.push(at_tag);
+        }
+    }
 
     // Split args into index selectors and trailing content words.
     // Index patterns: digits, pN, dN, N.N, N-N, pN-pN, etc.
