@@ -76,7 +76,7 @@
 use crate::commands;
 use crate::error::{PadzError, Result};
 use crate::index::{parse_index_or_range, PadSelector};
-use crate::model::Scope;
+use crate::model::{Pad, Scope};
 use crate::store::DataStore;
 
 /// The main API facade for padz operations.
@@ -297,6 +297,26 @@ impl<S: DataStore> PadzApi<S> {
         self.store.get_pad_path(&id, scope)
     }
 
+    /// Re-reads a pad from disk and syncs metadata (title, updated_at).
+    /// Returns None if the file content is empty (pad is hard-deleted).
+    pub fn refresh_pad(&mut self, scope: Scope, id: &uuid::Uuid) -> Result<Option<Pad>> {
+        let pad = self.store.get_pad(id, scope)?;
+        if pad.content.trim().is_empty() {
+            self.store.delete_pad(id, scope)?;
+            return Ok(None);
+        }
+        let mut updated = pad;
+        let content = updated.content.clone();
+        updated.update_from_raw(&content);
+        self.store.save_pad(&updated, scope)?;
+        Ok(Some(updated))
+    }
+
+    /// Hard-deletes a pad (file + metadata). Used for cleanup of aborted creates.
+    pub fn remove_pad(&mut self, scope: Scope, id: uuid::Uuid) -> Result<()> {
+        self.store.delete_pad(&id, scope)
+    }
+
     pub fn init(&self, scope: Scope) -> Result<commands::CmdResult> {
         commands::init::run(&self.paths, scope)
     }
@@ -466,6 +486,7 @@ pub use commands::{CmdMessage, CmdResult, MessageLevel, PadUpdate, PadzPaths};
 mod tests {
     use super::*;
     use crate::index::{DisplayIndex, PadSelector};
+    use crate::store::backend::StorageBackend;
     use crate::store::memory::InMemoryStore;
     use std::path::PathBuf;
 
@@ -1042,5 +1063,68 @@ mod tests {
 
         assert!(result.messages[0].content.contains("Cleared tags"));
         assert!(result.affected_pads[0].pad.metadata.tags.is_empty());
+    }
+
+    // --- refresh_pad / remove_pad tests ---
+
+    #[test]
+    fn test_api_refresh_pad_updates_title() {
+        let mut api = make_api();
+        let result = api
+            .create_pad(Scope::Project, "Original Title".into(), "Body".into(), None)
+            .unwrap();
+        let pad_id = result.affected_pads[0].pad.metadata.id;
+
+        // Simulate external edit: write new content directly to backend
+        api.store
+            .backend
+            .write_content(&pad_id, Scope::Project, "New Title\n\nNew body")
+            .unwrap();
+
+        let refreshed = api.refresh_pad(Scope::Project, &pad_id).unwrap();
+        assert!(refreshed.is_some());
+        let pad = refreshed.unwrap();
+        assert_eq!(pad.metadata.title, "New Title");
+        assert_eq!(pad.content, "New Title\n\nNew body");
+    }
+
+    #[test]
+    fn test_api_refresh_pad_empty_deletes() {
+        let mut api = make_api();
+        let result = api
+            .create_pad(Scope::Project, "Will Be Empty".into(), "".into(), None)
+            .unwrap();
+        let pad_id = result.affected_pads[0].pad.metadata.id;
+
+        // Simulate clearing the file
+        api.store
+            .backend
+            .write_content(&pad_id, Scope::Project, "   \n\n   ")
+            .unwrap();
+
+        let refreshed = api.refresh_pad(Scope::Project, &pad_id).unwrap();
+        assert!(refreshed.is_none());
+
+        // Pad should be gone
+        let list = api
+            .get_pads(Scope::Project, PadFilter::default(), &[] as &[String])
+            .unwrap();
+        assert_eq!(list.listed_pads.len(), 0);
+    }
+
+    #[test]
+    fn test_api_remove_pad() {
+        let mut api = make_api();
+        let result = api
+            .create_pad(Scope::Project, "To Remove".into(), "Content".into(), None)
+            .unwrap();
+        let pad_id = result.affected_pads[0].pad.metadata.id;
+
+        api.remove_pad(Scope::Project, pad_id).unwrap();
+
+        let list = api
+            .get_pads(Scope::Project, PadFilter::default(), &[] as &[String])
+            .unwrap();
+        assert_eq!(list.listed_pads.len(), 0);
     }
 }

@@ -6,6 +6,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+- **Changed**
+  - **Editor opens real pad files** - Create and edit now open the actual pad file in `.padz/` instead of a temporary file in `/tmp`. This means:
+    - **Crash resilience**: If the editor or system crashes, content is preserved on disk and recovered automatically by reconciliation
+    - **Path autocomplete**: Editor autocomplete suggests project-relative paths (e.g., `../README.md`) instead of `/tmp` files
+    - **No temp file dependency**: Removed `standout-input` dependency from the CLI crate
+  - **Fixed double-title bug in edit** - The edit handler no longer duplicates the title in the editor buffer (`Title\n\nTitle\n\nBody` → `Title\n\nBody`)
+
 ## [0.19.0] - 2026-02-13
 
 ## [0.19.0] - 2026-02-13
