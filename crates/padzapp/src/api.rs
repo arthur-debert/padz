@@ -242,6 +242,25 @@ impl<S: DataStore> PadzApi<S> {
         )
     }
 
+    pub fn archive_pads<I: AsRef<str>>(
+        &mut self,
+        scope: Scope,
+        indexes: &[I],
+    ) -> Result<commands::CmdResult> {
+        let selectors = parse_selectors(indexes)?;
+        commands::archive::run(&mut self.store, scope, &selectors)
+    }
+
+    pub fn unarchive_pads<I: AsRef<str>>(
+        &mut self,
+        scope: Scope,
+        indexes: &[I],
+    ) -> Result<commands::CmdResult> {
+        // Normalize inputs: bare numbers become archived indexes (e.g., "3" -> "ar3")
+        let selectors = parse_selectors_for_archived(indexes)?;
+        commands::unarchive::run(&mut self.store, scope, &selectors)
+    }
+
     pub fn restore_pads<I: AsRef<str>>(
         &mut self,
         scope: Scope,
@@ -294,27 +313,30 @@ impl<S: DataStore> PadzApi<S> {
     }
 
     pub fn get_path_by_id(&self, scope: Scope, id: uuid::Uuid) -> Result<std::path::PathBuf> {
-        self.store.get_pad_path(&id, scope)
+        use crate::store::Bucket;
+        self.store.get_pad_path(&id, scope, Bucket::Active)
     }
 
     /// Re-reads a pad from disk and syncs metadata (title, updated_at).
     /// Returns None if the file content is empty (pad is hard-deleted).
     pub fn refresh_pad(&mut self, scope: Scope, id: &uuid::Uuid) -> Result<Option<Pad>> {
-        let pad = self.store.get_pad(id, scope)?;
+        use crate::store::Bucket;
+        let pad = self.store.get_pad(id, scope, Bucket::Active)?;
         if pad.content.trim().is_empty() {
-            self.store.delete_pad(id, scope)?;
+            self.store.delete_pad(id, scope, Bucket::Active)?;
             return Ok(None);
         }
         let mut updated = pad;
         let content = updated.content.clone();
         updated.update_from_raw(&content);
-        self.store.save_pad(&updated, scope)?;
+        self.store.save_pad(&updated, scope, Bucket::Active)?;
         Ok(Some(updated))
     }
 
     /// Hard-deletes a pad (file + metadata). Used for cleanup of aborted creates.
     pub fn remove_pad(&mut self, scope: Scope, id: uuid::Uuid) -> Result<()> {
-        self.store.delete_pad(&id, scope)
+        use crate::store::Bucket;
+        self.store.delete_pad(&id, scope, Bucket::Active)
     }
 
     pub fn init(&self, scope: Scope) -> Result<commands::CmdResult> {
@@ -436,6 +458,42 @@ fn parse_selectors_for_deleted<I: AsRef<str>>(inputs: &[I]) -> Result<Vec<PadSel
     parse_selectors(&normalized)
 }
 
+/// Parses selectors for commands that operate on archived pads (unarchive).
+/// Bare numbers are treated as archived indexes: "3" -> "ar3", but "ar3" stays "ar3".
+fn parse_selectors_for_archived<I: AsRef<str>>(inputs: &[I]) -> Result<Vec<PadSelector>> {
+    let normalized: Vec<String> = inputs
+        .iter()
+        .map(|s| normalize_to_archived_index(s.as_ref()))
+        .collect();
+
+    parse_selectors(&normalized)
+}
+
+/// Normalizes an index string to an archived index if it's a bare number.
+/// "3" -> "ar3", "ar3" -> "ar3", "p1" -> "p1", "3-5" -> "ar3-ar5"
+fn normalize_to_archived_index(s: &str) -> String {
+    if let Some(dash_pos) = s.find('-') {
+        if dash_pos > 0 {
+            let start_str = &s[..dash_pos];
+            let end_str = &s[dash_pos + 1..];
+            let normalized_start = normalize_path_for_archived(start_str);
+            let normalized_end = normalize_path_for_archived(end_str);
+            return format!("{}-{}", normalized_start, normalized_end);
+        }
+    }
+    normalize_path_for_archived(s)
+}
+
+fn normalize_path_for_archived(s: &str) -> String {
+    let mut parts: Vec<String> = s.split('.').map(|s| s.to_string()).collect();
+    if let Some(last) = parts.last_mut() {
+        if last.chars().all(|c| c.is_ascii_digit()) && !last.is_empty() {
+            *last = format!("ar{}", last);
+        }
+    }
+    parts.join(".")
+}
+
 /// Normalizes an index string to a deleted index if it's a bare number.
 /// "3" -> "d3", "d3" -> "d3", "p1" -> "p1", "3-5" -> "d3-d5"
 fn normalize_to_deleted_index(s: &str) -> String {
@@ -487,11 +545,23 @@ mod tests {
     use super::*;
     use crate::index::{DisplayIndex, PadSelector};
     use crate::store::backend::StorageBackend;
-    use crate::store::memory::InMemoryStore;
+    use crate::store::bucketed::BucketedStore;
+    use crate::store::mem_backend::MemBackend;
     use std::path::PathBuf;
 
-    fn make_api() -> PadzApi<InMemoryStore> {
-        let store = InMemoryStore::new();
+    type TestStore = BucketedStore<MemBackend>;
+
+    fn make_store() -> TestStore {
+        BucketedStore::new(
+            MemBackend::new(),
+            MemBackend::new(),
+            MemBackend::new(),
+            MemBackend::new(),
+        )
+    }
+
+    fn make_api() -> PadzApi<TestStore> {
+        let store = make_store();
         let paths = PadzPaths {
             project: Some(PathBuf::from("/tmp/test")),
             global: PathBuf::from("/tmp/global"),
@@ -628,7 +698,11 @@ mod tests {
         let result = api.delete_pads(Scope::Project, &["1"]).unwrap();
 
         assert_eq!(result.affected_pads.len(), 1);
-        assert!(result.affected_pads[0].pad.metadata.is_deleted);
+        // Pad moved to Deleted bucket — verify it shows with Deleted index
+        assert!(matches!(
+            result.affected_pads[0].index,
+            crate::index::DisplayIndex::Deleted(_)
+        ));
     }
 
     #[test]
@@ -681,7 +755,11 @@ mod tests {
         let result = api.restore_pads(Scope::Project, &["1"]).unwrap();
 
         assert_eq!(result.affected_pads.len(), 1);
-        assert!(!result.affected_pads[0].pad.metadata.is_deleted);
+        // Restored pad should have a Regular index (back in Active)
+        assert!(matches!(
+            result.affected_pads[0].index,
+            crate::index::DisplayIndex::Regular(_)
+        ));
     }
 
     #[test]
@@ -1077,6 +1155,7 @@ mod tests {
 
         // Simulate external edit: write new content directly to backend
         api.store
+            .active
             .backend
             .write_content(&pad_id, Scope::Project, "New Title\n\nNew body")
             .unwrap();
@@ -1098,6 +1177,7 @@ mod tests {
 
         // Simulate clearing the file
         api.store
+            .active
             .backend
             .write_content(&pad_id, Scope::Project, "   \n\n   ")
             .unwrap();

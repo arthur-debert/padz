@@ -8,7 +8,7 @@ fn test_filestore_wrapper_methods() {
     let glob = TempDir::new().unwrap();
 
     // Test new
-    let store = FileStore::new(Some(proj.path().to_path_buf()), glob.path().to_path_buf());
+    let store = FileStore::new_fs(Some(proj.path().to_path_buf()), glob.path().to_path_buf());
 
     // Test config method delegtion
     let store = store.with_file_ext(".md");

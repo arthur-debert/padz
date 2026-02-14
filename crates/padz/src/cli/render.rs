@@ -93,6 +93,7 @@ pub fn build_modification_result_value(
             let local_idx_str = match &dp.index {
                 DisplayIndex::Pinned(n) => format!("p{}", n),
                 DisplayIndex::Regular(n) => format!("{:2}", n),
+                DisplayIndex::Archived(n) => format!("ar{}", n),
                 DisplayIndex::Deleted(n) => format!("d{}", n),
             };
             let full_idx_str = format!("{}.", local_idx_str);
@@ -228,6 +229,7 @@ pub fn build_list_result_value(
         let local_idx_str = match &dp.index {
             DisplayIndex::Pinned(n) => format!("p{}", n),
             DisplayIndex::Regular(n) => format!("{:2}", n),
+            DisplayIndex::Archived(n) => format!("ar{}", n),
             DisplayIndex::Deleted(n) => format!("d{}", n),
         };
         let full_idx_str = format!("{}.", local_idx_str);
@@ -475,10 +477,9 @@ mod tests {
     use padzapp::model::Pad;
     use standout::OutputMode;
 
-    fn make_pad(title: &str, pinned: bool, deleted: bool) -> Pad {
+    fn make_pad(title: &str, pinned: bool) -> Pad {
         let mut p = Pad::new(title.to_string(), "some content".to_string());
         p.metadata.is_pinned = pinned;
-        p.metadata.is_deleted = deleted;
         p
     }
 
@@ -505,7 +506,7 @@ mod tests {
 
     #[test]
     fn test_build_list_single_regular_pad() {
-        let pad = make_pad("Test Note", false, false);
+        let pad = make_pad("Test Note", false);
         let dp = make_display_pad(pad, DisplayIndex::Regular(1));
 
         let data =
@@ -528,7 +529,7 @@ mod tests {
 
     #[test]
     fn test_build_list_pinned_pad() {
-        let pad = make_pad("Pinned Note", true, false);
+        let pad = make_pad("Pinned Note", true);
         let dp = make_display_pad(pad, DisplayIndex::Pinned(1));
 
         let data =
@@ -550,7 +551,7 @@ mod tests {
 
     #[test]
     fn test_build_list_deleted_pad() {
-        let pad = make_pad("Deleted Note", false, true);
+        let pad = make_pad("Deleted Note", false);
         let dp = make_display_pad(pad, DisplayIndex::Deleted(1));
 
         let data =
@@ -572,8 +573,8 @@ mod tests {
 
     #[test]
     fn test_build_list_mixed_pinned_and_regular() {
-        let pinned = make_pad("Pinned", true, false);
-        let regular = make_pad("Regular", false, false);
+        let pinned = make_pad("Pinned", true);
+        let regular = make_pad("Regular", false);
 
         let pads = vec![
             make_display_pad(pinned.clone(), DisplayIndex::Pinned(1)),
@@ -597,7 +598,7 @@ mod tests {
     #[test]
     fn test_build_list_pinned_in_regular_section_shows_left_pin() {
         // A pinned pad displayed in regular section should show left_pin
-        let mut pad = make_pad("Pinned Note", true, false);
+        let mut pad = make_pad("Pinned Note", true);
         pad.metadata.is_pinned = true;
 
         let dp = make_display_pad(pad, DisplayIndex::Regular(1));
@@ -616,7 +617,7 @@ mod tests {
 
     #[test]
     fn test_build_list_with_messages() {
-        let pad = make_pad("Test", false, false);
+        let pad = make_pad("Test", false);
         let dp = make_display_pad(pad, DisplayIndex::Regular(1));
         let messages = vec![CmdMessage::success("Operation completed")];
 
@@ -646,7 +647,7 @@ mod tests {
 
     #[test]
     fn test_build_list_json_mode_returns_raw_pads() {
-        let pad = make_pad("Test", false, false);
+        let pad = make_pad("Test", false);
         let dp = make_display_pad(pad, DisplayIndex::Regular(1));
 
         let data =
@@ -661,7 +662,7 @@ mod tests {
 
     #[test]
     fn test_build_modification_result() {
-        let pad = make_pad("Test", false, false);
+        let pad = make_pad("Test", false);
         let dp = make_display_pad(pad, DisplayIndex::Regular(1));
 
         let data = build_modification_result_value(
@@ -711,7 +712,7 @@ mod tests {
 
     #[test]
     fn test_notes_mode_hides_status_icon() {
-        let pad = make_pad("Test Note", false, false);
+        let pad = make_pad("Test Note", false);
         let dp = make_display_pad(pad, DisplayIndex::Regular(1));
 
         let data =
@@ -727,7 +728,7 @@ mod tests {
 
     #[test]
     fn test_todos_mode_shows_status_icon() {
-        let pad = make_pad("Test Note", false, false);
+        let pad = make_pad("Test Note", false);
         let dp = make_display_pad(pad, DisplayIndex::Regular(1));
 
         let data =
@@ -746,7 +747,7 @@ mod tests {
 
     #[test]
     fn test_notes_mode_gives_more_title_width() {
-        let pad = make_pad("Test Note", false, false);
+        let pad = make_pad("Test Note", false);
         let dp = make_display_pad(pad.clone(), DisplayIndex::Regular(1));
         let dp2 = make_display_pad(pad, DisplayIndex::Regular(1));
 

@@ -2,6 +2,7 @@ use crate::commands::{CmdMessage, CmdResult};
 use crate::error::{PadzError, Result};
 use crate::index::{DisplayIndex, PadSelector};
 use crate::model::{Scope, TodoStatus};
+use crate::store::Bucket;
 use crate::store::DataStore;
 use uuid::Uuid;
 
@@ -93,8 +94,12 @@ pub fn run<S: DataStore>(
     )));
 
     for id in all_ids {
-        if store.get_pad(&id, scope).is_ok() {
-            store.delete_pad(&id, scope)?;
+        // Try each bucket (deleted first, then active for Done pads, then archived)
+        for &bucket in &[Bucket::Deleted, Bucket::Active, Bucket::Archived] {
+            if store.get_pad(&id, scope, bucket).is_ok() {
+                store.delete_pad(&id, scope, bucket)?;
+                break;
+            }
         }
     }
 
@@ -120,11 +125,17 @@ mod tests {
     use crate::commands::{create, delete, get};
     use crate::index::DisplayIndex;
     use crate::model::Scope;
-    use crate::store::memory::InMemoryStore;
+    use crate::store::bucketed::BucketedStore;
+    use crate::store::mem_backend::MemBackend;
 
     #[test]
     fn purges_deleted_pads_when_confirmed() {
-        let mut store = InMemoryStore::new();
+        let mut store = BucketedStore::new(
+            MemBackend::new(),
+            MemBackend::new(),
+            MemBackend::new(),
+            MemBackend::new(),
+        );
         create::run(&mut store, Scope::Project, "A".into(), "".into(), None).unwrap();
 
         // Delete it
@@ -182,7 +193,12 @@ mod tests {
 
     #[test]
     fn purge_without_confirmation_returns_error() {
-        let mut store = InMemoryStore::new();
+        let mut store = BucketedStore::new(
+            MemBackend::new(),
+            MemBackend::new(),
+            MemBackend::new(),
+            MemBackend::new(),
+        );
         create::run(&mut store, Scope::Project, "A".into(), "".into(), None).unwrap();
 
         // Delete it
@@ -225,7 +241,12 @@ mod tests {
 
     #[test]
     fn purges_specific_pads_even_if_active() {
-        let mut store = InMemoryStore::new();
+        let mut store = BucketedStore::new(
+            MemBackend::new(),
+            MemBackend::new(),
+            MemBackend::new(),
+            MemBackend::new(),
+        );
         create::run(&mut store, Scope::Project, "A".into(), "".into(), None).unwrap();
 
         // Purge active pad 1 (no children, so recursive not needed)
@@ -251,7 +272,12 @@ mod tests {
 
     #[test]
     fn does_nothing_if_no_deleted_pads() {
-        let mut store = InMemoryStore::new();
+        let mut store = BucketedStore::new(
+            MemBackend::new(),
+            MemBackend::new(),
+            MemBackend::new(),
+            MemBackend::new(),
+        );
         create::run(&mut store, Scope::Project, "A".into(), "".into(), None).unwrap();
 
         // Purge deleted (none) - even with confirmed=true, should just say "No pads"
@@ -267,7 +293,12 @@ mod tests {
 
     #[test]
     fn purges_recursively_with_flag() {
-        let mut store = InMemoryStore::new();
+        let mut store = BucketedStore::new(
+            MemBackend::new(),
+            MemBackend::new(),
+            MemBackend::new(),
+            MemBackend::new(),
+        );
         // Create Parent
         create::run(&mut store, Scope::Project, "Parent".into(), "".into(), None).unwrap();
         // Create Child inside Parent (id=1)
@@ -309,14 +340,31 @@ mod tests {
             .iter()
             .any(|m| m.content.contains("And purged 1 descendant")));
 
-        // Verify Store is empty
-        let all_pads = store.list_pads(Scope::Project).unwrap();
-        assert_eq!(all_pads.len(), 0);
+        // Verify Store is empty (both Active and Deleted)
+        assert_eq!(
+            store
+                .list_pads(Scope::Project, Bucket::Active)
+                .unwrap()
+                .len(),
+            0
+        );
+        assert_eq!(
+            store
+                .list_pads(Scope::Project, Bucket::Deleted)
+                .unwrap()
+                .len(),
+            0
+        );
     }
 
     #[test]
     fn purge_without_recursive_fails_when_has_children() {
-        let mut store = InMemoryStore::new();
+        let mut store = BucketedStore::new(
+            MemBackend::new(),
+            MemBackend::new(),
+            MemBackend::new(),
+            MemBackend::new(),
+        );
         // Create Parent
         create::run(&mut store, Scope::Project, "Parent".into(), "".into(), None).unwrap();
         // Create Child inside Parent
@@ -345,13 +393,18 @@ mod tests {
         assert!(err.to_string().contains("--recursive"));
 
         // Verify nothing was deleted
-        let all_pads = store.list_pads(Scope::Project).unwrap();
+        let all_pads = store.list_pads(Scope::Project, Bucket::Active).unwrap();
         assert_eq!(all_pads.len(), 2);
     }
 
     #[test]
     fn purge_selectors_vs_all() {
-        let mut store = InMemoryStore::new();
+        let mut store = BucketedStore::new(
+            MemBackend::new(),
+            MemBackend::new(),
+            MemBackend::new(),
+            MemBackend::new(),
+        );
         create::run(&mut store, Scope::Project, "A".into(), "".into(), None).unwrap();
         create::run(&mut store, Scope::Project, "B".into(), "".into(), None).unwrap();
 
@@ -379,14 +432,18 @@ mod tests {
 
         assert!(res.messages.iter().any(|m| m.content.contains("Purging 1")));
 
-        let remaining = store.list_pads(Scope::Project).unwrap();
-        assert_eq!(remaining.len(), 1); // One remains
-        assert!(remaining[0].metadata.is_deleted);
+        let remaining = store.list_pads(Scope::Project, Bucket::Deleted).unwrap();
+        assert_eq!(remaining.len(), 1); // One remains in Deleted bucket
     }
 
     #[test]
     fn purge_nothing_found() {
-        let mut store = InMemoryStore::new();
+        let mut store = BucketedStore::new(
+            MemBackend::new(),
+            MemBackend::new(),
+            MemBackend::new(),
+            MemBackend::new(),
+        );
         // Empty store - even with confirmed=true
         let res = run(&mut store, Scope::Project, &[], false, true, false).unwrap();
         assert!(res.messages[0].content.contains("No pads to purge"));
@@ -394,7 +451,12 @@ mod tests {
 
     #[test]
     fn purge_error_includes_count() {
-        let mut store = InMemoryStore::new();
+        let mut store = BucketedStore::new(
+            MemBackend::new(),
+            MemBackend::new(),
+            MemBackend::new(),
+            MemBackend::new(),
+        );
         create::run(&mut store, Scope::Project, "A".into(), "".into(), None).unwrap();
         create::run(&mut store, Scope::Project, "B".into(), "".into(), None).unwrap();
 
@@ -419,7 +481,12 @@ mod tests {
 
     #[test]
     fn purge_include_done_removes_completed_pads() {
-        let mut store = InMemoryStore::new();
+        let mut store = BucketedStore::new(
+            MemBackend::new(),
+            MemBackend::new(),
+            MemBackend::new(),
+            MemBackend::new(),
+        );
         create::run(
             &mut store,
             Scope::Project,
@@ -460,7 +527,12 @@ mod tests {
 
     #[test]
     fn purge_include_done_false_ignores_completed_pads() {
-        let mut store = InMemoryStore::new();
+        let mut store = BucketedStore::new(
+            MemBackend::new(),
+            MemBackend::new(),
+            MemBackend::new(),
+            MemBackend::new(),
+        );
         create::run(&mut store, Scope::Project, "A".into(), "".into(), None).unwrap();
 
         // Complete pad A
@@ -484,7 +556,12 @@ mod tests {
 
     #[test]
     fn purge_include_done_and_deleted_together() {
-        let mut store = InMemoryStore::new();
+        let mut store = BucketedStore::new(
+            MemBackend::new(),
+            MemBackend::new(),
+            MemBackend::new(),
+            MemBackend::new(),
+        );
         // Created in order: oldest first. Newest-first indexing means:
         // "Active Pad" = 1 (newest), "Deleted Pad" = 2, "Done Pad" = 3 (oldest)
         create::run(

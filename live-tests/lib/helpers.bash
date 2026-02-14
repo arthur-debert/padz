@@ -36,9 +36,13 @@
 #   get_pad_is_deleted <index> [scope]- Check if deleted (true/false)
 #
 # Listing & Search:
-#   list_pads [scope]                 - List all pads (JSON)
+#   list_pads [scope]                 - List active pads (JSON)
+#   list_deleted_pads [scope]         - List deleted pads (JSON)
+#   list_archived_pads [scope]        - List archived pads (JSON)
 #   search_pads <term> [scope]        - Search pads by term
 #   count_pads [scope]                - Count active pads
+#   count_deleted_pads [scope]        - Count deleted pads
+#   count_archived_pads [scope]       - Count archived pads
 #
 # Scope helpers:
 #   Use "global" or "project" as scope, defaults to current directory
@@ -78,6 +82,13 @@ list_deleted_pads() {
     _padz ${scope} list --deleted --output json 2>/dev/null
 }
 
+# Get JSON output for archived pads
+# Usage: list_archived_pads [scope]
+list_archived_pads() {
+    local scope="${1:-}"
+    _padz ${scope} list --archived --output json 2>/dev/null
+}
+
 # Search pads and return JSON
 # Usage: search_pads <term> [scope]
 search_pads() {
@@ -93,13 +104,31 @@ count_pads() {
     list_pads "${scope}" | jq '.pads | length'
 }
 
-# Get full JSON for a specific pad by index
+# Count deleted pads
+# Usage: count_deleted_pads [scope]
+count_deleted_pads() {
+    local scope="${1:-}"
+    list_deleted_pads "${scope}" | jq '.pads | length'
+}
+
+# Count archived pads
+# Usage: count_archived_pads [scope]
+count_archived_pads() {
+    local scope="${1:-}"
+    list_archived_pads "${scope}" | jq '.pads | length'
+}
+
+# jq helper: convert {type, value} index to display string
+# Regular(1) → "1", Pinned(1) → "p1", Archived(1) → "ar1", Deleted(1) → "d1"
+_JQ_INDEX_TO_STR='def idx_str: .index | if .type == "Pinned" then "p\(.value)" elif .type == "Archived" then "ar\(.value)" elif .type == "Deleted" then "d\(.value)" else (.value | tostring) end;'
+
+# Get full JSON for a specific pad by display index string (searches children recursively)
+# Accepts: "1", "p1", "ar1", "d1"
 # Usage: get_pad_json <index> [scope]
 get_pad_json() {
     local index="$1"
     local scope="${2:-}"
-    # Use first() to ensure we only get one result (in case of duplicates)
-    list_pads "${scope}" | jq --arg idx "${index}" 'first(.pads[] | select(.index.value == ($idx | tonumber)))'
+    list_pads "${scope}" | jq --arg idx "${index}" "${_JQ_INDEX_TO_STR} def walk: ., (.children[]? | walk); first(.pads[] | walk | select(idx_str == \$idx))"
 }
 
 # Get pad title by index
@@ -142,12 +171,18 @@ get_pad_is_pinned() {
     get_pad_json "${index}" "${scope}" | jq -r '.pad.metadata.is_pinned'
 }
 
-# Check if pad is deleted
+# Check if pad is deleted (exists in deleted bucket)
 # Usage: get_pad_is_deleted <index> [scope]
 get_pad_is_deleted() {
     local index="$1"
     local scope="${2:-}"
-    list_deleted_pads "${scope}" | jq --arg idx "${index}" '.pads[] | select(.index.value == ($idx | tonumber)) | .pad.metadata.is_deleted' | head -1
+    local found
+    found=$(list_deleted_pads "${scope}" | jq --arg idx "${index}" '[.pads[] | select(.index.value == ($idx | tonumber))] | length')
+    if [[ "${found}" -gt 0 ]]; then
+        echo "true"
+    else
+        echo "false"
+    fi
 }
 
 # Get pad content (body text)
@@ -158,17 +193,50 @@ get_pad_content() {
     get_pad_json "${index}" "${scope}" | jq -r '.pad.content'
 }
 
-# Find pad index by title (exact match)
+# Find pad display index by title (exact match, searches children recursively)
+# Returns display string like "1", "p1", "ar1", "d1"
 # Returns empty if not found, fails if multiple matches
 # Usage: find_pad_by_title <title> [scope]
 find_pad_by_title() {
     local title="$1"
     local scope="${2:-}"
     local result
-    # Use jq array to get all matches, then check count
-    result=$(list_pads "${scope}" | jq -r --arg t "${title}" '[.pads[] | select(.pad.metadata.title == $t) | .index.value] | if length > 1 then "MULTIPLE" elif length == 0 then "" else .[0] | tostring end')
+    # Recursively search pads and their children
+    result=$(list_pads "${scope}" | jq -r --arg t "${title}" "${_JQ_INDEX_TO_STR} def walk: ., (.children[]? | walk); [.pads[] | walk | select(.pad.metadata.title == \$t) | idx_str] | if length > 1 then \"MULTIPLE\" elif length == 0 then \"\" else .[0] end")
     if [[ "${result}" == "MULTIPLE" ]]; then
         echo "ERROR: Multiple pads found with title '${title}'" >&2
+        return 1
+    fi
+    echo "${result}"
+}
+
+# Find archived pad display index by title (exact match)
+# Returns display string like "ar1", "ar2"
+# Returns empty if not found
+# Usage: find_archived_pad_by_title <title> [scope]
+find_archived_pad_by_title() {
+    local title="$1"
+    local scope="${2:-}"
+    local result
+    result=$(list_archived_pads "${scope}" | jq -r --arg t "${title}" "${_JQ_INDEX_TO_STR} [.pads[] | select(.pad.metadata.title == \$t) | idx_str] | if length > 1 then \"MULTIPLE\" elif length == 0 then \"\" else .[0] end")
+    if [[ "${result}" == "MULTIPLE" ]]; then
+        echo "ERROR: Multiple archived pads found with title '${title}'" >&2
+        return 1
+    fi
+    echo "${result}"
+}
+
+# Find deleted pad display index by title (exact match)
+# Returns display string like "d1", "d2"
+# Returns empty if not found
+# Usage: find_deleted_pad_by_title <title> [scope]
+find_deleted_pad_by_title() {
+    local title="$1"
+    local scope="${2:-}"
+    local result
+    result=$(list_deleted_pads "${scope}" | jq -r --arg t "${title}" "${_JQ_INDEX_TO_STR} [.pads[] | select(.pad.metadata.title == \$t) | idx_str] | if length > 1 then \"MULTIPLE\" elif length == 0 then \"\" else .[0] end")
+    if [[ "${result}" == "MULTIPLE" ]]; then
+        echo "ERROR: Multiple deleted pads found with title '${title}'" >&2
         return 1
     fi
     echo "${result}"

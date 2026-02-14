@@ -1,4 +1,6 @@
-use super::complete::{active_pads_completer, all_pads_completer, deleted_pads_completer};
+use super::complete::{
+    active_pads_completer, all_pads_completer, archived_pads_completer, deleted_pads_completer,
+};
 use clap::{CommandFactory, FromArgMatches, Parser, Subcommand, ValueEnum};
 use once_cell::sync::Lazy;
 use standout::cli::{render_help_with_topics, App, CommandGroup, Dispatch, HelpConfig};
@@ -170,6 +172,8 @@ fn should_show_custom_help() -> bool {
         "move",
         "mv",
         "restore",
+        "archive",
+        "unarchive",
         "pin",
         "p",
         "unpin",
@@ -232,6 +236,9 @@ fn command_groups() -> Vec<CommandGroup> {
                 Some("peek".into()),
                 Some("move".into()),
                 Some("delete".into()),
+                None,
+                Some("archive".into()),
+                Some("unarchive".into()),
                 None,
                 Some("pin".into()),
                 Some("unpin".into()),
@@ -320,6 +327,10 @@ pub enum Commands {
         /// Show deleted pads
         #[arg(long)]
         deleted: bool,
+
+        /// Show archived pads
+        #[arg(long)]
+        archived: bool,
 
         /// Peek at pad content
         #[arg(long)]
@@ -421,8 +432,26 @@ pub enum Commands {
         indexes: Vec<String>,
     },
 
+    /// Archive pads (move to cold storage)
+    #[command(display_order = 15)]
+    #[dispatch(pure, template = "modification_result")]
+    Archive {
+        /// Indexes of pads to archive (e.g. 1 3 5)
+        #[arg(required = true, num_args = 1.., add = active_pads_completer())]
+        indexes: Vec<String>,
+    },
+
+    /// Unarchive pads (restore from archive)
+    #[command(display_order = 16)]
+    #[dispatch(pure, template = "modification_result")]
+    Unarchive {
+        /// Indexes of archived pads (e.g. ar1 ar2 or just 1 2)
+        #[arg(required = true, num_args = 1.., add = archived_pads_completer())]
+        indexes: Vec<String>,
+    },
+
     /// Pin one or more pads (makes them delete-protected)
-    #[command(alias = "p", display_order = 15)]
+    #[command(alias = "p", display_order = 17)]
     #[dispatch(pure, template = "modification_result")]
     Pin {
         /// Indexes of the pads (e.g. 1 3 5)
@@ -431,7 +460,7 @@ pub enum Commands {
     },
 
     /// Unpin one or more pads
-    #[command(alias = "u", display_order = 16)]
+    #[command(alias = "u", display_order = 18)]
     #[dispatch(pure, template = "modification_result")]
     Unpin {
         /// Indexes of the pads (e.g. p1 p2 p3)

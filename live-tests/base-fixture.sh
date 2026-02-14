@@ -11,7 +11,7 @@
 #   - Tagged pads: with unique and shared tags
 #   - Pinned pads: protected from deletion
 #   - Completed pads: marked as done
-#   - Deleted pads: soft-deleted, visible with --deleted
+#   - Deleted pads: moved to deleted bucket, visible with --deleted
 #
 # Title convention: "<Scope> pad: <description>" for easy debugging
 # =============================================================================

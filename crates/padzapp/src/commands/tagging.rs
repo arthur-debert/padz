@@ -11,6 +11,7 @@ use crate::commands::{CmdMessage, CmdResult};
 use crate::error::{PadzError, Result};
 use crate::index::{DisplayIndex, DisplayPad, PadSelector};
 use crate::model::Scope;
+use crate::store::Bucket;
 use crate::store::DataStore;
 
 /// Add tags to selected pads.
@@ -44,7 +45,7 @@ pub fn add_tags<S: DataStore>(
     let mut modified_count = 0;
 
     for (display_index, uuid) in resolved {
-        let mut pad = store.get_pad(&uuid, scope)?;
+        let mut pad = store.get_pad(&uuid, scope, Bucket::Active)?;
 
         // Get current tags via attribute API
         let current_tags = pad
@@ -66,7 +67,7 @@ pub fn add_tags<S: DataStore>(
         if new_tags.len() > original_count {
             new_tags.sort();
             pad.metadata.set_attr("tags", AttrValue::List(new_tags));
-            store.save_pad(&pad, scope)?;
+            store.save_pad(&pad, scope, Bucket::Active)?;
             modified_count += 1;
         }
 
@@ -123,7 +124,7 @@ pub fn remove_tags<S: DataStore>(
     let mut modified_count = 0;
 
     for (display_index, uuid) in resolved {
-        let mut pad = store.get_pad(&uuid, scope)?;
+        let mut pad = store.get_pad(&uuid, scope, Bucket::Active)?;
 
         // Get current tags via attribute API
         let current_tags = pad
@@ -142,7 +143,7 @@ pub fn remove_tags<S: DataStore>(
         // Save if changed
         if new_tags.len() < original_count {
             pad.metadata.set_attr("tags", AttrValue::List(new_tags));
-            store.save_pad(&pad, scope)?;
+            store.save_pad(&pad, scope, Bucket::Active)?;
             modified_count += 1;
         }
 
@@ -192,7 +193,7 @@ pub fn clear_tags<S: DataStore>(
     let mut modified_count = 0;
 
     for (display_index, uuid) in resolved {
-        let mut pad = store.get_pad(&uuid, scope)?;
+        let mut pad = store.get_pad(&uuid, scope, Bucket::Active)?;
 
         // Get current tags via attribute API
         let current_tags = pad
@@ -203,7 +204,7 @@ pub fn clear_tags<S: DataStore>(
 
         if !current_tags.is_empty() {
             pad.metadata.set_attr("tags", AttrValue::List(Vec::new()));
-            store.save_pad(&pad, scope)?;
+            store.save_pad(&pad, scope, Bucket::Active)?;
             modified_count += 1;
         }
 
@@ -252,10 +253,16 @@ fn find_pad_by_uuid_any(pads: &[DisplayPad], uuid: uuid::Uuid) -> Option<&Displa
 mod tests {
     use super::*;
     use crate::commands::{create, tags};
-    use crate::store::memory::InMemoryStore;
+    use crate::store::bucketed::BucketedStore;
+    use crate::store::mem_backend::MemBackend;
 
-    fn setup_store_with_tag() -> InMemoryStore {
-        let mut store = InMemoryStore::new();
+    fn setup_store_with_tag() -> BucketedStore<MemBackend> {
+        let mut store = BucketedStore::new(
+            MemBackend::new(),
+            MemBackend::new(),
+            MemBackend::new(),
+            MemBackend::new(),
+        );
         tags::create_tag(&mut store, Scope::Project, "work").unwrap();
         tags::create_tag(&mut store, Scope::Project, "rust").unwrap();
         store

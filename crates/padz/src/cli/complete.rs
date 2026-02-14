@@ -77,6 +77,40 @@ pub fn all_pads_completer() -> ArgValueCandidates {
     ArgValueCandidates::new(|| get_pad_candidates(true))
 }
 
+/// Completer for archived-only pads (unarchive)
+pub fn archived_pads_completer() -> ArgValueCandidates {
+    ArgValueCandidates::new(|| {
+        let args: Vec<String> = std::env::args().collect();
+        let is_global = args.iter().any(|a| a == "-g" || a == "--global");
+
+        let cwd = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
+        let ctx = initialize(&cwd, is_global, None);
+        let api: PadzApi<FileStore> = ctx.api;
+
+        let filter = PadFilter {
+            status: PadStatusFilter::Archived,
+            search_term: None,
+            todo_status: None,
+            tags: None,
+        };
+
+        let Ok(result) = api.get_pads(ctx.scope, filter, &[] as &[String]) else {
+            return vec![];
+        };
+
+        result
+            .listed_pads
+            .into_iter()
+            .map(|dp| {
+                let index_str = dp.index.to_string();
+                CompletionCandidate::new(index_str)
+                    .help(Some(dp.pad.metadata.title.into()))
+                    .display_order(Some(0))
+            })
+            .collect()
+    })
+}
+
 /// Completer for deleted-only pads (restore, purge)
 pub fn deleted_pads_completer() -> ArgValueCandidates {
     ArgValueCandidates::new(|| {

@@ -66,6 +66,7 @@ use crate::model::Scope;
 use serde::Serialize;
 use std::path::PathBuf;
 
+pub mod archive;
 pub mod create;
 pub mod delete;
 pub mod doctor;
@@ -84,6 +85,7 @@ pub mod status;
 pub mod tagging;
 pub mod tags;
 
+pub mod unarchive;
 pub mod update;
 pub mod view;
 

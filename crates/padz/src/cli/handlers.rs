@@ -184,6 +184,16 @@ impl<'a> ScopedApi<'a> {
         self.modification("Restored", result)
     }
 
+    pub fn archive_pads(&self, indexes: &[String]) -> Result<Output<Value>, anyhow::Error> {
+        let result = self.call(|api, scope| api.archive_pads(scope, indexes))?;
+        self.modification("Archived", result)
+    }
+
+    pub fn unarchive_pads(&self, indexes: &[String]) -> Result<Output<Value>, anyhow::Error> {
+        let result = self.call(|api, scope| api.unarchive_pads(scope, indexes))?;
+        self.modification("Unarchived", result)
+    }
+
     pub fn complete_pads(&self, indexes: &[String]) -> Result<Output<Value>, anyhow::Error> {
         let result = self.call(|api, scope| api.complete_pads(scope, indexes))?;
         self.modification("Completed", result)
@@ -535,6 +545,7 @@ pub fn list(
     #[arg] ids: Vec<String>,
     #[arg] search: Option<String>,
     #[flag] deleted: bool,
+    #[flag] archived: bool,
     #[flag] peek: bool,
     #[flag] planned: bool,
     #[flag] done: bool,
@@ -554,6 +565,8 @@ pub fn list(
     let filter = PadFilter {
         status: if deleted {
             PadStatusFilter::Deleted
+        } else if archived {
+            PadStatusFilter::Archived
         } else {
             PadStatusFilter::Active
         },
@@ -562,7 +575,7 @@ pub fn list(
         tags: if tags.is_empty() { None } else { Some(tags) },
     };
 
-    api(ctx).list_pads(filter, peek, deleted, &ids)
+    api(ctx).list_pads(filter, peek, deleted || archived, &ids)
 }
 
 #[handler]
@@ -751,6 +764,22 @@ pub fn restore(
     #[arg] indexes: Vec<String>,
 ) -> Result<Output<Value>, anyhow::Error> {
     api(ctx).restore_pads(&indexes)
+}
+
+#[handler]
+pub fn archive(
+    #[ctx] ctx: &CommandContext,
+    #[arg] indexes: Vec<String>,
+) -> Result<Output<Value>, anyhow::Error> {
+    api(ctx).archive_pads(&indexes)
+}
+
+#[handler]
+pub fn unarchive(
+    #[ctx] ctx: &CommandContext,
+    #[arg] indexes: Vec<String>,
+) -> Result<Output<Value>, anyhow::Error> {
+    api(ctx).unarchive_pads(&indexes)
 }
 
 /// Pin pads to the top of the list.

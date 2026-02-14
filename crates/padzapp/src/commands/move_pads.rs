@@ -2,7 +2,7 @@ use crate::commands::{CmdMessage, CmdResult, DisplayPad};
 use crate::error::{PadzError, Result};
 use crate::index::{DisplayIndex, PadSelector};
 use crate::model::Scope;
-use crate::store::DataStore;
+use crate::store::{Bucket, DataStore};
 use chrono::Utc;
 use uuid::Uuid;
 
@@ -39,7 +39,7 @@ pub fn run<S: DataStore>(
         let (_dest_idx, dest_id) = resolved_dests.into_iter().next().unwrap();
 
         // Load destination to get its title for the message later
-        let dest_pad = store.get_pad(&dest_id, scope)?;
+        let dest_pad = store.get_pad(&dest_id, scope, Bucket::Active)?;
         Some((dest_id, dest_pad.metadata.title))
     } else {
         None
@@ -78,7 +78,7 @@ pub fn run<S: DataStore>(
         }
 
         // 4. Update
-        let mut pad = store.get_pad(&source_uuid, scope)?;
+        let mut pad = store.get_pad(&source_uuid, scope, Bucket::Active)?;
 
         // Skip if already there
         if pad.metadata.parent_id == dest_uuid {
@@ -92,7 +92,7 @@ pub fn run<S: DataStore>(
         pad.metadata.parent_id = dest_uuid;
         pad.metadata.updated_at = Utc::now();
 
-        store.save_pad(&pad, scope)?;
+        store.save_pad(&pad, scope, Bucket::Active)?;
 
         // Note: No success message - CLI handles unified rendering
 
@@ -128,7 +128,7 @@ fn is_descendant_of<S: DataStore>(
     while depth < MAX_DEPTH {
         // Optimization: In a real DB we'd use a recursive query or materialized path.
         // Here we walk up.
-        let pad = store.get_pad(&current_id, scope)?;
+        let pad = store.get_pad(&current_id, scope, Bucket::Active)?;
 
         if let Some(parent_id) = pad.metadata.parent_id {
             if parent_id == potential_ancestor_id {
@@ -154,10 +154,16 @@ mod tests {
     use super::*;
     use crate::commands::create;
     use crate::index::DisplayIndex;
-    use crate::store::memory::InMemoryStore;
+    use crate::store::bucketed::BucketedStore;
+    use crate::store::mem_backend::MemBackend;
 
-    fn setup_store() -> (InMemoryStore, Uuid, Uuid) {
-        let mut store = InMemoryStore::new();
+    fn setup_store() -> (BucketedStore<MemBackend>, Uuid, Uuid) {
+        let mut store = BucketedStore::new(
+            MemBackend::new(),
+            MemBackend::new(),
+            MemBackend::new(),
+            MemBackend::new(),
+        );
         let root_res =
             create::run(&mut store, Scope::Project, "Root".into(), "".into(), None).unwrap();
         let root_id = root_res.affected_pads[0].pad.metadata.id;
@@ -180,7 +186,9 @@ mod tests {
         let (mut store, _root_id, child_id) = setup_store();
 
         // Verify initial state: child has parent
-        let child = store.get_pad(&child_id, Scope::Project).unwrap();
+        let child = store
+            .get_pad(&child_id, Scope::Project, Bucket::Active)
+            .unwrap();
         assert!(child.metadata.parent_id.is_some());
 
         // Move to root (destination = None)
@@ -196,13 +204,20 @@ mod tests {
         .unwrap();
 
         // Verify: parent_id is None
-        let child_after = store.get_pad(&child_id, Scope::Project).unwrap();
+        let child_after = store
+            .get_pad(&child_id, Scope::Project, Bucket::Active)
+            .unwrap();
         assert!(child_after.metadata.parent_id.is_none());
     }
 
     #[test]
     fn test_move_root_to_another_pad() {
-        let mut store = InMemoryStore::new();
+        let mut store = BucketedStore::new(
+            MemBackend::new(),
+            MemBackend::new(),
+            MemBackend::new(),
+            MemBackend::new(),
+        );
         // Create Pad A
         create::run(&mut store, Scope::Project, "A".into(), "".into(), None).unwrap();
         // Create Pad B (Index 1 - Newest)
@@ -218,7 +233,7 @@ mod tests {
         .unwrap();
 
         // Verify B's parent is A
-        let pads = store.list_pads(Scope::Project).unwrap();
+        let pads = store.list_pads(Scope::Project, Bucket::Active).unwrap();
         let pad_a = pads.iter().find(|p| p.metadata.title == "A").unwrap();
         let pad_b = pads.iter().find(|p| p.metadata.title == "B").unwrap();
 
@@ -227,7 +242,12 @@ mod tests {
 
     #[test]
     fn test_prevent_move_to_self() {
-        let mut store = InMemoryStore::new();
+        let mut store = BucketedStore::new(
+            MemBackend::new(),
+            MemBackend::new(),
+            MemBackend::new(),
+            MemBackend::new(),
+        );
         create::run(&mut store, Scope::Project, "A".into(), "".into(), None).unwrap();
 
         let res = run(

@@ -5,7 +5,12 @@ use std::fs;
 
 pub fn run(paths: &PadzPaths, scope: Scope) -> Result<CmdResult> {
     let dir = paths.scope_dir(scope)?;
-    fs::create_dir_all(&dir)?;
+
+    // Create scope root and bucket subdirectories
+    fs::create_dir_all(dir.join("active"))?;
+    fs::create_dir_all(dir.join("archived"))?;
+    fs::create_dir_all(dir.join("deleted"))?;
+
     let mut result = CmdResult::default();
     result.add_message(CmdMessage::success(format!(
         "Initialized padz store at {}",

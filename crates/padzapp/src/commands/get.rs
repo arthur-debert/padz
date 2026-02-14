@@ -1,7 +1,7 @@
 use crate::attributes::{AttrFilter, AttrValue};
 use crate::commands::CmdResult;
 use crate::error::{PadzError, Result};
-use crate::index::{index_pads, DisplayIndex, DisplayPad, MatchSegment, PadSelector, SearchMatch};
+use crate::index::{DisplayIndex, DisplayPad, MatchSegment, PadSelector, SearchMatch};
 use crate::model::{Scope, TodoStatus};
 use crate::store::DataStore;
 
@@ -9,8 +9,9 @@ use crate::store::DataStore;
 pub enum PadStatusFilter {
     All,
     Active,
+    Archived,
     Deleted,
-    Pinned, // Only pinned? Or pinned active? Let's say pinned active.
+    Pinned,
 }
 
 #[derive(Debug, Clone)]
@@ -247,7 +248,10 @@ fn find_by_path<'a>(
 fn matches_status(index: &DisplayIndex, status: PadStatusFilter) -> bool {
     match status {
         PadStatusFilter::All => true,
-        PadStatusFilter::Active => !matches!(index, DisplayIndex::Deleted(_)),
+        PadStatusFilter::Active => {
+            matches!(index, DisplayIndex::Pinned(_) | DisplayIndex::Regular(_))
+        }
+        PadStatusFilter::Archived => matches!(index, DisplayIndex::Archived(_)),
         PadStatusFilter::Deleted => matches!(index, DisplayIndex::Deleted(_)),
         PadStatusFilter::Pinned => matches!(index, DisplayIndex::Pinned(_)),
     }
@@ -259,8 +263,7 @@ pub fn run<S: DataStore>(
     filter: PadFilter,
     selectors: &[PadSelector],
 ) -> Result<CmdResult> {
-    let pads = store.list_pads(scope)?;
-    let indexed = index_pads(pads);
+    let indexed = super::helpers::indexed_pads(store, scope)?;
 
     // 0. Filter by ID selectors (if any)
     let indexed = if selectors.is_empty() {
@@ -498,11 +501,18 @@ mod tests {
     use crate::commands::{create, delete, tagging, tags};
     use crate::index::PadSelector;
     use crate::model::Scope;
-    use crate::store::memory::InMemoryStore;
+    use crate::store::bucketed::BucketedStore;
+    use crate::store::mem_backend::MemBackend;
+    use crate::store::Bucket;
 
     #[test]
     fn test_filters() {
-        let mut store = InMemoryStore::new();
+        let mut store = BucketedStore::new(
+            MemBackend::new(),
+            MemBackend::new(),
+            MemBackend::new(),
+            MemBackend::new(),
+        );
         create::run(&mut store, Scope::Project, "Active".into(), "".into(), None).unwrap();
         create::run(
             &mut store,
@@ -571,7 +581,12 @@ mod tests {
 
     #[test]
     fn test_search() {
-        let mut store = InMemoryStore::new();
+        let mut store = BucketedStore::new(
+            MemBackend::new(),
+            MemBackend::new(),
+            MemBackend::new(),
+            MemBackend::new(),
+        );
         create::run(&mut store, Scope::Project, "Foo".into(), "".into(), None).unwrap();
         create::run(
             &mut store,
@@ -649,7 +664,12 @@ mod tests {
 
     #[test]
     fn test_active_filter_shows_nested_children() {
-        let mut store = InMemoryStore::new();
+        let mut store = BucketedStore::new(
+            MemBackend::new(),
+            MemBackend::new(),
+            MemBackend::new(),
+            MemBackend::new(),
+        );
         // Create parent
         create::run(&mut store, Scope::Project, "Parent".into(), "".into(), None).unwrap();
         // Create child inside parent
@@ -674,7 +694,12 @@ mod tests {
 
     #[test]
     fn test_active_filter_hides_deleted_child() {
-        let mut store = InMemoryStore::new();
+        let mut store = BucketedStore::new(
+            MemBackend::new(),
+            MemBackend::new(),
+            MemBackend::new(),
+            MemBackend::new(),
+        );
         // Create parent
         create::run(&mut store, Scope::Project, "Parent".into(), "".into(), None).unwrap();
         // Create two children
@@ -716,7 +741,12 @@ mod tests {
 
     #[test]
     fn test_deleted_filter_shows_parent_with_children() {
-        let mut store = InMemoryStore::new();
+        let mut store = BucketedStore::new(
+            MemBackend::new(),
+            MemBackend::new(),
+            MemBackend::new(),
+            MemBackend::new(),
+        );
         // Create parent with child
         create::run(&mut store, Scope::Project, "Parent".into(), "".into(), None).unwrap();
         create::run(
@@ -760,7 +790,12 @@ mod tests {
 
     #[test]
     fn test_active_filter_hides_children_of_deleted_parent() {
-        let mut store = InMemoryStore::new();
+        let mut store = BucketedStore::new(
+            MemBackend::new(),
+            MemBackend::new(),
+            MemBackend::new(),
+            MemBackend::new(),
+        );
         // Create parent with child
         create::run(&mut store, Scope::Project, "Parent".into(), "".into(), None).unwrap();
         create::run(
@@ -791,7 +826,12 @@ mod tests {
 
     #[test]
     fn test_todo_status_filter_planned() {
-        let mut store = InMemoryStore::new();
+        let mut store = BucketedStore::new(
+            MemBackend::new(),
+            MemBackend::new(),
+            MemBackend::new(),
+            MemBackend::new(),
+        );
         // Create pads with different statuses
         create::run(
             &mut store,
@@ -811,14 +851,16 @@ mod tests {
         .unwrap();
 
         // Mark first pad as Done via direct store manipulation
-        let pads = store.list_pads(Scope::Project).unwrap();
+        let pads = store.list_pads(Scope::Project, Bucket::Active).unwrap();
         let mut pad = pads
             .iter()
             .find(|p| p.metadata.title == "Planned1")
             .unwrap()
             .clone();
         pad.metadata.status = TodoStatus::Done;
-        store.save_pad(&pad, Scope::Project).unwrap();
+        store
+            .save_pad(&pad, Scope::Project, Bucket::Active)
+            .unwrap();
 
         // Filter for Planned only
         let res = run(
@@ -840,13 +882,18 @@ mod tests {
 
     #[test]
     fn test_todo_status_filter_done() {
-        let mut store = InMemoryStore::new();
+        let mut store = BucketedStore::new(
+            MemBackend::new(),
+            MemBackend::new(),
+            MemBackend::new(),
+            MemBackend::new(),
+        );
         create::run(&mut store, Scope::Project, "Todo1".into(), "".into(), None).unwrap();
         create::run(&mut store, Scope::Project, "Todo2".into(), "".into(), None).unwrap();
         create::run(&mut store, Scope::Project, "Todo3".into(), "".into(), None).unwrap();
 
         // Mark first two as Done
-        let pads = store.list_pads(Scope::Project).unwrap();
+        let pads = store.list_pads(Scope::Project, Bucket::Active).unwrap();
         for title in ["Todo1", "Todo2"] {
             let mut pad = pads
                 .iter()
@@ -854,7 +901,9 @@ mod tests {
                 .unwrap()
                 .clone();
             pad.metadata.status = TodoStatus::Done;
-            store.save_pad(&pad, Scope::Project).unwrap();
+            store
+                .save_pad(&pad, Scope::Project, Bucket::Active)
+                .unwrap();
         }
 
         // Filter for Done only
@@ -883,19 +932,26 @@ mod tests {
 
     #[test]
     fn test_todo_status_filter_in_progress() {
-        let mut store = InMemoryStore::new();
+        let mut store = BucketedStore::new(
+            MemBackend::new(),
+            MemBackend::new(),
+            MemBackend::new(),
+            MemBackend::new(),
+        );
         create::run(&mut store, Scope::Project, "Task1".into(), "".into(), None).unwrap();
         create::run(&mut store, Scope::Project, "Task2".into(), "".into(), None).unwrap();
 
         // Mark Task1 as InProgress
-        let pads = store.list_pads(Scope::Project).unwrap();
+        let pads = store.list_pads(Scope::Project, Bucket::Active).unwrap();
         let mut pad = pads
             .iter()
             .find(|p| p.metadata.title == "Task1")
             .unwrap()
             .clone();
         pad.metadata.status = TodoStatus::InProgress;
-        store.save_pad(&pad, Scope::Project).unwrap();
+        store
+            .save_pad(&pad, Scope::Project, Bucket::Active)
+            .unwrap();
 
         // Filter for InProgress only
         let res = run(
@@ -917,7 +973,12 @@ mod tests {
 
     #[test]
     fn test_todo_status_filter_none_shows_all() {
-        let mut store = InMemoryStore::new();
+        let mut store = BucketedStore::new(
+            MemBackend::new(),
+            MemBackend::new(),
+            MemBackend::new(),
+            MemBackend::new(),
+        );
         create::run(
             &mut store,
             Scope::Project,
@@ -937,7 +998,7 @@ mod tests {
         .unwrap();
 
         // Set statuses
-        let pads = store.list_pads(Scope::Project).unwrap();
+        let pads = store.list_pads(Scope::Project, Bucket::Active).unwrap();
 
         let mut done_pad = pads
             .iter()
@@ -945,7 +1006,9 @@ mod tests {
             .unwrap()
             .clone();
         done_pad.metadata.status = TodoStatus::Done;
-        store.save_pad(&done_pad, Scope::Project).unwrap();
+        store
+            .save_pad(&done_pad, Scope::Project, Bucket::Active)
+            .unwrap();
 
         let mut ip_pad = pads
             .iter()
@@ -953,7 +1016,9 @@ mod tests {
             .unwrap()
             .clone();
         ip_pad.metadata.status = TodoStatus::InProgress;
-        store.save_pad(&ip_pad, Scope::Project).unwrap();
+        store
+            .save_pad(&ip_pad, Scope::Project, Bucket::Active)
+            .unwrap();
 
         // Filter with None (show all)
         let res = run(
@@ -975,7 +1040,12 @@ mod tests {
     #[test]
     fn test_todo_status_filter_preserves_index() {
         // Per spec: "Statuses do not alter the canonical display index"
-        let mut store = InMemoryStore::new();
+        let mut store = BucketedStore::new(
+            MemBackend::new(),
+            MemBackend::new(),
+            MemBackend::new(),
+            MemBackend::new(),
+        );
         create::run(&mut store, Scope::Project, "First".into(), "".into(), None).unwrap();
         create::run(&mut store, Scope::Project, "Second".into(), "".into(), None).unwrap();
         create::run(&mut store, Scope::Project, "Third".into(), "".into(), None).unwrap();
@@ -986,14 +1056,16 @@ mod tests {
         // First (oldest) = index 3
 
         // Mark Second (index 2) as Done, others stay Planned
-        let pads = store.list_pads(Scope::Project).unwrap();
+        let pads = store.list_pads(Scope::Project, Bucket::Active).unwrap();
         let mut pad = pads
             .iter()
             .find(|p| p.metadata.title == "Second")
             .unwrap()
             .clone();
         pad.metadata.status = TodoStatus::Done;
-        store.save_pad(&pad, Scope::Project).unwrap();
+        store
+            .save_pad(&pad, Scope::Project, Bucket::Active)
+            .unwrap();
 
         // Filter for Planned only
         let res = run(
@@ -1032,7 +1104,12 @@ mod tests {
 
     #[test]
     fn test_todo_status_filter_with_nested_pads() {
-        let mut store = InMemoryStore::new();
+        let mut store = BucketedStore::new(
+            MemBackend::new(),
+            MemBackend::new(),
+            MemBackend::new(),
+            MemBackend::new(),
+        );
 
         // Create parent with children
         create::run(&mut store, Scope::Project, "Parent".into(), "".into(), None).unwrap();
@@ -1054,14 +1131,16 @@ mod tests {
         .unwrap();
 
         // Mark Child1 as Done, Parent and Child2 stay Planned
-        let pads = store.list_pads(Scope::Project).unwrap();
+        let pads = store.list_pads(Scope::Project, Bucket::Active).unwrap();
         let mut child1 = pads
             .iter()
             .find(|p| p.metadata.title == "Child1")
             .unwrap()
             .clone();
         child1.metadata.status = TodoStatus::Done;
-        store.save_pad(&child1, Scope::Project).unwrap();
+        store
+            .save_pad(&child1, Scope::Project, Bucket::Active)
+            .unwrap();
 
         // Filter for Planned only
         let res = run(
@@ -1091,7 +1170,12 @@ mod tests {
 
     #[test]
     fn test_tag_filter_single_tag() {
-        let mut store = InMemoryStore::new();
+        let mut store = BucketedStore::new(
+            MemBackend::new(),
+            MemBackend::new(),
+            MemBackend::new(),
+            MemBackend::new(),
+        );
         tags::create_tag(&mut store, Scope::Project, "work").unwrap();
         tags::create_tag(&mut store, Scope::Project, "rust").unwrap();
 
@@ -1137,7 +1221,12 @@ mod tests {
 
     #[test]
     fn test_tag_filter_multiple_tags_and_logic() {
-        let mut store = InMemoryStore::new();
+        let mut store = BucketedStore::new(
+            MemBackend::new(),
+            MemBackend::new(),
+            MemBackend::new(),
+            MemBackend::new(),
+        );
         tags::create_tag(&mut store, Scope::Project, "work").unwrap();
         tags::create_tag(&mut store, Scope::Project, "rust").unwrap();
 
@@ -1183,7 +1272,12 @@ mod tests {
 
     #[test]
     fn test_tag_filter_no_matches() {
-        let mut store = InMemoryStore::new();
+        let mut store = BucketedStore::new(
+            MemBackend::new(),
+            MemBackend::new(),
+            MemBackend::new(),
+            MemBackend::new(),
+        );
         tags::create_tag(&mut store, Scope::Project, "work").unwrap();
 
         create::run(&mut store, Scope::Project, "Pad1".into(), "".into(), None).unwrap();
@@ -1207,7 +1301,12 @@ mod tests {
 
     #[test]
     fn test_tag_filter_empty_tags_shows_all() {
-        let mut store = InMemoryStore::new();
+        let mut store = BucketedStore::new(
+            MemBackend::new(),
+            MemBackend::new(),
+            MemBackend::new(),
+            MemBackend::new(),
+        );
         create::run(&mut store, Scope::Project, "Pad1".into(), "".into(), None).unwrap();
         create::run(&mut store, Scope::Project, "Pad2".into(), "".into(), None).unwrap();
 
@@ -1230,7 +1329,12 @@ mod tests {
 
     #[test]
     fn test_tag_filter_preserves_index() {
-        let mut store = InMemoryStore::new();
+        let mut store = BucketedStore::new(
+            MemBackend::new(),
+            MemBackend::new(),
+            MemBackend::new(),
+            MemBackend::new(),
+        );
         tags::create_tag(&mut store, Scope::Project, "work").unwrap();
 
         create::run(&mut store, Scope::Project, "First".into(), "".into(), None).unwrap();
@@ -1286,7 +1390,12 @@ mod tests {
 
     #[test]
     fn test_tag_filter_with_nested_pads() {
-        let mut store = InMemoryStore::new();
+        let mut store = BucketedStore::new(
+            MemBackend::new(),
+            MemBackend::new(),
+            MemBackend::new(),
+            MemBackend::new(),
+        );
         tags::create_tag(&mut store, Scope::Project, "work").unwrap();
 
         create::run(&mut store, Scope::Project, "Parent".into(), "".into(), None).unwrap();
@@ -1351,7 +1460,12 @@ mod tests {
 
     #[test]
     fn test_tag_filter_combined_with_search() {
-        let mut store = InMemoryStore::new();
+        let mut store = BucketedStore::new(
+            MemBackend::new(),
+            MemBackend::new(),
+            MemBackend::new(),
+            MemBackend::new(),
+        );
         tags::create_tag(&mut store, Scope::Project, "work").unwrap();
 
         create::run(
@@ -1411,7 +1525,12 @@ mod tests {
 
     #[test]
     fn test_id_selector_single_pad() {
-        let mut store = InMemoryStore::new();
+        let mut store = BucketedStore::new(
+            MemBackend::new(),
+            MemBackend::new(),
+            MemBackend::new(),
+            MemBackend::new(),
+        );
         create::run(&mut store, Scope::Project, "First".into(), "".into(), None).unwrap();
         create::run(&mut store, Scope::Project, "Second".into(), "".into(), None).unwrap();
         create::run(&mut store, Scope::Project, "Third".into(), "".into(), None).unwrap();
@@ -1431,7 +1550,12 @@ mod tests {
 
     #[test]
     fn test_id_selector_multiple_pads() {
-        let mut store = InMemoryStore::new();
+        let mut store = BucketedStore::new(
+            MemBackend::new(),
+            MemBackend::new(),
+            MemBackend::new(),
+            MemBackend::new(),
+        );
         create::run(&mut store, Scope::Project, "First".into(), "".into(), None).unwrap();
         create::run(&mut store, Scope::Project, "Second".into(), "".into(), None).unwrap();
         create::run(&mut store, Scope::Project, "Third".into(), "".into(), None).unwrap();
@@ -1460,7 +1584,12 @@ mod tests {
 
     #[test]
     fn test_id_selector_with_children() {
-        let mut store = InMemoryStore::new();
+        let mut store = BucketedStore::new(
+            MemBackend::new(),
+            MemBackend::new(),
+            MemBackend::new(),
+            MemBackend::new(),
+        );
         // Create parent with children
         create::run(
             &mut store,
@@ -1511,7 +1640,12 @@ mod tests {
 
     #[test]
     fn test_id_selector_range() {
-        let mut store = InMemoryStore::new();
+        let mut store = BucketedStore::new(
+            MemBackend::new(),
+            MemBackend::new(),
+            MemBackend::new(),
+            MemBackend::new(),
+        );
         create::run(&mut store, Scope::Project, "First".into(), "".into(), None).unwrap();
         create::run(&mut store, Scope::Project, "Second".into(), "".into(), None).unwrap();
         create::run(&mut store, Scope::Project, "Third".into(), "".into(), None).unwrap();
@@ -1534,7 +1668,12 @@ mod tests {
 
     #[test]
     fn test_id_selector_not_found() {
-        let mut store = InMemoryStore::new();
+        let mut store = BucketedStore::new(
+            MemBackend::new(),
+            MemBackend::new(),
+            MemBackend::new(),
+            MemBackend::new(),
+        );
         create::run(&mut store, Scope::Project, "Only".into(), "".into(), None).unwrap();
 
         // Try selecting non-existent pad 5
@@ -1550,7 +1689,12 @@ mod tests {
 
     #[test]
     fn test_id_selector_preserves_index() {
-        let mut store = InMemoryStore::new();
+        let mut store = BucketedStore::new(
+            MemBackend::new(),
+            MemBackend::new(),
+            MemBackend::new(),
+            MemBackend::new(),
+        );
         create::run(&mut store, Scope::Project, "First".into(), "".into(), None).unwrap();
         create::run(&mut store, Scope::Project, "Second".into(), "".into(), None).unwrap();
         create::run(&mut store, Scope::Project, "Third".into(), "".into(), None).unwrap();

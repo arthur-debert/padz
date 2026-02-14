@@ -27,8 +27,8 @@
 //!
 //! ## Deletion Lifecycle
 //!
-//! - **Soft Delete**: Sets `is_deleted = true` in Metadata. File remains on disk for undo.
-//! - **Purge**: Permanently removes both file and metadata entry.
+//! - **Soft Delete**: Moves the pad from the Active bucket to the Deleted bucket.
+//! - **Purge**: Permanently removes both file and metadata entry from the Deleted bucket.
 //!
 //! ## File Extension Handling
 //!
@@ -41,7 +41,6 @@
 //! The `data.json` stores `HashMap<Uuid, Metadata>` with:
 //! - `id`, `created_at`, `updated_at`: Identity and timestamps
 //! - `is_pinned`, `pinned_at`: Pin state
-//! - `is_deleted`, `deleted_at`: Soft-delete state
 //! - `delete_protected`: Protection flag
 //! - `title`: Cached title for fast listing
 //!
@@ -73,15 +72,28 @@
 use crate::error::Result;
 use crate::model::{Pad, Scope};
 use crate::tags::TagEntry;
+use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 use uuid::Uuid;
 
 pub mod backend;
+pub mod bucketed;
 pub mod fs;
 pub mod fs_backend;
 pub mod mem_backend;
 pub mod memory;
 pub mod pad_store;
+
+/// Which lifecycle bucket a pad lives in.
+///
+/// Bucket membership IS lifecycle state — there is no separate `is_deleted` flag.
+/// Moving a pad between buckets is the mechanism for delete/restore/archive/unarchive.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub enum Bucket {
+    Active,
+    Archived,
+    Deleted,
+}
 
 /// Report from the `doctor` operation.
 #[derive(Debug, Default)]
@@ -93,28 +105,41 @@ pub struct DoctorReport {
 
 /// Abstract interface for pad storage.
 ///
-/// Implementations must handle persistence, retrieval, and consistency
-/// for pads within a given scope.
+/// All methods are bucket-aware: pads live in Active, Archived, or Deleted buckets.
+/// Tags are scope-level (shared across buckets).
 pub trait DataStore {
-    /// Save a pad (create or update)
-    fn save_pad(&mut self, pad: &Pad, scope: Scope) -> Result<()>;
+    /// Save a pad (create or update) in a specific bucket
+    fn save_pad(&mut self, pad: &Pad, scope: Scope, bucket: Bucket) -> Result<()>;
 
-    /// Get a pad by ID
-    fn get_pad(&self, id: &Uuid, scope: Scope) -> Result<Pad>;
+    /// Get a pad by ID from a specific bucket
+    fn get_pad(&self, id: &Uuid, scope: Scope, bucket: Bucket) -> Result<Pad>;
 
-    /// List all pads in a given scope
-    fn list_pads(&self, scope: Scope) -> Result<Vec<Pad>>;
+    /// List all pads in a given scope and bucket
+    fn list_pads(&self, scope: Scope, bucket: Bucket) -> Result<Vec<Pad>>;
 
-    /// Delete a pad permanently
-    fn delete_pad(&mut self, id: &Uuid, scope: Scope) -> Result<()>;
+    /// Delete a pad permanently from a specific bucket
+    fn delete_pad(&mut self, id: &Uuid, scope: Scope, bucket: Bucket) -> Result<()>;
+
+    /// Move a pad from one bucket to another.
+    /// Returns the pad as it exists in the destination bucket.
+    fn move_pad(&mut self, id: &Uuid, scope: Scope, from: Bucket, to: Bucket) -> Result<Pad>;
+
+    /// Move multiple pads between buckets (e.g., parent + descendants).
+    fn move_pads(
+        &mut self,
+        ids: &[Uuid],
+        scope: Scope,
+        from: Bucket,
+        to: Bucket,
+    ) -> Result<Vec<Pad>>;
 
     /// Get the file path for a pad (for file-based stores)
-    fn get_pad_path(&self, id: &Uuid, scope: Scope) -> Result<PathBuf>;
+    fn get_pad_path(&self, id: &Uuid, scope: Scope, bucket: Bucket) -> Result<PathBuf>;
 
-    /// Verify and fix consistency issues
+    /// Verify and fix consistency issues across all buckets
     fn doctor(&mut self, scope: Scope) -> Result<DoctorReport>;
 
-    // --- Tag Registry Operations ---
+    // --- Tag Registry Operations (scope-level, not bucket-specific) ---
 
     /// Load all tags from the registry
     fn load_tags(&self, scope: Scope) -> Result<Vec<TagEntry>>;

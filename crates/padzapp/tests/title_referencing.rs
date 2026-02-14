@@ -1,10 +1,16 @@
 use padzapp::api::PadzApi;
 use padzapp::commands::PadzPaths;
 use padzapp::model::Scope;
-use padzapp::store::memory::InMemoryStore;
+use padzapp::store::bucketed::BucketedStore;
+use padzapp::store::mem_backend::MemBackend;
 
-fn setup() -> PadzApi<InMemoryStore> {
-    let store = InMemoryStore::new();
+fn setup() -> PadzApi<BucketedStore<MemBackend>> {
+    let store = BucketedStore::new(
+        MemBackend::new(),
+        MemBackend::new(),
+        MemBackend::new(),
+        MemBackend::new(),
+    );
     let paths = PadzPaths {
         project: Some(std::path::PathBuf::from(".padz")),
         global: std::path::PathBuf::from(".padz"),

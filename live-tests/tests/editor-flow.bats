@@ -42,7 +42,7 @@ teardown() {
 
     # Verify there's a pad-*.txt file in the data dir
     local pad_count
-    pad_count=$(ls "${PADZ_GLOBAL_DATA}"/pad-*.txt 2>/dev/null | wc -l | tr -d ' ')
+    pad_count=$(ls "${PADZ_GLOBAL_DATA}"/active/pad-*.txt 2>/dev/null | wc -l | tr -d ' ')
     [[ "${pad_count}" -gt 0 ]]
 }
 
@@ -50,7 +50,7 @@ teardown() {
     "${PADZ_BIN}" -g create --no-editor "Naming Test" >/dev/null
 
     local pad_file
-    pad_file=$(ls "${PADZ_GLOBAL_DATA}"/pad-*.txt 2>/dev/null | head -1)
+    pad_file=$(ls "${PADZ_GLOBAL_DATA}"/active/pad-*.txt 2>/dev/null | head -1)
     local filename
     filename=$(basename "${pad_file}")
 
@@ -62,7 +62,7 @@ teardown() {
     "${PADZ_BIN}" -g create --no-editor "Content Match" >/dev/null
 
     local pad_file
-    pad_file=$(ls "${PADZ_GLOBAL_DATA}"/pad-*.txt 2>/dev/null | head -1)
+    pad_file=$(ls "${PADZ_GLOBAL_DATA}"/active/pad-*.txt 2>/dev/null | head -1)
     local file_content
     file_content=$(cat "${pad_file}")
 
@@ -80,7 +80,7 @@ teardown() {
 
     # Find the pad file and change its content (simulating editor)
     local pad_file
-    pad_file=$(ls "${PADZ_GLOBAL_DATA}"/pad-*.txt 2>/dev/null | head -1)
+    pad_file=$(ls "${PADZ_GLOBAL_DATA}"/active/pad-*.txt 2>/dev/null | head -1)
 
     # Write new content with different title
     printf 'Changed Title\n\nNew body content' > "${pad_file}"
@@ -100,7 +100,7 @@ teardown() {
 
     # Empty the pad file (simulating editor clearing content)
     local pad_file
-    pad_file=$(ls "${PADZ_GLOBAL_DATA}"/pad-*.txt 2>/dev/null | head -1)
+    pad_file=$(ls "${PADZ_GLOBAL_DATA}"/active/pad-*.txt 2>/dev/null | head -1)
     truncate -s 0 "${pad_file}"
 
     # Touch to ensure mtime is newer
@@ -125,7 +125,7 @@ teardown() {
 
     # Find and modify the file
     local pad_file
-    pad_file=$(ls "${PADZ_GLOBAL_DATA}"/pad-*.txt 2>/dev/null | head -1)
+    pad_file=$(ls "${PADZ_GLOBAL_DATA}"/active/pad-*.txt 2>/dev/null | head -1)
     printf 'Updated Title\n\nUpdated body via file edit' > "${pad_file}"
 
     # Touch to trigger staleness

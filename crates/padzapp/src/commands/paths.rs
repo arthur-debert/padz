@@ -2,7 +2,7 @@ use crate::commands::CmdResult;
 use crate::error::Result;
 use crate::index::PadSelector;
 use crate::model::Scope;
-use crate::store::DataStore;
+use crate::store::{Bucket, DataStore};
 
 use super::helpers::resolve_selectors;
 
@@ -11,7 +11,7 @@ pub fn run<S: DataStore>(store: &S, scope: Scope, selectors: &[PadSelector]) -> 
     let mut paths = Vec::with_capacity(resolved.len());
 
     for (_, uuid) in resolved {
-        let path = store.get_pad_path(&uuid, scope)?;
+        let path = store.get_pad_path(&uuid, scope, Bucket::Active)?;
         paths.push(path);
     }
 
@@ -24,11 +24,17 @@ mod tests {
     use crate::commands::create;
     use crate::index::DisplayIndex;
     use crate::model::Scope;
-    use crate::store::memory::InMemoryStore;
+    use crate::store::bucketed::BucketedStore;
+    use crate::store::mem_backend::MemBackend;
 
     #[test]
     fn test_get_path() {
-        let mut store = InMemoryStore::new();
+        let mut store = BucketedStore::new(
+            MemBackend::new(),
+            MemBackend::new(),
+            MemBackend::new(),
+            MemBackend::new(),
+        );
         create::run(&mut store, Scope::Project, "Pad A".into(), "".into(), None).unwrap();
 
         let res = run(
@@ -49,7 +55,12 @@ mod tests {
 
     #[test]
     fn test_get_multiple_paths() {
-        let mut store = InMemoryStore::new();
+        let mut store = BucketedStore::new(
+            MemBackend::new(),
+            MemBackend::new(),
+            MemBackend::new(),
+            MemBackend::new(),
+        );
         create::run(&mut store, Scope::Project, "Pad A".into(), "".into(), None).unwrap();
         create::run(&mut store, Scope::Project, "Pad B".into(), "".into(), None).unwrap();
 

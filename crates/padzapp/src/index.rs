@@ -71,6 +71,7 @@ pub struct SearchMatch {
 pub enum DisplayIndex {
     Pinned(usize),
     Regular(usize),
+    Archived(usize),
     Deleted(usize),
 }
 
@@ -79,6 +80,7 @@ impl std::fmt::Display for DisplayIndex {
         match self {
             DisplayIndex::Pinned(i) => write!(f, "p{}", i),
             DisplayIndex::Regular(i) => write!(f, "{}", i),
+            DisplayIndex::Archived(i) => write!(f, "ar{}", i),
             DisplayIndex::Deleted(i) => write!(f, "d{}", i),
         }
     }
@@ -117,27 +119,63 @@ pub struct DisplayPad {
     pub children: Vec<DisplayPad>,
 }
 
-/// Assigns canonical display indexes to a list of pads, building a tree structure.
+/// Internal tag for which bucket a pad belongs to during indexing.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum IndexBucket {
+    Active,
+    Archived,
+    Deleted,
+}
+
+/// A pad tagged with its bucket membership for indexing purposes.
+#[derive(Debug, Clone)]
+struct TaggedPad {
+    pad: Pad,
+    bucket: IndexBucket,
+}
+
+/// Assigns canonical display indexes to pads from three lifecycle buckets,
+/// building a tree structure.
 ///
-/// **Per-parent bucketing**: The same pinned/regular/deleted indexing logic is applied
-/// recursively at each nesting level. Each parent maintains its own index namespace:
-/// - Root level: `p1`, `1`, `2`, `d1`
-/// - Children of pad 1: `1.p1`, `1.1`, `1.2`, `1.d1`
-/// - Children of pad 1.2: `1.2.p1`, `1.2.1`, etc.
+/// **Per-parent bucketing**: The same pinned/regular/archived/deleted indexing logic
+/// is applied recursively at each nesting level. Each parent maintains its own index namespace:
+/// - Root level: `p1`, `1`, `2`, `ar1`, `d1`
+/// - Children of pad 1: `1.p1`, `1.1`, `1.2`, `1.ar1`, `1.d1`
 ///
-/// **Dual indexing**: Pinned pads appear **twice** at each level—once with a `Pinned`
+/// **Dual indexing**: Pinned active pads appear **twice** at each level—once with a `Pinned`
 /// index and once with a `Regular` index. This ensures stability when unpinning.
 ///
-/// The returned list is ordered: pinned entries first, then regular, then deleted.
+/// The returned list is ordered: pinned, regular, archived, deleted.
 /// Each entry's `children` vector follows the same ordering recursively.
-pub fn index_pads(pads: Vec<Pad>) -> Vec<DisplayPad> {
-    // Group pads by parent_id
-    let mut parent_map: HashMap<Option<Uuid>, Vec<Pad>> = HashMap::new();
-    for pad in pads {
+pub fn index_pads(active: Vec<Pad>, archived: Vec<Pad>, deleted: Vec<Pad>) -> Vec<DisplayPad> {
+    // Tag each pad with its bucket
+    let mut all_tagged: Vec<TaggedPad> = Vec::new();
+    for pad in active {
+        all_tagged.push(TaggedPad {
+            pad,
+            bucket: IndexBucket::Active,
+        });
+    }
+    for pad in archived {
+        all_tagged.push(TaggedPad {
+            pad,
+            bucket: IndexBucket::Archived,
+        });
+    }
+    for pad in deleted {
+        all_tagged.push(TaggedPad {
+            pad,
+            bucket: IndexBucket::Deleted,
+        });
+    }
+
+    // Group by parent_id
+    let mut parent_map: HashMap<Option<Uuid>, Vec<TaggedPad>> = HashMap::new();
+    for tagged in all_tagged {
         parent_map
-            .entry(pad.metadata.parent_id)
+            .entry(tagged.pad.metadata.parent_id)
             .or_default()
-            .push(pad);
+            .push(tagged);
     }
 
     // Process roots (parent_id = None), recursively indexing their children
@@ -147,26 +185,27 @@ pub fn index_pads(pads: Vec<Pad>) -> Vec<DisplayPad> {
 
 /// Indexes a single level of the tree (siblings with the same parent).
 ///
-/// Applies the standard three-pass indexing at this level:
-/// 1. **Pinned pass**: Assigns `Pinned(1)`, `Pinned(2)`, etc. to pinned non-deleted pads
-/// 2. **Regular pass**: Assigns `Regular(1)`, `Regular(2)`, etc. to ALL non-deleted pads
-/// 3. **Deleted pass**: Assigns `Deleted(1)`, `Deleted(2)`, etc. to deleted pads
+/// Applies four-pass indexing at this level:
+/// 1. **Pinned pass**: `Pinned(1)`, `Pinned(2)`, etc. for pinned active pads
+/// 2. **Regular pass**: `Regular(1)`, `Regular(2)`, etc. for ALL active pads
+/// 3. **Archived pass**: `Archived(1)`, `Archived(2)`, etc. for archived pads
+/// 4. **Deleted pass**: `Deleted(1)`, `Deleted(2)`, etc. for deleted pads
 ///
-/// Note: Pinned pads get entries in BOTH the pinned and regular passes (dual indexing).
+/// Note: Pinned active pads get entries in BOTH the pinned and regular passes (dual indexing).
 /// This is recursive—each pad's children are indexed the same way.
 fn index_level(
-    mut pads: Vec<Pad>,
-    parent_map: &HashMap<Option<Uuid>, Vec<Pad>>,
+    mut pads: Vec<TaggedPad>,
+    parent_map: &HashMap<Option<Uuid>, Vec<TaggedPad>>,
 ) -> Vec<DisplayPad> {
     // Sort by created_at descending (newest first) within this level
-    pads.sort_by(|a, b| b.metadata.created_at.cmp(&a.metadata.created_at));
+    pads.sort_by(|a, b| b.pad.metadata.created_at.cmp(&a.pad.metadata.created_at));
 
     let mut results = Vec::new();
 
     // Helper closure to build DisplayPad and recurse
-    let mut add_pad = |pad: Pad, index: DisplayIndex| {
+    let mut add_pad = |tagged: TaggedPad, index: DisplayIndex| {
         let children = parent_map
-            .get(&Some(pad.metadata.id))
+            .get(&Some(tagged.pad.metadata.id))
             .cloned()
             .unwrap_or_default();
 
@@ -174,36 +213,45 @@ fn index_level(
         let indexed_children = index_level(children, parent_map);
 
         results.push(DisplayPad {
-            pad,
+            pad: tagged.pad,
             index,
             matches: None,
             children: indexed_children,
         });
     };
 
-    // First pass: Pinned
+    // First pass: Pinned (active + pinned)
     let mut pinned_idx = 1;
-    for pad in &pads {
-        if pad.metadata.is_pinned && !pad.metadata.is_deleted {
-            add_pad(pad.clone(), DisplayIndex::Pinned(pinned_idx));
+    for tagged in &pads {
+        if tagged.bucket == IndexBucket::Active && tagged.pad.metadata.is_pinned {
+            add_pad(tagged.clone(), DisplayIndex::Pinned(pinned_idx));
             pinned_idx += 1;
         }
     }
 
-    // Second pass: Regular (all non-deleted)
+    // Second pass: Regular (all active)
     let mut regular_idx = 1;
-    for pad in &pads {
-        if !pad.metadata.is_deleted {
-            add_pad(pad.clone(), DisplayIndex::Regular(regular_idx));
+    for tagged in &pads {
+        if tagged.bucket == IndexBucket::Active {
+            add_pad(tagged.clone(), DisplayIndex::Regular(regular_idx));
             regular_idx += 1;
         }
     }
 
-    // Third pass: Deleted
+    // Third pass: Archived
+    let mut archived_idx = 1;
+    for tagged in &pads {
+        if tagged.bucket == IndexBucket::Archived {
+            add_pad(tagged.clone(), DisplayIndex::Archived(archived_idx));
+            archived_idx += 1;
+        }
+    }
+
+    // Fourth pass: Deleted
     let mut deleted_idx = 1;
-    for pad in &pads {
-        if pad.metadata.is_deleted {
-            add_pad(pad.clone(), DisplayIndex::Deleted(deleted_idx));
+    for tagged in &pads {
+        if tagged.bucket == IndexBucket::Deleted {
+            add_pad(tagged.clone(), DisplayIndex::Deleted(deleted_idx));
             deleted_idx += 1;
         }
     }
@@ -215,6 +263,12 @@ impl std::str::FromStr for DisplayIndex {
     type Err = String;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
+        // Check "ar" before single-char prefixes to avoid ambiguity
+        if let Some(rest) = s.strip_prefix("ar") {
+            if let Ok(n) = rest.parse() {
+                return Ok(DisplayIndex::Archived(n));
+            }
+        }
         if let Some(rest) = s.strip_prefix('p') {
             if let Ok(n) = rest.parse() {
                 return Ok(DisplayIndex::Pinned(n));
@@ -269,32 +323,32 @@ fn parse_path(s: &str) -> Result<Vec<DisplayIndex>, String> {
 mod tests {
     use super::*;
 
-    fn make_pad(title: &str, pinned: bool, deleted: bool) -> Pad {
+    fn make_pad(title: &str, pinned: bool) -> Pad {
         let mut p = Pad::new(title.to_string(), "".to_string());
         p.metadata.is_pinned = pinned;
-        p.metadata.is_deleted = deleted;
         p
     }
 
     #[test]
     fn test_indexing_buckets() {
-        let p1 = make_pad("Regular 1", false, false);
-        let p2 = make_pad("Pinned 1", true, false);
-        let p3 = make_pad("Deleted 1", false, true);
-        let p4 = make_pad("Regular 2", false, false);
+        let p1 = make_pad("Regular 1", false);
+        let p2 = make_pad("Pinned 1", true);
+        let p3 = make_pad("Deleted 1", false);
+        let p4 = make_pad("Regular 2", false);
 
-        let pads = vec![p1, p2, p3, p4];
-        let indexed = index_pads(pads);
+        let active = vec![p1, p2, p4];
+        let deleted = vec![p3];
+        let indexed = index_pads(active, vec![], deleted);
 
         // With the canonical indexing (newest first), pinned pads appear in BOTH
         // the pinned list AND the regular list.
-        // Creation order: Regular 1, Pinned 1, Deleted 1, Regular 2
-        // Reverse chronological: Regular 2, Deleted 1, Pinned 1, Regular 1
+        // Active creation order: Regular 1, Pinned 1, Regular 2
+        // Active reverse chronological: Regular 2, Pinned 1, Regular 1
         // Expected entries:
-        // - p1: Pinned 1 (only pinned non-deleted pad)
-        // - 1: Regular 2 (newest non-deleted)
-        // - 2: Pinned 1 (second newest non-deleted)
-        // - 3: Regular 1 (oldest non-deleted)
+        // - p1: Pinned 1 (only pinned active pad)
+        // - 1: Regular 2 (newest active)
+        // - 2: Pinned 1 (second newest active)
+        // - 3: Regular 1 (oldest active)
         // - d1: Deleted 1
 
         // Check pinned index
@@ -306,7 +360,7 @@ mod tests {
         assert_eq!(pinned_entries[0].pad.metadata.title, "Pinned 1");
         assert_eq!(pinned_entries[0].index, DisplayIndex::Pinned(1));
 
-        // Check regular indexes - should include ALL non-deleted pads (newest first)
+        // Check regular indexes - should include ALL active pads (newest first)
         let regular_entries: Vec<_> = indexed
             .iter()
             .filter(|dp| matches!(dp.index, DisplayIndex::Regular(_)))
@@ -328,12 +382,11 @@ mod tests {
 
     #[test]
     fn test_pinned_pad_has_both_indexes() {
-        let p1 = make_pad("Note A", false, false);
-        let p2 = make_pad("Note B", true, false); // pinned
-        let p3 = make_pad("Note C", false, false);
+        let p1 = make_pad("Note A", false);
+        let p2 = make_pad("Note B", true); // pinned
+        let p3 = make_pad("Note C", false);
 
-        let pads = vec![p1, p2, p3];
-        let indexed = index_pads(pads);
+        let indexed = index_pads(vec![p1, p2, p3], vec![], vec![]);
 
         // Creation order: Note A, Note B, Note C
         // Reverse chronological: Note C (1), Note B (2), Note A (3)
@@ -364,11 +417,17 @@ mod tests {
         assert_eq!(DisplayIndex::from_str("p99"), Ok(DisplayIndex::Pinned(99)));
         assert_eq!(DisplayIndex::from_str("d1"), Ok(DisplayIndex::Deleted(1)));
         assert_eq!(DisplayIndex::from_str("d5"), Ok(DisplayIndex::Deleted(5)));
+        assert_eq!(DisplayIndex::from_str("ar1"), Ok(DisplayIndex::Archived(1)));
+        assert_eq!(
+            DisplayIndex::from_str("ar99"),
+            Ok(DisplayIndex::Archived(99))
+        );
 
         assert!(DisplayIndex::from_str("").is_err());
         assert!(DisplayIndex::from_str("abc").is_err());
         assert!(DisplayIndex::from_str("p").is_err());
         assert!(DisplayIndex::from_str("d").is_err());
+        assert!(DisplayIndex::from_str("ar").is_err());
         assert!(DisplayIndex::from_str("12a").is_err());
         assert!(DisplayIndex::from_str("p1a").is_err());
     }
@@ -387,6 +446,10 @@ mod tests {
         assert_eq!(
             parse_index_or_range("d1"),
             Ok(PadSelector::Path(vec![DisplayIndex::Deleted(1)]))
+        );
+        assert_eq!(
+            parse_index_or_range("ar3"),
+            Ok(PadSelector::Path(vec![DisplayIndex::Archived(3)]))
         );
     }
 
@@ -428,6 +491,17 @@ mod tests {
             Ok(PadSelector::Range(
                 vec![DisplayIndex::Deleted(2)],
                 vec![DisplayIndex::Deleted(4)]
+            ))
+        );
+    }
+
+    #[test]
+    fn test_parse_archived_range() {
+        assert_eq!(
+            parse_index_or_range("ar1-ar5"),
+            Ok(PadSelector::Range(
+                vec![DisplayIndex::Archived(1)],
+                vec![DisplayIndex::Archived(5)]
             ))
         );
     }
@@ -515,17 +589,16 @@ mod tests {
 
     #[test]
     fn test_tree_with_nested_children() {
-        // Build a tree: Root -> Child -> Grandchild
-        let mut grandchild = make_pad("Grandchild", false, false);
-        let mut child = make_pad("Child", false, false);
-        let root = make_pad("Root", false, false);
+        // Build a tree: Root -> Child -> Grandchild (all active)
+        let mut grandchild = make_pad("Grandchild", false);
+        let mut child = make_pad("Child", false);
+        let root = make_pad("Root", false);
 
         // Set up parent relationships
         child.metadata.parent_id = Some(root.metadata.id);
         grandchild.metadata.parent_id = Some(child.metadata.id);
 
-        let pads = vec![root, child, grandchild];
-        let indexed = index_pads(pads);
+        let indexed = index_pads(vec![root, child, grandchild], vec![], vec![]);
 
         // Should have 1 root
         assert_eq!(indexed.len(), 1);
@@ -552,13 +625,12 @@ mod tests {
     #[test]
     fn test_tree_pinned_child_has_dual_index() {
         // Root with a pinned child - child should appear twice in children
-        let mut child = make_pad("Pinned Child", true, false);
-        let root = make_pad("Root", false, false);
+        let mut child = make_pad("Pinned Child", true);
+        let root = make_pad("Root", false);
 
         child.metadata.parent_id = Some(root.metadata.id);
 
-        let pads = vec![root, child];
-        let indexed = index_pads(pads);
+        let indexed = index_pads(vec![root, child], vec![], vec![]);
 
         // Root's children should have 2 entries for the pinned child
         assert_eq!(indexed[0].children.len(), 2);
@@ -582,18 +654,17 @@ mod tests {
 
     #[test]
     fn test_tree_deep_nesting_four_levels() {
-        // Create 4-level deep tree: L1 -> L2 -> L3 -> L4
-        let mut l4 = make_pad("Level 4", false, false);
-        let mut l3 = make_pad("Level 3", false, false);
-        let mut l2 = make_pad("Level 2", false, false);
-        let l1 = make_pad("Level 1", false, false);
+        // Create 4-level deep tree: L1 -> L2 -> L3 -> L4 (all active)
+        let mut l4 = make_pad("Level 4", false);
+        let mut l3 = make_pad("Level 3", false);
+        let mut l2 = make_pad("Level 2", false);
+        let l1 = make_pad("Level 1", false);
 
         l2.metadata.parent_id = Some(l1.metadata.id);
         l3.metadata.parent_id = Some(l2.metadata.id);
         l4.metadata.parent_id = Some(l3.metadata.id);
 
-        let pads = vec![l1, l2, l3, l4];
-        let indexed = index_pads(pads);
+        let indexed = index_pads(vec![l1, l2, l3, l4], vec![], vec![]);
 
         // Navigate to L4: indexed[0].children[0].children[0].children[0]
         assert_eq!(indexed[0].pad.metadata.title, "Level 1");
@@ -621,5 +692,47 @@ mod tests {
             indexed[0].children[0].children[0].children[0].index,
             DisplayIndex::Regular(1)
         );
+    }
+
+    #[test]
+    fn test_archived_pads_get_archived_index() {
+        let p1 = make_pad("Active 1", false);
+        let p2 = make_pad("Archived 1", false);
+        let p3 = make_pad("Archived 2", false);
+
+        let indexed = index_pads(vec![p1], vec![p2, p3], vec![]);
+
+        let archived_entries: Vec<_> = indexed
+            .iter()
+            .filter(|dp| matches!(dp.index, DisplayIndex::Archived(_)))
+            .collect();
+        assert_eq!(archived_entries.len(), 2);
+
+        let regular_entries: Vec<_> = indexed
+            .iter()
+            .filter(|dp| matches!(dp.index, DisplayIndex::Regular(_)))
+            .collect();
+        assert_eq!(regular_entries.len(), 1);
+    }
+
+    #[test]
+    fn test_all_three_buckets() {
+        let active = make_pad("Active", false);
+        let archived = make_pad("Archived", false);
+        let deleted = make_pad("Deleted", false);
+
+        let indexed = index_pads(vec![active], vec![archived], vec![deleted]);
+
+        assert_eq!(indexed.len(), 3);
+
+        assert!(indexed
+            .iter()
+            .any(|dp| matches!(dp.index, DisplayIndex::Regular(_))));
+        assert!(indexed
+            .iter()
+            .any(|dp| matches!(dp.index, DisplayIndex::Archived(_))));
+        assert!(indexed
+            .iter()
+            .any(|dp| matches!(dp.index, DisplayIndex::Deleted(_))));
     }
 }

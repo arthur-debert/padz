@@ -8,7 +8,7 @@ use crate::commands::{CmdMessage, CmdResult};
 use crate::error::Result;
 use crate::index::{DisplayIndex, DisplayPad, PadSelector};
 use crate::model::{Scope, TodoStatus};
-use crate::store::DataStore;
+use crate::store::{Bucket, DataStore};
 use uuid::Uuid;
 
 use super::helpers::{indexed_pads, resolve_selectors};
@@ -42,7 +42,7 @@ fn set_status<S: DataStore>(
 
     let mut affected_uuids: Vec<Uuid> = Vec::new();
     for (display_index, uuid) in resolved {
-        let mut pad = store.get_pad(&uuid, scope)?;
+        let mut pad = store.get_pad(&uuid, scope, Bucket::Active)?;
         let old_status = pad.metadata.status;
 
         if old_status == new_status {
@@ -62,7 +62,7 @@ fn set_status<S: DataStore>(
             pad.metadata.updated_at = chrono::Utc::now();
 
             let parent_id = pad.metadata.parent_id;
-            store.save_pad(&pad, scope)?;
+            store.save_pad(&pad, scope, Bucket::Active)?;
 
             // Propagate status change to parent
             crate::todos::propagate_status_change(store, scope, parent_id)?;
@@ -97,12 +97,18 @@ mod tests {
     use crate::commands::{create, get};
     use crate::index::DisplayIndex;
     use crate::model::Scope;
-    use crate::store::memory::InMemoryStore;
+    use crate::store::bucketed::BucketedStore;
+    use crate::store::mem_backend::MemBackend;
     use std::slice;
 
     #[test]
     fn complete_marks_pad_as_done() {
-        let mut store = InMemoryStore::new();
+        let mut store = BucketedStore::new(
+            MemBackend::new(),
+            MemBackend::new(),
+            MemBackend::new(),
+            MemBackend::new(),
+        );
         create::run(&mut store, Scope::Project, "Task".into(), "".into(), None).unwrap();
 
         let sel = PadSelector::Path(vec![DisplayIndex::Regular(1)]);
@@ -119,7 +125,12 @@ mod tests {
 
     #[test]
     fn reopen_sets_pad_to_planned() {
-        let mut store = InMemoryStore::new();
+        let mut store = BucketedStore::new(
+            MemBackend::new(),
+            MemBackend::new(),
+            MemBackend::new(),
+            MemBackend::new(),
+        );
         create::run(&mut store, Scope::Project, "Task".into(), "".into(), None).unwrap();
 
         // First complete it
@@ -140,7 +151,12 @@ mod tests {
 
     #[test]
     fn complete_already_done_is_idempotent() {
-        let mut store = InMemoryStore::new();
+        let mut store = BucketedStore::new(
+            MemBackend::new(),
+            MemBackend::new(),
+            MemBackend::new(),
+            MemBackend::new(),
+        );
         create::run(&mut store, Scope::Project, "Task".into(), "".into(), None).unwrap();
 
         let sel = PadSelector::Path(vec![DisplayIndex::Regular(1)]);
@@ -158,7 +174,12 @@ mod tests {
 
     #[test]
     fn reopen_already_planned_is_idempotent() {
-        let mut store = InMemoryStore::new();
+        let mut store = BucketedStore::new(
+            MemBackend::new(),
+            MemBackend::new(),
+            MemBackend::new(),
+            MemBackend::new(),
+        );
         create::run(&mut store, Scope::Project, "Task".into(), "".into(), None).unwrap();
 
         let sel = PadSelector::Path(vec![DisplayIndex::Regular(1)]);
@@ -175,7 +196,12 @@ mod tests {
 
     #[test]
     fn complete_batch() {
-        let mut store = InMemoryStore::new();
+        let mut store = BucketedStore::new(
+            MemBackend::new(),
+            MemBackend::new(),
+            MemBackend::new(),
+            MemBackend::new(),
+        );
         create::run(&mut store, Scope::Project, "A".into(), "".into(), None).unwrap();
         create::run(&mut store, Scope::Project, "B".into(), "".into(), None).unwrap();
 
@@ -200,7 +226,12 @@ mod tests {
 
     #[test]
     fn complete_propagates_to_parent() {
-        let mut store = InMemoryStore::new();
+        let mut store = BucketedStore::new(
+            MemBackend::new(),
+            MemBackend::new(),
+            MemBackend::new(),
+            MemBackend::new(),
+        );
 
         // Create parent
         create::run(&mut store, Scope::Project, "Parent".into(), "".into(), None).unwrap();
@@ -220,14 +251,19 @@ mod tests {
         complete(&mut store, Scope::Project, slice::from_ref(&sel)).unwrap();
 
         // Parent should now be Done (all children are Done)
-        let pads = store.list_pads(Scope::Project).unwrap();
+        let pads = store.list_pads(Scope::Project, Bucket::Active).unwrap();
         let parent = pads.iter().find(|p| p.metadata.title == "Parent").unwrap();
         assert_eq!(parent.metadata.status, TodoStatus::Done);
     }
 
     #[test]
     fn reopen_propagates_to_parent() {
-        let mut store = InMemoryStore::new();
+        let mut store = BucketedStore::new(
+            MemBackend::new(),
+            MemBackend::new(),
+            MemBackend::new(),
+            MemBackend::new(),
+        );
 
         // Create parent
         create::run(&mut store, Scope::Project, "Parent".into(), "".into(), None).unwrap();
@@ -247,7 +283,7 @@ mod tests {
         complete(&mut store, Scope::Project, slice::from_ref(&sel)).unwrap();
 
         // Verify parent is Done
-        let pads = store.list_pads(Scope::Project).unwrap();
+        let pads = store.list_pads(Scope::Project, Bucket::Active).unwrap();
         let parent = pads.iter().find(|p| p.metadata.title == "Parent").unwrap();
         assert_eq!(parent.metadata.status, TodoStatus::Done);
 
@@ -255,7 +291,7 @@ mod tests {
         reopen(&mut store, Scope::Project, slice::from_ref(&sel)).unwrap();
 
         // Parent should now be Planned (all children are Planned)
-        let pads_after = store.list_pads(Scope::Project).unwrap();
+        let pads_after = store.list_pads(Scope::Project, Bucket::Active).unwrap();
         let parent_after = pads_after
             .iter()
             .find(|p| p.metadata.title == "Parent")

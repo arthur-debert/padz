@@ -81,15 +81,23 @@ fn import_content<S: DataStore>(store: &mut S, scope: Scope, content_raw: &str) 
 mod tests {
     use super::*;
     use crate::model::Scope;
-    use crate::store::memory::InMemoryStore;
+    use crate::store::bucketed::BucketedStore;
+    use crate::store::mem_backend::MemBackend;
 
     #[test]
     fn test_import_content_extracts_title() {
-        let mut store = InMemoryStore::new();
+        let mut store = BucketedStore::new(
+            MemBackend::new(),
+            MemBackend::new(),
+            MemBackend::new(),
+            MemBackend::new(),
+        );
         let raw = "My Title\nLine 1\nLine 2";
         import_content(&mut store, Scope::Project, raw).unwrap();
 
-        let pads = store.list_pads(Scope::Project).unwrap();
+        let pads = store
+            .list_pads(Scope::Project, crate::store::Bucket::Active)
+            .unwrap();
         assert_eq!(pads.len(), 1);
         assert_eq!(pads[0].metadata.title, "My Title");
         assert_eq!(pads[0].content, "My Title\n\nLine 1\nLine 2");
@@ -97,11 +105,18 @@ mod tests {
 
     #[test]
     fn test_import_content_trims_leading_blanks() {
-        let mut store = InMemoryStore::new();
+        let mut store = BucketedStore::new(
+            MemBackend::new(),
+            MemBackend::new(),
+            MemBackend::new(),
+            MemBackend::new(),
+        );
         let raw = "Title\n\n\nReal Content";
         import_content(&mut store, Scope::Project, raw).unwrap();
 
-        let pads = store.list_pads(Scope::Project).unwrap();
+        let pads = store
+            .list_pads(Scope::Project, crate::store::Bucket::Active)
+            .unwrap();
         assert_eq!(pads.len(), 1);
         assert_eq!(pads[0].metadata.title, "Title");
         assert_eq!(pads[0].content, "Title\n\nReal Content");
@@ -109,7 +124,12 @@ mod tests {
 
     #[test]
     fn test_import_from_directory() {
-        let mut store = InMemoryStore::new();
+        let mut store = BucketedStore::new(
+            MemBackend::new(),
+            MemBackend::new(),
+            MemBackend::new(),
+            MemBackend::new(),
+        );
         let temp_dir = tempfile::tempdir().unwrap();
 
         // Create valid files
@@ -139,7 +159,9 @@ mod tests {
             .iter()
             .any(|m| m.content.contains("Total imported: 2")));
 
-        let pads = store.list_pads(Scope::Project).unwrap();
+        let pads = store
+            .list_pads(Scope::Project, crate::store::Bucket::Active)
+            .unwrap();
         assert_eq!(pads.len(), 2);
         // Title extraction preserves markdown headers from first line
         assert!(pads.iter().any(|p| p.metadata.title == "# Note 1"));
@@ -148,7 +170,12 @@ mod tests {
 
     #[test]
     fn test_import_file_directly() {
-        let mut store = InMemoryStore::new();
+        let mut store = BucketedStore::new(
+            MemBackend::new(),
+            MemBackend::new(),
+            MemBackend::new(),
+            MemBackend::new(),
+        );
         let temp_dir = tempfile::tempdir().unwrap();
         let file_path = temp_dir.path().join("single.md");
         std::fs::write(&file_path, "# Single\nContent").unwrap();
@@ -167,14 +194,21 @@ mod tests {
             .iter()
             .any(|m| m.content.contains("Total imported: 1")));
 
-        let pads = store.list_pads(Scope::Project).unwrap();
+        let pads = store
+            .list_pads(Scope::Project, crate::store::Bucket::Active)
+            .unwrap();
         assert_eq!(pads.len(), 1);
         assert_eq!(pads[0].metadata.title, "# Single");
     }
 
     #[test]
     fn test_import_invalid_path() {
-        let mut store = InMemoryStore::new();
+        let mut store = BucketedStore::new(
+            MemBackend::new(),
+            MemBackend::new(),
+            MemBackend::new(),
+            MemBackend::new(),
+        );
         let temp_dir = tempfile::tempdir().unwrap();
         let invalid_path = temp_dir.path().join("missing.md");
 
@@ -191,18 +225,30 @@ mod tests {
 
     #[test]
     fn test_import_empty_content_returns_zero() {
-        let mut store = InMemoryStore::new();
+        let mut store = BucketedStore::new(
+            MemBackend::new(),
+            MemBackend::new(),
+            MemBackend::new(),
+            MemBackend::new(),
+        );
         // Empty content (whitespace only) should not create a pad
         let result = import_content(&mut store, Scope::Project, "   \n\n  ").unwrap();
         assert_eq!(result, 0);
 
-        let pads = store.list_pads(Scope::Project).unwrap();
+        let pads = store
+            .list_pads(Scope::Project, crate::store::Bucket::Active)
+            .unwrap();
         assert_eq!(pads.len(), 0);
     }
 
     #[test]
     fn test_import_file_with_non_utf8_fails() {
-        let mut store = InMemoryStore::new();
+        let mut store = BucketedStore::new(
+            MemBackend::new(),
+            MemBackend::new(),
+            MemBackend::new(),
+            MemBackend::new(),
+        );
         let temp_dir = tempfile::tempdir().unwrap();
         let file_path = temp_dir.path().join("binary.md");
 
@@ -228,7 +274,12 @@ mod tests {
 
     #[test]
     fn test_import_directory_skips_non_matching_extensions() {
-        let mut store = InMemoryStore::new();
+        let mut store = BucketedStore::new(
+            MemBackend::new(),
+            MemBackend::new(),
+            MemBackend::new(),
+            MemBackend::new(),
+        );
         let temp_dir = tempfile::tempdir().unwrap();
 
         // Create file with non-matching extension
@@ -249,13 +300,20 @@ mod tests {
             .messages
             .iter()
             .any(|m| m.content.contains("Total imported: 0")));
-        let pads = store.list_pads(Scope::Project).unwrap();
+        let pads = store
+            .list_pads(Scope::Project, crate::store::Bucket::Active)
+            .unwrap();
         assert_eq!(pads.len(), 0);
     }
 
     #[test]
     fn test_import_empty_paths_list() {
-        let mut store = InMemoryStore::new();
+        let mut store = BucketedStore::new(
+            MemBackend::new(),
+            MemBackend::new(),
+            MemBackend::new(),
+            MemBackend::new(),
+        );
 
         let res = run(&mut store, Scope::Project, vec![], &[".md".to_string()]).unwrap();
 
@@ -264,13 +322,20 @@ mod tests {
             .messages
             .iter()
             .any(|m| m.content.contains("Total imported: 0")));
-        let pads = store.list_pads(Scope::Project).unwrap();
+        let pads = store
+            .list_pads(Scope::Project, crate::store::Bucket::Active)
+            .unwrap();
         assert_eq!(pads.len(), 0);
     }
 
     #[test]
     fn test_import_multiple_paths_mixed_validity() {
-        let mut store = InMemoryStore::new();
+        let mut store = BucketedStore::new(
+            MemBackend::new(),
+            MemBackend::new(),
+            MemBackend::new(),
+            MemBackend::new(),
+        );
         let temp_dir = tempfile::tempdir().unwrap();
 
         let valid_file = temp_dir.path().join("valid.md");
@@ -299,13 +364,20 @@ mod tests {
         // Should have success for valid
         assert!(res.messages.iter().any(|m| m.content.contains("Imported:")));
 
-        let pads = store.list_pads(Scope::Project).unwrap();
+        let pads = store
+            .list_pads(Scope::Project, crate::store::Bucket::Active)
+            .unwrap();
         assert_eq!(pads.len(), 1);
     }
 
     #[test]
     fn test_import_directory_with_subdirs() {
-        let mut store = InMemoryStore::new();
+        let mut store = BucketedStore::new(
+            MemBackend::new(),
+            MemBackend::new(),
+            MemBackend::new(),
+            MemBackend::new(),
+        );
         let temp_dir = tempfile::tempdir().unwrap();
 
         // Create a subdirectory (should be ignored, not recursively imported)
@@ -330,14 +402,21 @@ mod tests {
             .iter()
             .any(|m| m.content.contains("Total imported: 1")));
 
-        let pads = store.list_pads(Scope::Project).unwrap();
+        let pads = store
+            .list_pads(Scope::Project, crate::store::Bucket::Active)
+            .unwrap();
         assert_eq!(pads.len(), 1);
         assert_eq!(pads[0].metadata.title, "Root");
     }
 
     #[test]
     fn test_import_directory_file_with_empty_content() {
-        let mut store = InMemoryStore::new();
+        let mut store = BucketedStore::new(
+            MemBackend::new(),
+            MemBackend::new(),
+            MemBackend::new(),
+            MemBackend::new(),
+        );
         let temp_dir = tempfile::tempdir().unwrap();
 
         // Create a file with empty content
@@ -361,14 +440,21 @@ mod tests {
             .iter()
             .any(|m| m.content.contains("Total imported: 1")));
 
-        let pads = store.list_pads(Scope::Project).unwrap();
+        let pads = store
+            .list_pads(Scope::Project, crate::store::Bucket::Active)
+            .unwrap();
         assert_eq!(pads.len(), 1);
         assert_eq!(pads[0].metadata.title, "Valid Title");
     }
 
     #[test]
     fn test_import_file_with_no_extension() {
-        let mut store = InMemoryStore::new();
+        let mut store = BucketedStore::new(
+            MemBackend::new(),
+            MemBackend::new(),
+            MemBackend::new(),
+            MemBackend::new(),
+        );
         let temp_dir = tempfile::tempdir().unwrap();
 
         // Direct file import ignores extension list, tries to import any file
@@ -390,7 +476,9 @@ mod tests {
             .iter()
             .any(|m| m.content.contains("Total imported: 1")));
 
-        let pads = store.list_pads(Scope::Project).unwrap();
+        let pads = store
+            .list_pads(Scope::Project, crate::store::Bucket::Active)
+            .unwrap();
         assert_eq!(pads.len(), 1);
     }
 }
