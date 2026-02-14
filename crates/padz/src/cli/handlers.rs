@@ -14,7 +14,6 @@
 // Allow non_snake_case for macro-generated __handler wrapper functions
 #![allow(non_snake_case)]
 
-use clap::ArgMatches;
 use padzapp::api::{PadFilter, PadStatusFilter, PadzApi, TodoStatus};
 use padzapp::clipboard::{copy_to_clipboard, format_for_clipboard};
 use padzapp::commands::CmdResult;
@@ -25,7 +24,6 @@ use padzapp::store::fs::FileStore;
 use serde_json::Value;
 use standout::cli::{CommandContext, Output};
 use standout::OutputMode;
-use standout_input::{EditorSource, InputChain, StdinSource};
 use standout_macros::handler;
 use std::cell::RefCell;
 use std::io::IsTerminal;
@@ -369,27 +367,18 @@ fn copy_content_to_clipboard(content: &str) {
     }
 }
 
-/// Build the initial editor content template for a new pad
-fn make_editor_template(title: Option<&str>) -> String {
-    let title = title.unwrap_or_default();
-    padzapp::editor::EditorContent::new(title.to_string(), String::new()).to_buffer()
-}
-
-/// Collect content from stdin or editor using InputChain
-fn collect_content(
-    matches: &ArgMatches,
-    initial_content: &str,
-) -> Result<Option<String>, anyhow::Error> {
-    let result = InputChain::<String>::new()
-        .try_source(StdinSource::new())
-        .try_source(EditorSource::new().initial_content(initial_content))
-        .resolve(matches);
-
-    match result {
-        Ok(content) => Ok(Some(content)),
-        Err(standout_input::InputError::NoInput) => Ok(None),
-        Err(e) => Err(anyhow::anyhow!("{}", e)),
+/// Try to read content from piped stdin.
+/// Returns None if stdin is a terminal (interactive), Some if piped.
+fn try_read_stdin() -> Result<Option<String>, anyhow::Error> {
+    use std::io::Read;
+    if std::io::stdin().is_terminal() {
+        return Ok(None);
     }
+    let mut content = String::new();
+    std::io::stdin()
+        .read_to_string(&mut content)
+        .map_err(|e| anyhow::anyhow!("Failed to read stdin: {}", e))?;
+    Ok(Some(content.trim().to_string()))
 }
 
 /// Split a list of args into index selectors and trailing content words.
@@ -427,7 +416,6 @@ pub fn create(
     #[flag(name = "no_editor")] no_editor: bool,
     #[arg] inside: Option<String>,
     #[arg] title: Vec<String>,
-    #[matches] matches: &ArgMatches,
 ) -> Result<Output<Value>, anyhow::Error> {
     let state = get_state(ctx);
     let title_arg = if title.is_empty() {
@@ -455,29 +443,69 @@ pub fn create(
         let clipboard_text = format_for_clipboard(&title, &body);
         let _ = copy_to_clipboard(&clipboard_text);
         result
+    } else if let Some(raw) = try_read_stdin()? {
+        // Piped content from stdin
+        if raw.is_empty() {
+            return Ok(Output::Render(serde_json::json!({
+                "start_message": "",
+                "pads": [],
+                "trailing_messages": [{"content": "Aborted: empty content", "style": "warning"}]
+            })));
+        }
+        let parsed = padzapp::editor::EditorContent::from_buffer(&raw);
+        // Determine title: title_arg override > parsed title > "Untitled"
+        let final_title = match (&title_arg, parsed.title.is_empty()) {
+            (Some(t), _) => t.clone(),  // CLI title always wins
+            (_, false) => parsed.title, // parsed has title, no CLI override
+            (None, true) => "Untitled".to_string(),
+        };
+        let result = state.with_api(|api| {
+            api.create_pad(state.scope, final_title, parsed.content, inside)
+                .map_err(|e| anyhow::anyhow!("{}", e))
+        })?;
+        // Copy to clipboard
+        copy_content_to_clipboard(&raw);
+        result
     } else {
-        // Collect content via InputChain: stdin → editor
-        let template = make_editor_template(title_arg.as_deref());
-        let content = collect_content(matches, &template)?;
+        // Interactive: create pad first, then open real file in editor
+        let initial_title = title_arg.clone().unwrap_or_else(|| "Untitled".to_string());
+        let create_result = state.with_api(|api| {
+            api.create_pad(state.scope, initial_title, String::new(), inside)
+                .map_err(|e| anyhow::anyhow!("{}", e))
+        })?;
+        let pad_path = create_result.pad_paths[0].clone();
+        let pad_id = create_result.affected_pads[0].pad.metadata.id;
 
-        match content {
-            Some(raw) if !raw.trim().is_empty() => {
-                let parsed = padzapp::editor::EditorContent::from_buffer(&raw);
-                // Determine title: title_arg override > parsed title > "Untitled"
-                let final_title = match (&title_arg, parsed.title.is_empty()) {
-                    (Some(t), _) => t.clone(),  // CLI title always wins
-                    (_, false) => parsed.title, // parsed has title, no CLI override
-                    (None, true) => "Untitled".to_string(),
-                };
-                let result = state.with_api(|api| {
-                    api.create_pad(state.scope, final_title, parsed.content, inside)
-                        .map_err(|e| anyhow::anyhow!("{}", e))
-                })?;
+        // Open editor on the real pad file in .padz/
+        if let Err(e) = padzapp::editor::open_in_editor(&pad_path) {
+            // Editor failed - clean up the pad
+            let _ = state.with_api(|api| api.remove_pad(state.scope, pad_id));
+            return Err(anyhow::anyhow!("{}", e));
+        }
+
+        // Refresh pad from disk (re-reads content, updates title)
+        match state.with_api(|api| {
+            api.refresh_pad(state.scope, &pad_id)
+                .map_err(|e| anyhow::anyhow!("{}", e))
+        })? {
+            Some(pad) => {
                 // Copy to clipboard
-                copy_content_to_clipboard(&raw);
-                result
+                let clipboard_text = format_for_clipboard(&pad.metadata.title, &pad.content);
+                let _ = copy_to_clipboard(&clipboard_text);
+                // Build result
+                let display_pad = padzapp::index::DisplayPad {
+                    pad,
+                    index: padzapp::index::DisplayIndex::Regular(1),
+                    matches: None,
+                    children: Vec::new(),
+                };
+                CmdResult {
+                    affected_pads: vec![display_pad],
+                    ..Default::default()
+                }
             }
-            _ => {
+            None => {
+                // Empty file - user aborted
                 return Ok(Output::Render(serde_json::json!({
                     "start_message": "",
                     "pads": [],
@@ -585,7 +613,6 @@ pub fn view(
 pub fn edit(
     #[ctx] ctx: &CommandContext,
     #[arg] indexes: Vec<String>,
-    #[matches] matches: &ArgMatches,
 ) -> Result<Output<Value>, anyhow::Error> {
     let state = get_state(ctx);
 
@@ -628,41 +655,67 @@ pub fn edit(
         return Ok(Output::Render(data));
     }
 
-    // Get existing pad content to use as initial editor content
+    // Check for piped stdin
+    if let Some(raw) = try_read_stdin()? {
+        if raw.is_empty() {
+            return Err(anyhow::anyhow!("Aborted: empty content"));
+        }
+        let result = state.with_api(|api| {
+            api.update_pads_from_content(state.scope, &index_args, &raw)
+                .map_err(|e| anyhow::anyhow!("{}", e))
+        })?;
+
+        copy_content_to_clipboard(&raw);
+
+        let data = build_modification_result_value(
+            "Updated",
+            &result.affected_pads,
+            &result.messages,
+            state.output_mode,
+            state.mode,
+        );
+        return Ok(Output::Render(data));
+    }
+
+    // Interactive editor: open real pad file
     let view_result = state.with_api(|api| {
         api.view_pads(state.scope, &index_args)
             .map_err(|e| anyhow::anyhow!("{}", e))
     })?;
 
-    // For now, only support single pad edit (first pad)
     let pad = view_result
         .listed_pads
         .first()
         .ok_or_else(|| anyhow::anyhow!("No pad found"))?;
+    let pad_id = pad.pad.metadata.id;
+    let display_index = pad.index.clone();
 
-    // Build editor template with existing content
-    // In notes mode with trailing content, pre-fill editor with the new text
-    let initial_content = if let Some(ref new_text) = inline_content {
-        new_text.clone()
-    } else {
-        padzapp::editor::EditorContent::new(pad.pad.metadata.title.clone(), pad.pad.content.clone())
-            .to_buffer()
-    };
+    let pad_path = state.with_api(|api| {
+        api.get_path_by_id(state.scope, pad_id)
+            .map_err(|e| anyhow::anyhow!("{}", e))
+    })?;
 
-    // Collect content via InputChain: stdin → editor
-    let content = collect_content(matches, &initial_content)?;
+    // Open editor on the real pad file in .padz/
+    padzapp::editor::open_in_editor(&pad_path)?;
 
-    match content {
-        Some(raw) if !raw.trim().is_empty() => {
-            // Update the pad using the raw content (API parses title/body)
-            let result = state.with_api(|api| {
-                api.update_pads_from_content(state.scope, &index_args, &raw)
-                    .map_err(|e| anyhow::anyhow!("{}", e))
-            })?;
+    // Refresh pad from disk (re-reads content, updates title)
+    match state.with_api(|api| {
+        api.refresh_pad(state.scope, &pad_id)
+            .map_err(|e| anyhow::anyhow!("{}", e))
+    })? {
+        Some(pad) => {
+            copy_content_to_clipboard(&pad.content);
 
-            // Copy to clipboard
-            copy_content_to_clipboard(&raw);
-
+            let display_pad = padzapp::index::DisplayPad {
+                pad,
+                index: display_index,
+                matches: None,
+                children: Vec::new(),
+            };
+            let result = CmdResult {
+                affected_pads: vec![display_pad],
+                ..Default::default()
+            };
             let data = build_modification_result_value(
                 "Updated",
                 &result.affected_pads,
@@ -672,10 +725,10 @@ pub fn edit(
             );
             Ok(Output::Render(data))
         }
-        Some(_) | None if !std::io::stdin().is_terminal() => {
-            Err(anyhow::anyhow!("Aborted: empty content"))
+        None => {
+            // User emptied the file
+            Ok(Output::<Value>::Silent)
         }
-        _ => Ok(Output::<Value>::Silent),
     }
 }
 
