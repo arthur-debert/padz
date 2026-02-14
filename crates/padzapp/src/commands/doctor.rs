@@ -33,16 +33,30 @@ mod tests {
     use super::*;
     use crate::model::Metadata;
     use crate::store::backend::StorageBackend;
+    use crate::store::bucketed::BucketedStore;
     use crate::store::mem_backend::MemBackend;
-    use crate::store::memory::InMemoryStore;
-    use crate::store::pad_store::PadStore;
     use chrono::Utc;
     use std::collections::HashMap;
     use uuid::Uuid;
 
+    /// Helper: create a BucketedStore where the active backend has been pre-populated.
+    fn bucketed_with_active(active_backend: MemBackend) -> BucketedStore<MemBackend> {
+        BucketedStore::new(
+            active_backend,
+            MemBackend::new(),
+            MemBackend::new(),
+            MemBackend::new(),
+        )
+    }
+
     #[test]
     fn doctor_no_inconsistencies() {
-        let mut store = InMemoryStore::new();
+        let mut store = BucketedStore::new(
+            MemBackend::new(),
+            MemBackend::new(),
+            MemBackend::new(),
+            MemBackend::new(),
+        );
 
         let result = run(&mut store, Scope::Project).unwrap();
 
@@ -60,7 +74,7 @@ mod tests {
             .write_content(&orphan_id, Scope::Project, "Orphan Title\n\nBody")
             .unwrap();
 
-        let mut store = PadStore::with_backend(backend);
+        let mut store = bucketed_with_active(backend);
         let result = run(&mut store, Scope::Project).unwrap();
 
         // Should report inconsistencies found
@@ -88,8 +102,6 @@ mod tests {
                 updated_at: Utc::now(),
                 is_pinned: false,
                 pinned_at: None,
-                is_deleted: false,
-                deleted_at: None,
                 delete_protected: false,
                 parent_id: None,
                 title: "Zombie".to_string(),
@@ -99,7 +111,7 @@ mod tests {
         );
         backend.save_index(Scope::Project, &index).unwrap();
 
-        let mut store = PadStore::with_backend(backend);
+        let mut store = bucketed_with_active(backend);
         let result = run(&mut store, Scope::Project).unwrap();
 
         // Should report inconsistencies found
@@ -133,8 +145,6 @@ mod tests {
                 updated_at: Utc::now(),
                 is_pinned: false,
                 pinned_at: None,
-                is_deleted: false,
-                deleted_at: None,
                 delete_protected: false,
                 parent_id: None,
                 title: "Zombie".to_string(),
@@ -144,7 +154,7 @@ mod tests {
         );
         backend.save_index(Scope::Project, &index).unwrap();
 
-        let mut store = PadStore::with_backend(backend);
+        let mut store = bucketed_with_active(backend);
         let result = run(&mut store, Scope::Project).unwrap();
 
         // Should have warning + both issue types

@@ -3,7 +3,7 @@ use crate::commands::{CmdMessage, CmdResult};
 use crate::error::Result;
 use crate::index::{DisplayIndex, DisplayPad, PadSelector};
 use crate::model::Scope;
-use crate::store::DataStore;
+use crate::store::{Bucket, DataStore};
 use uuid::Uuid;
 
 use super::helpers::{indexed_pads, resolve_selectors};
@@ -36,12 +36,12 @@ fn pin_state<S: DataStore>(
     // Collect UUIDs and perform pin/unpin
     let mut affected_uuids: Vec<Uuid> = Vec::new();
     for (display_index, uuid) in resolved {
-        let mut pad = store.get_pad(&uuid, scope)?;
+        let mut pad = store.get_pad(&uuid, scope, Bucket::Active)?;
         let was_already_pinned = pad.metadata.is_pinned; // Capture original state
 
         // Use the attribute API - this sets is_pinned, pinned_at, and delete_protected
         pad.metadata.set_attr("pinned", AttrValue::Bool(is_pinned));
-        store.save_pad(&pad, scope)?;
+        store.save_pad(&pad, scope, Bucket::Active)?;
 
         // Only add info messages for no-op cases; success cases are shown via pad list
         if is_pinned && was_already_pinned {
@@ -86,12 +86,18 @@ mod tests {
     use crate::commands::{create, get};
     use crate::index::DisplayIndex;
     use crate::model::Scope;
-    use crate::store::memory::InMemoryStore;
+    use crate::store::bucketed::BucketedStore;
+    use crate::store::mem_backend::MemBackend;
     use std::slice;
 
     #[test]
     fn pinning_assigns_p_index() {
-        let mut store = InMemoryStore::new();
+        let mut store = BucketedStore::new(
+            MemBackend::new(),
+            MemBackend::new(),
+            MemBackend::new(),
+            MemBackend::new(),
+        );
         create::run(&mut store, Scope::Project, "A".into(), "".into(), None).unwrap();
         create::run(&mut store, Scope::Project, "B".into(), "".into(), None).unwrap();
 
@@ -107,7 +113,12 @@ mod tests {
 
     #[test]
     fn unpinning_removes_pinned_flag() {
-        let mut store = InMemoryStore::new();
+        let mut store = BucketedStore::new(
+            MemBackend::new(),
+            MemBackend::new(),
+            MemBackend::new(),
+            MemBackend::new(),
+        );
         create::run(&mut store, Scope::Project, "A".into(), "".into(), None).unwrap();
         let sel = PadSelector::Path(vec![DisplayIndex::Regular(1)]);
         pin(&mut store, Scope::Project, slice::from_ref(&sel)).unwrap();
@@ -122,7 +133,12 @@ mod tests {
 
     #[test]
     fn pinning_enables_delete_protection() {
-        let mut store = InMemoryStore::new();
+        let mut store = BucketedStore::new(
+            MemBackend::new(),
+            MemBackend::new(),
+            MemBackend::new(),
+            MemBackend::new(),
+        );
         create::run(&mut store, Scope::Project, "A".into(), "".into(), None).unwrap();
 
         // Pin it
@@ -169,7 +185,12 @@ mod tests {
 
     #[test]
     fn pinning_already_pinned_is_idempotent() {
-        let mut store = InMemoryStore::new();
+        let mut store = BucketedStore::new(
+            MemBackend::new(),
+            MemBackend::new(),
+            MemBackend::new(),
+            MemBackend::new(),
+        );
         create::run(&mut store, Scope::Project, "A".into(), "".into(), None).unwrap();
 
         // Pin first time
@@ -198,7 +219,12 @@ mod tests {
 
     #[test]
     fn unpinning_already_unpinned_is_idempotent() {
-        let mut store = InMemoryStore::new();
+        let mut store = BucketedStore::new(
+            MemBackend::new(),
+            MemBackend::new(),
+            MemBackend::new(),
+            MemBackend::new(),
+        );
         create::run(&mut store, Scope::Project, "A".into(), "".into(), None).unwrap();
 
         // Unpin unpinned
@@ -219,7 +245,12 @@ mod tests {
 
     #[test]
     fn pinning_batch() {
-        let mut store = InMemoryStore::new();
+        let mut store = BucketedStore::new(
+            MemBackend::new(),
+            MemBackend::new(),
+            MemBackend::new(),
+            MemBackend::new(),
+        );
         create::run(&mut store, Scope::Project, "A".into(), "".into(), None).unwrap();
         create::run(&mut store, Scope::Project, "B".into(), "".into(), None).unwrap();
 

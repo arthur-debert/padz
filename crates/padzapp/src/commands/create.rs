@@ -2,7 +2,7 @@ use crate::commands::CmdResult;
 use crate::error::Result;
 use crate::index::{DisplayIndex, DisplayPad};
 use crate::model::{Pad, Scope};
-use crate::store::DataStore;
+use crate::store::{Bucket, DataStore};
 
 pub fn run<S: DataStore>(
     store: &mut S,
@@ -35,13 +35,13 @@ pub fn run<S: DataStore>(
         }
     }
 
-    store.save_pad(&pad, scope)?;
+    store.save_pad(&pad, scope, Bucket::Active)?;
 
     // Propagate status change to parent (e.g. adding a "Planned" child might revert parent from "Done")
     crate::todos::propagate_status_change(store, scope, pad.metadata.parent_id)?;
 
     // Get the path for the created pad (for editor integration)
-    let pad_path = store.get_pad_path(&pad.metadata.id, scope)?;
+    let pad_path = store.get_pad_path(&pad.metadata.id, scope, Bucket::Active)?;
 
     let mut result = CmdResult::default();
     // New pad is always the newest, so it gets index 1
@@ -61,11 +61,17 @@ pub fn run<S: DataStore>(
 mod tests {
     use super::*;
     use crate::index::{DisplayIndex, PadSelector};
-    use crate::store::memory::InMemoryStore;
+    use crate::store::bucketed::BucketedStore;
+    use crate::store::mem_backend::MemBackend;
 
     #[test]
     fn creates_nested_pad() {
-        let mut store = InMemoryStore::new();
+        let mut store = BucketedStore::new(
+            MemBackend::new(),
+            MemBackend::new(),
+            MemBackend::new(),
+            MemBackend::new(),
+        );
         // Create parent
         run(&mut store, Scope::Project, "Parent".into(), "".into(), None).unwrap();
 
@@ -81,7 +87,7 @@ mod tests {
         .unwrap();
 
         // Check relationship
-        let pads = store.list_pads(Scope::Project).unwrap();
+        let pads = store.list_pads(Scope::Project, Bucket::Active).unwrap();
         let child = pads.iter().find(|p| p.metadata.title == "Child").unwrap();
         let parent = pads.iter().find(|p| p.metadata.title == "Parent").unwrap();
 
@@ -90,7 +96,12 @@ mod tests {
 
     #[test]
     fn parent_not_found_returns_error() {
-        let mut store = InMemoryStore::new();
+        let mut store = BucketedStore::new(
+            MemBackend::new(),
+            MemBackend::new(),
+            MemBackend::new(),
+            MemBackend::new(),
+        );
 
         // Try to create with non-existent parent index
         let result = run(
@@ -108,7 +119,12 @@ mod tests {
 
     #[test]
     fn ambiguous_parent_selector_returns_error() {
-        let mut store = InMemoryStore::new();
+        let mut store = BucketedStore::new(
+            MemBackend::new(),
+            MemBackend::new(),
+            MemBackend::new(),
+            MemBackend::new(),
+        );
 
         // Create two pads with similar titles
         run(
@@ -144,7 +160,12 @@ mod tests {
 
     #[test]
     fn create_returns_affected_pad_with_index_1() {
-        let mut store = InMemoryStore::new();
+        let mut store = BucketedStore::new(
+            MemBackend::new(),
+            MemBackend::new(),
+            MemBackend::new(),
+            MemBackend::new(),
+        );
 
         let result = run(
             &mut store,
@@ -169,7 +190,12 @@ mod tests {
 
     #[test]
     fn create_with_content_normalizes_title_in_content() {
-        let mut store = InMemoryStore::new();
+        let mut store = BucketedStore::new(
+            MemBackend::new(),
+            MemBackend::new(),
+            MemBackend::new(),
+            MemBackend::new(),
+        );
 
         let result = run(
             &mut store,
@@ -188,18 +214,28 @@ mod tests {
 
     #[test]
     fn create_root_pad_has_no_parent() {
-        let mut store = InMemoryStore::new();
+        let mut store = BucketedStore::new(
+            MemBackend::new(),
+            MemBackend::new(),
+            MemBackend::new(),
+            MemBackend::new(),
+        );
 
         run(&mut store, Scope::Project, "Root".into(), "".into(), None).unwrap();
 
-        let pads = store.list_pads(Scope::Project).unwrap();
+        let pads = store.list_pads(Scope::Project, Bucket::Active).unwrap();
         assert_eq!(pads.len(), 1);
         assert!(pads[0].metadata.parent_id.is_none());
     }
 
     #[test]
     fn create_returns_pad_path() {
-        let mut store = InMemoryStore::new();
+        let mut store = BucketedStore::new(
+            MemBackend::new(),
+            MemBackend::new(),
+            MemBackend::new(),
+            MemBackend::new(),
+        );
 
         let result = run(
             &mut store,

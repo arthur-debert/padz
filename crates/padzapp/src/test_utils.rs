@@ -19,7 +19,7 @@ impl TestEnv {
     pub fn new() -> Self {
         let temp_dir = tempfile::tempdir().expect("failed to create temp dir");
         let root = temp_dir.path().to_path_buf();
-        let store = FileStore::new(Some(root.clone()), root.clone());
+        let store = FileStore::new_fs(Some(root.clone()), root.clone());
         Self {
             _temp_dir: temp_dir,
             store,

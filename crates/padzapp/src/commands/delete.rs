@@ -1,9 +1,8 @@
-use crate::attributes::AttrValue;
 use crate::commands::CmdResult;
 use crate::error::Result;
 use crate::index::{DisplayPad, PadSelector};
 use crate::model::Scope;
-use crate::store::DataStore;
+use crate::store::{Bucket, DataStore};
 use uuid::Uuid;
 
 use super::helpers::{indexed_pads, resolve_selectors};
@@ -16,26 +15,39 @@ pub fn run<S: DataStore>(
     let resolved = resolve_selectors(store, scope, selectors, true)?;
     let mut result = CmdResult::default();
 
-    // Collect UUIDs and perform deletions
     let mut deleted_uuids: Vec<Uuid> = Vec::new();
+    let mut processed_ids = std::collections::HashSet::new();
+
     for (_display_index, uuid) in resolved {
-        let mut pad = store.get_pad(&uuid, scope)?;
+        if !processed_ids.insert(uuid) {
+            continue; // Already processed (e.g., as a descendant of an earlier pad)
+        }
 
-        // Use the attribute API - this sets is_deleted and deleted_at
-        pad.metadata.set_attr("deleted", AttrValue::Bool(true));
-        store.save_pad(&pad, scope)?;
+        // Get the pad's parent before moving (parent stays in Active)
+        let pad = store.get_pad(&uuid, scope, Bucket::Active)?;
+        let parent_id = pad.metadata.parent_id;
 
-        // Propagate status change to parent (deleted child no longer affects status)
-        crate::todos::propagate_status_change(store, scope, pad.metadata.parent_id)?;
+        // Find descendants (children, grandchildren, etc.)
+        let descendants = super::helpers::get_descendant_ids(store, scope, &[uuid])?;
 
-        // Note: No per-pad message - CLI handles unified rendering
+        // Move pad + all descendants from Active to Deleted
+        let mut ids_to_move = vec![uuid];
+        ids_to_move.extend(&descendants);
+        store.move_pads(&ids_to_move, scope, Bucket::Active, Bucket::Deleted)?;
+
+        for id in &descendants {
+            processed_ids.insert(*id);
+        }
+
+        // Propagate status change to parent (deleted child no longer affects parent status)
+        crate::todos::propagate_status_change(store, scope, parent_id)?;
+
         deleted_uuids.push(uuid);
     }
 
     // Re-index to get the new deleted indexes
     let indexed = indexed_pads(store, scope)?;
     for uuid in deleted_uuids {
-        // Find the pad with any index type (deleted pads may have Deleted index)
         if let Some(dp) = super::helpers::find_pad_by_uuid(&indexed, uuid, |_| true) {
             result.affected_pads.push(DisplayPad {
                 pad: dp.pad.clone(),
@@ -55,11 +67,17 @@ mod tests {
     use crate::commands::{create, get};
     use crate::index::DisplayIndex;
     use crate::model::Scope;
-    use crate::store::memory::InMemoryStore;
+    use crate::store::bucketed::BucketedStore;
+    use crate::store::mem_backend::MemBackend;
 
     #[test]
     fn marks_pad_as_deleted() {
-        let mut store = InMemoryStore::new();
+        let mut store = BucketedStore::new(
+            MemBackend::new(),
+            MemBackend::new(),
+            MemBackend::new(),
+            MemBackend::new(),
+        );
         create::run(&mut store, Scope::Project, "Title".into(), "".into(), None).unwrap();
         run(
             &mut store,
@@ -87,7 +105,12 @@ mod tests {
 
     #[test]
     fn delete_protected_pad_fails() {
-        let mut store = InMemoryStore::new();
+        let mut store = BucketedStore::new(
+            MemBackend::new(),
+            MemBackend::new(),
+            MemBackend::new(),
+            MemBackend::new(),
+        );
         create::run(
             &mut store,
             Scope::Project,
@@ -105,9 +128,13 @@ mod tests {
             .metadata
             .id;
 
-        let mut pad = store.get_pad(&pad_id, Scope::Project).unwrap();
+        let mut pad = store
+            .get_pad(&pad_id, Scope::Project, Bucket::Active)
+            .unwrap();
         pad.metadata.delete_protected = true;
-        store.save_pad(&pad, Scope::Project).unwrap();
+        store
+            .save_pad(&pad, Scope::Project, Bucket::Active)
+            .unwrap();
 
         // Attempt delete
         let result = run(
@@ -129,7 +156,12 @@ mod tests {
     fn delete_parent_with_pinned_child_succeeds() {
         // Deleting a parent should work even if it has a pinned child.
         // The pinned child is NOT deleted (soft delete is non-recursive per spec).
-        let mut store = InMemoryStore::new();
+        let mut store = BucketedStore::new(
+            MemBackend::new(),
+            MemBackend::new(),
+            MemBackend::new(),
+            MemBackend::new(),
+        );
 
         // Create parent
         create::run(&mut store, Scope::Project, "Parent".into(), "".into(), None).unwrap();
@@ -177,14 +209,18 @@ mod tests {
         assert_eq!(deleted.listed_pads.len(), 1);
         assert_eq!(deleted.listed_pads[0].pad.metadata.title, "Parent");
 
-        // Child should still exist (not deleted, just hidden under deleted parent)
-        // It appears under the deleted parent in deleted view
-        assert_eq!(deleted.listed_pads[0].children.len(), 2); // pinned + regular entry
+        // Child moves to Deleted bucket with parent — no dual pinned indexing in Deleted
+        assert_eq!(deleted.listed_pads[0].children.len(), 1);
     }
 
     #[test]
     fn delete_nested_pad_via_path() {
-        let mut store = InMemoryStore::new();
+        let mut store = BucketedStore::new(
+            MemBackend::new(),
+            MemBackend::new(),
+            MemBackend::new(),
+            MemBackend::new(),
+        );
 
         // Create parent
         create::run(&mut store, Scope::Project, "Parent".into(), "".into(), None).unwrap();

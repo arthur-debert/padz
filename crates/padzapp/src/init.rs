@@ -67,6 +67,7 @@ use crate::store::fs::FileStore;
 use clapfig::{Clapfig, SearchMode, SearchPath};
 use directories::{BaseDirs, ProjectDirs};
 use std::path::{Path, PathBuf};
+use uuid::Uuid;
 
 pub struct PadzContext {
     pub api: PadzApi<FileStore>,
@@ -201,7 +202,11 @@ pub fn initialize(cwd: &Path, use_global: bool, data_override: Option<PathBuf>) 
         .unwrap_or_default();
     let file_ext = config.file_ext();
 
-    let store = FileStore::new(Some(project_padz_dir.clone()), global_data_dir.clone())
+    // Migrate legacy flat layout to bucketed layout (if needed)
+    migrate_if_needed(&project_padz_dir);
+    migrate_if_needed(&global_data_dir);
+
+    let store = FileStore::new_fs(Some(project_padz_dir.clone()), global_data_dir.clone())
         .with_file_ext(&file_ext);
     let paths = PadzPaths {
         project: Some(project_padz_dir),
@@ -210,6 +215,149 @@ pub fn initialize(cwd: &Path, use_global: bool, data_override: Option<PathBuf>) 
     let api = PadzApi::new(store, paths);
 
     PadzContext { api, scope, config }
+}
+
+/// Migrates a legacy flat `.padz/` layout to the bucketed layout.
+///
+/// Legacy layout:
+/// ```text
+/// .padz/
+///   data.json        # All pads (active + deleted via is_deleted flag)
+///   pad-{uuid}.txt   # Content files
+///   tags.json        # Tags (stays in place)
+/// ```
+///
+/// Bucketed layout:
+/// ```text
+/// .padz/
+///   tags.json        # Scope-level (shared)
+///   active/
+///     data.json      # Active pad metadata
+///     pad-{uuid}.txt
+///   archived/        # (empty after migration)
+///     data.json
+///   deleted/
+///     data.json      # Deleted pad metadata
+///     pad-{uuid}.txt
+/// ```
+///
+/// Detection: `data.json` exists at root AND `active/` does NOT exist.
+/// Idempotent: only runs if legacy layout detected.
+fn migrate_if_needed(scope_root: &Path) {
+    let legacy_data = scope_root.join("data.json");
+    let active_dir = scope_root.join("active");
+
+    // Only migrate if legacy data.json exists and active/ doesn't
+    if !legacy_data.exists() || active_dir.exists() {
+        return;
+    }
+
+    // Best-effort migration — log errors but don't crash
+    if let Err(e) = migrate_flat_to_bucketed(scope_root) {
+        eprintln!(
+            "Warning: migration of {} failed: {}",
+            scope_root.display(),
+            e
+        );
+    }
+}
+
+fn migrate_flat_to_bucketed(scope_root: &Path) -> std::io::Result<()> {
+    use std::collections::HashMap;
+    use std::fs;
+
+    let legacy_data_path = scope_root.join("data.json");
+    let content = fs::read_to_string(&legacy_data_path)?;
+
+    let entries: HashMap<Uuid, serde_json::Value> = serde_json::from_str(&content)
+        .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))?;
+
+    // Partition entries by is_deleted flag
+    let mut active_entries: HashMap<Uuid, serde_json::Value> = HashMap::new();
+    let mut deleted_entries: HashMap<Uuid, serde_json::Value> = HashMap::new();
+
+    for (id, mut value) in entries {
+        let is_deleted = value
+            .get("is_deleted")
+            .and_then(|v| v.as_bool())
+            .unwrap_or(false);
+
+        // Strip legacy fields
+        if let Some(obj) = value.as_object_mut() {
+            obj.remove("is_deleted");
+            obj.remove("deleted_at");
+        }
+
+        if is_deleted {
+            deleted_entries.insert(id, value);
+        } else {
+            active_entries.insert(id, value);
+        }
+    }
+
+    // Create bucket directories
+    let active_dir = scope_root.join("active");
+    let archived_dir = scope_root.join("archived");
+    let deleted_dir = scope_root.join("deleted");
+    fs::create_dir_all(&active_dir)?;
+    fs::create_dir_all(&archived_dir)?;
+    fs::create_dir_all(&deleted_dir)?;
+
+    // Write bucket data.json files
+    let active_json =
+        serde_json::to_string_pretty(&active_entries).map_err(std::io::Error::other)?;
+    fs::write(active_dir.join("data.json"), active_json)?;
+
+    let deleted_json =
+        serde_json::to_string_pretty(&deleted_entries).map_err(std::io::Error::other)?;
+    fs::write(deleted_dir.join("data.json"), deleted_json)?;
+
+    // Write empty archived data.json
+    fs::write(archived_dir.join("data.json"), "{}")?;
+
+    // Move content files to their respective bucket directories
+    let all_active_ids: std::collections::HashSet<Uuid> = active_entries.keys().copied().collect();
+    let all_deleted_ids: std::collections::HashSet<Uuid> =
+        deleted_entries.keys().copied().collect();
+
+    let dir_entries = fs::read_dir(scope_root)?;
+    for entry in dir_entries {
+        let entry = entry?;
+        let path = entry.path();
+
+        if !path.is_file() {
+            continue;
+        }
+        let Some(name) = path.file_name().and_then(|s| s.to_str()) else {
+            continue;
+        };
+        if !name.starts_with("pad-") {
+            continue;
+        }
+
+        // Extract UUID from filename: pad-{uuid}.ext
+        let stem = path.file_stem().and_then(|s| s.to_str()).unwrap_or("");
+        let uuid_part = stem.strip_prefix("pad-").unwrap_or("");
+        let Ok(id) = Uuid::parse_str(uuid_part) else {
+            continue;
+        };
+
+        let dest_dir = if all_deleted_ids.contains(&id) {
+            &deleted_dir
+        } else if all_active_ids.contains(&id) {
+            &active_dir
+        } else {
+            // Orphan file — move to active (doctor will handle it)
+            &active_dir
+        };
+
+        fs::rename(&path, dest_dir.join(name))?;
+    }
+
+    // Remove legacy data.json
+    fs::remove_file(&legacy_data_path)?;
+
+    Ok(())
 }
 
 #[cfg(test)]
@@ -428,5 +576,161 @@ mod tests {
 
         // Should use project's .padz path
         assert_eq!(ctx.api.paths().project, Some(project.join(".padz")));
+    }
+
+    // --- Migration tests ---
+
+    #[test]
+    fn test_migration_flat_to_bucketed() {
+        let temp = TempDir::new().unwrap();
+        let root = temp.path().join(".padz");
+        fs::create_dir_all(&root).unwrap();
+
+        let id1 = Uuid::new_v4();
+        let id2 = Uuid::new_v4();
+
+        // Create legacy data.json with one active and one deleted pad
+        let legacy_data = serde_json::json!({
+            id1.to_string(): {
+                "id": id1.to_string(),
+                "created_at": "2024-01-01T00:00:00Z",
+                "updated_at": "2024-01-01T00:00:00Z",
+                "is_pinned": false,
+                "title": "Active Pad",
+                "is_deleted": false
+            },
+            id2.to_string(): {
+                "id": id2.to_string(),
+                "created_at": "2024-01-01T00:00:00Z",
+                "updated_at": "2024-01-01T00:00:00Z",
+                "is_pinned": false,
+                "title": "Deleted Pad",
+                "is_deleted": true,
+                "deleted_at": "2024-01-02T00:00:00Z"
+            }
+        });
+        fs::write(
+            root.join("data.json"),
+            serde_json::to_string_pretty(&legacy_data).unwrap(),
+        )
+        .unwrap();
+
+        // Create content files
+        fs::write(root.join(format!("pad-{}.txt", id1)), "Active content").unwrap();
+        fs::write(root.join(format!("pad-{}.txt", id2)), "Deleted content").unwrap();
+
+        // Create tags.json (should stay in place)
+        fs::write(root.join("tags.json"), "[]").unwrap();
+
+        // Run migration
+        migrate_if_needed(&root);
+
+        // Verify: legacy data.json removed
+        assert!(!root.join("data.json").exists());
+
+        // Verify: bucket directories created
+        assert!(root.join("active").is_dir());
+        assert!(root.join("archived").is_dir());
+        assert!(root.join("deleted").is_dir());
+
+        // Verify: active pad in active/
+        let active_data: std::collections::HashMap<Uuid, serde_json::Value> =
+            serde_json::from_str(&fs::read_to_string(root.join("active/data.json")).unwrap())
+                .unwrap();
+        assert_eq!(active_data.len(), 1);
+        assert!(active_data.contains_key(&id1));
+        // Verify is_deleted stripped
+        assert!(active_data[&id1].get("is_deleted").is_none());
+
+        // Verify: deleted pad in deleted/
+        let deleted_data: std::collections::HashMap<Uuid, serde_json::Value> =
+            serde_json::from_str(&fs::read_to_string(root.join("deleted/data.json")).unwrap())
+                .unwrap();
+        assert_eq!(deleted_data.len(), 1);
+        assert!(deleted_data.contains_key(&id2));
+        // Verify is_deleted and deleted_at stripped
+        assert!(deleted_data[&id2].get("is_deleted").is_none());
+        assert!(deleted_data[&id2].get("deleted_at").is_none());
+
+        // Verify: content files moved
+        assert!(root
+            .join("active")
+            .join(format!("pad-{}.txt", id1))
+            .exists());
+        assert!(root
+            .join("deleted")
+            .join(format!("pad-{}.txt", id2))
+            .exists());
+        assert!(!root.join(format!("pad-{}.txt", id1)).exists());
+        assert!(!root.join(format!("pad-{}.txt", id2)).exists());
+
+        // Verify: tags.json stays at root
+        assert!(root.join("tags.json").exists());
+    }
+
+    #[test]
+    fn test_migration_idempotent() {
+        let temp = TempDir::new().unwrap();
+        let root = temp.path().join(".padz");
+        fs::create_dir_all(root.join("active")).unwrap();
+
+        // Create a data.json at root (should NOT trigger migration since active/ exists)
+        fs::write(root.join("data.json"), "{}").unwrap();
+
+        migrate_if_needed(&root);
+
+        // data.json should still exist (migration was skipped)
+        assert!(root.join("data.json").exists());
+    }
+
+    #[test]
+    fn test_migration_no_data_json() {
+        let temp = TempDir::new().unwrap();
+        let root = temp.path().join(".padz");
+        fs::create_dir_all(&root).unwrap();
+
+        // No data.json — nothing to migrate
+        migrate_if_needed(&root);
+
+        // No bucket directories should be created
+        assert!(!root.join("active").exists());
+    }
+
+    #[test]
+    fn test_migration_all_active() {
+        let temp = TempDir::new().unwrap();
+        let root = temp.path().join(".padz");
+        fs::create_dir_all(&root).unwrap();
+
+        let id = Uuid::new_v4();
+
+        let legacy_data = serde_json::json!({
+            id.to_string(): {
+                "id": id.to_string(),
+                "created_at": "2024-01-01T00:00:00Z",
+                "updated_at": "2024-01-01T00:00:00Z",
+                "is_pinned": false,
+                "title": "Active"
+            }
+        });
+        fs::write(
+            root.join("data.json"),
+            serde_json::to_string_pretty(&legacy_data).unwrap(),
+        )
+        .unwrap();
+        fs::write(root.join(format!("pad-{}.txt", id)), "Content").unwrap();
+
+        migrate_if_needed(&root);
+
+        // All pads should be in active
+        let active_data: std::collections::HashMap<Uuid, serde_json::Value> =
+            serde_json::from_str(&fs::read_to_string(root.join("active/data.json")).unwrap())
+                .unwrap();
+        assert_eq!(active_data.len(), 1);
+
+        let deleted_data: std::collections::HashMap<Uuid, serde_json::Value> =
+            serde_json::from_str(&fs::read_to_string(root.join("deleted/data.json")).unwrap())
+                .unwrap();
+        assert_eq!(deleted_data.len(), 0);
     }
 }

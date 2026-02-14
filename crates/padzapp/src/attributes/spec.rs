@@ -109,7 +109,6 @@ pub const ATTRIBUTES: &[AttributeSpec] = &[
     AttributeSpec::new("pinned", AttributeKind::BoolWithTimestamp)
         .filterable()
         .has_coupling(), // pinned also sets delete_protected
-    AttributeSpec::new("deleted", AttributeKind::BoolWithTimestamp).filterable(),
     // Simple boolean attributes
     AttributeSpec::new("protected", AttributeKind::Bool),
     // Enum attributes
@@ -144,7 +143,6 @@ mod tests {
     #[test]
     fn attributes_registry_has_expected_entries() {
         assert!(get_spec("pinned").is_some());
-        assert!(get_spec("deleted").is_some());
         assert!(get_spec("protected").is_some());
         assert!(get_spec("status").is_some());
         assert!(get_spec("tags").is_some());
@@ -165,15 +163,6 @@ mod tests {
         assert!(spec.has_coupling);
         assert!(!spec.propagates_up);
         assert!(!spec.cascades_on_delete);
-    }
-
-    #[test]
-    fn deleted_spec_is_correct() {
-        let spec = get_spec("deleted").unwrap();
-        assert_eq!(spec.name, "deleted");
-        assert_eq!(spec.kind, AttributeKind::BoolWithTimestamp);
-        assert!(spec.filterable);
-        assert!(!spec.has_coupling);
     }
 
     #[test]
@@ -214,7 +203,6 @@ mod tests {
     fn filterable_attrs_returns_expected() {
         let filterable: Vec<_> = filterable_attrs().collect();
         assert!(filterable.contains(&"pinned"));
-        assert!(filterable.contains(&"deleted"));
         assert!(filterable.contains(&"status"));
         assert!(filterable.contains(&"tags"));
         assert!(!filterable.contains(&"protected"));

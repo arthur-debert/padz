@@ -1,5 +1,5 @@
 use super::backend::StorageBackend;
-use super::{DataStore, DoctorReport};
+use super::DoctorReport;
 use crate::error::{PadzError, Result};
 use crate::model::{Metadata, Pad, Scope};
 use std::path::PathBuf;
@@ -88,8 +88,6 @@ impl<B: StorageBackend> PadStore<B> {
                             updated_at: mtime,
                             is_pinned: false,
                             pinned_at: None,
-                            is_deleted: false,
-                            deleted_at: None,
                             delete_protected: false,
                             parent_id: None,
                             title,
@@ -132,13 +130,15 @@ impl<B: StorageBackend> PadStore<B> {
     }
 }
 
-impl<B: StorageBackend> DataStore for PadStore<B> {
-    fn save_pad(&mut self, pad: &Pad, scope: Scope) -> Result<()> {
-        // 1. Write content FIRST (Atomic) to avoid Zombies
+/// CRUD and maintenance methods.
+/// BucketedStore delegates to these; they are also used directly in PadStore tests.
+impl<B: StorageBackend> PadStore<B> {
+    pub fn save_pad(&mut self, pad: &Pad, scope: Scope) -> Result<()> {
+        // Write content FIRST (Atomic) to avoid Zombies
         self.backend
             .write_content(&pad.metadata.id, scope, &pad.content)?;
 
-        // 2. Update Index
+        // Update Index
         let mut index = self.backend.load_index(scope)?;
         index.insert(pad.metadata.id, pad.metadata.clone());
         self.backend.save_index(scope, &index)?;
@@ -146,66 +146,48 @@ impl<B: StorageBackend> DataStore for PadStore<B> {
         Ok(())
     }
 
-    fn get_pad(&self, id: &Uuid, scope: Scope) -> Result<Pad> {
+    pub fn get_pad(&self, id: &Uuid, scope: Scope) -> Result<Pad> {
         let index = self.backend.load_index(scope)?;
         let metadata = index.get(id).ok_or(PadzError::PadNotFound(*id))?.clone();
-
-        // If content is missing, return empty string (self-healing on next sync)
         let content = self.backend.read_content(id, scope)?.unwrap_or_default();
-
         Ok(Pad { metadata, content })
     }
 
-    fn list_pads(&self, scope: Scope) -> Result<Vec<Pad>> {
-        // Sync first!
+    pub fn list_pads(&self, scope: Scope) -> Result<Vec<Pad>> {
         let _ = self.reconcile(scope);
-
-        // Then list from "clean" state
         let index = self.backend.load_index(scope)?;
         let mut pads = Vec::new();
-
         for (id, metadata) in index {
             let content = self.backend.read_content(&id, scope)?.unwrap_or_default();
             pads.push(Pad { metadata, content });
         }
-
         Ok(pads)
     }
 
-    fn delete_pad(&mut self, id: &Uuid, scope: Scope) -> Result<()> {
-        // 1. Update Index FIRST? Or Content FIRST?
-        // If we delete content first, and index update fails -> Zombie (fixed by sync).
-        // If we delete index first, and content delete fails -> Orphan (fixed by sync).
-        // Bias towards Orphan is safer (data not lost if it was a mistake).
-        // But for explicit delete, we want it gone.
-        // Current FileStore: remove from metadata first.
-
+    pub fn delete_pad(&mut self, id: &Uuid, scope: Scope) -> Result<()> {
         let mut index = self.backend.load_index(scope)?;
         if index.remove(id).is_none() {
             return Err(PadzError::PadNotFound(*id));
         }
         self.backend.save_index(scope, &index)?;
-
-        // 2. Delete Content
         self.backend.delete_content(id, scope)?;
-
         Ok(())
     }
 
-    fn get_pad_path(&self, id: &Uuid, scope: Scope) -> Result<PathBuf> {
+    pub fn get_pad_path(&self, id: &Uuid, scope: Scope) -> Result<PathBuf> {
         self.backend.content_path(id, scope)
     }
 
-    fn doctor(&mut self, scope: Scope) -> Result<DoctorReport> {
+    pub fn doctor(&mut self, scope: Scope) -> Result<DoctorReport> {
         let (report, _) = self.reconcile(scope)?;
         Ok(report)
     }
 
-    fn load_tags(&self, scope: Scope) -> Result<Vec<crate::tags::TagEntry>> {
+    pub fn load_tags(&self, scope: Scope) -> Result<Vec<crate::tags::TagEntry>> {
         self.backend.load_tags(scope)
     }
 
-    fn save_tags(&mut self, scope: Scope, tags: &[crate::tags::TagEntry]) -> Result<()> {
+    pub fn save_tags(&mut self, scope: Scope, tags: &[crate::tags::TagEntry]) -> Result<()> {
         self.backend.save_tags(scope, tags)
     }
 }
@@ -286,8 +268,6 @@ mod tests {
                 updated_at: Utc::now(),
                 is_pinned: false,
                 pinned_at: None,
-                is_deleted: false,
-                deleted_at: None,
                 delete_protected: false,
                 parent_id: None,
                 title: "Zombie".to_string(),

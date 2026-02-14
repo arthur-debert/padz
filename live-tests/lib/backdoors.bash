@@ -21,6 +21,14 @@
 # Content files: pad-{uuid}.txt (not .md!)
 # Index file: data.json (HashMap<Uuid, Metadata>, not array)
 #
+# STORAGE LAYOUT
+# --------------
+# Each scope has three bucket subdirectories:
+#   {scope_root}/active/    — active pads (data.json + pad-*.txt)
+#   {scope_root}/archived/  — archived pads
+#   {scope_root}/deleted/   — deleted pads
+#   {scope_root}/           — scope-level files (tags.json)
+#
 # USAGE
 # -----
 # Load in your .bats file:
@@ -36,9 +44,9 @@
 #
 # =============================================================================
 
-# Get the data directory for a scope
-# Usage: _get_data_dir [scope]
-_get_data_dir() {
+# Get the scope root directory
+# Usage: _get_scope_root [scope]
+_get_scope_root() {
     local scope="${1:-}"
     if [[ "${scope}" == "global" ]]; then
         echo "${PADZ_GLOBAL_DATA}"
@@ -48,44 +56,59 @@ _get_data_dir() {
     fi
 }
 
+# Get the bucket directory for a scope
+# Usage: _get_bucket_dir [scope] [bucket]
+# bucket: active (default), archived, deleted
+_get_bucket_dir() {
+    local scope="${1:-}"
+    local bucket="${2:-active}"
+    local root
+    root=$(_get_scope_root "${scope}")
+    echo "${root}/${bucket}"
+}
+
 # Get path to content file for a pad
 # Note: Files are named pad-{uuid}.txt
-# Usage: backdoor_get_content_path <uuid> [scope]
+# Usage: backdoor_get_content_path <uuid> [scope] [bucket]
 backdoor_get_content_path() {
     local uuid="$1"
     local scope="${2:-}"
-    local data_dir
-    data_dir=$(_get_data_dir "${scope}")
-    echo "${data_dir}/pad-${uuid}.txt"
+    local bucket="${3:-active}"
+    local bucket_dir
+    bucket_dir=$(_get_bucket_dir "${scope}" "${bucket}")
+    echo "${bucket_dir}/pad-${uuid}.txt"
 }
 
-# Get path to data.json
-# Usage: backdoor_get_index_path [scope]
+# Get path to data.json for a bucket
+# Usage: backdoor_get_index_path [scope] [bucket]
 backdoor_get_index_path() {
     local scope="${1:-}"
-    local data_dir
-    data_dir=$(_get_data_dir "${scope}")
-    echo "${data_dir}/data.json"
+    local bucket="${2:-active}"
+    local bucket_dir
+    bucket_dir=$(_get_bucket_dir "${scope}" "${bucket}")
+    echo "${bucket_dir}/data.json"
 }
 
 # Remove content file only (creates zombie metadata)
-# Usage: backdoor_remove_content <uuid> [scope]
+# Usage: backdoor_remove_content <uuid> [scope] [bucket]
 backdoor_remove_content() {
     local uuid="$1"
     local scope="${2:-}"
+    local bucket="${3:-active}"
     local content_path
-    content_path=$(backdoor_get_content_path "${uuid}" "${scope}")
+    content_path=$(backdoor_get_content_path "${uuid}" "${scope}" "${bucket}")
     rm -f "${content_path}"
 }
 
 # Remove metadata entry only (creates orphan file)
 # Note: data.json is HashMap<Uuid, Metadata>, so we delete by key
-# Usage: backdoor_remove_metadata <uuid> [scope]
+# Usage: backdoor_remove_metadata <uuid> [scope] [bucket]
 backdoor_remove_metadata() {
     local uuid="$1"
     local scope="${2:-}"
+    local bucket="${3:-active}"
     local index_path
-    index_path=$(backdoor_get_index_path "${scope}")
+    index_path=$(backdoor_get_index_path "${scope}" "${bucket}")
 
     if [[ -f "${index_path}" ]]; then
         local temp_file="${index_path}.tmp"
@@ -96,61 +119,66 @@ backdoor_remove_metadata() {
 }
 
 # Write invalid JSON to index (for corruption testing)
-# Usage: backdoor_corrupt_index [scope]
+# Usage: backdoor_corrupt_index [scope] [bucket]
 backdoor_corrupt_index() {
     local scope="${1:-}"
+    local bucket="${2:-active}"
     local index_path
-    index_path=$(backdoor_get_index_path "${scope}")
+    index_path=$(backdoor_get_index_path "${scope}" "${bucket}")
     echo "{ invalid json here" > "${index_path}"
 }
 
 # Create an orphan content file (no metadata)
-# Usage: backdoor_create_orphan <title> [scope]
+# Usage: backdoor_create_orphan <title> [scope] [bucket]
 # Returns: the UUID of the created orphan
 backdoor_create_orphan() {
     local title="$1"
     local scope="${2:-}"
-    local data_dir
-    data_dir=$(_get_data_dir "${scope}")
+    local bucket="${3:-active}"
+    local bucket_dir
+    bucket_dir=$(_get_bucket_dir "${scope}" "${bucket}")
 
     # Generate a UUID (lowercase)
     local uuid
     uuid=$(uuidgen | tr '[:upper:]' '[:lower:]')
 
     # Create content file with correct naming convention
-    mkdir -p "${data_dir}"
-    echo -e "${title}\n\nOrphan content body" > "${data_dir}/pad-${uuid}.txt"
+    mkdir -p "${bucket_dir}"
+    echo -e "${title}\n\nOrphan content body" > "${bucket_dir}/pad-${uuid}.txt"
 
     echo "${uuid}"
 }
 
-# List all content files in data directory
-# Usage: backdoor_list_content_files [scope]
+# List all content files in a bucket directory
+# Usage: backdoor_list_content_files [scope] [bucket]
 backdoor_list_content_files() {
     local scope="${1:-}"
-    local data_dir
-    data_dir=$(_get_data_dir "${scope}")
-    ls "${data_dir}"/pad-*.txt 2>/dev/null | xargs -n1 basename | sed 's/^pad-//; s/\.txt$//' || true
+    local bucket="${2:-active}"
+    local bucket_dir
+    bucket_dir=$(_get_bucket_dir "${scope}" "${bucket}")
+    ls "${bucket_dir}"/pad-*.txt 2>/dev/null | xargs -n1 basename | sed 's/^pad-//; s/\.txt$//' || true
 }
 
 # Check if content file exists for UUID
-# Usage: backdoor_content_exists <uuid> [scope]
+# Usage: backdoor_content_exists <uuid> [scope] [bucket]
 backdoor_content_exists() {
     local uuid="$1"
     local scope="${2:-}"
+    local bucket="${3:-active}"
     local content_path
-    content_path=$(backdoor_get_content_path "${uuid}" "${scope}")
+    content_path=$(backdoor_get_content_path "${uuid}" "${scope}" "${bucket}")
     [[ -f "${content_path}" ]]
 }
 
 # Check if metadata exists for UUID
 # Note: data.json is {uuid: metadata, ...}
-# Usage: backdoor_metadata_exists <uuid> [scope]
+# Usage: backdoor_metadata_exists <uuid> [scope] [bucket]
 backdoor_metadata_exists() {
     local uuid="$1"
     local scope="${2:-}"
+    local bucket="${3:-active}"
     local index_path
-    index_path=$(backdoor_get_index_path "${scope}")
+    index_path=$(backdoor_get_index_path "${scope}" "${bucket}")
 
     if [[ ! -f "${index_path}" ]]; then
         return 1

@@ -1,12 +1,16 @@
 use crate::error::{PadzError, Result};
 use crate::index::{index_pads, DisplayIndex, DisplayPad};
 use crate::model::Scope;
+use crate::store::Bucket;
 use crate::store::DataStore;
 use uuid::Uuid;
 
 pub fn indexed_pads<S: DataStore>(store: &S, scope: Scope) -> Result<Vec<DisplayPad>> {
-    let pads = store.list_pads(scope)?;
-    Ok(index_pads(pads))
+    let active_pads = store.list_pads(scope, Bucket::Active)?;
+    let archived_pads = store.list_pads(scope, Bucket::Archived)?;
+    let deleted_pads = store.list_pads(scope, Bucket::Deleted)?;
+
+    Ok(index_pads(active_pads, archived_pads, deleted_pads))
 }
 
 use crate::index::PadSelector;
@@ -137,6 +141,15 @@ pub fn fmt_path(path: &[DisplayIndex]) -> String {
     s.join(".")
 }
 
+/// Determines the storage bucket for a pad based on its display index.
+pub fn bucket_for_index(index: &DisplayIndex) -> Bucket {
+    match index {
+        DisplayIndex::Pinned(_) | DisplayIndex::Regular(_) => Bucket::Active,
+        DisplayIndex::Archived(_) => Bucket::Archived,
+        DisplayIndex::Deleted(_) => Bucket::Deleted,
+    }
+}
+
 /// Resolves selectors and returns a flat list of DisplayPads.
 ///
 /// **Important**: This returns a *flattened* view—each pad has `children: Vec::new()`.
@@ -153,8 +166,9 @@ pub fn pads_by_selectors<S: DataStore>(
     let resolved = resolve_selectors(store, scope, selectors, check_delete_protection)?;
     let mut pads = Vec::with_capacity(resolved.len());
     for (path, id) in resolved {
-        let pad = store.get_pad(&id, scope)?;
         let local_index = path.last().cloned().unwrap_or(DisplayIndex::Regular(0));
+        let bucket = bucket_for_index(&local_index);
+        let pad = store.get_pad(&id, scope, bucket)?;
 
         pads.push(DisplayPad {
             pad,
@@ -171,13 +185,13 @@ pub fn get_descendant_ids<S: DataStore>(
     scope: Scope,
     target_ids: &[Uuid],
 ) -> Result<Vec<Uuid>> {
-    let all_pads = store.list_pads(scope)?;
-    let roots = index_pads(all_pads);
+    let roots = indexed_pads(store, scope)?;
+    let mut seen = std::collections::HashSet::new();
     let mut descendants = Vec::new();
 
     for target in target_ids {
         if let Some(node) = find_node_by_id(&roots, *target) {
-            collect_subtree_ids(node, &mut descendants);
+            collect_subtree_ids(node, &mut descendants, &mut seen);
         }
     }
     Ok(descendants)
@@ -195,10 +209,16 @@ fn find_node_by_id(pads: &[DisplayPad], id: Uuid) -> Option<&DisplayPad> {
     None
 }
 
-fn collect_subtree_ids(dp: &DisplayPad, ids: &mut Vec<Uuid>) {
+fn collect_subtree_ids(
+    dp: &DisplayPad,
+    ids: &mut Vec<Uuid>,
+    seen: &mut std::collections::HashSet<Uuid>,
+) {
     for child in &dp.children {
-        ids.push(child.pad.metadata.id);
-        collect_subtree_ids(child, ids);
+        if seen.insert(child.pad.metadata.id) {
+            ids.push(child.pad.metadata.id);
+        }
+        collect_subtree_ids(child, ids, seen);
     }
 }
 
@@ -230,12 +250,18 @@ mod tests {
     use crate::commands::create;
     use crate::index::DisplayIndex;
     use crate::model::Scope;
-    use crate::store::memory::InMemoryStore;
+    use crate::store::bucketed::BucketedStore;
+    use crate::store::mem_backend::MemBackend;
 
     #[test]
     fn test_range_selection_within_siblings() {
         // Create parent with 3 children, test range 1.1-1.3
-        let mut store = InMemoryStore::new();
+        let mut store = BucketedStore::new(
+            MemBackend::new(),
+            MemBackend::new(),
+            MemBackend::new(),
+            MemBackend::new(),
+        );
 
         create::run(&mut store, Scope::Project, "Parent".into(), "".into(), None).unwrap();
         create::run(
@@ -282,7 +308,12 @@ mod tests {
     #[test]
     fn test_range_selection_cross_parent() {
         // Create 2 parents with children, test range 1.1-2.1
-        let mut store = InMemoryStore::new();
+        let mut store = BucketedStore::new(
+            MemBackend::new(),
+            MemBackend::new(),
+            MemBackend::new(),
+            MemBackend::new(),
+        );
 
         // Parent 1 with child
         create::run(
@@ -343,7 +374,12 @@ mod tests {
 
     #[test]
     fn test_range_selection_root_only() {
-        let mut store = InMemoryStore::new();
+        let mut store = BucketedStore::new(
+            MemBackend::new(),
+            MemBackend::new(),
+            MemBackend::new(),
+            MemBackend::new(),
+        );
 
         // Create: Root1 -> Child1, Root2
         create::run(&mut store, Scope::Project, "Root 1".into(), "".into(), None).unwrap();
@@ -377,7 +413,12 @@ mod tests {
 
     #[test]
     fn test_range_includes_children_of_intermediate_nodes() {
-        let mut store = InMemoryStore::new();
+        let mut store = BucketedStore::new(
+            MemBackend::new(),
+            MemBackend::new(),
+            MemBackend::new(),
+            MemBackend::new(),
+        );
 
         // Create: Root1 -> Child1, Root2, Root3
         create::run(&mut store, Scope::Project, "Root 1".into(), "".into(), None).unwrap();
@@ -412,7 +453,12 @@ mod tests {
 
     #[test]
     fn test_pinned_child_addressable_by_path() {
-        let mut store = InMemoryStore::new();
+        let mut store = BucketedStore::new(
+            MemBackend::new(),
+            MemBackend::new(),
+            MemBackend::new(),
+            MemBackend::new(),
+        );
 
         // Create parent with pinned child
         create::run(&mut store, Scope::Project, "Parent".into(), "".into(), None).unwrap();
@@ -450,13 +496,20 @@ mod tests {
 
         assert_eq!(result.len(), 1);
         // Verify it's the child
-        let pad = store.get_pad(&result[0].1, Scope::Project).unwrap();
+        let pad = store
+            .get_pad(&result[0].1, Scope::Project, Bucket::Active)
+            .unwrap();
         assert_eq!(pad.metadata.title, "Child");
     }
 
     #[test]
     fn test_title_search_no_match_returns_error() {
-        let mut store = InMemoryStore::new();
+        let mut store = BucketedStore::new(
+            MemBackend::new(),
+            MemBackend::new(),
+            MemBackend::new(),
+            MemBackend::new(),
+        );
         create::run(&mut store, Scope::Project, "Alpha".into(), "".into(), None).unwrap();
         create::run(&mut store, Scope::Project, "Beta".into(), "".into(), None).unwrap();
 
@@ -475,7 +528,12 @@ mod tests {
 
     #[test]
     fn test_title_search_multiple_matches_returns_error() {
-        let mut store = InMemoryStore::new();
+        let mut store = BucketedStore::new(
+            MemBackend::new(),
+            MemBackend::new(),
+            MemBackend::new(),
+            MemBackend::new(),
+        );
         create::run(
             &mut store,
             Scope::Project,
@@ -516,7 +574,12 @@ mod tests {
 
     #[test]
     fn test_title_search_single_match_succeeds() {
-        let mut store = InMemoryStore::new();
+        let mut store = BucketedStore::new(
+            MemBackend::new(),
+            MemBackend::new(),
+            MemBackend::new(),
+            MemBackend::new(),
+        );
         create::run(&mut store, Scope::Project, "Alpha".into(), "".into(), None).unwrap();
         create::run(&mut store, Scope::Project, "Beta".into(), "".into(), None).unwrap();
         create::run(&mut store, Scope::Project, "Gamma".into(), "".into(), None).unwrap();
@@ -530,13 +593,20 @@ mod tests {
         .unwrap();
 
         assert_eq!(result.len(), 1);
-        let pad = store.get_pad(&result[0].1, Scope::Project).unwrap();
+        let pad = store
+            .get_pad(&result[0].1, Scope::Project, Bucket::Active)
+            .unwrap();
         assert_eq!(pad.metadata.title, "Beta");
     }
 
     #[test]
     fn test_title_search_matches_title_only_not_content() {
-        let mut store = InMemoryStore::new();
+        let mut store = BucketedStore::new(
+            MemBackend::new(),
+            MemBackend::new(),
+            MemBackend::new(),
+            MemBackend::new(),
+        );
         create::run(
             &mut store,
             Scope::Project,
@@ -575,13 +645,20 @@ mod tests {
         .unwrap();
 
         assert_eq!(result.len(), 1);
-        let pad = store.get_pad(&result[0].1, Scope::Project).unwrap();
+        let pad = store
+            .get_pad(&result[0].1, Scope::Project, Bucket::Active)
+            .unwrap();
         assert_eq!(pad.metadata.title, "Shopping List");
     }
 
     #[test]
     fn test_title_search_is_case_insensitive() {
-        let mut store = InMemoryStore::new();
+        let mut store = BucketedStore::new(
+            MemBackend::new(),
+            MemBackend::new(),
+            MemBackend::new(),
+            MemBackend::new(),
+        );
         create::run(
             &mut store,
             Scope::Project,
@@ -600,13 +677,20 @@ mod tests {
         .unwrap();
 
         assert_eq!(result.len(), 1);
-        let pad = store.get_pad(&result[0].1, Scope::Project).unwrap();
+        let pad = store
+            .get_pad(&result[0].1, Scope::Project, Bucket::Active)
+            .unwrap();
         assert_eq!(pad.metadata.title, "UPPERCASE TITLE");
     }
 
     #[test]
     fn test_title_search_delete_protection_check() {
-        let mut store = InMemoryStore::new();
+        let mut store = BucketedStore::new(
+            MemBackend::new(),
+            MemBackend::new(),
+            MemBackend::new(),
+            MemBackend::new(),
+        );
         create::run(
             &mut store,
             Scope::Project,
@@ -617,10 +701,12 @@ mod tests {
         .unwrap();
 
         // Manually set delete_protected without pinning (to avoid dual-index)
-        let pads = store.list_pads(Scope::Project).unwrap();
+        let pads = store.list_pads(Scope::Project, Bucket::Active).unwrap();
         let mut pad = pads[0].clone();
         pad.metadata.delete_protected = true;
-        store.save_pad(&pad, Scope::Project).unwrap();
+        store
+            .save_pad(&pad, Scope::Project, Bucket::Active)
+            .unwrap();
 
         // Try to resolve with delete protection check enabled
         let result = resolve_selectors(
@@ -637,7 +723,12 @@ mod tests {
 
     #[test]
     fn test_title_search_delete_protection_disabled() {
-        let mut store = InMemoryStore::new();
+        let mut store = BucketedStore::new(
+            MemBackend::new(),
+            MemBackend::new(),
+            MemBackend::new(),
+            MemBackend::new(),
+        );
         create::run(
             &mut store,
             Scope::Project,
@@ -648,10 +739,12 @@ mod tests {
         .unwrap();
 
         // Manually set delete_protected without pinning (to avoid dual-index)
-        let pads = store.list_pads(Scope::Project).unwrap();
+        let pads = store.list_pads(Scope::Project, Bucket::Active).unwrap();
         let mut pad = pads[0].clone();
         pad.metadata.delete_protected = true;
-        store.save_pad(&pad, Scope::Project).unwrap();
+        store
+            .save_pad(&pad, Scope::Project, Bucket::Active)
+            .unwrap();
 
         // Resolve with delete protection check disabled
         let result = resolve_selectors(
@@ -667,7 +760,12 @@ mod tests {
 
     #[test]
     fn test_range_invalid_order_returns_error() {
-        let mut store = InMemoryStore::new();
+        let mut store = BucketedStore::new(
+            MemBackend::new(),
+            MemBackend::new(),
+            MemBackend::new(),
+            MemBackend::new(),
+        );
 
         // Create pads: newest first, so order is 1, 2, 3
         create::run(&mut store, Scope::Project, "Pad A".into(), "".into(), None).unwrap();
@@ -692,7 +790,12 @@ mod tests {
 
     #[test]
     fn test_range_start_not_found_returns_error() {
-        let mut store = InMemoryStore::new();
+        let mut store = BucketedStore::new(
+            MemBackend::new(),
+            MemBackend::new(),
+            MemBackend::new(),
+            MemBackend::new(),
+        );
 
         create::run(&mut store, Scope::Project, "Pad A".into(), "".into(), None).unwrap();
 
@@ -715,7 +818,12 @@ mod tests {
 
     #[test]
     fn test_range_end_not_found_returns_error() {
-        let mut store = InMemoryStore::new();
+        let mut store = BucketedStore::new(
+            MemBackend::new(),
+            MemBackend::new(),
+            MemBackend::new(),
+            MemBackend::new(),
+        );
 
         create::run(&mut store, Scope::Project, "Pad A".into(), "".into(), None).unwrap();
 
@@ -738,21 +846,28 @@ mod tests {
 
     #[test]
     fn test_range_delete_protection_check() {
-        let mut store = InMemoryStore::new();
+        let mut store = BucketedStore::new(
+            MemBackend::new(),
+            MemBackend::new(),
+            MemBackend::new(),
+            MemBackend::new(),
+        );
 
         create::run(&mut store, Scope::Project, "Pad A".into(), "".into(), None).unwrap();
         create::run(&mut store, Scope::Project, "Pad B".into(), "".into(), None).unwrap();
         create::run(&mut store, Scope::Project, "Pad C".into(), "".into(), None).unwrap();
 
         // Protect the middle pad (index 2)
-        let pads = store.list_pads(Scope::Project).unwrap();
+        let pads = store.list_pads(Scope::Project, Bucket::Active).unwrap();
         let mut pad_b = pads
             .iter()
             .find(|p| p.metadata.title == "Pad B")
             .unwrap()
             .clone();
         pad_b.metadata.delete_protected = true;
-        store.save_pad(&pad_b, Scope::Project).unwrap();
+        store
+            .save_pad(&pad_b, Scope::Project, Bucket::Active)
+            .unwrap();
 
         // Try to select range 1-3 with delete protection check
         let result = resolve_selectors(
@@ -772,7 +887,12 @@ mod tests {
 
     #[test]
     fn test_path_selector_not_found_returns_error() {
-        let mut store = InMemoryStore::new();
+        let mut store = BucketedStore::new(
+            MemBackend::new(),
+            MemBackend::new(),
+            MemBackend::new(),
+            MemBackend::new(),
+        );
 
         create::run(&mut store, Scope::Project, "Pad A".into(), "".into(), None).unwrap();
 
@@ -790,15 +910,22 @@ mod tests {
 
     #[test]
     fn test_path_selector_delete_protection_check() {
-        let mut store = InMemoryStore::new();
+        let mut store = BucketedStore::new(
+            MemBackend::new(),
+            MemBackend::new(),
+            MemBackend::new(),
+            MemBackend::new(),
+        );
 
         create::run(&mut store, Scope::Project, "Pad A".into(), "".into(), None).unwrap();
 
         // Protect the pad
-        let pads = store.list_pads(Scope::Project).unwrap();
+        let pads = store.list_pads(Scope::Project, Bucket::Active).unwrap();
         let mut pad = pads[0].clone();
         pad.metadata.delete_protected = true;
-        store.save_pad(&pad, Scope::Project).unwrap();
+        store
+            .save_pad(&pad, Scope::Project, Bucket::Active)
+            .unwrap();
 
         let result = resolve_selectors(
             &store,

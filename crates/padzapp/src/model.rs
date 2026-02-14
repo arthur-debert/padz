@@ -81,8 +81,6 @@ pub struct Metadata {
     pub updated_at: DateTime<Utc>,
     pub is_pinned: bool,
     pub pinned_at: Option<DateTime<Utc>>,
-    pub is_deleted: bool,
-    pub deleted_at: Option<DateTime<Utc>>,
     pub delete_protected: bool,
     pub parent_id: Option<Uuid>,
     // We store the title in metadata to list without reading content files
@@ -109,8 +107,6 @@ impl<'de> Deserialize<'de> for Metadata {
             updated_at: helper.updated_at,
             is_pinned: helper.is_pinned,
             pinned_at: helper.pinned_at,
-            is_deleted: helper.is_deleted,
-            deleted_at: helper.deleted_at,
             // If delete_protected is missing (None), default to is_pinned.
             // This ensures legacy pinned pads are protected.
             delete_protected: helper.delete_protected.unwrap_or(helper.is_pinned),
@@ -129,8 +125,6 @@ struct MetadataHelper {
     updated_at: DateTime<Utc>,
     is_pinned: bool,
     pinned_at: Option<DateTime<Utc>>,
-    is_deleted: bool,
-    deleted_at: Option<DateTime<Utc>>,
     #[serde(default)]
     delete_protected: Option<bool>,
     #[serde(default)]
@@ -151,8 +145,6 @@ impl Metadata {
             updated_at: now,
             is_pinned: false,
             pinned_at: None,
-            is_deleted: false,
-            deleted_at: None,
             delete_protected: false,
             parent_id: None,
             title,
@@ -171,7 +163,6 @@ impl Metadata {
     /// | Name | Type | Description |
     /// |------|------|-------------|
     /// | `"pinned"` | `BoolWithTimestamp` | Pin state and when it was set |
-    /// | `"deleted"` | `BoolWithTimestamp` | Deletion state and when deleted |
     /// | `"protected"` | `Bool` | Delete protection flag |
     /// | `"status"` | `Enum` | Todo status (Planned/InProgress/Done) |
     /// | `"tags"` | `List` | Assigned tag names |
@@ -188,10 +179,6 @@ impl Metadata {
             "pinned" => Some(AttrValue::BoolWithTimestamp {
                 value: self.is_pinned,
                 timestamp: self.pinned_at,
-            }),
-            "deleted" => Some(AttrValue::BoolWithTimestamp {
-                value: self.is_deleted,
-                timestamp: self.deleted_at,
             }),
             "protected" => Some(AttrValue::Bool(self.delete_protected)),
             "status" => Some(AttrValue::Enum(format!("{:?}", self.status))),
@@ -242,14 +229,6 @@ impl Metadata {
                 // Coupled: pinned also controls delete_protected
                 self.delete_protected = flag;
                 Some(AttrSideEffect::None)
-            }
-            "deleted" => {
-                let flag = value.as_bool()?;
-                self.is_deleted = flag;
-                self.deleted_at = if flag { Some(Utc::now()) } else { None };
-                // Note: deletion has its own side effect (status propagation)
-                // but that's handled by the caller, not as a formal side effect here
-                Some(AttrSideEffect::PropagateStatusUp)
             }
             "protected" => {
                 let flag = value.as_bool()?;
@@ -480,9 +459,6 @@ mod tests {
             "updated_at": "2023-01-01T00:00:00Z",
             "is_pinned": false,
             "pinned_at": null,
-            "is_deleted": false,
-            "deleted_at": null,
-            "delete_protected": false,
             "title": "Legacy Pad"
         }}"#,
             id
@@ -499,7 +475,6 @@ mod tests {
     fn test_metadata_deserialization_with_explicit_delete_protected() {
         let id = Uuid::new_v4();
         // JSON with explicit delete_protected = true, but is_pinned = false
-        // This verifies we don't blindly copy is_pinned
         let json = format!(
             r#"{{
             "id": "{}",
@@ -507,8 +482,6 @@ mod tests {
             "updated_at": "2023-01-01T00:00:00Z",
             "is_pinned": false,
             "pinned_at": null,
-            "is_deleted": false,
-            "deleted_at": null,
             "delete_protected": true,
             "title": "Protected Pad"
         }}"#,
@@ -559,8 +532,6 @@ mod tests {
             "updated_at": "2023-01-01T00:00:00Z",
             "is_pinned": false,
             "pinned_at": null,
-            "is_deleted": false,
-            "deleted_at": null,
             "delete_protected": false,
             "title": "Legacy Pad Without Tags"
         }}"#,
@@ -626,13 +597,6 @@ mod tests {
             }
             _ => panic!("Expected BoolWithTimestamp"),
         }
-    }
-
-    #[test]
-    fn test_get_attr_deleted_default() {
-        let meta = Metadata::new("Test".into());
-        let value = meta.get_attr("deleted").unwrap();
-        assert_eq!(value.as_bool(), Some(false));
     }
 
     #[test]
@@ -745,34 +709,6 @@ mod tests {
         assert!(meta.pinned_at.is_none());
         assert!(!meta.delete_protected); // Coupled
         assert_eq!(effect, crate::attributes::AttrSideEffect::None);
-    }
-
-    #[test]
-    fn test_set_attr_deleted_true() {
-        let mut meta = Metadata::new("Test".into());
-
-        let effect = meta
-            .set_attr("deleted", crate::attributes::AttrValue::Bool(true))
-            .unwrap();
-
-        assert!(meta.is_deleted);
-        assert!(meta.deleted_at.is_some());
-        assert_eq!(effect, crate::attributes::AttrSideEffect::PropagateStatusUp);
-    }
-
-    #[test]
-    fn test_set_attr_deleted_false() {
-        let mut meta = Metadata::new("Test".into());
-        meta.is_deleted = true;
-        meta.deleted_at = Some(Utc::now());
-
-        let effect = meta
-            .set_attr("deleted", crate::attributes::AttrValue::Bool(false))
-            .unwrap();
-
-        assert!(!meta.is_deleted);
-        assert!(meta.deleted_at.is_none());
-        assert_eq!(effect, crate::attributes::AttrSideEffect::PropagateStatusUp);
     }
 
     #[test]

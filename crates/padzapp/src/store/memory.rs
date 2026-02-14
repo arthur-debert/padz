@@ -21,7 +21,6 @@ impl InMemoryStore {
 pub mod fixtures {
     use super::*;
     use crate::model::{Pad, Scope};
-    use crate::store::DataStore;
 
     pub struct StoreFixture {
         pub store: InMemoryStore,
@@ -65,9 +64,7 @@ pub mod fixtures {
         }
 
         pub fn with_deleted_pad(mut self, title: &str, scope: Scope) -> Self {
-            let mut pad = Pad::new(title.to_string(), "Deleted content".to_string());
-            pad.metadata.is_deleted = true;
-            pad.metadata.deleted_at = Some(chrono::Utc::now());
+            let pad = Pad::new(title.to_string(), "Deleted content".to_string());
             self.store.save_pad(&pad, scope).unwrap();
             self
         }
@@ -81,7 +78,6 @@ mod tests {
     use crate::error::PadzError;
     use crate::model::Scope;
     use crate::store::backend::StorageBackend;
-    use crate::store::DataStore;
     use crate::tags::TagEntry;
     use uuid::Uuid;
 
@@ -119,13 +115,12 @@ mod tests {
 
         let active = pads.iter().find(|p| p.metadata.title == "Active").unwrap();
         assert!(!active.metadata.is_pinned);
-        assert!(!active.metadata.is_deleted);
 
         let pinned = pads.iter().find(|p| p.metadata.title == "Pinned").unwrap();
         assert!(pinned.metadata.is_pinned);
 
-        let deleted = pads.iter().find(|p| p.metadata.title == "Deleted").unwrap();
-        assert!(deleted.metadata.is_deleted);
+        // Verify deleted pad exists (it's just a regular pad saved to the store)
+        assert!(pads.iter().any(|p| p.metadata.title == "Deleted"));
 
         let generic = pads
             .iter()

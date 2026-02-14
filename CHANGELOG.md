@@ -6,7 +6,15 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+- **Added**
+  - **Bucketed storage architecture** - Replaced flat store with three lifecycle buckets (`active/`, `archived/`, `deleted/`). Pad location IS lifecycle state — no more `is_deleted` metadata flag. Each bucket has its own `data.json` and content files.
+  - **Archive/unarchive commands** - `padz archive` moves pads to cold storage; `padz unarchive` brings them back. Children always move with their parent.
+  - **`--archived` flag for list** - `padz list --archived` shows archived pads (indexed as `ar1`, `ar2`, etc.)
+  - **Automatic migration** - Legacy flat-layout stores are auto-migrated to bucketed layout on first run. Pads with `is_deleted` move to `deleted/` bucket.
+
 - **Changed**
+  - **Delete/restore use bucket moves** - Delete moves pads from `active/` to `deleted/`; restore moves them back. No more metadata flag toggling.
+  - **Removed `is_deleted` from metadata** - Bucket membership determines lifecycle state. The `deleted` attribute is gone.
   - **Editor opens real pad files** - Create and edit now open the actual pad file in `.padz/` instead of a temporary file in `/tmp`. This means:
     - **Crash resilience**: If the editor or system crashes, content is preserved on disk and recovered automatically by reconciliation
     - **Path autocomplete**: Editor autocomplete suggests project-relative paths (e.g., `../README.md`) instead of `/tmp` files

@@ -2,7 +2,7 @@ use crate::commands::{CmdMessage, CmdResult, PadUpdate};
 use crate::error::{PadzError, Result};
 use crate::index::{DisplayPad, PadSelector};
 use crate::model::{parse_pad_content, Scope};
-use crate::store::DataStore;
+use crate::store::{Bucket, DataStore};
 use chrono::Utc;
 
 use super::helpers::resolve_selectors;
@@ -26,7 +26,7 @@ pub fn run<S: DataStore>(store: &mut S, scope: Scope, updates: &[PadUpdate]) -> 
     let mut result = CmdResult::default();
 
     for ((display_index, uuid), update) in resolved.into_iter().zip(updates.iter()) {
-        let mut pad = store.get_pad(&uuid, scope)?;
+        let mut pad = store.get_pad(&uuid, scope, Bucket::Active)?;
         // We accept updates from editor which splits title and body.
         // We must re-normalize to get the correct full content.
         let (_, normalized_content) =
@@ -41,7 +41,7 @@ pub fn run<S: DataStore>(store: &mut S, scope: Scope, updates: &[PadUpdate]) -> 
         pad.content = normalized_content;
 
         let parent_id = pad.metadata.parent_id;
-        store.save_pad(&pad, scope)?;
+        store.save_pad(&pad, scope, Bucket::Active)?;
 
         // Propagate status change to parent
         crate::todos::propagate_status_change(store, scope, parent_id)?;
@@ -89,7 +89,7 @@ pub fn run_from_content<S: DataStore>(
     let mut result = CmdResult::default();
 
     for (display_index, uuid) in resolved {
-        let mut pad = store.get_pad(&uuid, scope)?;
+        let mut pad = store.get_pad(&uuid, scope, Bucket::Active)?;
 
         // Update the pad with the new content
         pad.metadata.title = title.clone();
@@ -97,7 +97,7 @@ pub fn run_from_content<S: DataStore>(
         pad.content = full_content.clone();
 
         let parent_id = pad.metadata.parent_id;
-        store.save_pad(&pad, scope)?;
+        store.save_pad(&pad, scope, Bucket::Active)?;
 
         // Propagate status change to parent
         crate::todos::propagate_status_change(store, scope, parent_id)?;
@@ -129,11 +129,17 @@ mod tests {
     use crate::commands::{create, get, view};
     use crate::index::{DisplayIndex, PadSelector};
     use crate::model::Scope;
-    use crate::store::memory::InMemoryStore;
+    use crate::store::bucketed::BucketedStore;
+    use crate::store::mem_backend::MemBackend;
 
     #[test]
     fn updates_pad_content() {
-        let mut store = InMemoryStore::new();
+        let mut store = BucketedStore::new(
+            MemBackend::new(),
+            MemBackend::new(),
+            MemBackend::new(),
+            MemBackend::new(),
+        );
         create::run(
             &mut store,
             Scope::Project,
@@ -156,7 +162,12 @@ mod tests {
     }
     #[test]
     fn update_empty_batch_does_nothing() {
-        let mut store = InMemoryStore::new();
+        let mut store = BucketedStore::new(
+            MemBackend::new(),
+            MemBackend::new(),
+            MemBackend::new(),
+            MemBackend::new(),
+        );
         let result = run(&mut store, Scope::Project, &[]).unwrap();
         assert!(result.messages.is_empty());
         assert!(result.affected_pads.is_empty());
@@ -164,7 +175,12 @@ mod tests {
 
     #[test]
     fn update_renames_title() {
-        let mut store = InMemoryStore::new();
+        let mut store = BucketedStore::new(
+            MemBackend::new(),
+            MemBackend::new(),
+            MemBackend::new(),
+            MemBackend::new(),
+        );
         create::run(
             &mut store,
             Scope::Project,
@@ -195,7 +211,12 @@ mod tests {
 
     #[test]
     fn update_batch_multiple_pads() {
-        let mut store = InMemoryStore::new();
+        let mut store = BucketedStore::new(
+            MemBackend::new(),
+            MemBackend::new(),
+            MemBackend::new(),
+            MemBackend::new(),
+        );
         create::run(&mut store, Scope::Project, "A".into(), "".into(), None).unwrap();
         create::run(&mut store, Scope::Project, "B".into(), "".into(), None).unwrap();
 
@@ -238,7 +259,12 @@ mod tests {
 
     #[test]
     fn update_normalizes_content_structure() {
-        let mut store = InMemoryStore::new();
+        let mut store = BucketedStore::new(
+            MemBackend::new(),
+            MemBackend::new(),
+            MemBackend::new(),
+            MemBackend::new(),
+        );
         create::run(&mut store, Scope::Project, "Title".into(), "".into(), None).unwrap();
 
         // Update with content that needs normalization (title not in body)
@@ -265,10 +291,15 @@ mod tests {
 
     #[test]
     fn update_updates_timestamp() {
-        let mut store = InMemoryStore::new();
+        let mut store = BucketedStore::new(
+            MemBackend::new(),
+            MemBackend::new(),
+            MemBackend::new(),
+            MemBackend::new(),
+        );
         create::run(&mut store, Scope::Project, "Title".into(), "".into(), None).unwrap();
 
-        let pads_before = store.list_pads(Scope::Project).unwrap();
+        let pads_before = store.list_pads(Scope::Project, Bucket::Active).unwrap();
         let original_updated_at = pads_before[0].metadata.updated_at;
 
         // Small delay to ensure timestamp differs
@@ -281,7 +312,7 @@ mod tests {
         );
         run(&mut store, Scope::Project, &[update]).unwrap();
 
-        let pads_after = store.list_pads(Scope::Project).unwrap();
+        let pads_after = store.list_pads(Scope::Project, Bucket::Active).unwrap();
         let new_updated_at = pads_after[0].metadata.updated_at;
 
         assert!(new_updated_at > original_updated_at);
@@ -289,7 +320,12 @@ mod tests {
 
     #[test]
     fn update_returns_affected_pads() {
-        let mut store = InMemoryStore::new();
+        let mut store = BucketedStore::new(
+            MemBackend::new(),
+            MemBackend::new(),
+            MemBackend::new(),
+            MemBackend::new(),
+        );
         create::run(&mut store, Scope::Project, "Title".into(), "".into(), None).unwrap();
 
         let update = PadUpdate::new(
@@ -310,7 +346,12 @@ mod tests {
 
     #[test]
     fn update_success_message_format() {
-        let mut store = InMemoryStore::new();
+        let mut store = BucketedStore::new(
+            MemBackend::new(),
+            MemBackend::new(),
+            MemBackend::new(),
+            MemBackend::new(),
+        );
         create::run(&mut store, Scope::Project, "Title".into(), "".into(), None).unwrap();
 
         let update = PadUpdate::new(
@@ -328,7 +369,12 @@ mod tests {
 
     #[test]
     fn update_nonexistent_pad_fails() {
-        let mut store = InMemoryStore::new();
+        let mut store = BucketedStore::new(
+            MemBackend::new(),
+            MemBackend::new(),
+            MemBackend::new(),
+            MemBackend::new(),
+        );
         create::run(&mut store, Scope::Project, "Title".into(), "".into(), None).unwrap();
 
         let update = PadUpdate::new(DisplayIndex::Regular(99), "Title".into(), "Content".into());
@@ -339,10 +385,15 @@ mod tests {
 
     #[test]
     fn update_preserves_other_metadata() {
-        let mut store = InMemoryStore::new();
+        let mut store = BucketedStore::new(
+            MemBackend::new(),
+            MemBackend::new(),
+            MemBackend::new(),
+            MemBackend::new(),
+        );
         create::run(&mut store, Scope::Project, "Title".into(), "".into(), None).unwrap();
 
-        let pads_before = store.list_pads(Scope::Project).unwrap();
+        let pads_before = store.list_pads(Scope::Project, Bucket::Active).unwrap();
         let original_created_at = pads_before[0].metadata.created_at;
         let original_id = pads_before[0].metadata.id;
 
@@ -353,7 +404,7 @@ mod tests {
         );
         run(&mut store, Scope::Project, &[update]).unwrap();
 
-        let pads_after = store.list_pads(Scope::Project).unwrap();
+        let pads_after = store.list_pads(Scope::Project, Bucket::Active).unwrap();
         // Created_at should NOT change
         assert_eq!(pads_after[0].metadata.created_at, original_created_at);
         // ID should NOT change
@@ -362,7 +413,12 @@ mod tests {
 
     #[test]
     fn test_status_propagation_via_update() {
-        let mut store = InMemoryStore::new();
+        let mut store = BucketedStore::new(
+            MemBackend::new(),
+            MemBackend::new(),
+            MemBackend::new(),
+            MemBackend::new(),
+        );
 
         // 1. Create a parent (initially Planned)
         create::run(&mut store, Scope::Project, "Parent".into(), "".into(), None).unwrap();
@@ -378,7 +434,7 @@ mod tests {
         .unwrap();
 
         // Parent should still be Planned
-        let pads = store.list_pads(Scope::Project).unwrap();
+        let pads = store.list_pads(Scope::Project, Bucket::Active).unwrap();
         let parent = pads.iter().find(|p| p.metadata.title == "Parent").unwrap();
         assert_eq!(parent.metadata.status, crate::model::TodoStatus::Planned);
 
@@ -394,7 +450,7 @@ mod tests {
         run(&mut store, Scope::Project, &[update]).unwrap();
 
         // Verify Child is Done
-        let pads_after = store.list_pads(Scope::Project).unwrap();
+        let pads_after = store.list_pads(Scope::Project, Bucket::Active).unwrap();
         let child = pads_after
             .iter()
             .find(|p| p.metadata.title == "Child")
@@ -413,7 +469,12 @@ mod tests {
 
     #[test]
     fn run_from_content_updates_single_pad() {
-        let mut store = InMemoryStore::new();
+        let mut store = BucketedStore::new(
+            MemBackend::new(),
+            MemBackend::new(),
+            MemBackend::new(),
+            MemBackend::new(),
+        );
         create::run(
             &mut store,
             Scope::Project,
@@ -441,7 +502,12 @@ mod tests {
 
     #[test]
     fn run_from_content_updates_multiple_pads() {
-        let mut store = InMemoryStore::new();
+        let mut store = BucketedStore::new(
+            MemBackend::new(),
+            MemBackend::new(),
+            MemBackend::new(),
+            MemBackend::new(),
+        );
         create::run(&mut store, Scope::Project, "Pad A".into(), "".into(), None).unwrap();
         create::run(&mut store, Scope::Project, "Pad B".into(), "".into(), None).unwrap();
 
@@ -465,7 +531,12 @@ mod tests {
 
     #[test]
     fn run_from_content_empty_content_fails() {
-        let mut store = InMemoryStore::new();
+        let mut store = BucketedStore::new(
+            MemBackend::new(),
+            MemBackend::new(),
+            MemBackend::new(),
+            MemBackend::new(),
+        );
         create::run(&mut store, Scope::Project, "Test".into(), "".into(), None).unwrap();
 
         let raw_content = "   \n\n   "; // Only whitespace
@@ -479,10 +550,15 @@ mod tests {
 
     #[test]
     fn run_from_content_preserves_metadata() {
-        let mut store = InMemoryStore::new();
+        let mut store = BucketedStore::new(
+            MemBackend::new(),
+            MemBackend::new(),
+            MemBackend::new(),
+            MemBackend::new(),
+        );
         create::run(&mut store, Scope::Project, "Title".into(), "".into(), None).unwrap();
 
-        let pads_before = store.list_pads(Scope::Project).unwrap();
+        let pads_before = store.list_pads(Scope::Project, Bucket::Active).unwrap();
         let original_id = pads_before[0].metadata.id;
         let original_created_at = pads_before[0].metadata.created_at;
 
@@ -492,7 +568,7 @@ mod tests {
         let selectors = vec![PadSelector::Path(vec![DisplayIndex::Regular(1)])];
         run_from_content(&mut store, Scope::Project, &selectors, raw_content).unwrap();
 
-        let pads_after = store.list_pads(Scope::Project).unwrap();
+        let pads_after = store.list_pads(Scope::Project, Bucket::Active).unwrap();
         // ID should NOT change
         assert_eq!(pads_after[0].metadata.id, original_id);
         // Created_at should NOT change
@@ -503,7 +579,12 @@ mod tests {
 
     #[test]
     fn run_from_content_title_only() {
-        let mut store = InMemoryStore::new();
+        let mut store = BucketedStore::new(
+            MemBackend::new(),
+            MemBackend::new(),
+            MemBackend::new(),
+            MemBackend::new(),
+        );
         create::run(
             &mut store,
             Scope::Project,
@@ -525,7 +606,12 @@ mod tests {
 
     #[test]
     fn run_from_content_nonexistent_pad_fails() {
-        let mut store = InMemoryStore::new();
+        let mut store = BucketedStore::new(
+            MemBackend::new(),
+            MemBackend::new(),
+            MemBackend::new(),
+            MemBackend::new(),
+        );
         create::run(&mut store, Scope::Project, "Test".into(), "".into(), None).unwrap();
 
         let raw_content = "New Content\n\nBody";

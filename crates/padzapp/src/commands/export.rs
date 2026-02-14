@@ -317,16 +317,23 @@ mod tests {
     use super::*;
     use crate::commands::create;
     use crate::model::Scope;
-    use crate::store::memory::InMemoryStore;
+    use crate::store::bucketed::BucketedStore;
+    use crate::store::mem_backend::MemBackend;
 
     #[test]
     fn test_resolve_pads_exports_active_by_default() {
-        let mut store = InMemoryStore::new();
+        let mut store = BucketedStore::new(
+            MemBackend::new(),
+            MemBackend::new(),
+            MemBackend::new(),
+            MemBackend::new(),
+        );
         create::run(&mut store, Scope::Project, "Active".into(), "".into(), None).unwrap();
 
-        let mut del_pad = crate::model::Pad::new("Deleted".into(), "".into());
-        del_pad.metadata.is_deleted = true;
-        store.save_pad(&del_pad, Scope::Project).unwrap();
+        let del_pad = crate::model::Pad::new("Deleted".into(), "".into());
+        store
+            .save_pad(&del_pad, Scope::Project, crate::store::Bucket::Deleted)
+            .unwrap();
 
         let pads = resolve_pads(&store, Scope::Project, &[]).unwrap();
         assert_eq!(pads.len(), 1);
@@ -335,7 +342,12 @@ mod tests {
 
     #[test]
     fn test_write_archive_produces_content() {
-        let mut store = InMemoryStore::new();
+        let mut store = BucketedStore::new(
+            MemBackend::new(),
+            MemBackend::new(),
+            MemBackend::new(),
+            MemBackend::new(),
+        );
         create::run(
             &mut store,
             Scope::Project,
@@ -523,7 +535,12 @@ mod tests {
     }
     #[test]
     fn test_export_empty_does_nothing() {
-        let store = InMemoryStore::new();
+        let store = BucketedStore::new(
+            MemBackend::new(),
+            MemBackend::new(),
+            MemBackend::new(),
+            MemBackend::new(),
+        );
         // No pads created
         let res = run(&store, Scope::Project, &[]).unwrap();
         assert!(res
@@ -541,7 +558,12 @@ mod tests {
     #[test]
     fn test_export_single_file_creates_file() {
         use std::path::Path;
-        let mut store = InMemoryStore::new();
+        let mut store = BucketedStore::new(
+            MemBackend::new(),
+            MemBackend::new(),
+            MemBackend::new(),
+            MemBackend::new(),
+        );
         create::run(&mut store, Scope::Project, "A".into(), "".into(), None).unwrap();
 
         // Since run_single_file forces writing to CWD with a sanitized name,

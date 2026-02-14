@@ -222,16 +222,4 @@ mod tests {
         let filter = AttrFilter::eq("status", AttrValue::Bool(true));
         assert!(!filter.matches(&meta_with_status(TodoStatus::Done)));
     }
-
-    #[test]
-    fn filter_deleted() {
-        let filter = AttrFilter::eq("deleted", AttrValue::Bool(true));
-
-        let mut deleted_meta = Metadata::new("Test".into());
-        deleted_meta.is_deleted = true;
-        deleted_meta.deleted_at = Some(chrono::Utc::now());
-
-        assert!(filter.matches(&deleted_meta));
-        assert!(!filter.matches(&Metadata::new("Test".into())));
-    }
 }

@@ -9,6 +9,7 @@
 use crate::commands::{CmdMessage, CmdResult};
 use crate::error::{PadzError, Result};
 use crate::model::Scope;
+use crate::store::Bucket;
 use crate::store::DataStore;
 use crate::tags::{validate_tag_name, TagEntry};
 
@@ -78,12 +79,12 @@ pub fn delete_tag<S: DataStore>(store: &mut S, scope: Scope, name: &str) -> Resu
     store.save_tags(scope, &tags)?;
 
     // Cascade: remove tag from all pads
-    let pads = store.list_pads(scope)?;
+    let pads = store.list_pads(scope, Bucket::Active)?;
     let mut affected_count = 0;
     for mut pad in pads {
         if pad.metadata.tags.contains(&name.to_string()) {
             pad.metadata.tags.retain(|t| t != name);
-            store.save_pad(&pad, scope)?;
+            store.save_pad(&pad, scope, Bucket::Active)?;
             affected_count += 1;
         }
     }
@@ -130,12 +131,12 @@ pub fn rename_tag<S: DataStore>(
     store.save_tags(scope, &tags)?;
 
     // Update all pads that have this tag
-    let pads = store.list_pads(scope)?;
+    let pads = store.list_pads(scope, Bucket::Active)?;
     let mut affected_count = 0;
     for mut pad in pads {
         if let Some(pos) = pad.metadata.tags.iter().position(|t| t == old_name) {
             pad.metadata.tags[pos] = new_name.to_string();
-            store.save_pad(&pad, scope)?;
+            store.save_pad(&pad, scope, Bucket::Active)?;
             affected_count += 1;
         }
     }
@@ -159,18 +160,29 @@ pub fn rename_tag<S: DataStore>(
 mod tests {
     use super::*;
     use crate::commands::create;
-    use crate::store::memory::InMemoryStore;
+    use crate::store::bucketed::BucketedStore;
+    use crate::store::mem_backend::MemBackend;
 
     #[test]
     fn test_list_tags_empty() {
-        let store = InMemoryStore::new();
+        let store = BucketedStore::new(
+            MemBackend::new(),
+            MemBackend::new(),
+            MemBackend::new(),
+            MemBackend::new(),
+        );
         let result = list_tags(&store, Scope::Project).unwrap();
         assert!(result.messages[0].content.contains("No tags defined"));
     }
 
     #[test]
     fn test_create_tag() {
-        let mut store = InMemoryStore::new();
+        let mut store = BucketedStore::new(
+            MemBackend::new(),
+            MemBackend::new(),
+            MemBackend::new(),
+            MemBackend::new(),
+        );
         let result = create_tag(&mut store, Scope::Project, "work").unwrap();
         assert!(result.messages[0].content.contains("Created tag 'work'"));
 
@@ -182,14 +194,24 @@ mod tests {
 
     #[test]
     fn test_create_tag_invalid_name() {
-        let mut store = InMemoryStore::new();
+        let mut store = BucketedStore::new(
+            MemBackend::new(),
+            MemBackend::new(),
+            MemBackend::new(),
+            MemBackend::new(),
+        );
         let result = create_tag(&mut store, Scope::Project, "-invalid");
         assert!(result.is_err());
     }
 
     #[test]
     fn test_create_tag_duplicate() {
-        let mut store = InMemoryStore::new();
+        let mut store = BucketedStore::new(
+            MemBackend::new(),
+            MemBackend::new(),
+            MemBackend::new(),
+            MemBackend::new(),
+        );
         create_tag(&mut store, Scope::Project, "work").unwrap();
         let result = create_tag(&mut store, Scope::Project, "work");
         assert!(result.is_err());
@@ -198,7 +220,12 @@ mod tests {
 
     #[test]
     fn test_delete_tag() {
-        let mut store = InMemoryStore::new();
+        let mut store = BucketedStore::new(
+            MemBackend::new(),
+            MemBackend::new(),
+            MemBackend::new(),
+            MemBackend::new(),
+        );
         create_tag(&mut store, Scope::Project, "work").unwrap();
 
         let result = delete_tag(&mut store, Scope::Project, "work").unwrap();
@@ -211,7 +238,12 @@ mod tests {
 
     #[test]
     fn test_delete_tag_not_found() {
-        let mut store = InMemoryStore::new();
+        let mut store = BucketedStore::new(
+            MemBackend::new(),
+            MemBackend::new(),
+            MemBackend::new(),
+            MemBackend::new(),
+        );
         let result = delete_tag(&mut store, Scope::Project, "nonexistent");
         assert!(result.is_err());
         assert!(result.unwrap_err().to_string().contains("not found"));
@@ -219,7 +251,12 @@ mod tests {
 
     #[test]
     fn test_delete_tag_cascades_to_pads() {
-        let mut store = InMemoryStore::new();
+        let mut store = BucketedStore::new(
+            MemBackend::new(),
+            MemBackend::new(),
+            MemBackend::new(),
+            MemBackend::new(),
+        );
 
         // Create a tag and a pad with that tag
         create_tag(&mut store, Scope::Project, "work").unwrap();
@@ -233,22 +270,29 @@ mod tests {
         .unwrap();
 
         // Manually add tag to pad
-        let mut pads = store.list_pads(Scope::Project).unwrap();
+        let mut pads = store.list_pads(Scope::Project, Bucket::Active).unwrap();
         pads[0].metadata.tags.push("work".to_string());
-        store.save_pad(&pads[0], Scope::Project).unwrap();
+        store
+            .save_pad(&pads[0], Scope::Project, Bucket::Active)
+            .unwrap();
 
         // Delete the tag
         let result = delete_tag(&mut store, Scope::Project, "work").unwrap();
         assert!(result.messages[1].content.contains("Removed from 1 pad"));
 
         // Verify tag is removed from pad
-        let pads = store.list_pads(Scope::Project).unwrap();
+        let pads = store.list_pads(Scope::Project, Bucket::Active).unwrap();
         assert!(pads[0].metadata.tags.is_empty());
     }
 
     #[test]
     fn test_rename_tag() {
-        let mut store = InMemoryStore::new();
+        let mut store = BucketedStore::new(
+            MemBackend::new(),
+            MemBackend::new(),
+            MemBackend::new(),
+            MemBackend::new(),
+        );
         create_tag(&mut store, Scope::Project, "old-name").unwrap();
 
         let result = rename_tag(&mut store, Scope::Project, "old-name", "new-name").unwrap();
@@ -264,14 +308,24 @@ mod tests {
 
     #[test]
     fn test_rename_tag_not_found() {
-        let mut store = InMemoryStore::new();
+        let mut store = BucketedStore::new(
+            MemBackend::new(),
+            MemBackend::new(),
+            MemBackend::new(),
+            MemBackend::new(),
+        );
         let result = rename_tag(&mut store, Scope::Project, "nonexistent", "new-name");
         assert!(result.is_err());
     }
 
     #[test]
     fn test_rename_tag_to_existing() {
-        let mut store = InMemoryStore::new();
+        let mut store = BucketedStore::new(
+            MemBackend::new(),
+            MemBackend::new(),
+            MemBackend::new(),
+            MemBackend::new(),
+        );
         create_tag(&mut store, Scope::Project, "tag-a").unwrap();
         create_tag(&mut store, Scope::Project, "tag-b").unwrap();
 
@@ -282,7 +336,12 @@ mod tests {
 
     #[test]
     fn test_rename_tag_invalid_new_name() {
-        let mut store = InMemoryStore::new();
+        let mut store = BucketedStore::new(
+            MemBackend::new(),
+            MemBackend::new(),
+            MemBackend::new(),
+            MemBackend::new(),
+        );
         create_tag(&mut store, Scope::Project, "valid").unwrap();
 
         let result = rename_tag(&mut store, Scope::Project, "valid", "-invalid");
@@ -291,7 +350,12 @@ mod tests {
 
     #[test]
     fn test_rename_tag_updates_pads() {
-        let mut store = InMemoryStore::new();
+        let mut store = BucketedStore::new(
+            MemBackend::new(),
+            MemBackend::new(),
+            MemBackend::new(),
+            MemBackend::new(),
+        );
 
         // Create a tag and a pad with that tag
         create_tag(&mut store, Scope::Project, "old-tag").unwrap();
@@ -305,22 +369,29 @@ mod tests {
         .unwrap();
 
         // Manually add tag to pad
-        let mut pads = store.list_pads(Scope::Project).unwrap();
+        let mut pads = store.list_pads(Scope::Project, Bucket::Active).unwrap();
         pads[0].metadata.tags.push("old-tag".to_string());
-        store.save_pad(&pads[0], Scope::Project).unwrap();
+        store
+            .save_pad(&pads[0], Scope::Project, Bucket::Active)
+            .unwrap();
 
         // Rename the tag
         let result = rename_tag(&mut store, Scope::Project, "old-tag", "new-tag").unwrap();
         assert!(result.messages[1].content.contains("Updated 1 pad"));
 
         // Verify tag is updated in pad
-        let pads = store.list_pads(Scope::Project).unwrap();
+        let pads = store.list_pads(Scope::Project, Bucket::Active).unwrap();
         assert_eq!(pads[0].metadata.tags, vec!["new-tag"]);
     }
 
     #[test]
     fn test_list_tags_shows_count() {
-        let mut store = InMemoryStore::new();
+        let mut store = BucketedStore::new(
+            MemBackend::new(),
+            MemBackend::new(),
+            MemBackend::new(),
+            MemBackend::new(),
+        );
         create_tag(&mut store, Scope::Project, "work").unwrap();
         create_tag(&mut store, Scope::Project, "rust").unwrap();
 
