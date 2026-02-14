@@ -19,7 +19,10 @@ load '../lib/assertions.bash'
 # -----------------------------------------------------------------------------
 
 @test "mode: default mode is notes" {
-    run "${PADZ_BIN}" -g config get mode
+    # Use merged view from a clean project (no config files yet)
+    # Scoped -g reads only the raw global file which may not exist yet
+    cd "${PROJECT_A}"
+    run "${PADZ_BIN}" config get mode
     assert_success
     [[ "$output" == *"notes"* ]]
 }

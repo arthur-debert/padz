@@ -180,10 +180,10 @@ pub fn initialize(cwd: &Path, use_global: bool, data_override: Option<PathBuf>) 
         Scope::Project
     };
 
-    // Build search paths based on scope:
-    // - Global scope: only Platform directory
-    // - Project scope: Platform (lower priority) then project dir (higher priority)
-    let search_paths = if use_global {
+    // Config search paths depend on scope:
+    // - Global: only global dir (project config must not affect global operations)
+    // - Project: both dirs merged (global provides defaults, project overrides)
+    let config_search_paths = if use_global {
         vec![SearchPath::Path(global_data_dir.clone())]
     } else {
         vec![
@@ -195,8 +195,8 @@ pub fn initialize(cwd: &Path, use_global: bool, data_override: Option<PathBuf>) 
     let config: PadzConfig = Clapfig::builder()
         .app_name("padz")
         .file_name("padz.toml")
-        .search_paths(search_paths)
-        .search_mode(SearchMode::FirstMatch)
+        .search_paths(config_search_paths)
+        .search_mode(SearchMode::Merge)
         .load()
         .unwrap_or_default();
     let file_ext = config.file_ext();

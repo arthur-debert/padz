@@ -156,66 +156,48 @@ fn handle_config(cli: &Cli, subcommand: &Option<ConfigSubcommand>) -> Result<()>
             proj_dirs.data_dir().to_path_buf()
         });
 
-    let use_global = cli.global;
-
-    // Build search paths and persist path based on scope
-    let (search_paths, persist_path) = if use_global {
-        (
-            vec![SearchPath::Path(global_data_dir.clone())],
-            SearchPath::Path(global_data_dir),
-        )
+    // Map -g flag to clapfig scope: None defaults to "local" (first registered)
+    let scope: Option<String> = if cli.global {
+        Some("global".into())
     } else {
-        (
-            vec![
-                SearchPath::Path(global_data_dir),
-                SearchPath::Path(project_padz_dir.clone()),
-            ],
-            SearchPath::Path(project_padz_dir),
-        )
+        None
     };
 
     // Convert our ConfigSubcommand to clapfig's ConfigAction
     let action = match subcommand {
-        None => ConfigAction::List,
-        Some(ConfigSubcommand::List) => ConfigAction::List,
+        None => ConfigAction::List {
+            scope: scope.clone(),
+        },
+        Some(ConfigSubcommand::List) => ConfigAction::List {
+            scope: scope.clone(),
+        },
         Some(ConfigSubcommand::Gen { file }) => ConfigAction::Gen {
             output: file.clone(),
         },
-        Some(ConfigSubcommand::Get { key }) => ConfigAction::Get { key: key.clone() },
-        Some(ConfigSubcommand::Set { key, value }) => {
-            // Validate enum fields before writing (clapfig doesn't validate on set yet)
-            validate_config_value(key, value)?;
-            ConfigAction::Set {
-                key: key.clone(),
-                value: value.clone(),
-            }
-        }
+        Some(ConfigSubcommand::Get { key }) => ConfigAction::Get {
+            key: key.clone(),
+            scope: scope.clone(),
+        },
+        Some(ConfigSubcommand::Set { key, value }) => ConfigAction::Set {
+            key: key.clone(),
+            value: value.clone(),
+            scope,
+        },
     };
 
     Clapfig::builder::<PadzConfig>()
         .app_name("padz")
         .file_name("padz.toml")
-        .search_paths(search_paths)
-        .search_mode(SearchMode::FirstMatch)
-        .persist_path(persist_path)
+        .search_paths(vec![
+            SearchPath::Path(global_data_dir.clone()),
+            SearchPath::Path(project_padz_dir.clone()),
+        ])
+        .search_mode(SearchMode::Merge)
+        .persist_scope("local", SearchPath::Path(project_padz_dir))
+        .persist_scope("global", SearchPath::Path(global_data_dir))
         .handle_and_print(&action)
         .map_err(|e| padzapp::error::PadzError::Api(e.to_string()))?;
 
-    Ok(())
-}
-
-/// Validate config values for fields with restricted choices.
-/// Workaround until clapfig validates on set (https://github.com/arthur-debert/clapfig/issues/9).
-fn validate_config_value(key: &str, value: &str) -> Result<()> {
-    if key == "mode" {
-        let json = format!("\"{}\"", value);
-        if serde_json::from_str::<padzapp::config::PadzMode>(&json).is_err() {
-            return Err(padzapp::error::PadzError::Api(format!(
-                "invalid value \"{}\" for key \"mode\". Valid values: notes, todos",
-                value
-            )));
-        }
-    }
     Ok(())
 }
 
