@@ -114,18 +114,8 @@ pub fn build_modification_result_value(
                 String::new()
             };
 
-            // Calculate tags display width
-            let tags_width = if dp.pad.metadata.tags.is_empty() {
-                0
-            } else {
-                use unicode_width::UnicodeWidthStr;
-                let tag_chars: usize = dp.pad.metadata.tags.iter().map(|t| t.width()).sum();
-                let spaces = dp.pad.metadata.tags.len().saturating_sub(1);
-                tag_chars + spaces + 1
-            };
-
             let fixed_columns = COL_LEFT_PIN + col_status + COL_INDEX + COL_TIME;
-            let title_width = LINE_WIDTH.saturating_sub(fixed_columns + tags_width);
+            let title_width = LINE_WIDTH.saturating_sub(fixed_columns);
 
             json!({
                 "indent": "",
@@ -253,18 +243,8 @@ pub fn build_list_result_value(
             String::new()
         };
 
-        // Calculate tags display width
-        let tags_width = if dp.pad.metadata.tags.is_empty() {
-            0
-        } else {
-            use unicode_width::UnicodeWidthStr;
-            let tag_chars: usize = dp.pad.metadata.tags.iter().map(|t| t.width()).sum();
-            let spaces = dp.pad.metadata.tags.len().saturating_sub(1);
-            tag_chars + spaces + 1
-        };
-
         let fixed_columns = COL_LEFT_PIN + col_status + COL_INDEX + COL_TIME;
-        let title_width = LINE_WIDTH.saturating_sub(fixed_columns + indent_width + tags_width);
+        let title_width = LINE_WIDTH.saturating_sub(fixed_columns + indent_width);
 
         // Process matches
         let mut match_lines: Vec<serde_json::Value> = Vec::new();

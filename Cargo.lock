@@ -1829,9 +1829,9 @@ dependencies = [
 
 [[package]]
 name = "standout"
-version = "6.1.0"
+version = "6.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "558214a925aea08c8af840d6f9eb3d072953dec8caf156a5eee285bb3fa0aa38"
+checksum = "919bc50a072fd115da717891dfaeac0873fe97dd73afd87c4d1b965e40c3c39c"
 dependencies = [
  "anyhow",
  "clap",
@@ -1855,18 +1855,18 @@ dependencies = [
 
 [[package]]
 name = "standout-bbparser"
-version = "6.1.0"
+version = "6.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0239bb59d4a12d622331494b8f66a46f3b61d8cd6f5863322a785d674b664bab"
+checksum = "fd4057c1bbe535a39d73b286e4b5db6002ec863c30abf514afb2745e3636697e"
 dependencies = [
  "console",
 ]
 
 [[package]]
 name = "standout-dispatch"
-version = "6.1.0"
+version = "6.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "838643eff8d98713a3d503543c9bcc3426f775d836093d4f047e60aa4e87e8aa"
+checksum = "54a7141196fb7af05e196f6293e591e978f19c83045f49eaf7d8d58f11592adf"
 dependencies = [
  "anyhow",
  "clap",
@@ -1877,9 +1877,9 @@ dependencies = [
 
 [[package]]
 name = "standout-macros"
-version = "6.1.0"
+version = "6.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1938c32ff5f26c8f14d786a3bf0423924a010ba230f13fbed7bf57ee0588b04b"
+checksum = "eb1aade88249736d3eaecfbc4b1be1d8d484e55ea45d80271960c2e2c57a7983"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -1888,9 +1888,9 @@ dependencies = [
 
 [[package]]
 name = "standout-pipe"
-version = "6.1.0"
+version = "6.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "bcb45e38ef81502128ab003e7209f7ecb5f1c3ea44ef4c8b93d4cffb857a90e9"
+checksum = "62748fb4b1dee9898a89f4b2778b40210e07489aa68d1c7d0c8670245deb5b1b"
 dependencies = [
  "thiserror 2.0.17",
  "wait-timeout",
@@ -1898,9 +1898,9 @@ dependencies = [
 
 [[package]]
 name = "standout-render"
-version = "6.1.0"
+version = "6.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "6c90c450f549b5573e20beaa8b45a118359c76926aaebb0d646459c025e93483"
+checksum = "87ce720b1dfad4e9561a7e40afaac2f005d871b607080cc6322589e0561990f8"
 dependencies = [
  "console",
  "cssparser",
@@ -1919,9 +1919,9 @@ dependencies = [
 
 [[package]]
 name = "standout-seeker"
-version = "6.1.0"
+version = "6.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "736543644c191f6d8bd1ad7121026a53d02a8f39cdc1fd0b32d72f8fcddd349a"
+checksum = "7dbe7ecff7ef90aa2ddc41276dd0cede4cab745f53a88c9c7f03291cc53b965b"
 dependencies = [
  "regex",
  "thiserror 2.0.17",

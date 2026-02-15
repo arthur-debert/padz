@@ -21,6 +21,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
     - **No temp file dependency**: Removed `standout-input` dependency from the CLI crate
   - **Fixed double-title bug in edit** - The edit handler no longer duplicates the title in the editor buffer (`Title\n\nTitle\n\nBody` → `Title\n\nBody`)
 
+- **Fixed**
+  - **Tag display in list view** - Tags were invisible and broke column alignment. Two root causes: standout's `tabular().row()` counted BBCode markup (`[tag]...[/tag]`) as display width, and padz compensated by shrinking the title column per-row, misaligning the time column. Fixed by upgrading to standout 6.2.0 (BBCode-aware width measurement) and switching to sub-columns — title and tags are now sub-columns within a constant-width parent column, with tags right-aligned and the title absorbing remaining space per-row.
+
 ## [0.19.0] - 2026-02-13
 
 ## [0.19.0] - 2026-02-13
