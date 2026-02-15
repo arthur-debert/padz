@@ -1,4 +1,4 @@
-{#- Single pad line rendering using Tabular -#}
+{#- Single pad line rendering using Tabular with sub-columns -#}
 {#- Expects: pad (PadLineData), peek (bool), col_* (column widths) -#}
 
 {#- Determine index style based on section type -#}
@@ -18,28 +18,30 @@
 {%- endif -%}
 
 {#- Build tags string -#}
-{%- set tags_str = "" -%}
-{%- for tag in pad.tags -%}
-  {%- set tags_str = tags_str ~ " [tag]" ~ tag ~ "[/tag]" -%}
-{%- endfor -%}
+{%- set tags_str = pad.tags | join(" ") -%}
 
-{#- Define tabular layout with styles at column level -#}
+{#- Define tabular layout with sub-columns for title+tags -#}
 {%- set t = tabular([
     {"name": "left_pin", "width": col_left_pin, "style": "pinned"},
     {"name": "status", "width": col_status, "style": "status-icon"},
     {"name": "index", "width": col_index, "style": index_style},
-    {"name": "title", "width": pad.title_width, "overflow": "truncate", "style": title_style},
+    {"name": "content", "width": pad.title_width, "sub_columns": {
+        "columns": [
+            {"width": "fill", "overflow": "truncate", "style": title_style},
+            {"width": {"min": 0, "max": 30}, "align": "right", "style": "tag"}
+        ],
+        "separator": " "
+    }},
     {"name": "time", "width": col_time, "align": "right", "style": "time"}
 ]) -%}
 
 {#- Render the row with indent prefix -#}
-{#- Note: tags are appended after title column since they have variable count -#}
 {{- pad.indent -}}
 {{- t.row([
     pad.left_pin,
     pad.status_icon,
     pad.index,
-    pad.title ~ tags_str,
+    [pad.title, tags_str],
     pad.time_ago
 ]) -}}
 {{ "" | nl -}}
