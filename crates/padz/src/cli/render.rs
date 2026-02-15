@@ -39,7 +39,7 @@ pub const PIN_MARKER: &str = "⚲";
 pub const COL_LEFT_PIN: usize = 2; // Pin marker or empty ("⚲ " or "  ")
 pub const COL_STATUS: usize = 2; // Status icon + space
 pub const COL_INDEX: usize = 4; // "p1.", " 1.", "d1."
-pub const COL_TIME: usize = 5; // Compact timestamp ("34s ⏲")
+pub const COL_TIME: usize = 6; // Compact timestamp (" 34s ⏲") with leading gap
 
 /// Status indicators for todo status
 pub const STATUS_PLANNED: &str = "⚪︎";
@@ -125,6 +125,7 @@ pub fn build_modification_result_value(
                 "title": dp.pad.metadata.title,
                 "title_width": title_width,
                 "tags": dp.pad.metadata.tags,
+                "tags_display": format_tags_display(&dp.pad.metadata.tags),
                 "time_ago": format_time_ago(dp.pad.metadata.created_at),
                 "is_pinned_section": is_pinned_section,
                 "is_deleted": is_deleted,
@@ -299,6 +300,7 @@ pub fn build_list_result_value(
             "title": dp.pad.metadata.title,
             "title_width": title_width,
             "tags": dp.pad.metadata.tags,
+                "tags_display": format_tags_display(&dp.pad.metadata.tags),
             "time_ago": format_time_ago(dp.pad.metadata.created_at),
             "is_pinned_section": is_pinned_section && depth == 0,
             "is_deleted": is_deleted || is_deleted_root,
@@ -337,6 +339,7 @@ pub fn build_list_result_value(
                 "title": "",
                 "title_width": 0,
                 "tags": [],
+                "tags_display": "",
                 "time_ago": "",
                 "is_pinned_section": false,
                 "is_deleted": false,
@@ -426,6 +429,13 @@ fn truncate_match_segments_to_json(
         }
     }
     result
+}
+
+fn format_tags_display(tags: &[String]) -> String {
+    tags.iter()
+        .map(|t| format!("\u{300c}{}\u{300d}", t))
+        .collect::<Vec<_>>()
+        .join(" ")
 }
 
 fn format_time_ago(timestamp: DateTime<Utc>) -> String {

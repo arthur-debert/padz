@@ -17,9 +17,6 @@
   {%- set title_style = "title" -%}
 {%- endif -%}
 
-{#- Build tags string -#}
-{%- set tags_str = pad.tags | join(" ") -%}
-
 {#- Define tabular layout with sub-columns for title+tags -#}
 {%- set t = tabular([
     {"name": "left_pin", "width": col_left_pin, "style": "pinned"},
@@ -41,7 +38,7 @@
     pad.left_pin,
     pad.status_icon,
     pad.index,
-    [pad.title, tags_str],
+    [pad.title, pad.tags_display],
     pad.time_ago
 ]) -}}
 {{ "" | nl -}}
