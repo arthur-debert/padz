@@ -6,6 +6,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [0.19.1] - 2026-02-15
+
+## [0.19.1] - 2026-02-15
+
 - **Added**
   - **Bucketed storage architecture** - Replaced flat store with three lifecycle buckets (`active/`, `archived/`, `deleted/`). Pad location IS lifecycle state — no more `is_deleted` metadata flag. Each bucket has its own `data.json` and content files.
   - **Archive/unarchive commands** - `padz archive` moves pads to cold storage; `padz unarchive` brings them back. Children always move with their parent.
@@ -315,7 +319,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
   - Demo flow verification script
   - Live testing shell
 
-[Unreleased]: https://github.com/arthur-debert/padz/compare/v0.19.0...HEAD
+[Unreleased]: https://github.com/arthur-debert/padz/compare/v0.19.1...HEAD
+[0.19.1]: https://github.com/arthur-debert/padz/compare/v0.19.0...v0.19.1
+[0.19.1]: https://github.com/arthur-debert/padz/compare/v0.19.0...v0.19.1
 [0.19.0]: https://github.com/arthur-debert/padz/compare/v0.18.0...v0.19.0
 [0.19.0]: https://github.com/arthur-debert/padz/compare/v0.18.0...v0.19.0
 [0.18.0]: https://github.com/arthur-debert/padz/compare/v0.17.0...v0.18.0

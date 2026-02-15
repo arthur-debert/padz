@@ -1256,7 +1256,7 @@ dependencies = [
 
 [[package]]
 name = "padz"
-version = "0.19.0"
+version = "0.19.1"
 dependencies = [
  "anyhow",
  "assert_cmd",
@@ -1281,7 +1281,7 @@ dependencies = [
 
 [[package]]
 name = "padzapp"
-version = "0.19.0"
+version = "0.19.1"
 dependencies = [
  "chrono",
  "clapfig",
