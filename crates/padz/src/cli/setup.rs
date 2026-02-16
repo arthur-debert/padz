@@ -185,11 +185,7 @@ fn should_show_custom_help() -> bool {
         "purge",
         "export",
         "import",
-        "add_tag",
-        "add-tag",
-        "remove_tag",
-        "remove-tag",
-        "tags",
+        "tag",
         "doctor",
         "config",
         "init",
@@ -250,9 +246,7 @@ fn command_groups() -> Vec<CommandGroup> {
                 Some("import".into()),
                 Some("export".into()),
                 None,
-                Some("tags".into()),
-                Some("add_tag".into()),
-                Some("remove_tag".into()),
+                Some("tag".into()),
             ],
         },
         CommandGroup {
@@ -509,32 +503,6 @@ pub enum Commands {
         indexes: Vec<String>,
     },
 
-    /// Add tags to pads
-    #[command(name = "add_tag", alias = "add-tag", display_order = 23)]
-    #[dispatch(pure, template = "modification_result")]
-    AddTag {
-        /// Indexes of the pads (e.g. 1 3 5 or 1-5)
-        #[arg(required = true, num_args = 1.., add = active_pads_completer())]
-        indexes: Vec<String>,
-
-        /// Tag(s) to add (can be specified multiple times)
-        #[arg(long = "tag", short = 't', required = true, num_args = 1..)]
-        tags: Vec<String>,
-    },
-
-    /// Remove tags from pads
-    #[command(name = "remove_tag", alias = "remove-tag", display_order = 24)]
-    #[dispatch(pure, template = "modification_result")]
-    RemoveTag {
-        /// Indexes of the pads (e.g. 1 3 5 or 1-5)
-        #[arg(required = true, num_args = 1.., add = active_pads_completer())]
-        indexes: Vec<String>,
-
-        /// Tag(s) to remove (can be specified multiple times) - if omitted, clears all tags
-        #[arg(long = "tag", short = 't', num_args = 1..)]
-        tags: Vec<String>,
-    },
-
     // --- Data operations ---
     /// Permanently delete pads
     #[command(display_order = 20)]
@@ -579,7 +547,7 @@ pub enum Commands {
     /// Manage tags
     #[command(subcommand, display_order = 25)]
     #[dispatch(nested)]
-    Tags(TagsCommands),
+    Tag(TagCommands),
 
     // --- Misc commands ---
     /// Check and fix data inconsistencies
@@ -639,39 +607,53 @@ pub enum ConfigSubcommand {
     },
 }
 
-/// Tags subcommands
+/// Tag subcommands
 #[derive(Subcommand, Dispatch, Debug)]
-#[dispatch(handlers = handlers::tags)]
-pub enum TagsCommands {
-    /// List all defined tags
-    #[command(alias = "ls", display_order = 25)]
-    #[dispatch(pure, template = "messages")]
-    List,
-
-    /// Create a new tag
-    #[command(display_order = 26)]
-    #[dispatch(pure, template = "messages")]
-    Create {
-        /// Name of the tag to create
-        name: String,
+#[dispatch(handlers = handlers::tag)]
+pub enum TagCommands {
+    /// Add tags to pads (auto-creates tags if needed)
+    #[command(display_order = 25)]
+    #[dispatch(pure, template = "modification_result")]
+    Add {
+        /// Pad selectors followed by tag names (e.g. 1 2 feature work)
+        #[arg(required = true, num_args = 1..)]
+        args: Vec<String>,
     },
 
-    /// Delete a tag (removes from all pads)
-    #[command(alias = "rm", display_order = 27)]
-    #[dispatch(pure, template = "messages")]
-    Delete {
-        /// Name of the tag to delete
-        name: String,
+    /// Remove tags from pads
+    #[command(display_order = 26)]
+    #[dispatch(pure, template = "modification_result")]
+    Remove {
+        /// Pad selectors followed by tag names (e.g. 1 2 feature work)
+        #[arg(required = true, num_args = 1..)]
+        args: Vec<String>,
     },
 
     /// Rename a tag (updates all pads)
-    #[command(alias = "mv", display_order = 28)]
+    #[command(alias = "mv", display_order = 27)]
     #[dispatch(pure, template = "messages")]
     Rename {
         /// Current name of the tag
         old_name: String,
         /// New name for the tag
         new_name: String,
+    },
+
+    /// Delete a tag (removes from all pads)
+    #[command(alias = "rm", display_order = 28)]
+    #[dispatch(pure, template = "messages")]
+    Delete {
+        /// Name of the tag to delete
+        name: String,
+    },
+
+    /// List all defined tags, or tags for specific pads
+    #[command(alias = "ls", display_order = 29)]
+    #[dispatch(pure, template = "messages")]
+    List {
+        /// Pad IDs to show tags for (e.g. 1, 2 3, 1-3). If omitted, lists all tags.
+        #[arg(num_args = 0..)]
+        ids: Vec<String>,
     },
 }
 

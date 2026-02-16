@@ -354,6 +354,16 @@ impl<S: DataStore> PadzApi<S> {
         commands::tags::list_tags(&self.store, scope)
     }
 
+    /// List tags for specific pads.
+    pub fn list_pad_tags<I: AsRef<str>>(
+        &self,
+        scope: Scope,
+        indexes: &[I],
+    ) -> Result<commands::CmdResult> {
+        let selectors = parse_selectors(indexes)?;
+        commands::tags::list_pad_tags(&self.store, scope, &selectors)
+    }
+
     /// Create a new tag in the registry.
     pub fn create_tag(&mut self, scope: Scope, name: &str) -> Result<commands::CmdResult> {
         commands::tags::create_tag(&mut self.store, scope, name)
@@ -396,16 +406,6 @@ impl<S: DataStore> PadzApi<S> {
     ) -> Result<commands::CmdResult> {
         let selectors = parse_selectors(indexes)?;
         commands::tagging::remove_tags(&mut self.store, scope, &selectors, tags)
-    }
-
-    /// Clear all tags from pads.
-    pub fn clear_tags_from_pads<I: AsRef<str>>(
-        &mut self,
-        scope: Scope,
-        indexes: &[I],
-    ) -> Result<commands::CmdResult> {
-        let selectors = parse_selectors(indexes)?;
-        commands::tagging::clear_tags(&mut self.store, scope, &selectors)
     }
 }
 
@@ -1120,26 +1120,6 @@ mod tests {
             .unwrap();
 
         assert!(result.messages[0].content.contains("Removed tag"));
-        assert!(result.affected_pads[0].pad.metadata.tags.is_empty());
-    }
-
-    #[test]
-    fn test_api_clear_tags_from_pads() {
-        let mut api = make_api();
-        api.create_pad(Scope::Project, "Test".into(), "".into(), None)
-            .unwrap();
-        api.create_tag(Scope::Project, "work").unwrap();
-        api.create_tag(Scope::Project, "rust").unwrap();
-        api.add_tags_to_pads(
-            Scope::Project,
-            &["1"],
-            &["work".to_string(), "rust".to_string()],
-        )
-        .unwrap();
-
-        let result = api.clear_tags_from_pads(Scope::Project, &["1"]).unwrap();
-
-        assert!(result.messages[0].content.contains("Cleared tags"));
         assert!(result.affected_pads[0].pad.metadata.tags.is_empty());
     }
 

@@ -204,28 +204,6 @@ impl<'a> ScopedApi<'a> {
         self.modification("Reopened", result)
     }
 
-    pub fn add_tags(
-        &self,
-        indexes: &[String],
-        tags: &[String],
-    ) -> Result<Output<Value>, anyhow::Error> {
-        let result = self.call(|api, scope| api.add_tags_to_pads(scope, indexes, tags))?;
-        self.modification("Tagged", result)
-    }
-
-    pub fn remove_tags(
-        &self,
-        indexes: &[String],
-        tags: &[String],
-    ) -> Result<Output<Value>, anyhow::Error> {
-        let result = if tags.is_empty() {
-            self.call(|api, scope| api.clear_tags_from_pads(scope, indexes))?
-        } else {
-            self.call(|api, scope| api.remove_tags_from_pads(scope, indexes, tags))?
-        };
-        self.modification("Untagged", result)
-    }
-
     pub fn move_pads(
         &self,
         indexes: &[String],
@@ -295,11 +273,6 @@ impl<'a> ScopedApi<'a> {
 
     pub fn list_tags(&self) -> Result<Output<Value>, anyhow::Error> {
         let result = self.call(|api, scope| api.list_tags(scope))?;
-        self.messages(result)
-    }
-
-    pub fn create_tag(&self, name: &str) -> Result<Output<Value>, anyhow::Error> {
-        let result = self.call(|api, scope| api.create_tag(scope, name))?;
         self.messages(result)
     }
 
@@ -839,24 +812,6 @@ pub fn reopen(
     api(ctx).reopen_pads(&indexes)
 }
 
-#[handler]
-pub fn add_tag(
-    #[ctx] ctx: &CommandContext,
-    #[arg] indexes: Vec<String>,
-    #[arg] tags: Vec<String>,
-) -> Result<Output<Value>, anyhow::Error> {
-    api(ctx).add_tags(&indexes, &tags)
-}
-
-#[handler]
-pub fn remove_tag(
-    #[ctx] ctx: &CommandContext,
-    #[arg] indexes: Vec<String>,
-    #[arg] tags: Vec<String>,
-) -> Result<Output<Value>, anyhow::Error> {
-    api(ctx).remove_tags(&indexes, &tags)
-}
-
 // =============================================================================
 // Data operations
 // =============================================================================
@@ -904,23 +859,96 @@ pub fn init(#[ctx] ctx: &CommandContext) -> Result<Output<Value>, anyhow::Error>
 }
 
 // =============================================================================
-// Tags subcommand handlers
+// Tag subcommand handlers
 // =============================================================================
 
-pub mod tags {
+/// Split positional args into pad selectors and tag names.
+///
+/// Leading args that parse as index selectors (via `parse_index_or_range`) are pad IDs.
+/// Once one fails, everything from that point on is a tag name.
+/// Requires at least 1 selector and at least 1 tag.
+fn split_indexes_and_tags(args: &[String]) -> Result<(Vec<String>, Vec<String>), anyhow::Error> {
+    use padzapp::index::parse_index_or_range;
+
+    let mut indexes = Vec::new();
+    let mut tags = Vec::new();
+    let mut past_indexes = false;
+
+    for arg in args {
+        if past_indexes {
+            tags.push(arg.clone());
+        } else if parse_index_or_range(arg).is_ok() {
+            indexes.push(arg.clone());
+        } else {
+            past_indexes = true;
+            tags.push(arg.clone());
+        }
+    }
+
+    if indexes.is_empty() {
+        return Err(anyhow::anyhow!(
+            "No pad selectors provided. Usage: padz tag add <id>... <tag>..."
+        ));
+    }
+    if tags.is_empty() {
+        return Err(anyhow::anyhow!(
+            "No tag names provided. Usage: padz tag add <id>... <tag>..."
+        ));
+    }
+
+    Ok((indexes, tags))
+}
+
+pub mod tag {
     use super::*;
 
     #[handler]
-    pub fn list(#[ctx] ctx: &CommandContext) -> Result<Output<Value>, anyhow::Error> {
-        api(ctx).list_tags()
+    pub fn add(
+        #[ctx] ctx: &CommandContext,
+        #[arg] args: Vec<String>,
+    ) -> Result<Output<Value>, anyhow::Error> {
+        let (indexes, tags) = split_indexes_and_tags(&args)?;
+        let state = get_state(ctx);
+        let result = state.with_api(|api| {
+            api.add_tags_to_pads(state.scope, &indexes, &tags)
+                .map_err(|e| anyhow::anyhow!("{}", e))
+        })?;
+        Ok(Output::Render(build_modification_result_value(
+            "Tagged",
+            &result.affected_pads,
+            &result.messages,
+            state.output_mode,
+            state.mode,
+        )))
     }
 
     #[handler]
-    pub fn create(
+    pub fn remove(
         #[ctx] ctx: &CommandContext,
-        #[arg] name: String,
+        #[arg] args: Vec<String>,
     ) -> Result<Output<Value>, anyhow::Error> {
-        api(ctx).create_tag(&name)
+        let (indexes, tags) = split_indexes_and_tags(&args)?;
+        let state = get_state(ctx);
+        let result = state.with_api(|api| {
+            api.remove_tags_from_pads(state.scope, &indexes, &tags)
+                .map_err(|e| anyhow::anyhow!("{}", e))
+        })?;
+        Ok(Output::Render(build_modification_result_value(
+            "Untagged",
+            &result.affected_pads,
+            &result.messages,
+            state.output_mode,
+            state.mode,
+        )))
+    }
+
+    #[handler]
+    pub fn rename(
+        #[ctx] ctx: &CommandContext,
+        #[arg(name = "old_name")] old_name: String,
+        #[arg(name = "new_name")] new_name: String,
+    ) -> Result<Output<Value>, anyhow::Error> {
+        api(ctx).rename_tag(&old_name, &new_name)
     }
 
     #[handler]
@@ -932,11 +960,21 @@ pub mod tags {
     }
 
     #[handler]
-    pub fn rename(
+    pub fn list(
         #[ctx] ctx: &CommandContext,
-        #[arg(name = "old_name")] old_name: String,
-        #[arg(name = "new_name")] new_name: String,
+        #[arg] ids: Vec<String>,
     ) -> Result<Output<Value>, anyhow::Error> {
-        api(ctx).rename_tag(&old_name, &new_name)
+        if ids.is_empty() {
+            api(ctx).list_tags()
+        } else {
+            let state = get_state(ctx);
+            let result = state.with_api(|api| {
+                api.list_pad_tags(state.scope, &ids)
+                    .map_err(|e| anyhow::anyhow!("{}", e))
+            })?;
+            Ok(Output::Render(serde_json::json!({
+                "messages": result.messages,
+            })))
+        }
     }
 }

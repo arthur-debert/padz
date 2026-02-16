@@ -32,17 +32,12 @@ padz -g create --no-editor "Global pad: Projects Overview"
 # Create a nested global pad (child of "Projects Overview" which is index 4)
 padz -g create --no-editor --inside 4 "Global pad: Backend Tasks"
 
-# Create tags first, then apply them
-padz -g tags create work
-padz -g tags create important
-padz -g tags create reference
-
-# Tag some global pads (using display indexes)
+# Tag some global pads (using display indexes, tags auto-created)
 # "Meeting Notes" = 1, "Quick Reference" = 2, "API Documentation" = 3
-# Note: Use -- to separate -t options from positional INDEXES argument
-padz -g add-tag -t work -t important -- 1
-padz -g add-tag -t reference -- 2 3
-padz -g add-tag -t work -- 3
+# Tags are auto-created when first used
+padz -g tag add 1 work important
+padz -g tag add 2 3 reference
+padz -g tag add 3 work
 
 # Pin a global pad
 padz -g pin 2
@@ -80,16 +75,10 @@ padz create --no-editor "Project pad: Sprint Backlog"
 padz create --no-editor --inside 4 "Project pad: Sprint Item Alpha"
 padz create --no-editor --inside 4 "Project pad: Sprint Item Beta"
 
-# Create project tags first
-padz tags create feature
-padz tags create priority
-padz tags create bug
-padz tags create testing
-
-# Tag some project pads
-padz add-tag -t feature -t priority -- 1
-padz add-tag -t bug -t priority -- 2
-padz add-tag -t testing -- 3
+# Tag some project pads (tags auto-created)
+padz tag add 1 feature priority
+padz tag add 2 bug priority
+padz tag add 3 testing
 
 # Pin a project pad
 padz pin 1
