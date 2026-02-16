@@ -1,9 +1,8 @@
 //! Pad tagging commands.
 //!
 //! This module provides operations for managing tags on pads:
-//! - `add_tags`: Add tags to pads
+//! - `add_tags`: Add tags to pads (auto-creates tags if needed)
 //! - `remove_tags`: Remove specific tags from pads
-//! - `clear_tags`: Remove all tags from pads
 
 use crate::attributes::AttrValue;
 use crate::commands::helpers::{indexed_pads, resolve_selectors};
@@ -16,7 +15,7 @@ use crate::store::DataStore;
 
 /// Add tags to selected pads.
 ///
-/// Tags must exist in the registry before they can be added to pads.
+/// Tags are auto-created in the registry if they don't already exist.
 /// Adding a tag that a pad already has is a no-op (idempotent).
 pub fn add_tags<S: DataStore>(
     store: &mut S,
@@ -28,16 +27,19 @@ pub fn add_tags<S: DataStore>(
         return Err(PadzError::Api("No tags specified".to_string()));
     }
 
-    // Verify all tags exist in the registry
-    let registry = store.load_tags(scope)?;
-    let registry_names: Vec<&str> = registry.iter().map(|t| t.name.as_str()).collect();
+    // Auto-create tags that don't exist in the registry
+    let mut registry = store.load_tags(scope)?;
+    let mut created_tags = Vec::new();
     for tag in tags {
-        if !registry_names.contains(&tag.as_str()) {
-            return Err(PadzError::Api(format!(
-                "Tag '{}' not found. Create it first with 'padz tags create {}'",
-                tag, tag
-            )));
+        if !registry.iter().any(|t| t.name == *tag) {
+            use crate::tags::{validate_tag_name, TagEntry};
+            validate_tag_name(tag).map_err(|e| PadzError::Api(e.to_string()))?;
+            registry.push(TagEntry::new(tag.clone()));
+            created_tags.push(tag.clone());
         }
+    }
+    if !created_tags.is_empty() {
+        store.save_tags(scope, &registry)?;
     }
 
     let resolved = resolve_selectors(store, scope, selectors, false)?;
@@ -182,60 +184,6 @@ pub fn remove_tags<S: DataStore>(
     Ok(result)
 }
 
-/// Remove all tags from selected pads.
-pub fn clear_tags<S: DataStore>(
-    store: &mut S,
-    scope: Scope,
-    selectors: &[PadSelector],
-) -> Result<CmdResult> {
-    let resolved = resolve_selectors(store, scope, selectors, false)?;
-    let mut result = CmdResult::default();
-    let mut modified_count = 0;
-
-    for (display_index, uuid) in resolved {
-        let mut pad = store.get_pad(&uuid, scope, Bucket::Active)?;
-
-        // Get current tags via attribute API
-        let current_tags = pad
-            .metadata
-            .get_attr("tags")
-            .and_then(|v| v.as_list().map(|l| l.to_vec()))
-            .unwrap_or_default();
-
-        if !current_tags.is_empty() {
-            pad.metadata.set_attr("tags", AttrValue::List(Vec::new()));
-            store.save_pad(&pad, scope, Bucket::Active)?;
-            modified_count += 1;
-        }
-
-        // Re-index to get updated pad with correct index
-        let indexed = indexed_pads(store, scope)?;
-        if let Some(dp) = find_pad_by_uuid_any(&indexed, uuid) {
-            result.affected_pads.push(DisplayPad {
-                pad: dp.pad.clone(),
-                index: display_index
-                    .last()
-                    .cloned()
-                    .unwrap_or(DisplayIndex::Regular(1)),
-                matches: None,
-                children: Vec::new(),
-            });
-        }
-    }
-
-    if modified_count > 0 {
-        result.add_message(CmdMessage::success(format!(
-            "Cleared tags from {} pad{}",
-            modified_count,
-            if modified_count == 1 { "" } else { "s" }
-        )));
-    } else {
-        result.add_message(CmdMessage::info("No pads had any tags to clear"));
-    }
-
-    Ok(result)
-}
-
 /// Find a pad by UUID in the indexed tree (any index type).
 fn find_pad_by_uuid_any(pads: &[DisplayPad], uuid: uuid::Uuid) -> Option<&DisplayPad> {
     for dp in pads {
@@ -312,7 +260,7 @@ mod tests {
     }
 
     #[test]
-    fn test_add_tags_nonexistent_tag() {
+    fn test_add_tags_auto_creates_tag() {
         let mut store = setup_store_with_tag();
         create::run(&mut store, Scope::Project, "Test".into(), "".into(), None).unwrap();
 
@@ -321,11 +269,20 @@ mod tests {
             &mut store,
             Scope::Project,
             &selectors,
-            &["nonexistent".to_string()],
-        );
+            &["newbie".to_string()],
+        )
+        .unwrap();
 
-        assert!(result.is_err());
-        assert!(result.unwrap_err().to_string().contains("not found"));
+        assert!(result.messages[0].content.contains("Added tag"));
+        assert!(result.affected_pads[0]
+            .pad
+            .metadata
+            .tags
+            .contains(&"newbie".to_string()));
+
+        // Verify the tag was auto-created in the registry
+        let registry = store.load_tags(Scope::Project).unwrap();
+        assert!(registry.iter().any(|t| t.name == "newbie"));
     }
 
     #[test]
@@ -395,37 +352,6 @@ mod tests {
         .unwrap();
 
         assert!(result.messages[0].content.contains("No pads had"));
-    }
-
-    #[test]
-    fn test_clear_tags() {
-        let mut store = setup_store_with_tag();
-        create::run(&mut store, Scope::Project, "Test".into(), "".into(), None).unwrap();
-
-        let selectors = vec![PadSelector::Path(vec![DisplayIndex::Regular(1)])];
-        add_tags(
-            &mut store,
-            Scope::Project,
-            &selectors,
-            &["work".to_string(), "rust".to_string()],
-        )
-        .unwrap();
-
-        let result = clear_tags(&mut store, Scope::Project, &selectors).unwrap();
-
-        assert!(result.messages[0].content.contains("Cleared tags"));
-        assert!(result.affected_pads[0].pad.metadata.tags.is_empty());
-    }
-
-    #[test]
-    fn test_clear_tags_empty() {
-        let mut store = setup_store_with_tag();
-        create::run(&mut store, Scope::Project, "Test".into(), "".into(), None).unwrap();
-
-        let selectors = vec![PadSelector::Path(vec![DisplayIndex::Regular(1)])];
-        let result = clear_tags(&mut store, Scope::Project, &selectors).unwrap();
-
-        assert!(result.messages[0].content.contains("No pads had any tags"));
     }
 
     #[test]

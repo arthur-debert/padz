@@ -433,7 +433,7 @@ fn truncate_match_segments_to_json(
 
 fn format_tags_display(tags: &[String]) -> String {
     tags.iter()
-        .map(|t| format!("\u{300c}{}\u{300d}", t))
+        .map(|t| format!("\u{300c}[tag]{}[/tag]\u{300d}", t.trim()))
         .collect::<Vec<_>>()
         .join(" ")
 }

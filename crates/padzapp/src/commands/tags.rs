@@ -21,18 +21,54 @@ pub fn list_tags<S: DataStore>(store: &S, scope: Scope) -> Result<CmdResult> {
     if tags.is_empty() {
         result.add_message(CmdMessage::info("No tags defined"));
     } else {
-        let count = tags.len();
-        result.add_message(CmdMessage::info(format!(
-            "{} tag{} defined",
-            count,
-            if count == 1 { "" } else { "s" }
-        )));
+        for tag in &tags {
+            result.add_message(CmdMessage::info(tag.name.clone()));
+        }
     }
 
-    // Store tags in a way the CLI can render them
-    // For now, we'll use messages to list them
-    for tag in &tags {
-        result.add_message(CmdMessage::info(format!("  {}", tag.name)));
+    Ok(result)
+}
+
+/// List tags for specific pads.
+pub fn list_pad_tags<S: DataStore>(
+    store: &S,
+    scope: Scope,
+    selectors: &[crate::index::PadSelector],
+) -> Result<CmdResult> {
+    use crate::commands::helpers::resolve_selectors;
+    use crate::index::{DisplayIndex, DisplayPad};
+
+    let resolved = resolve_selectors(store, scope, selectors, false)?;
+    let mut result = CmdResult::default();
+
+    for (display_index, uuid) in resolved {
+        let pad = store.get_pad(&uuid, scope, Bucket::Active)?;
+        let index = display_index
+            .last()
+            .cloned()
+            .unwrap_or(DisplayIndex::Regular(1));
+        let tags = &pad.metadata.tags;
+
+        if tags.is_empty() {
+            result.add_message(CmdMessage::info(format!(
+                "{} {}: (no tags)",
+                index, pad.metadata.title
+            )));
+        } else {
+            result.add_message(CmdMessage::info(format!(
+                "{} {}: {}",
+                index,
+                pad.metadata.title,
+                tags.join(", ")
+            )));
+        }
+
+        result.listed_pads.push(DisplayPad {
+            pad,
+            index,
+            matches: None,
+            children: Vec::new(),
+        });
     }
 
     Ok(result)
@@ -173,6 +209,24 @@ mod tests {
         );
         let result = list_tags(&store, Scope::Project).unwrap();
         assert!(result.messages[0].content.contains("No tags defined"));
+    }
+
+    #[test]
+    fn test_list_tags_no_preamble() {
+        let mut store = BucketedStore::new(
+            MemBackend::new(),
+            MemBackend::new(),
+            MemBackend::new(),
+            MemBackend::new(),
+        );
+        create_tag(&mut store, Scope::Project, "work").unwrap();
+        create_tag(&mut store, Scope::Project, "rust").unwrap();
+
+        let result = list_tags(&store, Scope::Project).unwrap();
+        // Should just be the tag names, no "X tags defined" preamble
+        assert_eq!(result.messages.len(), 2);
+        assert_eq!(result.messages[0].content, "work");
+        assert_eq!(result.messages[1].content, "rust");
     }
 
     #[test]
@@ -385,7 +439,7 @@ mod tests {
     }
 
     #[test]
-    fn test_list_tags_shows_count() {
+    fn test_list_pad_tags() {
         let mut store = BucketedStore::new(
             MemBackend::new(),
             MemBackend::new(),
@@ -394,8 +448,55 @@ mod tests {
         );
         create_tag(&mut store, Scope::Project, "work").unwrap();
         create_tag(&mut store, Scope::Project, "rust").unwrap();
+        create::run(
+            &mut store,
+            Scope::Project,
+            "Test Pad".into(),
+            "".into(),
+            None,
+        )
+        .unwrap();
 
-        let result = list_tags(&store, Scope::Project).unwrap();
-        assert!(result.messages[0].content.contains("2 tags defined"));
+        // Add tags to the pad
+        use crate::commands::tagging::add_tags;
+        use crate::index::{DisplayIndex, PadSelector};
+        let selectors = vec![PadSelector::Path(vec![DisplayIndex::Regular(1)])];
+        add_tags(
+            &mut store,
+            Scope::Project,
+            &selectors,
+            &["work".to_string(), "rust".to_string()],
+        )
+        .unwrap();
+
+        let result = list_pad_tags(&store, Scope::Project, &selectors).unwrap();
+        assert_eq!(result.messages.len(), 1);
+        assert!(result.messages[0].content.contains("work"));
+        assert!(result.messages[0].content.contains("rust"));
+        assert!(result.messages[0].content.contains("Test Pad"));
+    }
+
+    #[test]
+    fn test_list_pad_tags_no_tags() {
+        let mut store = BucketedStore::new(
+            MemBackend::new(),
+            MemBackend::new(),
+            MemBackend::new(),
+            MemBackend::new(),
+        );
+        create::run(
+            &mut store,
+            Scope::Project,
+            "Empty Pad".into(),
+            "".into(),
+            None,
+        )
+        .unwrap();
+
+        use crate::index::{DisplayIndex, PadSelector};
+        let selectors = vec![PadSelector::Path(vec![DisplayIndex::Regular(1)])];
+        let result = list_pad_tags(&store, Scope::Project, &selectors).unwrap();
+        assert_eq!(result.messages.len(), 1);
+        assert!(result.messages[0].content.contains("no tags"));
     }
 }

@@ -2,18 +2,18 @@
 # =============================================================================
 # TAG OPERATIONS TESTS
 # =============================================================================
-# Tests for tag creation, assignment, and filtering.
+# Tests for the unified `padz tag` subcommand.
 #
 # FIXTURE STATE (from base-fixture.sh)
 # ------------------------------------
-# Global tags: work, important, reference
-# Project tags: feature, priority, bug, testing
+# Global tags (auto-created): work, important, reference
+# Project tags (auto-created): feature, priority, bug, testing
 #
 # Tagged pads (global):
 #   - "Global pad: Meeting Notes" -> work, important (but completed)
-#   - "Global pad: Quick Reference" -> reference, work (but deleted)
-#   - "Global pad: API Documentation" -> reference
-#   - "Global pad: Projects Overview" -> important, work
+#   - "Global pad: Quick Reference" -> reference (but pinned) -- note: also had reference+work before delete
+#   - "Global pad: API Documentation" -> reference, work (but deleted)
+#   - "Global pad: Projects Overview" -> (no tags)
 #
 # TEST GUIDELINES
 # ---------------
@@ -26,127 +26,188 @@ load '../lib/helpers.bash'
 load '../lib/assertions.bash'
 
 # -----------------------------------------------------------------------------
-# TAG MANAGEMENT
+# TAG LIST (registry)
 # -----------------------------------------------------------------------------
 
-@test "tags create: creates a new tag" {
-    run "${PADZ_BIN}" -g tags create testtag
+@test "tag list: shows existing tags" {
+    run "${PADZ_BIN}" -g tag list
     assert_success
-    assert_output_contains "Created tag"
-}
-
-@test "tags create: fails for duplicate tag" {
-    # 'work' exists from fixture
-    run "${PADZ_BIN}" -g tags create work
-    assert_failure
-}
-
-@test "tags list: shows existing tags" {
-    run "${PADZ_BIN}" -g tags list
-    assert_success
-    # Fixture creates these tags
     assert_output_contains "work"
     assert_output_contains "important"
     assert_output_contains "reference"
 }
 
-@test "tags delete: removes tag" {
-    # Create a tag to delete
-    "${PADZ_BIN}" -g tags create deleteme >/dev/null
-
-    run "${PADZ_BIN}" -g tags delete deleteme
+@test "tag list: no preamble, just tag names" {
+    run "${PADZ_BIN}" -g tag list
     assert_success
+    # Should NOT contain count preamble
+    [[ "${output}" != *"tags defined"* ]]
+}
 
-    # Should not appear in list anymore
-    run "${PADZ_BIN}" -g tags list
-    [[ "${output}" != *"deleteme"* ]]
+# -----------------------------------------------------------------------------
+# TAG LIST (per-pad)
+# -----------------------------------------------------------------------------
+
+@test "tag list <id>: shows tags for a specific pad" {
+    "${PADZ_BIN}" -g create --no-editor "Pad For Tag List" >/dev/null
+    local index
+    index=$(find_pad_by_title "Pad For Tag List" global)
+    "${PADZ_BIN}" -g tag add "${index}" mylisttag >/dev/null
+
+    run "${PADZ_BIN}" -g tag list "${index}"
+    assert_success
+    assert_output_contains "mylisttag"
+    assert_output_contains "Pad For Tag List"
+}
+
+@test "tag list <id> <id>: shows tags for multiple pads" {
+    "${PADZ_BIN}" -g create --no-editor "Tag List Pad A" >/dev/null
+    "${PADZ_BIN}" -g create --no-editor "Tag List Pad B" >/dev/null
+    local idx_a idx_b
+    idx_a=$(find_pad_by_title "Tag List Pad A" global)
+    idx_b=$(find_pad_by_title "Tag List Pad B" global)
+    "${PADZ_BIN}" -g tag add "${idx_a}" taga >/dev/null
+    "${PADZ_BIN}" -g tag add "${idx_b}" tagb >/dev/null
+
+    run "${PADZ_BIN}" -g tag list "${idx_a}" "${idx_b}"
+    assert_success
+    assert_output_contains "taga"
+    assert_output_contains "tagb"
+}
+
+@test "tag list: pad with no tags shows (no tags)" {
+    "${PADZ_BIN}" -g create --no-editor "No Tags Pad" >/dev/null
+    local index
+    index=$(find_pad_by_title "No Tags Pad" global)
+
+    run "${PADZ_BIN}" -g tag list "${index}"
+    assert_success
+    assert_output_contains "no tags"
 }
 
 # -----------------------------------------------------------------------------
 # ADDING TAGS TO PADS
 # -----------------------------------------------------------------------------
 
-@test "add-tag: applies tag to pad" {
-    # Create fresh pad and tag
+@test "tag add: applies tag to pad (auto-creates)" {
     "${PADZ_BIN}" -g create --no-editor "Tag Test Pad" >/dev/null
-    "${PADZ_BIN}" -g tags create addtest >/dev/null 2>&1 || true
-
     local index
     index=$(find_pad_by_title "Tag Test Pad" global)
 
-    run "${PADZ_BIN}" -g add-tag -t addtest -- "${index}"
+    run "${PADZ_BIN}" -g tag add "${index}" addtest
     assert_success
 
-    # Verify tag was added
     assert_pad_has_tag "${index}" "addtest" global
 }
 
-@test "add-tag: can add multiple tags at once" {
+@test "tag add: can add multiple tags at once" {
     "${PADZ_BIN}" -g create --no-editor "Multi Tag Pad" >/dev/null
-    "${PADZ_BIN}" -g tags create multi1 >/dev/null 2>&1 || true
-    "${PADZ_BIN}" -g tags create multi2 >/dev/null 2>&1 || true
-
     local index
     index=$(find_pad_by_title "Multi Tag Pad" global)
 
-    run "${PADZ_BIN}" -g add-tag -t multi1 -t multi2 -- "${index}"
+    run "${PADZ_BIN}" -g tag add "${index}" multi1 multi2
     assert_success
 
     assert_pad_has_tag "${index}" "multi1" global
     assert_pad_has_tag "${index}" "multi2" global
 }
 
+@test "tag add: multiple pads multiple tags" {
+    "${PADZ_BIN}" -g create --no-editor "Batch Tag A" >/dev/null
+    "${PADZ_BIN}" -g create --no-editor "Batch Tag B" >/dev/null
+    local idx_a idx_b
+    idx_a=$(find_pad_by_title "Batch Tag A" global)
+    idx_b=$(find_pad_by_title "Batch Tag B" global)
+
+    run "${PADZ_BIN}" -g tag add "${idx_a}" "${idx_b}" batchtag1 batchtag2
+    assert_success
+
+    assert_pad_has_tag "${idx_a}" "batchtag1" global
+    assert_pad_has_tag "${idx_a}" "batchtag2" global
+    assert_pad_has_tag "${idx_b}" "batchtag1" global
+    assert_pad_has_tag "${idx_b}" "batchtag2" global
+}
+
 # -----------------------------------------------------------------------------
 # REMOVING TAGS FROM PADS
 # -----------------------------------------------------------------------------
 
-@test "remove-tag: removes tag from pad" {
+@test "tag remove: removes tag from pad" {
     "${PADZ_BIN}" -g create --no-editor "Remove Tag Pad" >/dev/null
-    "${PADZ_BIN}" -g tags create removeme >/dev/null 2>&1 || true
-
     local index
     index=$(find_pad_by_title "Remove Tag Pad" global)
-    "${PADZ_BIN}" -g add-tag -t removeme -- "${index}" >/dev/null
+    "${PADZ_BIN}" -g tag add "${index}" removeme >/dev/null
 
-    # Remove the tag
-    run "${PADZ_BIN}" -g remove-tag -t removeme -- "${index}"
+    run "${PADZ_BIN}" -g tag remove "${index}" removeme
     assert_success
 
-    # Tag should be gone
     local tags
     tags=$(get_pad_tags "${index}" global)
     [[ "${tags}" != *"removeme"* ]]
 }
 
 # -----------------------------------------------------------------------------
-# FILTERING BY TAG
+# TAG RENAME & DELETE
+# -----------------------------------------------------------------------------
+
+@test "tag rename: renames tag globally" {
+    "${PADZ_BIN}" -g create --no-editor "Rename Tag Pad" >/dev/null
+    local index
+    index=$(find_pad_by_title "Rename Tag Pad" global)
+    "${PADZ_BIN}" -g tag add "${index}" oldname >/dev/null
+
+    run "${PADZ_BIN}" -g tag rename oldname newname
+    assert_success
+
+    assert_pad_has_tag "${index}" "newname" global
+    local tags
+    tags=$(get_pad_tags "${index}" global)
+    [[ "${tags}" != *"oldname"* ]]
+}
+
+@test "tag delete: removes tag from registry and pads" {
+    "${PADZ_BIN}" -g create --no-editor "Delete Tag Pad" >/dev/null
+    local index
+    index=$(find_pad_by_title "Delete Tag Pad" global)
+    "${PADZ_BIN}" -g tag add "${index}" deleteme >/dev/null
+
+    run "${PADZ_BIN}" -g tag delete deleteme
+    assert_success
+
+    # Should not appear in list anymore
+    run "${PADZ_BIN}" -g tag list
+    [[ "${output}" != *"deleteme"* ]]
+
+    # Should be gone from pad too
+    local tags
+    tags=$(get_pad_tags "${index}" global)
+    [[ "${tags}" != *"deleteme"* ]]
+}
+
+# -----------------------------------------------------------------------------
+# FILTERING BY TAG (via padz list --tag)
 # -----------------------------------------------------------------------------
 
 @test "list --tag: filters by single tag" {
-    # Create a fresh pad with a known tag for reliable testing
     "${PADZ_BIN}" -g create --no-editor "Tag Filter Test Pad" >/dev/null
     local index
     index=$(find_pad_by_title "Tag Filter Test Pad" global)
-    "${PADZ_BIN}" -g add-tag -t reference -- "${index}" >/dev/null
+    "${PADZ_BIN}" -g tag add "${index}" reference >/dev/null
 
     run "${PADZ_BIN}" -g list --tag reference --output json
     assert_success
 
-    # Should include our test pad
     [[ "${output}" == *"Tag Filter Test Pad"* ]]
 }
 
 @test "list --tag: multiple tags uses AND logic" {
-    # Create a pad with both tags for testing
     "${PADZ_BIN}" -g create --no-editor "Both Tags Pad" >/dev/null
     local index
     index=$(find_pad_by_title "Both Tags Pad" global)
-    "${PADZ_BIN}" -g add-tag -t work -t important -- "${index}" >/dev/null
+    "${PADZ_BIN}" -g tag add "${index}" work important >/dev/null
 
-    # Filter by both tags
     run "${PADZ_BIN}" -g list --tag work --tag important --output json
     assert_success
 
-    # Should find pads with BOTH tags
     [[ "${output}" == *"Both Tags Pad"* ]]
 }

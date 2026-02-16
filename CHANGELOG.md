@@ -6,74 +6,6 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
-## [0.19.1] - 2026-02-15
-
-## [0.19.1] - 2026-02-15
-
-- **Added**
-  - **Bucketed storage architecture** - Replaced flat store with three lifecycle buckets (`active/`, `archived/`, `deleted/`). Pad location IS lifecycle state — no more `is_deleted` metadata flag. Each bucket has its own `data.json` and content files.
-  - **Archive/unarchive commands** - `padz archive` moves pads to cold storage; `padz unarchive` brings them back. Children always move with their parent.
-  - **`--archived` flag for list** - `padz list --archived` shows archived pads (indexed as `ar1`, `ar2`, etc.)
-  - **Automatic migration** - Legacy flat-layout stores are auto-migrated to bucketed layout on first run. Pads with `is_deleted` move to `deleted/` bucket.
-
-- **Changed**
-  - **Delete/restore use bucket moves** - Delete moves pads from `active/` to `deleted/`; restore moves them back. No more metadata flag toggling.
-  - **Removed `is_deleted` from metadata** - Bucket membership determines lifecycle state. The `deleted` attribute is gone.
-  - **Editor opens real pad files** - Create and edit now open the actual pad file in `.padz/` instead of a temporary file in `/tmp`. This means:
-    - **Crash resilience**: If the editor or system crashes, content is preserved on disk and recovered automatically by reconciliation
-    - **Path autocomplete**: Editor autocomplete suggests project-relative paths (e.g., `../README.md`) instead of `/tmp` files
-    - **No temp file dependency**: Removed `standout-input` dependency from the CLI crate
-  - **Fixed double-title bug in edit** - The edit handler no longer duplicates the title in the editor buffer (`Title\n\nTitle\n\nBody` → `Title\n\nBody`)
-
-- **Fixed**
-  - **Tag display in list view** - Tags were invisible and broke column alignment. Two root causes: standout's `tabular().row()` counted BBCode markup (`[tag]...[/tag]`) as display width, and padz compensated by shrinking the title column per-row, misaligning the time column. Fixed by upgrading to standout 6.2.0 (BBCode-aware width measurement) and switching to sub-columns — title and tags are now sub-columns within a constant-width parent column, with tags right-aligned and the title absorbing remaining space per-row.
-
-## [0.19.0] - 2026-02-13
-
-## [0.19.0] - 2026-02-13
-
-- **Added**
-  - **Todo mode toggle** - New `mode` config (`notes` | `todos`, default `notes`) that adapts padz for note-taking or task management:
-    - **Display**: Todos mode shows status icons (⚪︎ ☉︎︎ ⚫︎); notes mode hides them and gives more title width
-    - **Quick-create**: In todos mode, `padz create Buy Milk` skips the editor; supports `\n` for multi-line (`padz create 'Buy Groceries\nMilk\nEggs'`)
-    - **Quick-edit**: In todos mode, `padz edit 1 Updated Title` updates directly without opening the editor
-    - **Purge**: In todos mode, `padz purge` removes both Done and Deleted pads; in notes mode only Deleted
-
-- **Changed**
-  - **Compact timestamps** - List timestamps now use compact format (` 3d ⏲`, `23h ⏲`) instead of verbose (`3 days ago`), reclaiming ~9 chars for title display. Removed `timeago` dependency.
-  - **Unified pin marker position** - Pin marker `⚲` now appears in the left column (col 0) for both pinned and regular sections, instead of appearing on the right side in the regular list
-  - **Fixed pinned section indentation** - Children of pinned pads now indent correctly, matching the regular list layout. Removed the `right_pin` column.
-
-## [0.18.0] - 2026-02-10
-
-## [0.18.0] - 2026-02-10
-
-- **Added**
-  - **Peek command** - `padz peek` / `padz peek 2 3` shows pad listing with content previews. Shortcut for `padz list --peek`, supports ID filtering and tag filtering.
-
-## [0.17.0] - 2026-02-10
-
-## [0.17.0] - 2026-02-10
-
-- **Added**
-  - **List command ID filtering** - `padz list 2`, `padz list 3 5`, `padz list 1-3` to constrain which pads are shown. Selected pads include their full subtree of children. Uses existing `parse_selectors` infrastructure for ID resolution (paths, ranges, titles).
-  - **Bats live-tests in CI** - Added bats live-tests to pre-commit hook and CI workflow
-
-- **Changed**
-  - **Upgraded standout to v6.0.2** - Major upgrade through 3.8.0 → 4.0.0 → 5.0.0 → 6.0.2, adopting unified single-threaded API, `#[handler]` proc macro, declarative `InputChain` for stdin/editor input, `Output::Render` for template rendering, `pipe_to_clipboard` dispatch attribute, and explicit template mappings for all commands
-  - **ScopedApi pattern** - All handlers migrated to `ScopedApi` wrapper that binds scope, handles error conversion, and wraps results. Handler bodies reduced from ~10 lines to 1-2 lines (~200+ lines of boilerplate removed)
-  - **`#[handler]` macro migration** - All handlers use standout's `#[handler]` macro with `#[dispatch(pure)]` for auto-extraction of CLI args via `#[arg]`, `#[flag]`, and `#[ctx]` annotations
-  - **Unified create/open editor flow** - Extracted shared `edit_and_copy_pads` helper; create now opens the real pad file in editor (same as open) instead of using a temp file
-  - **Consolidated edit/open handlers** - Open dispatches to edit handler; extracted `read_piped_input()` helper shared by create and edit
-  - **Normalized naked invocation** - Extracted `build_dispatch_app()` and `handle_dispatch_result()` for a unified dispatch path; naked invocation injects synthetic command and uses same flow
-  - **View uses template rendering** - View handler returns structured data for `view.jinja` template with automatic clipboard piping (ANSI stripped) instead of manual `println!` and clipboard code
-
-- **Fixed**
-  - View output no longer consumes stdout — clipboard copy is separate from terminal rendering
-  - Handler errors now propagate as non-zero exit codes
-  - Create title priority: CLI title always wins over piped content title
-  - Empty/whitespace piped content in edit returns error instead of silent success
-
 ## [0.16.0] - 2026-01-30
 
 ## [0.16.0] - 2026-01-30
@@ -319,15 +251,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
   - Demo flow verification script
   - Live testing shell
 
-[Unreleased]: https://github.com/arthur-debert/padz/compare/v0.19.1...HEAD
-[0.19.1]: https://github.com/arthur-debert/padz/compare/v0.19.0...v0.19.1
-[0.19.1]: https://github.com/arthur-debert/padz/compare/v0.19.0...v0.19.1
-[0.19.0]: https://github.com/arthur-debert/padz/compare/v0.18.0...v0.19.0
-[0.19.0]: https://github.com/arthur-debert/padz/compare/v0.18.0...v0.19.0
-[0.18.0]: https://github.com/arthur-debert/padz/compare/v0.17.0...v0.18.0
-[0.18.0]: https://github.com/arthur-debert/padz/compare/v0.17.0...v0.18.0
-[0.17.0]: https://github.com/arthur-debert/padz/compare/v0.16.0...v0.17.0
-[0.17.0]: https://github.com/arthur-debert/padz/compare/v0.16.0...v0.17.0
+[Unreleased]: https://github.com/arthur-debert/padz/compare/v0.16.0...HEAD
 [0.16.0]: https://github.com/arthur-debert/padz/compare/v0.15.1...v0.16.0
 [0.16.0]: https://github.com/arthur-debert/padz/compare/v0.15.1...v0.16.0
 [0.15.1]: https://github.com/arthur-debert/padz/compare/v0.15.0...v0.15.1
