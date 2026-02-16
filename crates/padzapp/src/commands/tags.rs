@@ -30,45 +30,34 @@ pub fn list_tags<S: DataStore>(store: &S, scope: Scope) -> Result<CmdResult> {
 }
 
 /// List tags for specific pads.
+///
+/// Collects all unique tags from the resolved pads and outputs them
+/// in the same format as `list_tags` (one tag name per line).
 pub fn list_pad_tags<S: DataStore>(
     store: &S,
     scope: Scope,
     selectors: &[crate::index::PadSelector],
 ) -> Result<CmdResult> {
     use crate::commands::helpers::resolve_selectors;
-    use crate::index::{DisplayIndex, DisplayPad};
+    use std::collections::BTreeSet;
 
     let resolved = resolve_selectors(store, scope, selectors, false)?;
-    let mut result = CmdResult::default();
+    let mut all_tags = BTreeSet::new();
 
-    for (display_index, uuid) in resolved {
+    for (_display_index, uuid) in resolved {
         let pad = store.get_pad(&uuid, scope, Bucket::Active)?;
-        let index = display_index
-            .last()
-            .cloned()
-            .unwrap_or(DisplayIndex::Regular(1));
-        let tags = &pad.metadata.tags;
-
-        if tags.is_empty() {
-            result.add_message(CmdMessage::info(format!(
-                "{} {}: (no tags)",
-                index, pad.metadata.title
-            )));
-        } else {
-            result.add_message(CmdMessage::info(format!(
-                "{} {}: {}",
-                index,
-                pad.metadata.title,
-                tags.join(", ")
-            )));
+        for tag in &pad.metadata.tags {
+            all_tags.insert(tag.clone());
         }
+    }
 
-        result.listed_pads.push(DisplayPad {
-            pad,
-            index,
-            matches: None,
-            children: Vec::new(),
-        });
+    let mut result = CmdResult::default();
+    if all_tags.is_empty() {
+        result.add_message(CmdMessage::info("No tags defined"));
+    } else {
+        for tag in &all_tags {
+            result.add_message(CmdMessage::info(tag.clone()));
+        }
     }
 
     Ok(result)
@@ -470,10 +459,10 @@ mod tests {
         .unwrap();
 
         let result = list_pad_tags(&store, Scope::Project, &selectors).unwrap();
-        assert_eq!(result.messages.len(), 1);
-        assert!(result.messages[0].content.contains("work"));
-        assert!(result.messages[0].content.contains("rust"));
-        assert!(result.messages[0].content.contains("Test Pad"));
+        // Output is just tag names, one per message, sorted
+        assert_eq!(result.messages.len(), 2);
+        assert_eq!(result.messages[0].content, "rust");
+        assert_eq!(result.messages[1].content, "work");
     }
 
     #[test]
@@ -497,6 +486,6 @@ mod tests {
         let selectors = vec![PadSelector::Path(vec![DisplayIndex::Regular(1)])];
         let result = list_pad_tags(&store, Scope::Project, &selectors).unwrap();
         assert_eq!(result.messages.len(), 1);
-        assert!(result.messages[0].content.contains("no tags"));
+        assert_eq!(result.messages[0].content, "No tags defined");
     }
 }

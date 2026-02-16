@@ -57,7 +57,6 @@ load '../lib/assertions.bash'
     run "${PADZ_BIN}" -g tag list "${index}"
     assert_success
     assert_output_contains "mylisttag"
-    assert_output_contains "Pad For Tag List"
 }
 
 @test "tag list <id> <id>: shows tags for multiple pads" {
@@ -75,14 +74,14 @@ load '../lib/assertions.bash'
     assert_output_contains "tagb"
 }
 
-@test "tag list: pad with no tags shows (no tags)" {
+@test "tag list <id>: pad with no tags shows No tags defined" {
     "${PADZ_BIN}" -g create --no-editor "No Tags Pad" >/dev/null
     local index
     index=$(find_pad_by_title "No Tags Pad" global)
 
     run "${PADZ_BIN}" -g tag list "${index}"
     assert_success
-    assert_output_contains "no tags"
+    assert_output_contains "No tags defined"
 }
 
 # -----------------------------------------------------------------------------

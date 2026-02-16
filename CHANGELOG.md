@@ -6,6 +6,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+- **Changed**
+  - Unified `padz tag` subcommand replacing `add-tag`, `remove-tag`, and `tags` commands
+  - `padz tag add <id>... <tag>...` with positional args and auto-creation of tags
+  - `padz tag list` and `padz tag list <id>...` now output just tag names (consistent format)
+
 ## [0.16.0] - 2026-01-30
 
 ## [0.16.0] - 2026-01-30
