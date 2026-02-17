@@ -6,6 +6,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [0.20.0] - 2026-02-17
+
+## [0.20.0] - 2026-02-17
+
 - **Added**
   - **`padz init --link <PATH>`** — Persistent data directory linking. Allows multiple directories to share the same padz data store without passing `--data` on every invocation. Creates a `.padz/link` file that redirects to the target project's data. Supports `--unlink` to remove the link. Validates target is initialized and rejects chained links.
 
@@ -263,7 +267,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
   - Demo flow verification script
   - Live testing shell
 
-[Unreleased]: https://github.com/arthur-debert/padz/compare/v0.19.2...HEAD
+[Unreleased]: https://github.com/arthur-debert/padz/compare/v0.20.0...HEAD
+[0.20.0]: https://github.com/arthur-debert/padz/compare/v0.19.2...v0.20.0
+[0.20.0]: https://github.com/arthur-debert/padz/compare/v0.19.2...v0.20.0
 [0.19.2]: https://github.com/arthur-debert/padz/compare/v0.19.1...v0.19.2
 [0.19.2]: https://github.com/arthur-debert/padz/compare/v0.19.1...v0.19.2
 [0.16.0]: https://github.com/arthur-debert/padz/compare/v0.15.1...v0.16.0
