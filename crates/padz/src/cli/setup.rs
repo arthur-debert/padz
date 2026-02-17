@@ -566,7 +566,15 @@ pub enum Commands {
     /// Initialize the store (optional utility)
     #[command(display_order = 32)]
     #[dispatch(pure, template = "messages")]
-    Init,
+    Init {
+        /// Link to another project's padz data
+        #[arg(long, value_name = "PATH", conflicts_with = "unlink")]
+        link: Option<String>,
+
+        /// Remove an existing link
+        #[arg(long, conflicts_with = "link")]
+        unlink: bool,
+    },
 
     /// Shell completion setup
     #[command(display_order = 34, name = "completion")]

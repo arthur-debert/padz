@@ -343,6 +343,18 @@ impl<S: DataStore> PadzApi<S> {
         commands::init::run(&self.paths, scope)
     }
 
+    pub fn init_link(
+        &self,
+        local_padz: &std::path::Path,
+        target: &std::path::Path,
+    ) -> Result<commands::CmdResult> {
+        commands::init::link(local_padz, target)
+    }
+
+    pub fn init_unlink(&self, local_padz: &std::path::Path) -> Result<commands::CmdResult> {
+        commands::init::unlink(local_padz)
+    }
+
     pub fn paths(&self) -> &commands::PadzPaths {
         &self.paths
     }

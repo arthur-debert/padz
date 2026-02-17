@@ -62,6 +62,7 @@
 
 use crate::api::{PadzApi, PadzPaths};
 use crate::config::PadzConfig;
+use crate::error::PadzError;
 use crate::model::Scope;
 use crate::store::fs::FileStore;
 use clapfig::{Clapfig, SearchMode, SearchPath};
@@ -112,6 +113,65 @@ pub fn find_project_root(cwd: &Path) -> Option<PathBuf> {
     }
 }
 
+/// Resolve a `.padz/link` file to the target data directory.
+///
+/// If `padz_dir` contains a `link` file, reads its contents as an absolute path
+/// to a target project root, validates the target, and returns the resolved
+/// `.padz` directory path.
+///
+/// Returns:
+/// - `Ok(Some(path))` if a valid link was resolved
+/// - `Ok(None)` if no link file exists
+/// - `Err(...)` if the link file exists but is invalid (broken target, chained link)
+pub fn resolve_link(padz_dir: &Path) -> crate::error::Result<Option<PathBuf>> {
+    let link_file = padz_dir.join("link");
+    if !link_file.exists() {
+        return Ok(None);
+    }
+
+    let raw = std::fs::read_to_string(&link_file)?;
+    let target_str = raw.trim();
+    if target_str.is_empty() {
+        return Err(PadzError::Store(format!(
+            "Link file at {} is empty",
+            link_file.display()
+        )));
+    }
+
+    let target = PathBuf::from(target_str);
+    let target = target.canonicalize().map_err(|_| {
+        PadzError::Store(format!(
+            "Link target '{}' does not exist or is not accessible",
+            target_str
+        ))
+    })?;
+
+    // Determine the target .padz dir
+    let target_padz = if target.file_name().is_some_and(|n| n == ".padz") {
+        target
+    } else {
+        target.join(".padz")
+    };
+
+    // Validate target has been initialized (has active/ dir)
+    if !target_padz.join("active").exists() {
+        return Err(PadzError::Store(format!(
+            "Link target '{}' has not been initialized (missing active/ directory). Run `padz init` there first.",
+            target_padz.display()
+        )));
+    }
+
+    // Reject chained links
+    if target_padz.join("link").exists() {
+        return Err(PadzError::Store(format!(
+            "Link target '{}' is itself a link. Chained links are not supported.",
+            target_padz.display()
+        )));
+    }
+
+    Ok(Some(target_padz))
+}
+
 /// Initialize the padz context with scope detection and store setup.
 ///
 /// # Arguments
@@ -158,9 +218,16 @@ pub fn initialize(cwd: &Path, use_global: bool, data_override: Option<PathBuf>) 
                 path.join(".padz")
             }
         }
-        None => find_project_root(cwd)
-            .map(|root| root.join(".padz"))
-            .unwrap_or_else(|| cwd.join(".padz")),
+        None => {
+            let detected = find_project_root(cwd)
+                .map(|root| root.join(".padz"))
+                .unwrap_or_else(|| cwd.join(".padz"));
+            // Follow .padz/link if present
+            match resolve_link(&detected) {
+                Ok(Some(linked)) => linked,
+                _ => detected,
+            }
+        }
     };
 
     // Determine global data directory:
@@ -732,5 +799,135 @@ mod tests {
             serde_json::from_str(&fs::read_to_string(root.join("deleted/data.json")).unwrap())
                 .unwrap();
         assert_eq!(deleted_data.len(), 0);
+    }
+
+    // --- resolve_link tests ---
+
+    #[test]
+    fn test_resolve_link_follows_link_file() {
+        let temp = TempDir::new().unwrap();
+
+        // Create target project with initialized .padz
+        let target = temp.path().join("project-a");
+        fs::create_dir_all(target.join(".padz").join("active")).unwrap();
+        fs::create_dir_all(target.join(".padz").join("archived")).unwrap();
+        fs::create_dir_all(target.join(".padz").join("deleted")).unwrap();
+
+        // Create source .padz with link file
+        let source_padz = temp.path().join("project-b").join(".padz");
+        fs::create_dir_all(&source_padz).unwrap();
+        fs::write(
+            source_padz.join("link"),
+            target.canonicalize().unwrap().to_str().unwrap(),
+        )
+        .unwrap();
+
+        let result = resolve_link(&source_padz).unwrap();
+        assert!(result.is_some());
+        assert_eq!(
+            result.unwrap(),
+            target.canonicalize().unwrap().join(".padz")
+        );
+    }
+
+    #[test]
+    fn test_resolve_link_no_link_file() {
+        let temp = TempDir::new().unwrap();
+        let padz_dir = temp.path().join(".padz");
+        fs::create_dir_all(&padz_dir).unwrap();
+
+        let result = resolve_link(&padz_dir).unwrap();
+        assert!(result.is_none());
+    }
+
+    #[test]
+    fn test_resolve_link_broken_target() {
+        let temp = TempDir::new().unwrap();
+        let padz_dir = temp.path().join(".padz");
+        fs::create_dir_all(&padz_dir).unwrap();
+        fs::write(padz_dir.join("link"), "/nonexistent/path").unwrap();
+
+        let result = resolve_link(&padz_dir);
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("does not exist"));
+    }
+
+    #[test]
+    fn test_resolve_link_chained_link() {
+        let temp = TempDir::new().unwrap();
+
+        // Create target that is itself a link
+        let target = temp.path().join("project-a");
+        fs::create_dir_all(target.join(".padz").join("active")).unwrap();
+        fs::write(target.join(".padz").join("link"), "/some/other/path").unwrap();
+
+        // Create source with link to target
+        let source_padz = temp.path().join("project-b").join(".padz");
+        fs::create_dir_all(&source_padz).unwrap();
+        fs::write(
+            source_padz.join("link"),
+            target.canonicalize().unwrap().to_str().unwrap(),
+        )
+        .unwrap();
+
+        let result = resolve_link(&source_padz);
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("itself a link"));
+    }
+
+    #[test]
+    fn test_resolve_link_uninitialized_target() {
+        let temp = TempDir::new().unwrap();
+
+        // Create target without active/ dir (not initialized)
+        let target = temp.path().join("project-a");
+        fs::create_dir_all(target.join(".padz")).unwrap();
+
+        let source_padz = temp.path().join("project-b").join(".padz");
+        fs::create_dir_all(&source_padz).unwrap();
+        fs::write(
+            source_padz.join("link"),
+            target.canonicalize().unwrap().to_str().unwrap(),
+        )
+        .unwrap();
+
+        let result = resolve_link(&source_padz);
+        assert!(result.is_err());
+        assert!(result
+            .unwrap_err()
+            .to_string()
+            .contains("not been initialized"));
+    }
+
+    #[test]
+    fn test_initialize_follows_link() {
+        let temp = TempDir::new().unwrap();
+
+        // Create project-a: fully initialized with .git and .padz
+        let project_a = temp.path().join("project-a");
+        fs::create_dir(project_a.join(".git")).unwrap_or_default();
+        fs::create_dir_all(&project_a).unwrap();
+        fs::create_dir(project_a.join(".git")).unwrap();
+        fs::create_dir_all(project_a.join(".padz").join("active")).unwrap();
+        fs::create_dir_all(project_a.join(".padz").join("archived")).unwrap();
+        fs::create_dir_all(project_a.join(".padz").join("deleted")).unwrap();
+
+        // Create project-b: has .git and .padz with link
+        let project_b = temp.path().join("project-b");
+        fs::create_dir_all(&project_b).unwrap();
+        fs::create_dir(project_b.join(".git")).unwrap();
+        fs::create_dir_all(project_b.join(".padz")).unwrap();
+        fs::write(
+            project_b.join(".padz").join("link"),
+            project_a.canonicalize().unwrap().to_str().unwrap(),
+        )
+        .unwrap();
+
+        // Initialize from project-b — should follow link to project-a
+        let ctx = initialize(&project_b, false, None);
+        assert_eq!(
+            ctx.api.paths().project,
+            Some(project_a.canonicalize().unwrap().join(".padz"))
+        );
     }
 }
