@@ -113,6 +113,20 @@ fn create_app_state(cli: &Cli, output_mode: OutputMode) -> Result<AppState> {
     let cwd = std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from("."));
     let data_override = cli.data.as_ref().map(std::path::PathBuf::from);
 
+    // Compute the local .padz dir BEFORE link resolution (used by link/unlink commands)
+    let local_padz_dir = match &data_override {
+        Some(path) => {
+            if path.file_name().is_some_and(|name| name == ".padz") {
+                path.clone()
+            } else {
+                path.join(".padz")
+            }
+        }
+        None => padzapp::init::find_project_root(&cwd)
+            .map(|root| root.join(".padz"))
+            .unwrap_or_else(|| cwd.join(".padz")),
+    };
+
     let padz_ctx = initialize(&cwd, cli.global, data_override);
     let scope = if cli.global {
         padzapp::model::Scope::Global
@@ -126,6 +140,7 @@ fn create_app_state(cli: &Cli, output_mode: OutputMode) -> Result<AppState> {
         padz_ctx.config.import_extensions(),
         output_mode,
         padz_ctx.config.mode,
+        local_padz_dir,
     ))
 }
 

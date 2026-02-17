@@ -6,6 +6,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+- **Added**
+  - **`padz init --link <PATH>`** — Persistent data directory linking. Allows multiple directories to share the same padz data store without passing `--data` on every invocation. Creates a `.padz/link` file that redirects to the target project's data. Supports `--unlink` to remove the link. Validates target is initialized and rejects chained links.
+
 ## [0.19.2] - 2026-02-16
 
 ## [0.19.2] - 2026-02-16

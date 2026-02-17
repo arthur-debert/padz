@@ -46,6 +46,8 @@ pub struct AppState {
     pub import_extensions: ImportExtensions,
     pub output_mode: OutputMode,
     pub mode: PadzMode,
+    /// The local `.padz/` directory (pre-link-resolution), used by link/unlink commands.
+    pub local_padz_dir: std::path::PathBuf,
 }
 
 impl AppState {
@@ -55,6 +57,7 @@ impl AppState {
         import_extensions: Vec<String>,
         output_mode: OutputMode,
         mode: PadzMode,
+        local_padz_dir: std::path::PathBuf,
     ) -> Self {
         Self {
             api: RefCell::new(api),
@@ -62,6 +65,7 @@ impl AppState {
             import_extensions: ImportExtensions(import_extensions),
             output_mode,
             mode,
+            local_padz_dir,
         }
     }
 
@@ -244,6 +248,19 @@ impl<'a> ScopedApi<'a> {
 
     pub fn init(&self) -> Result<Output<Value>, anyhow::Error> {
         let result = self.call(|api, scope| api.init(scope))?;
+        self.messages(result)
+    }
+
+    pub fn init_link(&self, target: &str) -> Result<Output<Value>, anyhow::Error> {
+        let target_path = std::path::PathBuf::from(target);
+        let local_padz = &self.state.local_padz_dir;
+        let result = self.call(|api, _scope| api.init_link(local_padz, &target_path))?;
+        self.messages(result)
+    }
+
+    pub fn init_unlink(&self) -> Result<Output<Value>, anyhow::Error> {
+        let local_padz = &self.state.local_padz_dir;
+        let result = self.call(|api, _scope| api.init_unlink(local_padz))?;
         self.messages(result)
     }
 
@@ -854,8 +871,18 @@ pub fn doctor(#[ctx] ctx: &CommandContext) -> Result<Output<Value>, anyhow::Erro
 }
 
 #[handler]
-pub fn init(#[ctx] ctx: &CommandContext) -> Result<Output<Value>, anyhow::Error> {
-    api(ctx).init()
+pub fn init(
+    #[ctx] ctx: &CommandContext,
+    #[arg] link: Option<String>,
+    #[flag] unlink: bool,
+) -> Result<Output<Value>, anyhow::Error> {
+    if let Some(target) = link {
+        api(ctx).init_link(&target)
+    } else if unlink {
+        api(ctx).init_unlink()
+    } else {
+        api(ctx).init()
+    }
 }
 
 // =============================================================================
