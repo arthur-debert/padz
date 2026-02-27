@@ -154,6 +154,31 @@ load '../lib/assertions.bash'
     fi
 }
 
+@test "mode: todos create -e forces editor even with args" {
+    "${PADZ_BIN}" -g config set mode todos >/dev/null
+
+    # In todos mode, title args normally skip editor (quick-create).
+    # -e / --editor should force the editor open anyway.
+    # EDITOR=true exits immediately → empty → aborts
+    run "${PADZ_BIN}" -g create -e "Should Force Editor"
+
+    # The pad should NOT exist because editor was forced open,
+    # EDITOR=true produced empty content, so create aborted.
+    if pad_exists "Should Force Editor" global; then
+        echo "FAIL: -e flag should force editor in todos mode, not quick-create" >&2
+        return 1
+    fi
+
+    # Reset
+    "${PADZ_BIN}" -g config set mode notes >/dev/null
+}
+
+@test "mode: --editor and --no-editor conflict" {
+    run "${PADZ_BIN}" -g create --editor --no-editor "Conflicting Flags"
+    assert_failure
+}
+
+
 # -----------------------------------------------------------------------------
 # EDIT: quick-edit in todos mode
 # -----------------------------------------------------------------------------

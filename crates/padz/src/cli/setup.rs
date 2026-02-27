@@ -293,6 +293,10 @@ pub enum Commands {
     #[command(alias = "n", display_order = 1)]
     #[dispatch(pure, template = "modification_result")]
     Create {
+        /// Force opening the editor (even in todos mode)
+        #[arg(long, short = 'e', conflicts_with = "no_editor")]
+        editor: bool,
+
         /// Skip opening the editor
         #[arg(long)]
         no_editor: bool,

@@ -413,6 +413,7 @@ fn split_indexes_and_content(args: &[String]) -> (Vec<String>, Vec<String>) {
 #[handler]
 pub fn create(
     #[ctx] ctx: &CommandContext,
+    #[flag] editor: bool,
     #[flag(name = "no_editor")] no_editor: bool,
     #[arg] inside: Option<String>,
     #[arg] title: Vec<String>,
@@ -425,8 +426,10 @@ pub fn create(
     };
     let inside = inside.as_deref();
 
-    // In todos mode, having title args implies quick-create (skip editor)
-    let skip_editor = no_editor || (state.mode == PadzMode::Todos && title_arg.is_some());
+    // --editor forces interactive editor; --no-editor forces skip;
+    // default: todos mode with title args skips editor
+    let skip_editor =
+        !editor && (no_editor || (state.mode == PadzMode::Todos && title_arg.is_some()));
 
     let result = if skip_editor {
         // Quick-create: use args directly, no editor

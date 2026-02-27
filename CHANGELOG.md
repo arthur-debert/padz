@@ -6,6 +6,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+- **Added**
+  - **`padz create -e / --editor`** — Force editor mode. Opens the editor regardless of mode (notes or todos). Opposite of `--no-editor`. Conflicts with `--no-editor` if both are specified.
+
 ## [0.20.0] - 2026-02-17
 
 ## [0.20.0] - 2026-02-17
