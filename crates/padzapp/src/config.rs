@@ -49,15 +49,11 @@ fn strip_leading_dot<'de, D: Deserializer<'de>>(d: D) -> Result<String, D::Error
 /// - **Todos**: Task management — status icons shown, quick-create/edit from CLI args.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
+#[derive(Default)]
 pub enum PadzMode {
+    #[default]
     Notes,
     Todos,
-}
-
-impl Default for PadzMode {
-    fn default() -> Self {
-        Self::Notes
-    }
 }
 
 impl std::fmt::Display for PadzMode {

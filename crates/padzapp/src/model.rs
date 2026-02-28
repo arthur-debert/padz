@@ -61,17 +61,12 @@ pub enum Scope {
     Global,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, Default)]
 pub enum TodoStatus {
+    #[default]
     Planned,
     InProgress,
     Done,
-}
-
-impl Default for TodoStatus {
-    fn default() -> Self {
-        Self::Planned
-    }
 }
 
 #[derive(Debug, Clone, Serialize)]
