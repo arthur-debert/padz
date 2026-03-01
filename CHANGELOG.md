@@ -6,6 +6,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [0.23.0] - 2026-03-01
+
+## [0.23.0] - 2026-03-01
+
 - **Added**
   - **UUID support** — Pads can now be referenced by their UUID in any command that accepts pad IDs. UUIDs are parsed before range detection so hyphens in UUIDs don't confuse the range parser.
   - **`padz uuid <id>...`** — New command to print full UUIDs, one per line. Supports ranges (e.g. `padz uuid 1-3`). Clean output for scripting/piping.
@@ -283,7 +287,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
   - Demo flow verification script
   - Live testing shell
 
-[Unreleased]: https://github.com/arthur-debert/padz/compare/v0.22.0...HEAD
+[Unreleased]: https://github.com/arthur-debert/padz/compare/v0.23.0...HEAD
+[0.23.0]: https://github.com/arthur-debert/padz/compare/v0.22.0...v0.23.0
+[0.23.0]: https://github.com/arthur-debert/padz/compare/v0.22.0...v0.23.0
 [0.22.0]: https://github.com/arthur-debert/padz/compare/v0.21.0...v0.22.0
 [0.22.0]: https://github.com/arthur-debert/padz/compare/v0.21.0...v0.22.0
 [0.21.0]: https://github.com/arthur-debert/padz/compare/v0.20.0...v0.21.0
