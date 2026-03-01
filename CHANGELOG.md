@@ -8,6 +8,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 - **Added**
   - **`padz delete --completed`** — Soft-delete all pads marked as done/completed in a single command. Replaces the previous `--done` flag. Logic moved from CLI handler to command layer for proper testability.
+  - **`--completed` flag on `list` and `search`** — Filter to show only completed pads. Replaces the previous `--done` flag on `list` and adds the filter to `search` for the first time.
 
 ## [0.24.0] - 2026-03-01
 

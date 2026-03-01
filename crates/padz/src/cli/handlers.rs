@@ -537,14 +537,14 @@ pub fn list(
     #[flag] archived: bool,
     #[flag] peek: bool,
     #[flag] planned: bool,
-    #[flag] done: bool,
+    #[flag] completed: bool,
     #[flag(name = "in_progress")] in_progress: bool,
     #[arg] tags: Vec<String>,
     #[flag] uuid: bool,
 ) -> Result<Output<Value>, anyhow::Error> {
     let todo_status = if planned {
         Some(TodoStatus::Planned)
-    } else if done {
+    } else if completed {
         Some(TodoStatus::Done)
     } else if in_progress {
         Some(TodoStatus::InProgress)
@@ -588,13 +588,18 @@ pub fn peek(
 pub fn search(
     #[ctx] ctx: &CommandContext,
     #[arg] term: String,
+    #[flag] completed: bool,
     #[arg] tags: Vec<String>,
     #[flag] uuid: bool,
 ) -> Result<Output<Value>, anyhow::Error> {
     let filter = PadFilter {
         status: PadStatusFilter::Active,
         search_term: Some(term),
-        todo_status: None,
+        todo_status: if completed {
+            Some(TodoStatus::Done)
+        } else {
+            None
+        },
         tags: if tags.is_empty() { None } else { Some(tags) },
     };
 
