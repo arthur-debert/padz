@@ -6,6 +6,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+- **Fixed**
+  - **Empty create no longer fills in "Untitled"** — `padz create` with no title now starts with a blank document. Quitting the editor without typing correctly aborts instead of creating a junk "Untitled" pad. Applies to quick-create, piped stdin, and interactive editor paths.
+  - **Clipboard no longer duplicates the title** — `view`, `open`, and `create` (interactive editor) commands were copying title + full content (which already includes the title) to the clipboard. Now correctly extracts title and body before formatting.
+
 ## [0.23.0] - 2026-03-01
 
 ## [0.23.0] - 2026-03-01
