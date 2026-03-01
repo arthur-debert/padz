@@ -180,6 +180,25 @@ fn filter_by_selectors(
                     }
                 }
             }
+            PadSelector::Uuid(uuid) => {
+                let found = linearized
+                    .iter()
+                    .find(|(_, dp)| dp.pad.metadata.id == *uuid);
+
+                match found {
+                    Some((_, dp)) => {
+                        if !matched
+                            .iter()
+                            .any(|m: &DisplayPad| m.pad.metadata.id == dp.pad.metadata.id)
+                        {
+                            matched.push((*dp).clone());
+                        }
+                    }
+                    None => {
+                        return Err(PadzError::Api(format!("No pad found with UUID {}", uuid)));
+                    }
+                }
+            }
             PadSelector::Title(term) => {
                 let term_lower = term.to_lowercase();
                 let matches: Vec<&DisplayPad> = linearized

@@ -315,6 +315,7 @@ impl<'a> ScopedApi<'a> {
         peek: bool,
         show_deleted_help: bool,
         ids: &[String],
+        show_uuid: bool,
     ) -> Result<Output<Value>, anyhow::Error> {
         let result = self.call(|api, scope| api.get_pads(scope, filter, ids))?;
         Ok(Output::Render(build_list_result_value(
@@ -324,12 +325,17 @@ impl<'a> ScopedApi<'a> {
             &result.messages,
             self.state.output_mode,
             self.state.mode,
+            show_uuid,
         )))
     }
 
     // --- View operations ---
 
-    pub fn view_pads(&self, indexes: &[String]) -> Result<Output<Value>, anyhow::Error> {
+    pub fn view_pads(
+        &self,
+        indexes: &[String],
+        show_uuid: bool,
+    ) -> Result<Output<Value>, anyhow::Error> {
         let result = self.call(|api, scope| api.view_pads(scope, indexes))?;
 
         // Copy content to clipboard
@@ -342,10 +348,14 @@ impl<'a> ScopedApi<'a> {
             .listed_pads
             .iter()
             .map(|dp| {
-                serde_json::json!({
+                let mut v = serde_json::json!({
                     "title": dp.pad.metadata.title,
                     "content": dp.pad.content,
-                })
+                });
+                if show_uuid {
+                    v["uuid"] = serde_json::json!(dp.pad.metadata.id.to_string());
+                }
+                v
             })
             .collect();
         Ok(Output::Render(serde_json::json!({ "pads": pads })))
@@ -544,6 +554,7 @@ pub fn list(
     #[flag] done: bool,
     #[flag(name = "in_progress")] in_progress: bool,
     #[arg] tags: Vec<String>,
+    #[flag] uuid: bool,
 ) -> Result<Output<Value>, anyhow::Error> {
     let todo_status = if planned {
         Some(TodoStatus::Planned)
@@ -568,7 +579,7 @@ pub fn list(
         tags: if tags.is_empty() { None } else { Some(tags) },
     };
 
-    api(ctx).list_pads(filter, peek, deleted || archived, &ids)
+    api(ctx).list_pads(filter, peek, deleted || archived, &ids, uuid)
 }
 
 #[handler]
@@ -576,6 +587,7 @@ pub fn peek(
     #[ctx] ctx: &CommandContext,
     #[arg] ids: Vec<String>,
     #[arg] tags: Vec<String>,
+    #[flag] uuid: bool,
 ) -> Result<Output<Value>, anyhow::Error> {
     let filter = PadFilter {
         status: PadStatusFilter::Active,
@@ -583,7 +595,7 @@ pub fn peek(
         todo_status: None,
         tags: if tags.is_empty() { None } else { Some(tags) },
     };
-    api(ctx).list_pads(filter, true, false, &ids)
+    api(ctx).list_pads(filter, true, false, &ids, uuid)
 }
 
 #[handler]
@@ -591,6 +603,7 @@ pub fn search(
     #[ctx] ctx: &CommandContext,
     #[arg] term: String,
     #[arg] tags: Vec<String>,
+    #[flag] uuid: bool,
 ) -> Result<Output<Value>, anyhow::Error> {
     let filter = PadFilter {
         status: PadStatusFilter::Active,
@@ -599,7 +612,7 @@ pub fn search(
         tags: if tags.is_empty() { None } else { Some(tags) },
     };
 
-    api(ctx).list_pads(filter, false, false, &[])
+    api(ctx).list_pads(filter, false, false, &[], uuid)
 }
 
 // =============================================================================
@@ -611,8 +624,9 @@ pub fn view(
     #[ctx] ctx: &CommandContext,
     #[arg] indexes: Vec<String>,
     #[flag(name = "peek")] _peek: bool, // Reserved for future use
+    #[flag] uuid: bool,
 ) -> Result<Output<Value>, anyhow::Error> {
-    api(ctx).view_pads(&indexes)
+    api(ctx).view_pads(&indexes, uuid)
 }
 
 #[handler]
@@ -812,6 +826,21 @@ pub fn path(#[ctx] ctx: &CommandContext, #[arg] indexes: Vec<String>) -> Result<
 
     for path in &result.pad_paths {
         println!("{}", path.display());
+    }
+    Ok(())
+}
+
+/// Returns pad UUIDs - outputs directly and returns Silent.
+#[handler]
+pub fn uuid(#[ctx] ctx: &CommandContext, #[arg] indexes: Vec<String>) -> Result<(), anyhow::Error> {
+    let state = get_state(ctx);
+    let result = state.with_api(|api| {
+        api.pad_uuids(state.scope, &indexes)
+            .map_err(|e| anyhow::anyhow!("{}", e))
+    })?;
+
+    for msg in &result.messages {
+        println!("{}", msg.content);
     }
     Ok(())
 }

@@ -78,6 +78,27 @@ pub fn resolve_selectors<S: DataStore>(
                     results.push((path.clone(), pad.pad.metadata.id));
                 }
             }
+            PadSelector::Uuid(uuid) => {
+                // Search the entire linearized tree for a pad matching this UUID
+                let found = linearized
+                    .iter()
+                    .find(|(_, dp)| dp.pad.metadata.id == *uuid);
+
+                match found {
+                    Some((path, dp)) => {
+                        if check_delete_protection && dp.pad.metadata.delete_protected {
+                            return Err(PadzError::Api(
+                                "Pinned pads are delete protected, unpin then delete it"
+                                    .to_string(),
+                            ));
+                        }
+                        results.push((path.clone(), dp.pad.metadata.id));
+                    }
+                    None => {
+                        return Err(PadzError::Api(format!("No pad found with UUID {}", uuid)));
+                    }
+                }
+            }
             PadSelector::Title(term) => {
                 let term_lower = term.to_lowercase();
                 let matches: Vec<&(Vec<DisplayIndex>, &DisplayPad)> = linearized
@@ -756,6 +777,85 @@ mod tests {
         .unwrap();
 
         assert_eq!(result.len(), 1);
+    }
+
+    #[test]
+    fn test_uuid_resolution() {
+        let mut store = BucketedStore::new(
+            MemBackend::new(),
+            MemBackend::new(),
+            MemBackend::new(),
+            MemBackend::new(),
+        );
+        let result =
+            create::run(&mut store, Scope::Project, "Pad A".into(), "".into(), None).unwrap();
+        let pad_uuid = result.affected_pads[0].pad.metadata.id;
+
+        let resolved = resolve_selectors(
+            &store,
+            Scope::Project,
+            &[PadSelector::Uuid(pad_uuid)],
+            false,
+        )
+        .unwrap();
+
+        assert_eq!(resolved.len(), 1);
+        assert_eq!(resolved[0].1, pad_uuid);
+    }
+
+    #[test]
+    fn test_uuid_not_found_returns_error() {
+        let mut store = BucketedStore::new(
+            MemBackend::new(),
+            MemBackend::new(),
+            MemBackend::new(),
+            MemBackend::new(),
+        );
+        create::run(&mut store, Scope::Project, "Pad A".into(), "".into(), None).unwrap();
+
+        let fake_uuid = uuid::Uuid::new_v4();
+        let result = resolve_selectors(
+            &store,
+            Scope::Project,
+            &[PadSelector::Uuid(fake_uuid)],
+            false,
+        );
+
+        assert!(result.is_err());
+        let err = result.unwrap_err();
+        assert!(err.to_string().contains("No pad found with UUID"));
+    }
+
+    #[test]
+    fn test_uuid_delete_protection() {
+        let mut store = BucketedStore::new(
+            MemBackend::new(),
+            MemBackend::new(),
+            MemBackend::new(),
+            MemBackend::new(),
+        );
+        let result =
+            create::run(&mut store, Scope::Project, "Pad A".into(), "".into(), None).unwrap();
+        let pad_uuid = result.affected_pads[0].pad.metadata.id;
+
+        // Set delete protection
+        let pads = store.list_pads(Scope::Project, Bucket::Active).unwrap();
+        let mut pad = pads[0].clone();
+        pad.metadata.delete_protected = true;
+        store
+            .save_pad(&pad, Scope::Project, Bucket::Active)
+            .unwrap();
+
+        let result = resolve_selectors(
+            &store,
+            Scope::Project,
+            &[PadSelector::Uuid(pad_uuid)],
+            true, // check_delete_protection
+        );
+
+        assert!(result.is_err());
+        let err = result.unwrap_err();
+        assert!(err.to_string().contains("delete protected"));
     }
 
     #[test]

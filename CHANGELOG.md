@@ -6,6 +6,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+- **Added**
+  - **UUID support** — Pads can now be referenced by their UUID in any command that accepts pad IDs. UUIDs are parsed before range detection so hyphens in UUIDs don't confuse the range parser.
+  - **`padz uuid <id>...`** — New command to print full UUIDs, one per line. Supports ranges (e.g. `padz uuid 1-3`). Clean output for scripting/piping.
+  - **`--uuid` flag** on `list`, `search`, `peek`, and `view` — Shows short 8-char UUID prefix next to pad titles in list views, and full UUID in view output.
+
 ## [0.22.0] - 2026-02-28
 
 ## [0.22.0] - 2026-02-28

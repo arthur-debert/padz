@@ -167,6 +167,7 @@ pub fn build_list_result_value(
     trailing_messages: &[CmdMessage],
     output_mode: OutputMode,
     mode: PadzMode,
+    show_uuid: bool,
 ) -> serde_json::Value {
     use serde_json::json;
 
@@ -214,6 +215,7 @@ pub fn build_list_result_value(
         peek: bool,
         show_status: bool,
         col_status: usize,
+        show_uuid: bool,
     ) {
         let is_deleted = matches!(dp.index, DisplayIndex::Deleted(_));
 
@@ -292,12 +294,19 @@ pub fn build_list_result_value(
             serde_json::Value::Null
         };
 
+        let display_title = if show_uuid {
+            let short_uuid = &dp.pad.metadata.id.to_string()[..8];
+            format!("({}) {}", short_uuid, dp.pad.metadata.title)
+        } else {
+            dp.pad.metadata.title.clone()
+        };
+
         pad_lines.push(serde_json::json!({
             "indent": indent,
             "left_pin": left_pin,
             "status_icon": status_icon,
             "index": full_idx_str,
-            "title": dp.pad.metadata.title,
+            "title": display_title,
             "title_width": title_width,
             "tags": dp.pad.metadata.tags,
                 "tags_display": format_tags_display(&dp.pad.metadata.tags),
@@ -321,6 +330,7 @@ pub fn build_list_result_value(
                 peek,
                 show_status,
                 col_status,
+                show_uuid,
             );
         }
     }
@@ -360,6 +370,7 @@ pub fn build_list_result_value(
             peek,
             show_status,
             col_status,
+            show_uuid,
         );
     }
 
@@ -484,8 +495,15 @@ mod tests {
 
     #[test]
     fn test_build_list_empty() {
-        let data =
-            build_list_result_value(&[], false, false, &[], OutputMode::Text, PadzMode::Todos);
+        let data = build_list_result_value(
+            &[],
+            false,
+            false,
+            &[],
+            OutputMode::Text,
+            PadzMode::Todos,
+            false,
+        );
         assert!(data.get("empty").and_then(|v| v.as_bool()).unwrap_or(false));
         assert!(data
             .get("help_text")
@@ -499,8 +517,15 @@ mod tests {
         let pad = make_pad("Test Note", false);
         let dp = make_display_pad(pad, DisplayIndex::Regular(1));
 
-        let data =
-            build_list_result_value(&[dp], false, false, &[], OutputMode::Text, PadzMode::Todos);
+        let data = build_list_result_value(
+            &[dp],
+            false,
+            false,
+            &[],
+            OutputMode::Text,
+            PadzMode::Todos,
+            false,
+        );
 
         let pads = data.get("pads").and_then(|v| v.as_array()).unwrap();
         assert_eq!(pads.len(), 1);
@@ -522,8 +547,15 @@ mod tests {
         let pad = make_pad("Pinned Note", true);
         let dp = make_display_pad(pad, DisplayIndex::Pinned(1));
 
-        let data =
-            build_list_result_value(&[dp], false, false, &[], OutputMode::Text, PadzMode::Todos);
+        let data = build_list_result_value(
+            &[dp],
+            false,
+            false,
+            &[],
+            OutputMode::Text,
+            PadzMode::Todos,
+            false,
+        );
 
         let pads = data.get("pads").and_then(|v| v.as_array()).unwrap();
         let pad_data = &pads[0];
@@ -544,8 +576,15 @@ mod tests {
         let pad = make_pad("Deleted Note", false);
         let dp = make_display_pad(pad, DisplayIndex::Deleted(1));
 
-        let data =
-            build_list_result_value(&[dp], false, true, &[], OutputMode::Text, PadzMode::Todos);
+        let data = build_list_result_value(
+            &[dp],
+            false,
+            true,
+            &[],
+            OutputMode::Text,
+            PadzMode::Todos,
+            false,
+        );
 
         let pads = data.get("pads").and_then(|v| v.as_array()).unwrap();
         let pad_data = &pads[0];
@@ -571,8 +610,15 @@ mod tests {
             make_display_pad(regular, DisplayIndex::Regular(1)),
         ];
 
-        let data =
-            build_list_result_value(&pads, false, false, &[], OutputMode::Text, PadzMode::Todos);
+        let data = build_list_result_value(
+            &pads,
+            false,
+            false,
+            &[],
+            OutputMode::Text,
+            PadzMode::Todos,
+            false,
+        );
 
         let pad_list = data.get("pads").and_then(|v| v.as_array()).unwrap();
         // Should have: pinned pad, separator, regular pad
@@ -593,8 +639,15 @@ mod tests {
 
         let dp = make_display_pad(pad, DisplayIndex::Regular(1));
 
-        let data =
-            build_list_result_value(&[dp], false, false, &[], OutputMode::Text, PadzMode::Todos);
+        let data = build_list_result_value(
+            &[dp],
+            false,
+            false,
+            &[],
+            OutputMode::Text,
+            PadzMode::Todos,
+            false,
+        );
 
         let pads = data.get("pads").and_then(|v| v.as_array()).unwrap();
         let pad_data = &pads[0];
@@ -618,6 +671,7 @@ mod tests {
             &messages,
             OutputMode::Text,
             PadzMode::Todos,
+            false,
         );
 
         let trailing = data
@@ -640,8 +694,15 @@ mod tests {
         let pad = make_pad("Test", false);
         let dp = make_display_pad(pad, DisplayIndex::Regular(1));
 
-        let data =
-            build_list_result_value(&[dp], false, false, &[], OutputMode::Json, PadzMode::Todos);
+        let data = build_list_result_value(
+            &[dp],
+            false,
+            false,
+            &[],
+            OutputMode::Json,
+            PadzMode::Todos,
+            false,
+        );
 
         // In JSON mode, should return raw pads array, not processed pad lines
         let pads = data.get("pads").and_then(|v| v.as_array()).unwrap();
@@ -705,8 +766,15 @@ mod tests {
         let pad = make_pad("Test Note", false);
         let dp = make_display_pad(pad, DisplayIndex::Regular(1));
 
-        let data =
-            build_list_result_value(&[dp], false, false, &[], OutputMode::Text, PadzMode::Notes);
+        let data = build_list_result_value(
+            &[dp],
+            false,
+            false,
+            &[],
+            OutputMode::Text,
+            PadzMode::Notes,
+            false,
+        );
 
         let pads = data.get("pads").and_then(|v| v.as_array()).unwrap();
         assert_eq!(
@@ -721,8 +789,15 @@ mod tests {
         let pad = make_pad("Test Note", false);
         let dp = make_display_pad(pad, DisplayIndex::Regular(1));
 
-        let data =
-            build_list_result_value(&[dp], false, false, &[], OutputMode::Text, PadzMode::Todos);
+        let data = build_list_result_value(
+            &[dp],
+            false,
+            false,
+            &[],
+            OutputMode::Text,
+            PadzMode::Todos,
+            false,
+        );
 
         let pads = data.get("pads").and_then(|v| v.as_array()).unwrap();
         assert_eq!(
@@ -741,10 +816,24 @@ mod tests {
         let dp = make_display_pad(pad.clone(), DisplayIndex::Regular(1));
         let dp2 = make_display_pad(pad, DisplayIndex::Regular(1));
 
-        let notes_data =
-            build_list_result_value(&[dp], false, false, &[], OutputMode::Text, PadzMode::Notes);
-        let todos_data =
-            build_list_result_value(&[dp2], false, false, &[], OutputMode::Text, PadzMode::Todos);
+        let notes_data = build_list_result_value(
+            &[dp],
+            false,
+            false,
+            &[],
+            OutputMode::Text,
+            PadzMode::Notes,
+            false,
+        );
+        let todos_data = build_list_result_value(
+            &[dp2],
+            false,
+            false,
+            &[],
+            OutputMode::Text,
+            PadzMode::Todos,
+            false,
+        );
 
         let notes_width = notes_data.get("pads").and_then(|v| v.as_array()).unwrap()[0]
             .get("title_width")

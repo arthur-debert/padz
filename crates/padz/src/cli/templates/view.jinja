@@ -8,6 +8,9 @@
 {%- if not loop.first %}
 ---
 {% endif -%}
+{%- if pad.uuid %}
+[info]uuid: {{ pad.uuid }}[/info]
+{% endif -%}
 {{ pad.title }}
 
 {{ pad.content }}

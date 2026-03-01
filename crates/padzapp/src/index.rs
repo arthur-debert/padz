@@ -86,11 +86,12 @@ impl std::fmt::Display for DisplayIndex {
     }
 }
 
-/// A user input to select a pad, either by its index or a search term for its title.
+/// A user input to select a pad, either by its index, UUID, or a search term for its title.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum PadSelector {
     Path(Vec<DisplayIndex>),
     Range(Vec<DisplayIndex>, Vec<DisplayIndex>), // Start Path, End Path
+    Uuid(Uuid),
     Title(String),
 }
 
@@ -106,6 +107,7 @@ impl std::fmt::Display for PadSelector {
                 let s_end: Vec<String> = end.iter().map(|idx| idx.to_string()).collect();
                 write!(f, "{}-{}", s_start.join("."), s_end.join("."))
             }
+            PadSelector::Uuid(uuid) => write!(f, "{}", uuid),
             PadSelector::Title(t) => write!(f, "\"{}\"", t),
         }
     }
@@ -292,6 +294,12 @@ impl std::str::FromStr for DisplayIndex {
 /// - Path: "3", "3.1", "p1", "d2.1"
 /// - Range: "1-3", "1.1-1.3", "1.2-2.1"
 pub fn parse_index_or_range(s: &str) -> Result<PadSelector, String> {
+    // Try UUID first — UUIDs contain hyphens that would confuse the range parser.
+    // Uuid::parse_str is strict and won't match any DI format (1, p1, 1-3, etc.)
+    if let Ok(uuid) = Uuid::parse_str(s) {
+        return Ok(PadSelector::Uuid(uuid));
+    }
+
     // Check if it's a range (contains '-' but not at the start for negative numbers)
     // We need to be careful: "p1-p3" has '-' in the middle
     if let Some(dash_pos) = s.find('-') {
@@ -713,6 +721,57 @@ mod tests {
             .filter(|dp| matches!(dp.index, DisplayIndex::Regular(_)))
             .collect();
         assert_eq!(regular_entries.len(), 1);
+    }
+
+    #[test]
+    fn test_parse_uuid() {
+        let uuid_str = "550e8400-e29b-41d4-a716-446655440000";
+        let uuid = Uuid::parse_str(uuid_str).unwrap();
+        assert_eq!(parse_index_or_range(uuid_str), Ok(PadSelector::Uuid(uuid)));
+    }
+
+    #[test]
+    fn test_parse_uuid_does_not_interfere_with_indexes() {
+        // Regular indexes should still parse correctly
+        assert_eq!(
+            parse_index_or_range("1"),
+            Ok(PadSelector::Path(vec![DisplayIndex::Regular(1)]))
+        );
+        assert_eq!(
+            parse_index_or_range("p1"),
+            Ok(PadSelector::Path(vec![DisplayIndex::Pinned(1)]))
+        );
+        assert_eq!(
+            parse_index_or_range("d1"),
+            Ok(PadSelector::Path(vec![DisplayIndex::Deleted(1)]))
+        );
+        assert_eq!(
+            parse_index_or_range("ar1"),
+            Ok(PadSelector::Path(vec![DisplayIndex::Archived(1)]))
+        );
+        // Ranges should still work
+        assert_eq!(
+            parse_index_or_range("1-3"),
+            Ok(PadSelector::Range(
+                vec![DisplayIndex::Regular(1)],
+                vec![DisplayIndex::Regular(3)]
+            ))
+        );
+        assert_eq!(
+            parse_index_or_range("p1-p3"),
+            Ok(PadSelector::Range(
+                vec![DisplayIndex::Pinned(1)],
+                vec![DisplayIndex::Pinned(3)]
+            ))
+        );
+    }
+
+    #[test]
+    fn test_parse_uuid_display() {
+        let uuid_str = "550e8400-e29b-41d4-a716-446655440000";
+        let uuid = Uuid::parse_str(uuid_str).unwrap();
+        let selector = PadSelector::Uuid(uuid);
+        assert_eq!(format!("{}", selector), uuid_str);
     }
 
     #[test]
