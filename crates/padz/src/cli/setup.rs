@@ -337,15 +337,15 @@ pub enum Commands {
         peek: bool,
 
         /// Show only planned pads
-        #[arg(long, conflicts_with_all = ["done", "in_progress"])]
+        #[arg(long, conflicts_with_all = ["completed", "in_progress"])]
         planned: bool,
 
-        /// Show only done pads
+        /// Show only completed pads
         #[arg(long, conflicts_with_all = ["planned", "in_progress"])]
-        done: bool,
+        completed: bool,
 
         /// Show only in-progress pads
-        #[arg(long, conflicts_with_all = ["planned", "done"])]
+        #[arg(long, conflicts_with_all = ["planned", "completed"])]
         in_progress: bool,
 
         /// Filter by tag(s) (can be specified multiple times, uses AND logic)
@@ -363,6 +363,10 @@ pub enum Commands {
     Search {
         /// Search term
         term: String,
+
+        /// Show only completed pads
+        #[arg(long)]
+        completed: bool,
 
         /// Filter by tag(s) (can be specified multiple times, uses AND logic)
         #[arg(long = "tag", short = 't', num_args = 1..)]
@@ -431,12 +435,12 @@ pub enum Commands {
     #[dispatch(pure, template = "modification_result")]
     Delete {
         /// Indexes of the pads (e.g. 1 3 5)
-        #[arg(num_args = 1.., add = active_pads_completer(), required_unless_present = "done_status")]
+        #[arg(num_args = 1.., add = active_pads_completer(), required_unless_present = "completed")]
         indexes: Vec<String>,
 
-        /// Delete all pads marked as done
-        #[arg(long = "done", conflicts_with = "indexes")]
-        done_status: bool,
+        /// Delete all pads marked as completed
+        #[arg(long = "completed", conflicts_with = "indexes")]
+        completed: bool,
     },
 
     /// Restore deleted pads

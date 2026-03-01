@@ -113,9 +113,9 @@ fn filter_pad_by_attrs(mut dp: DisplayPad, filters: &[AttrFilter]) -> Option<Dis
         .filter_map(|child| filter_pad_by_attrs(child, filters))
         .collect();
 
-    // Include this pad if it matches ALL filters (AND logic)
+    // Include this pad if it matches ALL filters OR has matching children
     let matches_all = filters.iter().all(|f| f.matches(&dp.pad.metadata));
-    if matches_all {
+    if matches_all || !dp.children.is_empty() {
         Some(dp)
     } else {
         None

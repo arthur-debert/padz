@@ -28,7 +28,7 @@ use standout_macros::handler;
 use std::cell::RefCell;
 use std::io::IsTerminal;
 
-use super::render::{build_list_result_value, build_modification_result_value};
+use super::render::{build_list_result_value, build_modification_result_value, ListOptions};
 
 // =============================================================================
 // App State Types (for standout's type-based app_state lookup)
@@ -157,30 +157,18 @@ impl<'a> ScopedApi<'a> {
         self.modification("Deleted", result)
     }
 
-    pub fn delete_done_pads(&self) -> Result<Output<Value>, anyhow::Error> {
-        let filter = PadFilter {
-            status: PadStatusFilter::Active,
-            search_term: None,
-            todo_status: Some(TodoStatus::Done),
-            tags: None,
-        };
-        let pads = self.call(|api, scope| api.get_pads(scope, filter, &[] as &[String]))?;
+    pub fn delete_completed_pads(&self) -> Result<Output<Value>, anyhow::Error> {
+        let result = self.call(|api, scope| api.delete_completed_pads(scope))?;
 
-        if pads.listed_pads.is_empty() {
+        if result.affected_pads.is_empty() {
             return Ok(Output::Render(serde_json::json!({
                 "start_message": "",
                 "pads": [],
-                "trailing_messages": [{"content": "No done pads to delete.", "style": "info"}]
+                "trailing_messages": [{"content": "No completed pads to delete.", "style": "info"}]
             })));
         }
 
-        let done_indexes: Vec<String> = pads
-            .listed_pads
-            .iter()
-            .map(|dp| dp.index.to_string())
-            .collect();
-
-        self.delete_pads(&done_indexes)
+        self.modification("Deleted", result)
     }
 
     pub fn restore_pads(&self, indexes: &[String]) -> Result<Output<Value>, anyhow::Error> {
@@ -317,15 +305,22 @@ impl<'a> ScopedApi<'a> {
         ids: &[String],
         show_uuid: bool,
     ) -> Result<Output<Value>, anyhow::Error> {
+        let filtered = filter.search_term.is_some()
+            || filter.todo_status.is_some()
+            || filter.tags.is_some()
+            || !ids.is_empty();
         let result = self.call(|api, scope| api.get_pads(scope, filter, ids))?;
         Ok(Output::Render(build_list_result_value(
             &result.listed_pads,
-            peek,
-            show_deleted_help,
             &result.messages,
-            self.state.output_mode,
-            self.state.mode,
-            show_uuid,
+            ListOptions {
+                peek,
+                show_deleted_help,
+                output_mode: self.state.output_mode,
+                mode: self.state.mode,
+                show_uuid,
+                filtered,
+            },
         )))
     }
 
@@ -549,14 +544,14 @@ pub fn list(
     #[flag] archived: bool,
     #[flag] peek: bool,
     #[flag] planned: bool,
-    #[flag] done: bool,
+    #[flag] completed: bool,
     #[flag(name = "in_progress")] in_progress: bool,
     #[arg] tags: Vec<String>,
     #[flag] uuid: bool,
 ) -> Result<Output<Value>, anyhow::Error> {
     let todo_status = if planned {
         Some(TodoStatus::Planned)
-    } else if done {
+    } else if completed {
         Some(TodoStatus::Done)
     } else if in_progress {
         Some(TodoStatus::InProgress)
@@ -600,13 +595,18 @@ pub fn peek(
 pub fn search(
     #[ctx] ctx: &CommandContext,
     #[arg] term: String,
+    #[flag] completed: bool,
     #[arg] tags: Vec<String>,
     #[flag] uuid: bool,
 ) -> Result<Output<Value>, anyhow::Error> {
     let filter = PadFilter {
         status: PadStatusFilter::Active,
         search_term: Some(term),
-        todo_status: None,
+        todo_status: if completed {
+            Some(TodoStatus::Done)
+        } else {
+            None
+        },
         tags: if tags.is_empty() { None } else { Some(tags) },
     };
 
@@ -754,10 +754,10 @@ pub fn edit(
 pub fn delete(
     #[ctx] ctx: &CommandContext,
     #[arg] indexes: Vec<String>,
-    #[flag(name = "done_status")] done_status: bool,
+    #[flag] completed: bool,
 ) -> Result<Output<Value>, anyhow::Error> {
-    if done_status {
-        api(ctx).delete_done_pads()
+    if completed {
+        api(ctx).delete_completed_pads()
     } else {
         api(ctx).delete_pads(&indexes)
     }
