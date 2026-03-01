@@ -1,7 +1,7 @@
 use crate::commands::CmdResult;
 use crate::error::Result;
 use crate::index::{DisplayPad, PadSelector};
-use crate::model::Scope;
+use crate::model::{Scope, TodoStatus};
 use crate::store::{Bucket, DataStore};
 use uuid::Uuid;
 
@@ -59,6 +59,24 @@ pub fn run<S: DataStore>(
     }
 
     Ok(result)
+}
+
+/// Soft-deletes all active pads with `TodoStatus::Done`.
+pub fn run_completed<S: DataStore>(store: &mut S, scope: Scope) -> Result<CmdResult> {
+    let active_pads = store.list_pads(scope, Bucket::Active)?;
+    let done_ids: Vec<Uuid> = active_pads
+        .iter()
+        .filter(|p| p.metadata.status == TodoStatus::Done)
+        .map(|p| p.metadata.id)
+        .collect();
+
+    if done_ids.is_empty() {
+        return Ok(CmdResult::default());
+    }
+
+    let selectors: Vec<PadSelector> = done_ids.iter().map(|id| PadSelector::Uuid(*id)).collect();
+
+    run(store, scope, &selectors)
 }
 
 #[cfg(test)]
@@ -251,5 +269,151 @@ mod tests {
         assert_eq!(active.listed_pads.len(), 1);
         assert_eq!(active.listed_pads[0].pad.metadata.title, "Parent");
         assert_eq!(active.listed_pads[0].children.len(), 0); // child is deleted
+    }
+
+    #[test]
+    fn delete_completed_deletes_done_pads() {
+        let mut store = BucketedStore::new(
+            MemBackend::new(),
+            MemBackend::new(),
+            MemBackend::new(),
+            MemBackend::new(),
+        );
+
+        // Create 3 pads
+        create::run(
+            &mut store,
+            Scope::Project,
+            "Planned".into(),
+            "".into(),
+            None,
+        )
+        .unwrap();
+        create::run(
+            &mut store,
+            Scope::Project,
+            "Done One".into(),
+            "".into(),
+            None,
+        )
+        .unwrap();
+        create::run(
+            &mut store,
+            Scope::Project,
+            "Done Two".into(),
+            "".into(),
+            None,
+        )
+        .unwrap();
+
+        // Mark two as Done
+        crate::commands::status::complete(
+            &mut store,
+            Scope::Project,
+            &[PadSelector::Path(vec![DisplayIndex::Regular(1)])],
+        )
+        .unwrap();
+        crate::commands::status::complete(
+            &mut store,
+            Scope::Project,
+            &[PadSelector::Path(vec![DisplayIndex::Regular(2)])],
+        )
+        .unwrap();
+
+        // Delete completed
+        let result = run_completed(&mut store, Scope::Project).unwrap();
+        assert_eq!(result.affected_pads.len(), 2);
+
+        // Only the Planned pad should remain active
+        let active = get::run(&store, Scope::Project, get::PadFilter::default(), &[]).unwrap();
+        assert_eq!(active.listed_pads.len(), 1);
+        assert_eq!(active.listed_pads[0].pad.metadata.title, "Planned");
+
+        // Two pads should be in Deleted
+        let deleted = get::run(
+            &store,
+            Scope::Project,
+            get::PadFilter {
+                status: get::PadStatusFilter::Deleted,
+                ..Default::default()
+            },
+            &[],
+        )
+        .unwrap();
+        assert_eq!(deleted.listed_pads.len(), 2);
+    }
+
+    #[test]
+    fn delete_completed_with_no_done_pads_returns_empty() {
+        let mut store = BucketedStore::new(
+            MemBackend::new(),
+            MemBackend::new(),
+            MemBackend::new(),
+            MemBackend::new(),
+        );
+
+        create::run(
+            &mut store,
+            Scope::Project,
+            "Planned".into(),
+            "".into(),
+            None,
+        )
+        .unwrap();
+
+        let result = run_completed(&mut store, Scope::Project).unwrap();
+        assert!(result.affected_pads.is_empty());
+
+        // Pad should still be active
+        let active = get::run(&store, Scope::Project, get::PadFilter::default(), &[]).unwrap();
+        assert_eq!(active.listed_pads.len(), 1);
+    }
+
+    #[test]
+    fn delete_completed_skips_in_progress_pads() {
+        let mut store = BucketedStore::new(
+            MemBackend::new(),
+            MemBackend::new(),
+            MemBackend::new(),
+            MemBackend::new(),
+        );
+
+        create::run(
+            &mut store,
+            Scope::Project,
+            "In Progress".into(),
+            "".into(),
+            None,
+        )
+        .unwrap();
+        create::run(&mut store, Scope::Project, "Done".into(), "".into(), None).unwrap();
+
+        // Mark one as InProgress
+        let pads = store.list_pads(Scope::Project, Bucket::Active).unwrap();
+        let mut ip_pad = pads
+            .iter()
+            .find(|p| p.metadata.title == "In Progress")
+            .unwrap()
+            .clone();
+        ip_pad.metadata.status = TodoStatus::InProgress;
+        store
+            .save_pad(&ip_pad, Scope::Project, Bucket::Active)
+            .unwrap();
+
+        // Mark one as Done
+        crate::commands::status::complete(
+            &mut store,
+            Scope::Project,
+            &[PadSelector::Path(vec![DisplayIndex::Regular(1)])],
+        )
+        .unwrap();
+
+        let result = run_completed(&mut store, Scope::Project).unwrap();
+        assert_eq!(result.affected_pads.len(), 1);
+
+        // InProgress pad should still be active
+        let active = get::run(&store, Scope::Project, get::PadFilter::default(), &[]).unwrap();
+        assert_eq!(active.listed_pads.len(), 1);
+        assert_eq!(active.listed_pads[0].pad.metadata.title, "In Progress");
     }
 }

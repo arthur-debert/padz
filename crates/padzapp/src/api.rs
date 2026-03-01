@@ -140,6 +140,11 @@ impl<S: DataStore> PadzApi<S> {
         commands::delete::run(&mut self.store, scope, &selectors)
     }
 
+    /// Soft-deletes all active pads marked as Done (completed).
+    pub fn delete_completed_pads(&mut self, scope: Scope) -> Result<commands::CmdResult> {
+        commands::delete::run_completed(&mut self.store, scope)
+    }
+
     pub fn pin_pads<I: AsRef<str>>(
         &mut self,
         scope: Scope,

@@ -157,30 +157,18 @@ impl<'a> ScopedApi<'a> {
         self.modification("Deleted", result)
     }
 
-    pub fn delete_done_pads(&self) -> Result<Output<Value>, anyhow::Error> {
-        let filter = PadFilter {
-            status: PadStatusFilter::Active,
-            search_term: None,
-            todo_status: Some(TodoStatus::Done),
-            tags: None,
-        };
-        let pads = self.call(|api, scope| api.get_pads(scope, filter, &[] as &[String]))?;
+    pub fn delete_completed_pads(&self) -> Result<Output<Value>, anyhow::Error> {
+        let result = self.call(|api, scope| api.delete_completed_pads(scope))?;
 
-        if pads.listed_pads.is_empty() {
+        if result.affected_pads.is_empty() {
             return Ok(Output::Render(serde_json::json!({
                 "start_message": "",
                 "pads": [],
-                "trailing_messages": [{"content": "No done pads to delete.", "style": "info"}]
+                "trailing_messages": [{"content": "No completed pads to delete.", "style": "info"}]
             })));
         }
 
-        let done_indexes: Vec<String> = pads
-            .listed_pads
-            .iter()
-            .map(|dp| dp.index.to_string())
-            .collect();
-
-        self.delete_pads(&done_indexes)
+        self.modification("Deleted", result)
     }
 
     pub fn restore_pads(&self, indexes: &[String]) -> Result<Output<Value>, anyhow::Error> {
@@ -754,10 +742,10 @@ pub fn edit(
 pub fn delete(
     #[ctx] ctx: &CommandContext,
     #[arg] indexes: Vec<String>,
-    #[flag(name = "done_status")] done_status: bool,
+    #[flag] completed: bool,
 ) -> Result<Output<Value>, anyhow::Error> {
-    if done_status {
-        api(ctx).delete_done_pads()
+    if completed {
+        api(ctx).delete_completed_pads()
     } else {
         api(ctx).delete_pads(&indexes)
     }
