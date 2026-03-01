@@ -179,6 +179,7 @@ fn should_show_custom_help() -> bool {
         "unpin",
         "u",
         "path",
+        "uuid",
         "complete",
         "done",
         "reopen",
@@ -239,6 +240,7 @@ fn command_groups() -> Vec<CommandGroup> {
                 Some("pin".into()),
                 Some("unpin".into()),
                 Some("path".into()),
+                Some("uuid".into()),
                 None,
                 Some("complete".into()),
                 Some("reopen".into()),
@@ -349,6 +351,10 @@ pub enum Commands {
         /// Filter by tag(s) (can be specified multiple times, uses AND logic)
         #[arg(long = "tag", short = 't', num_args = 1..)]
         tags: Vec<String>,
+
+        /// Show short UUIDs next to pad titles
+        #[arg(long)]
+        uuid: bool,
     },
 
     /// Search pads (dedicated command)
@@ -361,6 +367,10 @@ pub enum Commands {
         /// Filter by tag(s) (can be specified multiple times, uses AND logic)
         #[arg(long = "tag", short = 't', num_args = 1..)]
         tags: Vec<String>,
+
+        /// Show short UUIDs next to pad titles
+        #[arg(long)]
+        uuid: bool,
     },
 
     /// Peek at pad content previews
@@ -374,6 +384,10 @@ pub enum Commands {
         /// Filter by tag(s) (can be specified multiple times, uses AND logic)
         #[arg(long = "tag", short = 't', num_args = 1..)]
         tags: Vec<String>,
+
+        /// Show short UUIDs next to pad titles
+        #[arg(long)]
+        uuid: bool,
     },
 
     // --- Pad operations ---
@@ -388,6 +402,10 @@ pub enum Commands {
         /// Peek at pad content
         #[arg(long)]
         peek: bool,
+
+        /// Show UUID in view output
+        #[arg(long)]
+        uuid: bool,
     },
 
     /// Edit a pad in the editor
@@ -484,6 +502,15 @@ pub enum Commands {
     #[command(display_order = 17)]
     #[dispatch(pure)]
     Path {
+        /// Indexes of the pads (e.g. 1 p1 d1)
+        #[arg(required = true, num_args = 1.., add = all_pads_completer())]
+        indexes: Vec<String>,
+    },
+
+    /// Print the UUID of one or more pads
+    #[command(display_order = 17)]
+    #[dispatch(pure)]
+    Uuid {
         /// Indexes of the pads (e.g. 1 p1 d1)
         #[arg(required = true, num_args = 1.., add = all_pads_completer())]
         indexes: Vec<String>,

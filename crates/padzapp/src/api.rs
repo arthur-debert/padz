@@ -312,6 +312,15 @@ impl<S: DataStore> PadzApi<S> {
         commands::paths::run(&self.store, scope, &selectors)
     }
 
+    pub fn pad_uuids<I: AsRef<str>>(
+        &self,
+        scope: Scope,
+        indexes: &[I],
+    ) -> Result<commands::CmdResult> {
+        let selectors = parse_selectors(indexes)?;
+        commands::uuid::run(&self.store, scope, &selectors)
+    }
+
     pub fn get_path_by_id(&self, scope: Scope, id: uuid::Uuid) -> Result<std::path::PathBuf> {
         use crate::store::Bucket;
         self.store.get_pad_path(&id, scope, Bucket::Active)

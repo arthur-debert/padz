@@ -87,6 +87,7 @@ pub mod tags;
 
 pub mod unarchive;
 pub mod update;
+pub mod uuid;
 pub mod view;
 
 #[derive(Debug, Clone)]
