@@ -1,4 +1,6 @@
-{%- if empty -%}
+{%- if empty_filtered -%}
+[info]No matching pads.[/info]{{ "" | nl -}}
+{%- elif empty -%}
 [empty-message]No pads yet, create one with `padz create`[/empty-message]{{ "" | nl -}}
 {{ help_text }}
 {%- else -%}

@@ -153,6 +153,15 @@ pub fn build_modification_result_value(
     })
 }
 
+pub struct ListOptions {
+    pub peek: bool,
+    pub show_deleted_help: bool,
+    pub output_mode: OutputMode,
+    pub mode: PadzMode,
+    pub show_uuid: bool,
+    pub filtered: bool,
+}
+
 /// Builds list result data as serde_json::Value for Dispatch handlers.
 ///
 /// This function creates the appropriate data structure based on output mode:
@@ -162,30 +171,33 @@ pub fn build_modification_result_value(
 /// Used by list/search handlers that need to return data for standout's rendering pipeline.
 pub fn build_list_result_value(
     pads: &[DisplayPad],
-    peek: bool,
-    show_deleted_help: bool,
     trailing_messages: &[CmdMessage],
-    output_mode: OutputMode,
-    mode: PadzMode,
-    show_uuid: bool,
+    opts: ListOptions,
 ) -> serde_json::Value {
     use serde_json::json;
 
     // For structured modes, return clean API format
-    if output_mode.is_structured() {
+    if opts.output_mode.is_structured() {
         return json!({
             "pads": pads,
             "messages": trailing_messages,
         });
     }
 
-    let show_status = mode == PadzMode::Todos;
+    let show_status = opts.mode == PadzMode::Todos;
     let col_status = if show_status { COL_STATUS } else { 0 };
 
     // For terminal modes, build full template data
     let trailing_data = convert_messages_to_json(trailing_messages);
 
     if pads.is_empty() {
+        if opts.filtered {
+            return json!({
+                "pads": [],
+                "empty_filtered": true,
+                "trailing_messages": trailing_data,
+            });
+        }
         return json!({
             "pads": [],
             "empty": true,
@@ -367,10 +379,10 @@ pub fn build_list_result_value(
             0,
             is_pinned_section,
             is_deleted_section,
-            peek,
+            opts.peek,
             show_status,
             col_status,
-            show_uuid,
+            opts.show_uuid,
         );
     }
 
@@ -379,8 +391,8 @@ pub fn build_list_result_value(
         "empty": false,
         "pin_marker": PIN_MARKER,
         "help_text": "",
-        "deleted_help": show_deleted_help,
-        "peek": peek,
+        "deleted_help": opts.show_deleted_help,
+        "peek": opts.peek,
         "col_left_pin": COL_LEFT_PIN,
         "col_status": col_status,
         "col_index": COL_INDEX,
@@ -497,12 +509,15 @@ mod tests {
     fn test_build_list_empty() {
         let data = build_list_result_value(
             &[],
-            false,
-            false,
             &[],
-            OutputMode::Text,
-            PadzMode::Todos,
-            false,
+            ListOptions {
+                peek: false,
+                show_deleted_help: false,
+                output_mode: OutputMode::Text,
+                mode: PadzMode::Todos,
+                show_uuid: false,
+                filtered: false,
+            },
         );
         assert!(data.get("empty").and_then(|v| v.as_bool()).unwrap_or(false));
         assert!(data
@@ -519,12 +534,15 @@ mod tests {
 
         let data = build_list_result_value(
             &[dp],
-            false,
-            false,
             &[],
-            OutputMode::Text,
-            PadzMode::Todos,
-            false,
+            ListOptions {
+                peek: false,
+                show_deleted_help: false,
+                output_mode: OutputMode::Text,
+                mode: PadzMode::Todos,
+                show_uuid: false,
+                filtered: false,
+            },
         );
 
         let pads = data.get("pads").and_then(|v| v.as_array()).unwrap();
@@ -549,12 +567,15 @@ mod tests {
 
         let data = build_list_result_value(
             &[dp],
-            false,
-            false,
             &[],
-            OutputMode::Text,
-            PadzMode::Todos,
-            false,
+            ListOptions {
+                peek: false,
+                show_deleted_help: false,
+                output_mode: OutputMode::Text,
+                mode: PadzMode::Todos,
+                show_uuid: false,
+                filtered: false,
+            },
         );
 
         let pads = data.get("pads").and_then(|v| v.as_array()).unwrap();
@@ -578,12 +599,15 @@ mod tests {
 
         let data = build_list_result_value(
             &[dp],
-            false,
-            true,
             &[],
-            OutputMode::Text,
-            PadzMode::Todos,
-            false,
+            ListOptions {
+                peek: false,
+                show_deleted_help: true,
+                output_mode: OutputMode::Text,
+                mode: PadzMode::Todos,
+                show_uuid: false,
+                filtered: false,
+            },
         );
 
         let pads = data.get("pads").and_then(|v| v.as_array()).unwrap();
@@ -612,12 +636,15 @@ mod tests {
 
         let data = build_list_result_value(
             &pads,
-            false,
-            false,
             &[],
-            OutputMode::Text,
-            PadzMode::Todos,
-            false,
+            ListOptions {
+                peek: false,
+                show_deleted_help: false,
+                output_mode: OutputMode::Text,
+                mode: PadzMode::Todos,
+                show_uuid: false,
+                filtered: false,
+            },
         );
 
         let pad_list = data.get("pads").and_then(|v| v.as_array()).unwrap();
@@ -641,12 +668,15 @@ mod tests {
 
         let data = build_list_result_value(
             &[dp],
-            false,
-            false,
             &[],
-            OutputMode::Text,
-            PadzMode::Todos,
-            false,
+            ListOptions {
+                peek: false,
+                show_deleted_help: false,
+                output_mode: OutputMode::Text,
+                mode: PadzMode::Todos,
+                show_uuid: false,
+                filtered: false,
+            },
         );
 
         let pads = data.get("pads").and_then(|v| v.as_array()).unwrap();
@@ -666,12 +696,15 @@ mod tests {
 
         let data = build_list_result_value(
             &[dp],
-            false,
-            false,
             &messages,
-            OutputMode::Text,
-            PadzMode::Todos,
-            false,
+            ListOptions {
+                peek: false,
+                show_deleted_help: false,
+                output_mode: OutputMode::Text,
+                mode: PadzMode::Todos,
+                show_uuid: false,
+                filtered: false,
+            },
         );
 
         let trailing = data
@@ -696,12 +729,15 @@ mod tests {
 
         let data = build_list_result_value(
             &[dp],
-            false,
-            false,
             &[],
-            OutputMode::Json,
-            PadzMode::Todos,
-            false,
+            ListOptions {
+                peek: false,
+                show_deleted_help: false,
+                output_mode: OutputMode::Json,
+                mode: PadzMode::Todos,
+                show_uuid: false,
+                filtered: false,
+            },
         );
 
         // In JSON mode, should return raw pads array, not processed pad lines
@@ -768,12 +804,15 @@ mod tests {
 
         let data = build_list_result_value(
             &[dp],
-            false,
-            false,
             &[],
-            OutputMode::Text,
-            PadzMode::Notes,
-            false,
+            ListOptions {
+                peek: false,
+                show_deleted_help: false,
+                output_mode: OutputMode::Text,
+                mode: PadzMode::Notes,
+                show_uuid: false,
+                filtered: false,
+            },
         );
 
         let pads = data.get("pads").and_then(|v| v.as_array()).unwrap();
@@ -791,12 +830,15 @@ mod tests {
 
         let data = build_list_result_value(
             &[dp],
-            false,
-            false,
             &[],
-            OutputMode::Text,
-            PadzMode::Todos,
-            false,
+            ListOptions {
+                peek: false,
+                show_deleted_help: false,
+                output_mode: OutputMode::Text,
+                mode: PadzMode::Todos,
+                show_uuid: false,
+                filtered: false,
+            },
         );
 
         let pads = data.get("pads").and_then(|v| v.as_array()).unwrap();
@@ -818,21 +860,27 @@ mod tests {
 
         let notes_data = build_list_result_value(
             &[dp],
-            false,
-            false,
             &[],
-            OutputMode::Text,
-            PadzMode::Notes,
-            false,
+            ListOptions {
+                peek: false,
+                show_deleted_help: false,
+                output_mode: OutputMode::Text,
+                mode: PadzMode::Notes,
+                show_uuid: false,
+                filtered: false,
+            },
         );
         let todos_data = build_list_result_value(
             &[dp2],
-            false,
-            false,
             &[],
-            OutputMode::Text,
-            PadzMode::Todos,
-            false,
+            ListOptions {
+                peek: false,
+                show_deleted_help: false,
+                output_mode: OutputMode::Text,
+                mode: PadzMode::Todos,
+                show_uuid: false,
+                filtered: false,
+            },
         );
 
         let notes_width = notes_data.get("pads").and_then(|v| v.as_array()).unwrap()[0]

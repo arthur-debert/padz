@@ -28,7 +28,7 @@ use standout_macros::handler;
 use std::cell::RefCell;
 use std::io::IsTerminal;
 
-use super::render::{build_list_result_value, build_modification_result_value};
+use super::render::{build_list_result_value, build_modification_result_value, ListOptions};
 
 // =============================================================================
 // App State Types (for standout's type-based app_state lookup)
@@ -305,15 +305,22 @@ impl<'a> ScopedApi<'a> {
         ids: &[String],
         show_uuid: bool,
     ) -> Result<Output<Value>, anyhow::Error> {
+        let filtered = filter.search_term.is_some()
+            || filter.todo_status.is_some()
+            || filter.tags.is_some()
+            || !ids.is_empty();
         let result = self.call(|api, scope| api.get_pads(scope, filter, ids))?;
         Ok(Output::Render(build_list_result_value(
             &result.listed_pads,
-            peek,
-            show_deleted_help,
             &result.messages,
-            self.state.output_mode,
-            self.state.mode,
-            show_uuid,
+            ListOptions {
+                peek,
+                show_deleted_help,
+                output_mode: self.state.output_mode,
+                mode: self.state.mode,
+                show_uuid,
+                filtered,
+            },
         )))
     }
 
