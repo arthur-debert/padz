@@ -340,8 +340,7 @@ impl<'a> ScopedApi<'a> {
 
         // Copy content to clipboard
         for dp in &result.listed_pads {
-            let clipboard_text = format_for_clipboard(&dp.pad.metadata.title, &dp.pad.content);
-            let _ = copy_to_clipboard(&clipboard_text);
+            copy_content_to_clipboard(&dp.pad.content);
         }
 
         let pads: Vec<serde_json::Value> = result
@@ -443,11 +442,11 @@ pub fn create(
 
     let result = if skip_editor {
         // Quick-create: use args directly, no editor
-        let raw_text = title_arg.unwrap_or_else(|| "Untitled".to_string());
+        let raw_text = title_arg.unwrap_or_default();
         // Convert literal \n sequences to real newlines
         let expanded = raw_text.replace("\\n", "\n");
-        let (title, body) = extract_title_and_body(&expanded)
-            .unwrap_or_else(|| ("Untitled".to_string(), String::new()));
+        let (title, body) =
+            extract_title_and_body(&expanded).unwrap_or_else(|| (String::new(), String::new()));
         let result = state.with_api(|api| {
             api.create_pad(state.scope, title.clone(), body.clone(), inside)
                 .map_err(|e| anyhow::anyhow!("{}", e))
@@ -466,11 +465,11 @@ pub fn create(
             })));
         }
         let parsed = padzapp::editor::EditorContent::from_buffer(&raw);
-        // Determine title: title_arg override > parsed title > "Untitled"
+        // Determine title: title_arg override > parsed title > empty
         let final_title = match (&title_arg, parsed.title.is_empty()) {
             (Some(t), _) => t.clone(),  // CLI title always wins
             (_, false) => parsed.title, // parsed has title, no CLI override
-            (None, true) => "Untitled".to_string(),
+            (None, true) => String::new(),
         };
         let result = state.with_api(|api| {
             api.create_pad(state.scope, final_title, parsed.content, inside)
@@ -481,7 +480,7 @@ pub fn create(
         result
     } else {
         // Interactive: create pad first, then open real file in editor
-        let initial_title = title_arg.clone().unwrap_or_else(|| "Untitled".to_string());
+        let initial_title = title_arg.clone().unwrap_or_default();
         let create_result = state.with_api(|api| {
             api.create_pad(state.scope, initial_title, String::new(), inside)
                 .map_err(|e| anyhow::anyhow!("{}", e))
@@ -503,8 +502,7 @@ pub fn create(
         })? {
             Some(pad) => {
                 // Copy to clipboard
-                let clipboard_text = format_for_clipboard(&pad.metadata.title, &pad.content);
-                let _ = copy_to_clipboard(&clipboard_text);
+                copy_content_to_clipboard(&pad.content);
                 // Build result
                 let display_pad = padzapp::index::DisplayPad {
                     pad,
