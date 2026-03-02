@@ -6,6 +6,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [0.25.0] - 2026-03-02
+
+## [0.25.0] - 2026-03-02
+
 - **Added**
   - **`padz delete --completed`** — Soft-delete all pads marked as done/completed in a single command. Replaces the previous `--done` flag. Logic moved from CLI handler to command layer for proper testability.
   - **`--completed` flag on `list` and `search`** — Filter to show only completed pads. Replaces the previous `--done` flag on `list` and adds the filter to `search` for the first time.
@@ -299,7 +303,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
   - Demo flow verification script
   - Live testing shell
 
-[Unreleased]: https://github.com/arthur-debert/padz/compare/v0.24.0...HEAD
+[Unreleased]: https://github.com/arthur-debert/padz/compare/v0.25.0...HEAD
+[0.25.0]: https://github.com/arthur-debert/padz/compare/v0.24.0...v0.25.0
+[0.25.0]: https://github.com/arthur-debert/padz/compare/v0.24.0...v0.25.0
 [0.24.0]: https://github.com/arthur-debert/padz/compare/v0.23.0...v0.24.0
 [0.24.0]: https://github.com/arthur-debert/padz/compare/v0.23.0...v0.24.0
 [0.23.0]: https://github.com/arthur-debert/padz/compare/v0.22.0...v0.23.0
