@@ -6,6 +6,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+- **Fixed**
+  - **Double title in `view` output** — `padz view` was rendering the title twice because `pad.content` (which includes the title) was passed directly to the template that also renders the title separately. Now extracts just the body before passing to the template.
+
 ## [0.25.0] - 2026-03-02
 
 ## [0.25.0] - 2026-03-02

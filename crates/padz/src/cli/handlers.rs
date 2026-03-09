@@ -342,9 +342,13 @@ impl<'a> ScopedApi<'a> {
             .listed_pads
             .iter()
             .map(|dp| {
+                // Extract body (content minus title) to avoid double-title in output
+                let body = extract_title_and_body(&dp.pad.content)
+                    .map(|(_, b)| b)
+                    .unwrap_or_default();
                 let mut v = serde_json::json!({
                     "title": dp.pad.metadata.title,
-                    "content": dp.pad.content,
+                    "content": body,
                 });
                 if show_uuid {
                     v["uuid"] = serde_json::json!(dp.pad.metadata.id.to_string());
