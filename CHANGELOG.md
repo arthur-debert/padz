@@ -6,6 +6,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [0.25.1] - 2026-03-09
+
+## [0.25.1] - 2026-03-09
+
 - **Fixed**
   - **Double title in `view` output** — `padz view` was rendering the title twice because `pad.content` (which includes the title) was passed directly to the template that also renders the title separately. Now extracts just the body before passing to the template.
 
@@ -306,7 +310,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
   - Demo flow verification script
   - Live testing shell
 
-[Unreleased]: https://github.com/arthur-debert/padz/compare/v0.25.0...HEAD
+[Unreleased]: https://github.com/arthur-debert/padz/compare/v0.25.1...HEAD
+[0.25.1]: https://github.com/arthur-debert/padz/compare/v0.25.0...v0.25.1
+[0.25.1]: https://github.com/arthur-debert/padz/compare/v0.25.0...v0.25.1
 [0.25.0]: https://github.com/arthur-debert/padz/compare/v0.24.0...v0.25.0
 [0.25.0]: https://github.com/arthur-debert/padz/compare/v0.24.0...v0.25.0
 [0.24.0]: https://github.com/arthur-debert/padz/compare/v0.23.0...v0.24.0
