@@ -32,9 +32,9 @@
 //!
 //! ## File Extension Handling
 //!
-//! - New pads use the configured `file-ext` (default `.txt`)
-//! - When reading, tries configured extension first, falls back to `.txt`
-//! - Mixed extensions are supported gracefully
+//! - New pads use the configured `format` (default `.txt`)
+//! - When reading, tries configured extension first, scans for any match
+//! - Mixed extensions are fully supported (different pads can have different formats)
 //!
 //! ## Metadata Fields
 //!

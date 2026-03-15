@@ -6,7 +6,7 @@
 //! ## Storage Hierarchy
 //!
 //! Configuration is resolved in priority order:
-//! 1. **Environment variables**: `PADZ__FILE_EXT`, `PADZ__IMPORT_EXTENSIONS`, etc.
+//! 1. **Environment variables**: `PADZ__FORMAT`, `PADZ__IMPORT_EXTENSIONS`, etc.
 //! 2. **Project Config**: `.padz/padz.toml` — Overrides everything for this repo.
 //! 3. **Global Config**: OS-appropriate config directory (via `directories` crate).
 //! 4. **Compiled Defaults**: Built-in fallbacks via `#[config(default = ...)]`.
@@ -15,15 +15,15 @@
 //!
 //! | Key | Default | Description |
 //! |-----|---------|-------------|
-//! | `file_ext` | `txt` | Extension for new pad files (e.g., `md`, `txt`) |
+//! | `format` | `txt` | Format for new pad files (e.g., `md`, `txt`, `markdown`, `text`) |
 //! | `import_extensions` | `["md", "txt", "text", "lex"]` | Extensions for `padz import` |
 //! | `mode` | `notes` | UI mode: `notes` (clean) or `todos` (status icons, quick-create) |
 //!
 //! ## Extension Convention
 //!
-//! Extensions are stored **without** leading dots (`md`, not `.md`).
+//! Format values are stored **without** leading dots (`md`, not `.md`).
 //! Dots are stripped on intake via deserialization and added back by accessor
-//! methods ([`PadzConfig::file_ext()`], [`PadzConfig::import_extensions()`]).
+//! methods ([`PadzConfig::format_ext()`], [`PadzConfig::import_extensions()`]).
 //!
 //! ## CLI Usage
 //!
@@ -74,14 +74,27 @@ fn default_import_ext() -> Vec<String> {
     ]
 }
 
+/// Normalize a format value to a canonical extension.
+///
+/// Accepts aliases like "markdown" → "md", "text" → "txt".
+/// Strips leading dots.
+pub fn normalize_format(raw: &str) -> String {
+    let bare = raw.strip_prefix('.').unwrap_or(raw);
+    match bare.to_lowercase().as_str() {
+        "markdown" => "md".to_string(),
+        "text" => "txt".to_string(),
+        other => other.to_string(),
+    }
+}
+
 /// Configuration for padz, stored in `padz.toml`.
 #[derive(Config, Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
 pub struct PadzConfig {
-    /// Extension for new pad files (e.g., "txt", "md", "rs").
-    /// Stored without leading dot; use file_ext() for the dotted form.
+    /// Format for new pad files (e.g., "txt", "md", "markdown", "text").
+    /// Stored without leading dot; use format_ext() for the dotted form.
     #[config(deserialize_with = strip_leading_dot, default = "txt")]
     #[serde(deserialize_with = "strip_leading_dot")]
-    pub file_ext: String,
+    pub format: String,
 
     /// Extensions to look for when importing directories (e.g. "md", "txt").
     /// Stored without leading dots; use import_extensions() for the dotted form.
@@ -97,7 +110,7 @@ pub struct PadzConfig {
 impl Default for PadzConfig {
     fn default() -> Self {
         Self {
-            file_ext: "txt".to_string(),
+            format: "txt".to_string(),
             import_extensions: None,
             mode: PadzMode::default(),
         }
@@ -106,9 +119,10 @@ impl Default for PadzConfig {
 
 impl PadzConfig {
     /// Get the file extension with a leading dot (e.g., `.txt`, `.md`).
-    pub fn file_ext(&self) -> String {
-        let ext = self.file_ext.strip_prefix('.').unwrap_or(&self.file_ext);
-        format!(".{}", ext)
+    /// Normalizes aliases: "markdown" → ".md", "text" → ".txt".
+    pub fn format_ext(&self) -> String {
+        let normalized = normalize_format(&self.format);
+        format!(".{}", normalized)
     }
 
     /// Get import extensions with leading dots (e.g., `.md`, `.txt`),
@@ -134,8 +148,8 @@ mod tests {
     #[test]
     fn test_default_config() {
         let config = PadzConfig::default();
-        assert_eq!(config.file_ext, "txt");
-        assert_eq!(config.file_ext(), ".txt");
+        assert_eq!(config.format, "txt");
+        assert_eq!(config.format_ext(), ".txt");
         assert_eq!(
             config.import_extensions(),
             vec![".md", ".txt", ".text", ".lex"]
@@ -143,23 +157,48 @@ mod tests {
     }
 
     #[test]
-    fn test_file_ext_stored_without_dot() {
+    fn test_format_stored_without_dot() {
         let config = PadzConfig {
-            file_ext: "md".to_string(),
+            format: "md".to_string(),
             ..Default::default()
         };
-        assert_eq!(config.file_ext, "md");
-        assert_eq!(config.file_ext(), ".md");
+        assert_eq!(config.format, "md");
+        assert_eq!(config.format_ext(), ".md");
     }
 
     #[test]
-    fn test_file_ext_accessor_handles_legacy_dot() {
+    fn test_format_accessor_handles_legacy_dot() {
         // Even if a dot slips in, accessor still works correctly
         let config = PadzConfig {
-            file_ext: ".rs".to_string(),
+            format: ".rs".to_string(),
             ..Default::default()
         };
-        assert_eq!(config.file_ext(), ".rs");
+        assert_eq!(config.format_ext(), ".rs");
+    }
+
+    #[test]
+    fn test_format_aliases() {
+        let config = PadzConfig {
+            format: "markdown".to_string(),
+            ..Default::default()
+        };
+        assert_eq!(config.format_ext(), ".md");
+
+        let config = PadzConfig {
+            format: "text".to_string(),
+            ..Default::default()
+        };
+        assert_eq!(config.format_ext(), ".txt");
+    }
+
+    #[test]
+    fn test_normalize_format() {
+        assert_eq!(normalize_format("markdown"), "md");
+        assert_eq!(normalize_format("text"), "txt");
+        assert_eq!(normalize_format(".md"), "md");
+        assert_eq!(normalize_format("md"), "md");
+        assert_eq!(normalize_format("txt"), "txt");
+        assert_eq!(normalize_format("rs"), "rs");
     }
 
     #[test]
@@ -192,16 +231,16 @@ mod tests {
     #[test]
     fn test_strip_leading_dot_deserializer() {
         // Simulate what confique does: deserialize a TOML string through our normalizer
-        let toml_str = r#"file_ext = ".md""#;
+        let toml_str = r#"format = ".md""#;
         let config: PadzConfig = toml::from_str(toml_str).unwrap();
-        assert_eq!(config.file_ext, "md");
+        assert_eq!(config.format, "md");
     }
 
     #[test]
     fn test_strip_leading_dot_deserializer_no_dot() {
-        let toml_str = r#"file_ext = "md""#;
+        let toml_str = r#"format = "md""#;
         let config: PadzConfig = toml::from_str(toml_str).unwrap();
-        assert_eq!(config.file_ext, "md");
+        assert_eq!(config.format, "md");
     }
 
     #[test]
@@ -212,21 +251,21 @@ mod tests {
 
     #[test]
     fn test_mode_deserialize_notes() {
-        let toml_str = "file_ext = \"txt\"\nmode = \"notes\"";
+        let toml_str = "format = \"txt\"\nmode = \"notes\"";
         let config: PadzConfig = toml::from_str(toml_str).unwrap();
         assert_eq!(config.mode, PadzMode::Notes);
     }
 
     #[test]
     fn test_mode_deserialize_todos() {
-        let toml_str = "file_ext = \"txt\"\nmode = \"todos\"";
+        let toml_str = "format = \"txt\"\nmode = \"todos\"";
         let config: PadzConfig = toml::from_str(toml_str).unwrap();
         assert_eq!(config.mode, PadzMode::Todos);
     }
 
     #[test]
     fn test_mode_defaults_when_absent() {
-        let toml_str = r#"file_ext = "txt""#;
+        let toml_str = r#"format = "txt""#;
         let config: PadzConfig = toml::from_str(toml_str).unwrap();
         assert_eq!(config.mode, PadzMode::Notes);
     }

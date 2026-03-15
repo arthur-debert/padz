@@ -12,7 +12,7 @@ use uuid::Uuid;
 pub struct FsBackend {
     project_root: Option<PathBuf>,
     global_root: PathBuf,
-    file_ext: String,
+    format: String,
 }
 
 impl FsBackend {
@@ -20,25 +20,29 @@ impl FsBackend {
         Self {
             project_root,
             global_root,
-            file_ext: ".txt".to_string(),
+            format: ".txt".to_string(),
         }
     }
 
-    pub fn with_file_ext(mut self, ext: &str) -> Self {
-        if ext.starts_with('.') {
-            self.file_ext = ext.to_string();
-        } else {
-            self.file_ext = format!(".{}", ext);
-        }
+    pub fn with_format(mut self, ext: &str) -> Self {
+        self.set_format(ext);
         self
     }
 
-    pub fn file_ext(&self) -> &str {
-        &self.file_ext
+    pub fn set_format(&mut self, ext: &str) {
+        if ext.starts_with('.') {
+            self.format = ext.to_string();
+        } else {
+            self.format = format!(".{}", ext);
+        }
+    }
+
+    pub fn format_ext(&self) -> &str {
+        &self.format
     }
 
     fn pad_filename(&self, id: &Uuid) -> String {
-        format!("pad-{}{}", id, self.file_ext)
+        format!("pad-{}{}", id, self.format)
     }
 
     fn get_store_path_by_scope(&self, scope: Scope) -> Result<PathBuf> {
@@ -58,18 +62,27 @@ impl FsBackend {
         Ok(())
     }
 
+    /// Find the pad file for a given UUID, regardless of its actual extension.
+    ///
+    /// Tries the configured format first (fast path), then scans the directory
+    /// for any file matching `pad-{uuid}.*`. This supports mixed-format stores
+    /// where different pads may have been created with different format settings.
     fn find_pad_file(&self, root: &Path, id: &Uuid) -> Option<PathBuf> {
-        // 1. Configured extension
+        // 1. Try configured format (fast path)
         let path = root.join(self.pad_filename(id));
         if path.exists() {
             return Some(path);
         }
 
-        // 2. Fallback .txt
-        if self.file_ext != ".txt" {
-            let txt_path = root.join(format!("pad-{}.txt", id));
-            if txt_path.exists() {
-                return Some(txt_path);
+        // 2. Scan directory for any matching file (mixed-format support)
+        let prefix = format!("pad-{}", id);
+        if let Ok(entries) = fs::read_dir(root) {
+            for entry in entries.flatten() {
+                if let Some(name) = entry.file_name().to_str() {
+                    if name.starts_with(&prefix) && entry.path().is_file() {
+                        return Some(entry.path());
+                    }
+                }
             }
         }
         None
@@ -145,7 +158,13 @@ impl StorageBackend for FsBackend {
         let root = self.get_store_path_by_scope(scope)?;
         self.ensure_dir(&root)?;
 
-        let target_path = root.join(self.pad_filename(id));
+        // Use existing file path if pad already exists (preserves original extension).
+        // Otherwise use configured format for new pads.
+        let target_path = if let Some(existing) = self.find_pad_file(&root, id) {
+            existing
+        } else {
+            root.join(self.pad_filename(id))
+        };
 
         // Atomic Write
         let tmp_path = root.join(format!(".pad-{}.tmp", Uuid::new_v4()));

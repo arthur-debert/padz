@@ -424,6 +424,7 @@ pub fn create(
     #[flag] editor: bool,
     #[flag(name = "no_editor")] no_editor: bool,
     #[arg] inside: Option<String>,
+    #[arg] format: Option<String>,
     #[arg] title: Vec<String>,
 ) -> Result<Output<Value>, anyhow::Error> {
     let state = get_state(ctx);
@@ -433,6 +434,26 @@ pub fn create(
         Some(title.join(" "))
     };
     let inside = inside.as_deref();
+    let format_ref = format.as_deref();
+
+    // Helper to call create_pad with or without format override
+    fn do_create(
+        state: &AppState,
+        title: String,
+        content: String,
+        inside: Option<&str>,
+        format: Option<&str>,
+    ) -> std::result::Result<padzapp::commands::CmdResult, anyhow::Error> {
+        state.with_api(|api| {
+            if let Some(fmt) = format {
+                api.create_pad_with_format(state.scope, title, content, inside, fmt)
+                    .map_err(|e| anyhow::anyhow!("{}", e))
+            } else {
+                api.create_pad(state.scope, title, content, inside)
+                    .map_err(|e| anyhow::anyhow!("{}", e))
+            }
+        })
+    }
 
     // --editor forces interactive editor; --no-editor forces skip;
     // default: todos mode with title args skips editor
@@ -446,10 +467,7 @@ pub fn create(
         let expanded = raw_text.replace("\\n", "\n");
         let (title, body) =
             extract_title_and_body(&expanded).unwrap_or_else(|| (String::new(), String::new()));
-        let result = state.with_api(|api| {
-            api.create_pad(state.scope, title.clone(), body.clone(), inside)
-                .map_err(|e| anyhow::anyhow!("{}", e))
-        })?;
+        let result = do_create(state, title.clone(), body.clone(), inside, format_ref)?;
         // Copy to clipboard
         let clipboard_text = format_for_clipboard(&title, &body);
         let _ = copy_to_clipboard(&clipboard_text);
@@ -470,20 +488,14 @@ pub fn create(
             (_, false) => parsed.title, // parsed has title, no CLI override
             (None, true) => String::new(),
         };
-        let result = state.with_api(|api| {
-            api.create_pad(state.scope, final_title, parsed.content, inside)
-                .map_err(|e| anyhow::anyhow!("{}", e))
-        })?;
+        let result = do_create(state, final_title, parsed.content, inside, format_ref)?;
         // Copy to clipboard
         copy_content_to_clipboard(&raw);
         result
     } else {
         // Interactive: create pad first, then open real file in editor
         let initial_title = title_arg.clone().unwrap_or_default();
-        let create_result = state.with_api(|api| {
-            api.create_pad(state.scope, initial_title, String::new(), inside)
-                .map_err(|e| anyhow::anyhow!("{}", e))
-        })?;
+        let create_result = do_create(state, initial_title, String::new(), inside, format_ref)?;
         let pad_path = create_result.pad_paths[0].clone();
         let pad_id = create_result.affected_pads[0].pad.metadata.id;
 
