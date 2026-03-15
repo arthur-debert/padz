@@ -6,6 +6,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [0.25.2] - 2026-03-15
+
+## [0.25.2] - 2026-03-15
+
 - **Changed**
   - **Renamed `file_ext` to `format`** — The config key, CLI option, and internal APIs now use `format` instead of `file_ext`. Accepts aliases: `markdown` → `md`, `text` → `txt`. Breaking change in config (`padz.toml`): rename `file_ext = "md"` to `format = "md"`.
   - **`--format` flag on `create`** — Override the global format for a single pad: `padz create --format md "My Note"`. The override only affects the new pad; subsequent pads use the global setting.
@@ -316,7 +320,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
   - Demo flow verification script
   - Live testing shell
 
-[Unreleased]: https://github.com/arthur-debert/padz/compare/v0.25.1...HEAD
+[Unreleased]: https://github.com/arthur-debert/padz/compare/v0.25.2...HEAD
+[0.25.2]: https://github.com/arthur-debert/padz/compare/v0.25.1...v0.25.2
+[0.25.2]: https://github.com/arthur-debert/padz/compare/v0.25.1...v0.25.2
 [0.25.1]: https://github.com/arthur-debert/padz/compare/v0.25.0...v0.25.1
 [0.25.1]: https://github.com/arthur-debert/padz/compare/v0.25.0...v0.25.1
 [0.25.0]: https://github.com/arthur-debert/padz/compare/v0.24.0...v0.25.0
