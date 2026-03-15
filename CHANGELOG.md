@@ -6,6 +6,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+- **Changed**
+  - **Renamed `file_ext` to `format`** — The config key, CLI option, and internal APIs now use `format` instead of `file_ext`. Accepts aliases: `markdown` → `md`, `text` → `txt`. Breaking change in config (`padz.toml`): rename `file_ext = "md"` to `format = "md"`.
+  - **`--format` flag on `create`** — Override the global format for a single pad: `padz create --format md "My Note"`. The override only affects the new pad; subsequent pads use the global setting.
+  - **Mixed-format data store** — The store now fully supports pads with different file extensions. Changing the format setting does not migrate or rename existing pads. Reading/editing pads works regardless of their original extension.
+  - **Extension-preserving updates** — Editing or updating an existing pad preserves its original file extension, even if the global format has changed since creation.
+
 ## [0.25.1] - 2026-03-09
 
 ## [0.25.1] - 2026-03-09

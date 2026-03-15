@@ -267,14 +267,14 @@ pub fn initialize(cwd: &Path, use_global: bool, data_override: Option<PathBuf>) 
         .search_mode(SearchMode::Merge)
         .load()
         .unwrap_or_default();
-    let file_ext = config.file_ext();
+    let format_ext = config.format_ext();
 
     // Migrate legacy flat layout to bucketed layout (if needed)
     migrate_if_needed(&project_padz_dir);
     migrate_if_needed(&global_data_dir);
 
     let store = FileStore::new_fs(Some(project_padz_dir.clone()), global_data_dir.clone())
-        .with_file_ext(&file_ext);
+        .with_format(&format_ext);
     let paths = PadzPaths {
         project: Some(project_padz_dir),
         global: global_data_dir,

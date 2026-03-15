@@ -10,11 +10,11 @@ fn test_filestore_wrapper_methods() {
     // Test new
     let store = FileStore::new_fs(Some(proj.path().to_path_buf()), glob.path().to_path_buf());
 
-    // Test config method delegtion
-    let store = store.with_file_ext(".md");
+    // Test config method delegation
+    let store = store.with_format(".md");
 
     // Test getter delegation
-    assert_eq!(store.file_ext(), ".md");
+    assert_eq!(store.format_ext(), ".md");
 
     // Verify it still works as a store
     let result = store.sync(Scope::Project);

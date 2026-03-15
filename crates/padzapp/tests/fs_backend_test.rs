@@ -145,7 +145,7 @@ fn test_fs_backend_scope_isolation() {
 #[test]
 fn test_fs_backend_custom_extension() {
     let (proj, _glob, backend) = setup();
-    let backend = backend.with_file_ext(".md");
+    let backend = backend.with_format(".md");
 
     let id = Uuid::new_v4();
     let scope = Scope::Project;
@@ -163,7 +163,7 @@ fn test_fs_backend_custom_extension() {
 fn test_fs_backend_extension_fallback() {
     let (proj, _glob, backend) = setup();
     // Configured with .md
-    let backend = backend.with_file_ext(".md");
+    let backend = backend.with_format(".md");
 
     let id = Uuid::new_v4();
     let scope = Scope::Project;
@@ -247,10 +247,10 @@ fn test_fs_backend_scope_available() {
 fn test_fs_backend_extension_without_dot() {
     let (proj, _glob, backend) = setup();
     // Use extension WITHOUT leading dot
-    let backend = backend.with_file_ext("md");
+    let backend = backend.with_format("md");
 
     // Verify it normalizes to have dot
-    assert_eq!(backend.file_ext(), ".md");
+    assert_eq!(backend.format_ext(), ".md");
 
     let id = Uuid::new_v4();
     let scope = Scope::Project;

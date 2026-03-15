@@ -307,6 +307,10 @@ pub enum Commands {
         #[arg(long, short = 'i')]
         inside: Option<String>,
 
+        /// File format for this pad (e.g., md, txt, markdown, text). Overrides global setting.
+        #[arg(long, short = 'f')]
+        format: Option<String>,
+
         /// Title words (joined with spaces, optional - opens empty editor if not provided)
         #[arg(trailing_var_arg = true)]
         title: Vec<String>,
@@ -638,12 +642,12 @@ pub enum ConfigSubcommand {
     },
     /// Show the resolved value for a config key
     Get {
-        /// Dotted key path (e.g. "file_ext")
+        /// Dotted key path (e.g. "format")
         key: String,
     },
     /// Set a configuration value
     Set {
-        /// Dotted key path (e.g. "file_ext")
+        /// Dotted key path (e.g. "format")
         key: String,
         /// Value to set
         value: String,

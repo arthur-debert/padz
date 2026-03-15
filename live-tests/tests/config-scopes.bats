@@ -87,7 +87,7 @@ teardown() {
 
 @test "config: list without -g shows merged config" {
     cd "${PROJECT_A}"
-    "${PADZ_BIN}" -g config set file_ext md >/dev/null
+    "${PADZ_BIN}" -g config set format md >/dev/null
     "${PADZ_BIN}" config set mode todos >/dev/null
 
     # Merged list should show both values
@@ -99,7 +99,7 @@ teardown() {
 
 @test "config: list with -g shows only global entries" {
     cd "${PROJECT_A}"
-    "${PADZ_BIN}" -g config set file_ext md >/dev/null
+    "${PADZ_BIN}" -g config set format md >/dev/null
     "${PADZ_BIN}" config set mode todos >/dev/null
 
     # Scoped list should only show global entries
@@ -137,7 +137,7 @@ teardown() {
 
 @test "config: different keys from each scope merge together" {
     cd "${PROJECT_A}"
-    "${PADZ_BIN}" -g config set file_ext md >/dev/null
+    "${PADZ_BIN}" -g config set format md >/dev/null
     "${PADZ_BIN}" config set mode todos >/dev/null
 
     # Both should be visible in merged view
