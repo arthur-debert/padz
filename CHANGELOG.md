@@ -6,6 +6,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+- **Added**
+  - **`padz copy` command** — Copy one or more pads to the clipboard without printing to stdout. Supports multiple IDs and `--peek` flag, just like `view`. Alias: `cp`.
+
 ## [0.25.2] - 2026-03-15
 
 ## [0.25.2] - 2026-03-15

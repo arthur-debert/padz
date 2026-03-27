@@ -358,6 +358,35 @@ impl<'a> ScopedApi<'a> {
             .collect();
         Ok(Output::Render(serde_json::json!({ "pads": pads })))
     }
+
+    // --- Copy operations ---
+
+    pub fn copy_pads(&self, indexes: &[String]) -> Result<Output<Value>, anyhow::Error> {
+        let result = self.call(|api, scope| api.view_pads(scope, indexes))?;
+
+        // Copy content to clipboard
+        for dp in &result.listed_pads {
+            copy_content_to_clipboard(&dp.pad.content);
+        }
+
+        let count = result.listed_pads.len();
+        let label = if count == 1 { "pad" } else { "pads" };
+        let titles: Vec<&str> = result
+            .listed_pads
+            .iter()
+            .map(|dp| dp.pad.metadata.title.as_str())
+            .collect();
+        let msg = format!(
+            "Copied {} {} to clipboard: {}",
+            count,
+            label,
+            titles.join(", ")
+        );
+
+        Ok(Output::Render(serde_json::json!({
+            "messages": [{ "content": msg, "style": "info" }]
+        })))
+    }
 }
 
 /// Get a scoped API accessor from the command context
@@ -641,6 +670,15 @@ pub fn view(
     #[flag] uuid: bool,
 ) -> Result<Output<Value>, anyhow::Error> {
     api(ctx).view_pads(&indexes, uuid)
+}
+
+#[handler]
+pub fn copy(
+    #[ctx] ctx: &CommandContext,
+    #[arg] indexes: Vec<String>,
+    #[flag(name = "peek")] _peek: bool, // Reserved for future use
+) -> Result<Output<Value>, anyhow::Error> {
+    api(ctx).copy_pads(&indexes)
 }
 
 #[handler]
