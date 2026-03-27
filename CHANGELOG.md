@@ -6,6 +6,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [0.26.0] - 2026-03-27
+
+## [0.26.0] - 2026-03-27
+
 - **Added**
   - **`padz copy` command** — Copy one or more pads to the clipboard without printing to stdout. Supports multiple IDs and `--peek` flag, just like `view`. Alias: `cp`.
 
@@ -323,7 +327,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
   - Demo flow verification script
   - Live testing shell
 
-[Unreleased]: https://github.com/arthur-debert/padz/compare/v0.25.2...HEAD
+[Unreleased]: https://github.com/arthur-debert/padz/compare/v0.26.0...HEAD
+[0.26.0]: https://github.com/arthur-debert/padz/compare/v0.25.2...v0.26.0
+[0.26.0]: https://github.com/arthur-debert/padz/compare/v0.25.2...v0.26.0
 [0.25.2]: https://github.com/arthur-debert/padz/compare/v0.25.1...v0.25.2
 [0.25.2]: https://github.com/arthur-debert/padz/compare/v0.25.1...v0.25.2
 [0.25.1]: https://github.com/arthur-debert/padz/compare/v0.25.0...v0.25.1
