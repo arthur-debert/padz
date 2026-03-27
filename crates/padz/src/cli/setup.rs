@@ -230,6 +230,7 @@ fn command_groups() -> Vec<CommandGroup> {
             commands: vec![
                 Some("open".into()),
                 Some("view".into()),
+                Some("copy".into()),
                 Some("peek".into()),
                 Some("move".into()),
                 Some("delete".into()),
@@ -414,6 +415,19 @@ pub enum Commands {
         /// Show UUID in view output
         #[arg(long)]
         uuid: bool,
+    },
+
+    /// Copy one or more pads to the clipboard (without printing)
+    #[command(alias = "cp", display_order = 10)]
+    #[dispatch(pure, template = "messages")]
+    Copy {
+        /// Indexes of the pads (e.g. 1 p1 d1)
+        #[arg(required = true, num_args = 1.., add = all_pads_completer())]
+        indexes: Vec<String>,
+
+        /// Peek at pad content
+        #[arg(long)]
+        peek: bool,
     },
 
     /// Edit a pad in the editor
