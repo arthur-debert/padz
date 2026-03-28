@@ -6,6 +6,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+- **Changed**
+  - **Dynamic terminal width** — List and search output now adapts to the actual terminal width instead of being fixed at 100 columns. Minimum width is 30 characters; below that the output wraps. Titles truncate to fit narrow terminals.
+
 ## [0.26.0] - 2026-03-27
 
 ## [0.26.0] - 2026-03-27

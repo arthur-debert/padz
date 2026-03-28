@@ -29,6 +29,7 @@ standout-dispatch = "6.2.0"
 serde = { version = "1.0.228", features = ["derive"] }
 serde_json = "1.0"
 serde_yaml = "0.9"
+terminal_size = "0.4"
 unicode-width = "0.2.2"
 anyhow = "1.0"
 
