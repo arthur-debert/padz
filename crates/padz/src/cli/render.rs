@@ -33,14 +33,25 @@ use standout::{truncate_to_width, OutputMode};
 
 /// Minimum terminal width — below this we stop shrinking and let the terminal wrap.
 pub const MIN_LINE_WIDTH: usize = 30;
+/// Default width when no terminal is detected and COLUMNS is unset (e.g. piped output).
+pub const DEFAULT_LINE_WIDTH: usize = 80;
 pub const PIN_MARKER: &str = "⚲";
 
-/// Returns the effective line width: the terminal width (if detectable), clamped to at least
-/// `MIN_LINE_WIDTH`.
+/// Returns the effective line width for layout.
+///
+/// Resolution order:
+/// 1. `COLUMNS` env var (set by most shells, useful for piped output and tests)
+/// 2. Actual terminal width via `terminal_size`
+/// 3. `DEFAULT_LINE_WIDTH` (80)
+///
+/// The result is clamped to at least `MIN_LINE_WIDTH` (30).
 pub fn line_width() -> usize {
-    terminal_size::terminal_size()
-        .map(|(w, _)| (w.0 as usize).max(MIN_LINE_WIDTH))
-        .unwrap_or(MIN_LINE_WIDTH)
+    let raw = std::env::var("COLUMNS")
+        .ok()
+        .and_then(|v| v.parse::<usize>().ok())
+        .or_else(|| terminal_size::terminal_size().map(|(w, _)| w.0 as usize))
+        .unwrap_or(DEFAULT_LINE_WIDTH);
+    raw.max(MIN_LINE_WIDTH)
 }
 
 /// Column widths for list layout (used by standout's `col()` filter)
@@ -909,5 +920,93 @@ mod tests {
             .unwrap();
 
         assert_eq!(notes_width - todos_width, COL_STATUS as u64);
+    }
+
+    #[test]
+    fn test_line_width_at_least_min() {
+        // line_width() should always be >= MIN_LINE_WIDTH
+        let w = line_width();
+        assert!(
+            w >= MIN_LINE_WIDTH,
+            "line_width() = {w}, expected >= {MIN_LINE_WIDTH}"
+        );
+    }
+
+    #[test]
+    fn test_title_width_plus_fixed_equals_line_width() {
+        // Verify the column-sum invariant: fixed cols + title_width == line_width()
+        let pad = make_pad("Test", false);
+
+        // Notes mode (no status column)
+        let dp = make_display_pad(pad.clone(), DisplayIndex::Regular(1));
+        let data = build_list_result_value(
+            &[dp],
+            &[],
+            ListOptions {
+                peek: false,
+                show_deleted_help: false,
+                output_mode: OutputMode::Text,
+                mode: PadzMode::Notes,
+                show_uuid: false,
+                filtered: false,
+            },
+        );
+
+        let pads = data.get("pads").and_then(|v| v.as_array()).unwrap();
+        let title_width = pads[0].get("title_width").and_then(|v| v.as_u64()).unwrap() as usize;
+        let col_status = data.get("col_status").and_then(|v| v.as_u64()).unwrap() as usize;
+
+        let total = COL_LEFT_PIN + col_status + COL_INDEX + title_width + COL_TIME;
+        let w = line_width();
+        assert_eq!(total, w, "Notes: columns sum {total} != line_width {w}");
+
+        // Todos mode (with status column)
+        let dp2 = make_display_pad(pad, DisplayIndex::Regular(1));
+        let data2 = build_list_result_value(
+            &[dp2],
+            &[],
+            ListOptions {
+                peek: false,
+                show_deleted_help: false,
+                output_mode: OutputMode::Text,
+                mode: PadzMode::Todos,
+                show_uuid: false,
+                filtered: false,
+            },
+        );
+
+        let pads2 = data2.get("pads").and_then(|v| v.as_array()).unwrap();
+        let title_width2 = pads2[0]
+            .get("title_width")
+            .and_then(|v| v.as_u64())
+            .unwrap() as usize;
+        let col_status2 = data2.get("col_status").and_then(|v| v.as_u64()).unwrap() as usize;
+
+        let total2 = COL_LEFT_PIN + col_status2 + COL_INDEX + title_width2 + COL_TIME;
+        assert_eq!(total2, w, "Todos: columns sum {total2} != line_width {w}");
+    }
+
+    #[test]
+    fn test_modification_result_title_width_invariant() {
+        let pad = make_pad("Test", false);
+        let dp = make_display_pad(pad, DisplayIndex::Regular(1));
+
+        let data = build_modification_result_value(
+            "Created",
+            &[dp],
+            &[],
+            OutputMode::Text,
+            PadzMode::Notes,
+        );
+
+        let pads = data.get("pads").and_then(|v| v.as_array()).unwrap();
+        let title_width = pads[0].get("title_width").and_then(|v| v.as_u64()).unwrap() as usize;
+
+        let total = COL_LEFT_PIN + COL_INDEX + title_width + COL_TIME;
+        let w = line_width();
+        assert_eq!(
+            total, w,
+            "Modification result: columns sum {total} != line_width {w}"
+        );
     }
 }
