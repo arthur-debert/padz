@@ -6,6 +6,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [0.27.1] - 2026-03-28
+
+## [0.27.1] - 2026-03-28
+
 ## [0.27.0] - 2026-03-28
 
 ## [0.27.0] - 2026-03-28
@@ -334,7 +338,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
   - Demo flow verification script
   - Live testing shell
 
-[Unreleased]: https://github.com/arthur-debert/padz/compare/v0.27.0...HEAD
+[Unreleased]: https://github.com/arthur-debert/padz/compare/v0.27.1...HEAD
+[0.27.1]: https://github.com/arthur-debert/padz/compare/v0.27.0...v0.27.1
+[0.27.1]: https://github.com/arthur-debert/padz/compare/v0.27.0...v0.27.1
 [0.27.0]: https://github.com/arthur-debert/padz/compare/v0.26.0...v0.27.0
 [0.27.0]: https://github.com/arthur-debert/padz/compare/v0.26.0...v0.27.0
 [0.26.0]: https://github.com/arthur-debert/padz/compare/v0.25.2...v0.26.0
