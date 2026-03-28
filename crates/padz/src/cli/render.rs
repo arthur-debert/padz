@@ -81,6 +81,7 @@ pub fn build_modification_result_value(
 
     let show_status = mode == PadzMode::Todos;
     let col_status = if show_status { COL_STATUS } else { 0 };
+    let width = line_width();
 
     // For terminal modes, build full template data
     let count = pads.len();
@@ -123,7 +124,7 @@ pub fn build_modification_result_value(
             };
 
             let fixed_columns = COL_LEFT_PIN + col_status + COL_INDEX + COL_TIME;
-            let title_width = line_width().saturating_sub(fixed_columns);
+            let title_width = width.saturating_sub(fixed_columns);
 
             json!({
                 "indent": "",
@@ -154,6 +155,7 @@ pub fn build_modification_result_value(
         "trailing_messages": trailing_data,
         "peek": false,
         "pin_marker": PIN_MARKER,
+        "line_width": width,
         "col_left_pin": COL_LEFT_PIN,
         "col_status": col_status,
         "col_index": COL_INDEX,
@@ -194,6 +196,7 @@ pub fn build_list_result_value(
 
     let show_status = opts.mode == PadzMode::Todos;
     let col_status = if show_status { COL_STATUS } else { 0 };
+    let width = line_width();
 
     // For terminal modes, build full template data
     let trailing_data = convert_messages_to_json(trailing_messages);
@@ -213,6 +216,7 @@ pub fn build_list_result_value(
             "help_text": get_grouped_help(),
             "deleted_help": false,
             "peek": false,
+            "line_width": width,
             "col_left_pin": COL_LEFT_PIN,
             "col_status": col_status,
             "col_index": COL_INDEX,
@@ -236,6 +240,7 @@ pub fn build_list_result_value(
         show_status: bool,
         col_status: usize,
         show_uuid: bool,
+        width: usize,
     ) {
         let is_deleted = matches!(dp.index, DisplayIndex::Deleted(_));
 
@@ -267,7 +272,7 @@ pub fn build_list_result_value(
         };
 
         let fixed_columns = COL_LEFT_PIN + col_status + COL_INDEX + COL_TIME;
-        let title_width = line_width().saturating_sub(fixed_columns + indent_width);
+        let title_width = width.saturating_sub(fixed_columns + indent_width);
 
         // Process matches
         let mut match_lines: Vec<serde_json::Value> = Vec::new();
@@ -289,7 +294,7 @@ pub fn build_list_result_value(
                     .collect();
 
                 let match_indent = indent_width + COL_LEFT_PIN + col_status + COL_INDEX;
-                let match_available = line_width().saturating_sub(COL_TIME + match_indent);
+                let match_available = width.saturating_sub(COL_TIME + match_indent);
 
                 // Truncate segments to available width
                 let truncated = truncate_match_segments_to_json(&segments, match_available);
@@ -351,6 +356,7 @@ pub fn build_list_result_value(
                 show_status,
                 col_status,
                 show_uuid,
+                width,
             );
         }
     }
@@ -391,6 +397,7 @@ pub fn build_list_result_value(
             show_status,
             col_status,
             opts.show_uuid,
+            width,
         );
     }
 
@@ -401,6 +408,7 @@ pub fn build_list_result_value(
         "help_text": "",
         "deleted_help": opts.show_deleted_help,
         "peek": opts.peek,
+        "line_width": width,
         "col_left_pin": COL_LEFT_PIN,
         "col_status": col_status,
         "col_index": COL_INDEX,
