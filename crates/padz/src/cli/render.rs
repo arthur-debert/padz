@@ -31,9 +31,17 @@ use padzapp::index::{DisplayIndex, DisplayPad};
 use padzapp::peek::format_as_peek;
 use standout::{truncate_to_width, OutputMode};
 
-/// Configuration for list rendering.
-pub const LINE_WIDTH: usize = 100;
+/// Minimum terminal width — below this we stop shrinking and let the terminal wrap.
+pub const MIN_LINE_WIDTH: usize = 30;
 pub const PIN_MARKER: &str = "⚲";
+
+/// Returns the effective line width: the terminal width (if detectable), clamped to at least
+/// `MIN_LINE_WIDTH`.
+pub fn line_width() -> usize {
+    terminal_size::terminal_size()
+        .map(|(w, _)| (w.0 as usize).max(MIN_LINE_WIDTH))
+        .unwrap_or(MIN_LINE_WIDTH)
+}
 
 /// Column widths for list layout (used by standout's `col()` filter)
 pub const COL_LEFT_PIN: usize = 2; // Pin marker or empty ("⚲ " or "  ")
@@ -115,7 +123,7 @@ pub fn build_modification_result_value(
             };
 
             let fixed_columns = COL_LEFT_PIN + col_status + COL_INDEX + COL_TIME;
-            let title_width = LINE_WIDTH.saturating_sub(fixed_columns);
+            let title_width = line_width().saturating_sub(fixed_columns);
 
             json!({
                 "indent": "",
@@ -259,7 +267,7 @@ pub fn build_list_result_value(
         };
 
         let fixed_columns = COL_LEFT_PIN + col_status + COL_INDEX + COL_TIME;
-        let title_width = LINE_WIDTH.saturating_sub(fixed_columns + indent_width);
+        let title_width = line_width().saturating_sub(fixed_columns + indent_width);
 
         // Process matches
         let mut match_lines: Vec<serde_json::Value> = Vec::new();
@@ -281,7 +289,7 @@ pub fn build_list_result_value(
                     .collect();
 
                 let match_indent = indent_width + COL_LEFT_PIN + col_status + COL_INDEX;
-                let match_available = LINE_WIDTH.saturating_sub(COL_TIME + match_indent);
+                let match_available = line_width().saturating_sub(COL_TIME + match_indent);
 
                 // Truncate segments to available width
                 let truncated = truncate_match_segments_to_json(&segments, match_available);

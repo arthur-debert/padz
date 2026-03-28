@@ -1277,6 +1277,7 @@ dependencies = [
  "standout-dispatch",
  "standout-macros",
  "tempfile",
+ "terminal_size",
  "unicode-width",
 ]
 
