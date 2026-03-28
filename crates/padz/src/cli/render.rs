@@ -45,20 +45,24 @@ pub const PIN_MARKER: &str = "⚲";
 /// 3. `DEFAULT_LINE_WIDTH` (80)
 ///
 /// The result is clamped to at least `MIN_LINE_WIDTH` (30).
+///
+/// We subtract 1 to compensate for `⏲` (U+23F2) which `unicode-width` measures as 1 column
+/// but terminals render as 2. Standout's tabular system uses `unicode-width` internally, so
+/// without this adjustment every line would overflow the terminal by 1 character.
 pub fn line_width() -> usize {
     let raw = std::env::var("COLUMNS")
         .ok()
         .and_then(|v| v.parse::<usize>().ok())
         .or_else(|| terminal_size::terminal_size().map(|(w, _)| w.0 as usize))
         .unwrap_or(DEFAULT_LINE_WIDTH);
-    raw.max(MIN_LINE_WIDTH)
+    raw.max(MIN_LINE_WIDTH).saturating_sub(1)
 }
 
 /// Column widths for list layout (used by standout's `col()` filter)
 pub const COL_LEFT_PIN: usize = 2; // Pin marker or empty ("⚲ " or "  ")
 pub const COL_STATUS: usize = 2; // Status icon + space
 pub const COL_INDEX: usize = 4; // "p1.", " 1.", "d1."
-pub const COL_TIME: usize = 6; // Compact timestamp (" 34s ⏲") with leading gap
+pub const COL_TIME: usize = 5; // Compact timestamp ("34s ⏲" per unicode-width)
 
 /// Status indicators for todo status
 pub const STATUS_PLANNED: &str = "⚪︎";
@@ -521,6 +525,22 @@ mod tests {
         let mut p = Pad::new(title.to_string(), "some content".to_string());
         p.metadata.is_pinned = pinned;
         p
+    }
+
+    #[test]
+    fn test_time_col_matches_unicode_width() {
+        use unicode_width::UnicodeWidthStr;
+
+        // COL_TIME must match what unicode-width reports for the time format.
+        // Note: ⏲ (U+23F2) is 1 col per unicode-width but 2 in terminals.
+        // We compensate via line_width()'s saturating_sub(1).
+        let time_sample = format!("{:2}{} ⏲", 34, 's');
+        let time_width = time_sample.width();
+        assert_eq!(
+            time_width, COL_TIME,
+            "time '{}' has display width {}, COL_TIME is {}",
+            time_sample, time_width, COL_TIME
+        );
     }
 
     fn make_display_pad(pad: Pad, index: DisplayIndex) -> DisplayPad {
