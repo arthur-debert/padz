@@ -9,6 +9,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - **Added**
   - **Nested pad output** — `view`, `copy`, and `export` commands now recursively include children by default (`--tree`). Use `--flat` for the previous behavior (selected pad only) or `--indented` for 4-space indentation per nesting level. Centralized tree-walking logic ensures consistent behavior across all content-output commands.
 
+- **Fixed**
+  - **Nested pad creation via editor lost parent relationship** — `padz create -i <parent> -e` would create the child pad, but the parent-child link was silently destroyed before the editor opened. The root cause: `create::run` called `propagate_status_change` immediately after saving the (empty) pad, which triggered `list_pads` → reconciliation → garbage collection of the empty content file and its index entry (including `parent_id`). The pad was later recovered as an orphan with no parent. Fix: `create::run` no longer calls propagation; the CLI handler calls it after the pad has real content (post-editor or post-pipe).
+
 ## [0.27.1] - 2026-03-28
 
 ## [0.27.1] - 2026-03-28
