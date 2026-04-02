@@ -1,5 +1,5 @@
 use padzapp::api::PadzApi;
-use padzapp::commands::PadzPaths;
+use padzapp::commands::{NestingMode, PadzPaths};
 use padzapp::model::Scope;
 use padzapp::store::bucketed::BucketedStore;
 use padzapp::store::mem_backend::MemBackend;
@@ -45,11 +45,15 @@ fn test_referencing_by_index() {
     // Created Order: Groceries, Grocery List, Gold.
     // Indexing: Gold (1), Grocery List (2), Groceries (3).
 
-    let res = api.view_pads(Scope::Project, &["1"]).unwrap();
+    let res = api
+        .view_pads(Scope::Project, &["1"], NestingMode::Flat)
+        .unwrap();
     assert_eq!(res.listed_pads.len(), 1);
     assert_eq!(res.listed_pads[0].pad.metadata.title, "Gold");
 
-    let res = api.view_pads(Scope::Project, &["3"]).unwrap();
+    let res = api
+        .view_pads(Scope::Project, &["3"], NestingMode::Flat)
+        .unwrap();
     assert_eq!(res.listed_pads.len(), 1);
     assert_eq!(res.listed_pads[0].pad.metadata.title, "Groceries");
 }
@@ -57,7 +61,9 @@ fn test_referencing_by_index() {
 #[test]
 fn test_referencing_multiple_indexes() {
     let api = setup();
-    let res = api.view_pads(Scope::Project, &["1", "2"]).unwrap();
+    let res = api
+        .view_pads(Scope::Project, &["1", "2"], NestingMode::Flat)
+        .unwrap();
     assert_eq!(res.listed_pads.len(), 2);
     // Gold and Grocery List
 }
@@ -65,7 +71,9 @@ fn test_referencing_multiple_indexes() {
 #[test]
 fn test_referencing_by_title_exact() {
     let api = setup();
-    let res = api.view_pads(Scope::Project, &["Gold"]).unwrap();
+    let res = api
+        .view_pads(Scope::Project, &["Gold"], NestingMode::Flat)
+        .unwrap();
     assert_eq!(res.listed_pads.len(), 1);
     assert_eq!(res.listed_pads[0].pad.metadata.title, "Gold");
 }
@@ -74,7 +82,9 @@ fn test_referencing_by_title_exact() {
 fn test_referencing_by_title_partial() {
     let api = setup();
     // "Gold" is matched by "old"
-    let res = api.view_pads(Scope::Project, &["old"]).unwrap();
+    let res = api
+        .view_pads(Scope::Project, &["old"], NestingMode::Flat)
+        .unwrap();
     assert_eq!(res.listed_pads.len(), 1);
     assert_eq!(res.listed_pads[0].pad.metadata.title, "Gold");
 }
@@ -84,7 +94,9 @@ fn test_referencing_by_title_multi_word_arg() {
     let api = setup();
     // "Grocery List" matched by "Grocery List" (passed as separate args by shell simulation)
     // Actually view_pads takes &[String]. The CLI passes ["Grocery", "List"].
-    let res = api.view_pads(Scope::Project, &["Grocery", "List"]).unwrap();
+    let res = api
+        .view_pads(Scope::Project, &["Grocery", "List"], NestingMode::Flat)
+        .unwrap();
     assert_eq!(res.listed_pads.len(), 1);
     assert_eq!(res.listed_pads[0].pad.metadata.title, "Grocery List");
 }
@@ -93,7 +105,7 @@ fn test_referencing_by_title_multi_word_arg() {
 fn test_referencing_ambiguous() {
     let api = setup();
     // "Gro" matches "Groceries" and "Grocery List"
-    let res = api.view_pads(Scope::Project, &["Gro"]);
+    let res = api.view_pads(Scope::Project, &["Gro"], NestingMode::Flat);
     assert!(res.is_err());
     let err = res.err().unwrap().to_string();
     assert!(err.contains("matches multiple paths"));
@@ -108,7 +120,7 @@ fn test_referencing_mixed_treated_as_title() {
     // "Gold" pad content is "Au". Title "Gold".
     // Search "1 Gold" -> No match.
 
-    let res = api.view_pads(Scope::Project, &["1", "Gold"]);
+    let res = api.view_pads(Scope::Project, &["1", "Gold"], NestingMode::Flat);
     assert!(res.is_err());
     let err = res.err().unwrap().to_string();
     assert!(err.contains("No pad found matching \"1 Gold\""));
@@ -117,6 +129,6 @@ fn test_referencing_mixed_treated_as_title() {
 #[test]
 fn test_referencing_mixed_no_match() {
     let api = setup();
-    let res = api.view_pads(Scope::Project, &["1", "Grocery"]);
+    let res = api.view_pads(Scope::Project, &["1", "Grocery"], NestingMode::Flat);
     assert!(res.is_err());
 }

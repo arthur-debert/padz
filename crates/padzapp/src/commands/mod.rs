@@ -66,6 +66,18 @@ use crate::model::Scope;
 use serde::Serialize;
 use std::path::PathBuf;
 
+/// Controls how nested (parent/child) pads are rendered.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum NestingMode {
+    /// Show only the selected pad(s), no children (legacy behavior).
+    Flat,
+    /// Recursively include children, no indentation.
+    #[default]
+    Tree,
+    /// Recursively include children, with 4-space indentation per nesting level.
+    Indented,
+}
+
 pub mod archive;
 pub mod create;
 pub mod delete;
@@ -157,8 +169,13 @@ impl CmdMessage {
 pub struct CmdResult {
     pub affected_pads: Vec<DisplayPad>,
     pub listed_pads: Vec<DisplayPad>,
+    /// Nesting depths for listed_pads (parallel to listed_pads).
+    /// Empty means all pads are at depth 0.
+    pub listed_depths: Vec<usize>,
     pub pad_paths: Vec<PathBuf>,
     pub messages: Vec<CmdMessage>,
+    /// The nesting mode used to produce listed_pads.
+    pub nesting: NestingMode,
 }
 
 impl CmdResult {

@@ -16,7 +16,7 @@
 
 use padzapp::api::{PadFilter, PadStatusFilter, PadzApi, TodoStatus};
 use padzapp::clipboard::{copy_to_clipboard, format_for_clipboard};
-use padzapp::commands::CmdResult;
+use padzapp::commands::{CmdResult, NestingMode};
 use padzapp::config::PadzMode;
 use padzapp::error::PadzError;
 use padzapp::model::{extract_title_and_body, Scope};
@@ -256,11 +256,12 @@ impl<'a> ScopedApi<'a> {
         &self,
         indexes: &[String],
         single_file: Option<&str>,
+        nesting: NestingMode,
     ) -> Result<Output<Value>, anyhow::Error> {
         let result = if let Some(title) = single_file {
-            self.call(|api, scope| api.export_pads_single_file(scope, indexes, title))?
+            self.call(|api, scope| api.export_pads_single_file(scope, indexes, title, nesting))?
         } else {
-            self.call(|api, scope| api.export_pads(scope, indexes))?
+            self.call(|api, scope| api.export_pads(scope, indexes, nesting))?
         };
         self.messages(result)
     }
@@ -330,25 +331,57 @@ impl<'a> ScopedApi<'a> {
         &self,
         indexes: &[String],
         show_uuid: bool,
+        nesting: NestingMode,
     ) -> Result<Output<Value>, anyhow::Error> {
-        let result = self.call(|api, scope| api.view_pads(scope, indexes))?;
+        let result = self.call(|api, scope| api.view_pads(scope, indexes, nesting))?;
 
         // Copy content to clipboard
         for dp in &result.listed_pads {
             copy_content_to_clipboard(&dp.pad.content);
         }
 
+        let indent_per_level = match nesting {
+            NestingMode::Indented => 4,
+            _ => 0,
+        };
+
         let pads: Vec<serde_json::Value> = result
             .listed_pads
             .iter()
-            .map(|dp| {
+            .enumerate()
+            .map(|(i, dp)| {
+                let depth = result.listed_depths.get(i).copied().unwrap_or(0);
+                let indent = " ".repeat(depth * indent_per_level);
+
                 // Extract body (content minus title) to avoid double-title in output
                 let body = extract_title_and_body(&dp.pad.content)
                     .map(|(_, b)| b)
                     .unwrap_or_default();
+
+                // Apply indentation to content lines if indented mode
+                let (display_title, display_body) = if indent.is_empty() {
+                    (dp.pad.metadata.title.clone(), body)
+                } else {
+                    let indented_body = body
+                        .lines()
+                        .map(|line| {
+                            if line.is_empty() {
+                                String::new()
+                            } else {
+                                format!("{}{}", indent, line)
+                            }
+                        })
+                        .collect::<Vec<_>>()
+                        .join("\n");
+                    (
+                        format!("{}{}", indent, dp.pad.metadata.title),
+                        indented_body,
+                    )
+                };
+
                 let mut v = serde_json::json!({
-                    "title": dp.pad.metadata.title,
-                    "content": body,
+                    "title": display_title,
+                    "content": display_body,
                 });
                 if show_uuid {
                     v["uuid"] = serde_json::json!(dp.pad.metadata.id.to_string());
@@ -361,26 +394,71 @@ impl<'a> ScopedApi<'a> {
 
     // --- Copy operations ---
 
-    pub fn copy_pads(&self, indexes: &[String]) -> Result<Output<Value>, anyhow::Error> {
-        let result = self.call(|api, scope| api.view_pads(scope, indexes))?;
+    pub fn copy_pads(
+        &self,
+        indexes: &[String],
+        nesting: NestingMode,
+    ) -> Result<Output<Value>, anyhow::Error> {
+        let result = self.call(|api, scope| api.view_pads(scope, indexes, nesting))?;
 
         // Copy content to clipboard
-        for dp in &result.listed_pads {
-            copy_content_to_clipboard(&dp.pad.content);
+        let indent_per_level = match nesting {
+            NestingMode::Indented => 4,
+            _ => 0,
+        };
+
+        let mut clipboard_parts: Vec<String> = Vec::new();
+        for (i, dp) in result.listed_pads.iter().enumerate() {
+            let depth = result.listed_depths.get(i).copied().unwrap_or(0);
+            let indent = " ".repeat(depth * indent_per_level);
+            let formatted = if indent.is_empty() {
+                format_for_clipboard(
+                    &dp.pad.metadata.title,
+                    &extract_title_and_body(&dp.pad.content)
+                        .map(|(_, b)| b)
+                        .unwrap_or_default(),
+                )
+            } else {
+                let body = extract_title_and_body(&dp.pad.content)
+                    .map(|(_, b)| b)
+                    .unwrap_or_default();
+                let indented_body = body
+                    .lines()
+                    .map(|line| {
+                        if line.is_empty() {
+                            String::new()
+                        } else {
+                            format!("{}{}", indent, line)
+                        }
+                    })
+                    .collect::<Vec<_>>()
+                    .join("\n");
+                format_for_clipboard(
+                    &format!("{}{}", indent, dp.pad.metadata.title),
+                    &indented_body,
+                )
+            };
+            clipboard_parts.push(formatted);
         }
 
-        let count = result.listed_pads.len();
-        let label = if count == 1 { "pad" } else { "pads" };
-        let titles: Vec<&str> = result
+        let clipboard_text = clipboard_parts.join("\n---\n\n");
+        let _ = copy_to_clipboard(&clipboard_text);
+
+        // Report using only the root-level (depth 0) pad titles
+        let root_titles: Vec<&str> = result
             .listed_pads
             .iter()
-            .map(|dp| dp.pad.metadata.title.as_str())
+            .enumerate()
+            .filter(|(i, _)| result.listed_depths.get(*i).copied().unwrap_or(0) == 0)
+            .map(|(_, dp)| dp.pad.metadata.title.as_str())
             .collect();
+        let count = root_titles.len();
+        let label = if count == 1 { "pad" } else { "pads" };
         let msg = format!(
             "Copied {} {} to clipboard: {}",
             count,
             label,
-            titles.join(", ")
+            root_titles.join(", ")
         );
 
         Ok(Output::Render(serde_json::json!({
@@ -393,6 +471,19 @@ impl<'a> ScopedApi<'a> {
 fn api(ctx: &CommandContext) -> ScopedApi<'_> {
     ScopedApi {
         state: get_state(ctx),
+    }
+}
+
+/// Parse --flat/--tree/--indented flags into a NestingMode.
+/// Default is Tree when none specified.
+fn parse_nesting_mode(flat: bool, _tree: bool, indented: bool) -> NestingMode {
+    if flat {
+        NestingMode::Flat
+    } else if indented {
+        NestingMode::Indented
+    } else {
+        // --tree or default
+        NestingMode::Tree
     }
 }
 
@@ -668,8 +759,12 @@ pub fn view(
     #[arg] indexes: Vec<String>,
     #[flag(name = "peek")] _peek: bool, // Reserved for future use
     #[flag] uuid: bool,
+    #[flag] flat: bool,
+    #[flag] tree: bool,
+    #[flag] indented: bool,
 ) -> Result<Output<Value>, anyhow::Error> {
-    api(ctx).view_pads(&indexes, uuid)
+    let nesting = parse_nesting_mode(flat, tree, indented);
+    api(ctx).view_pads(&indexes, uuid, nesting)
 }
 
 #[handler]
@@ -677,8 +772,12 @@ pub fn copy(
     #[ctx] ctx: &CommandContext,
     #[arg] indexes: Vec<String>,
     #[flag(name = "peek")] _peek: bool, // Reserved for future use
+    #[flag] flat: bool,
+    #[flag] tree: bool,
+    #[flag] indented: bool,
 ) -> Result<Output<Value>, anyhow::Error> {
-    api(ctx).copy_pads(&indexes)
+    let nesting = parse_nesting_mode(flat, tree, indented);
+    api(ctx).copy_pads(&indexes, nesting)
 }
 
 #[handler]
@@ -751,8 +850,12 @@ pub fn edit(
 
     // Interactive editor: open real pad file
     let view_result = state.with_api(|api| {
-        api.view_pads(state.scope, &index_args)
-            .map_err(|e| anyhow::anyhow!("{}", e))
+        api.view_pads(
+            state.scope,
+            &index_args,
+            padzapp::commands::NestingMode::Flat,
+        )
+        .map_err(|e| anyhow::anyhow!("{}", e))
     })?;
 
     let pad = view_result
@@ -932,8 +1035,12 @@ pub fn export(
     #[ctx] ctx: &CommandContext,
     #[arg(name = "single_file")] single_file: Option<String>,
     #[arg] indexes: Vec<String>,
+    #[flag] flat: bool,
+    #[flag] tree: bool,
+    #[flag] indented: bool,
 ) -> Result<Output<Value>, anyhow::Error> {
-    api(ctx).export_pads(&indexes, single_file.as_deref())
+    let nesting = parse_nesting_mode(flat, tree, indented);
+    api(ctx).export_pads(&indexes, single_file.as_deref(), nesting)
 }
 
 #[handler]

@@ -128,9 +128,10 @@ impl<S: DataStore> PadzApi<S> {
         &self,
         scope: Scope,
         indexes: &[I],
+        nesting: commands::NestingMode,
     ) -> Result<commands::CmdResult> {
         let selectors = parse_selectors(indexes)?;
-        commands::view::run(&self.store, scope, &selectors)
+        commands::view::run(&self.store, scope, &selectors, nesting)
     }
 
     pub fn delete_pads<I: AsRef<str>>(
@@ -282,9 +283,10 @@ impl<S: DataStore> PadzApi<S> {
         &self,
         scope: Scope,
         indexes: &[I],
+        nesting: commands::NestingMode,
     ) -> Result<commands::CmdResult> {
         let selectors = parse_selectors(indexes)?;
-        commands::export::run(&self.store, scope, &selectors)
+        commands::export::run(&self.store, scope, &selectors, nesting)
     }
 
     pub fn export_pads_single_file<I: AsRef<str>>(
@@ -292,9 +294,10 @@ impl<S: DataStore> PadzApi<S> {
         scope: Scope,
         indexes: &[I],
         title: &str,
+        nesting: commands::NestingMode,
     ) -> Result<commands::CmdResult> {
         let selectors = parse_selectors(indexes)?;
-        commands::export::run_single_file(&self.store, scope, &selectors, title)
+        commands::export::run_single_file(&self.store, scope, &selectors, title, nesting)
     }
 
     pub fn import_pads(
@@ -737,7 +740,9 @@ mod tests {
         api.create_pad(Scope::Project, "Test".into(), "".into(), None)
             .unwrap();
 
-        let result = api.view_pads(Scope::Project, &["1"]).unwrap();
+        let result = api
+            .view_pads(Scope::Project, &["1"], commands::NestingMode::Flat)
+            .unwrap();
 
         assert_eq!(result.listed_pads.len(), 1);
         assert_eq!(result.listed_pads[0].pad.metadata.title, "Test");

@@ -201,6 +201,61 @@ pub fn pads_by_selectors<S: DataStore>(
     Ok(pads)
 }
 
+/// A pad with its nesting depth, produced by tree-walking.
+#[derive(Debug, Clone)]
+pub struct NestedPad {
+    pub pad: DisplayPad,
+    pub depth: usize,
+}
+
+/// Given a list of resolved (flat) DisplayPads, re-resolve them with their full
+/// subtrees from the indexed tree. Returns a flat sequence of (pad, depth) pairs
+/// in tree-traversal order.
+///
+/// Each selected pad is at depth 0, its children at depth 1, etc.
+/// Only active (non-deleted) children are included.
+pub fn collect_nested_pads<S: DataStore>(
+    store: &S,
+    scope: Scope,
+    root_pads: &[DisplayPad],
+) -> Result<Vec<NestedPad>> {
+    let indexed = indexed_pads(store, scope)?;
+    let mut result = Vec::new();
+
+    for dp in root_pads {
+        // Find this pad in the full indexed tree to get its children
+        if let Some(tree_node) = find_node_by_id(&indexed, dp.pad.metadata.id) {
+            flatten_tree(tree_node, 0, &mut result);
+        } else {
+            // Pad not found in tree (edge case) - include it flat
+            result.push(NestedPad {
+                pad: dp.clone(),
+                depth: 0,
+            });
+        }
+    }
+
+    Ok(result)
+}
+
+fn flatten_tree(dp: &DisplayPad, depth: usize, result: &mut Vec<NestedPad>) {
+    result.push(NestedPad {
+        pad: DisplayPad {
+            pad: dp.pad.clone(),
+            index: dp.index.clone(),
+            matches: dp.matches.clone(),
+            children: Vec::new(), // flatten
+        },
+        depth,
+    });
+    for child in &dp.children {
+        // Skip deleted children in nested output
+        if !matches!(child.index, DisplayIndex::Deleted(_)) {
+            flatten_tree(child, depth + 1, result);
+        }
+    }
+}
+
 pub fn get_descendant_ids<S: DataStore>(
     store: &S,
     scope: Scope,
