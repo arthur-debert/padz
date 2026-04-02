@@ -1093,4 +1093,219 @@ mod tests {
         let err = result.unwrap_err();
         assert!(err.to_string().contains("delete protected"));
     }
+
+    // -------------------------------------------------------------------------
+    // collect_nested_pads tests
+    // -------------------------------------------------------------------------
+
+    #[test]
+    fn collect_nested_returns_parent_then_children_with_depths() {
+        let mut store = BucketedStore::new(
+            MemBackend::new(),
+            MemBackend::new(),
+            MemBackend::new(),
+            MemBackend::new(),
+        );
+        create::run(&mut store, Scope::Project, "Parent".into(), "".into(), None).unwrap();
+        create::run(
+            &mut store,
+            Scope::Project,
+            "Child A".into(),
+            "".into(),
+            Some(PadSelector::Path(vec![DisplayIndex::Regular(1)])),
+        )
+        .unwrap();
+        create::run(
+            &mut store,
+            Scope::Project,
+            "Child B".into(),
+            "".into(),
+            Some(PadSelector::Path(vec![DisplayIndex::Regular(1)])),
+        )
+        .unwrap();
+
+        // Resolve the parent as a flat pad (how view.rs calls it)
+        let flat = pads_by_selectors(
+            &store,
+            Scope::Project,
+            &[PadSelector::Path(vec![DisplayIndex::Regular(1)])],
+            false,
+        )
+        .unwrap();
+        assert_eq!(flat.len(), 1);
+
+        let nested = collect_nested_pads(&store, Scope::Project, &flat).unwrap();
+
+        assert_eq!(nested.len(), 3);
+        assert_eq!(nested[0].pad.pad.metadata.title, "Parent");
+        assert_eq!(nested[0].depth, 0);
+        // Children newest first: B then A
+        assert_eq!(nested[1].depth, 1);
+        assert_eq!(nested[2].depth, 1);
+    }
+
+    #[test]
+    fn collect_nested_deep_tree_tracks_depth() {
+        let mut store = BucketedStore::new(
+            MemBackend::new(),
+            MemBackend::new(),
+            MemBackend::new(),
+            MemBackend::new(),
+        );
+        create::run(&mut store, Scope::Project, "Root".into(), "".into(), None).unwrap();
+        create::run(
+            &mut store,
+            Scope::Project,
+            "Level 1".into(),
+            "".into(),
+            Some(PadSelector::Path(vec![DisplayIndex::Regular(1)])),
+        )
+        .unwrap();
+        create::run(
+            &mut store,
+            Scope::Project,
+            "Level 2".into(),
+            "".into(),
+            Some(PadSelector::Path(vec![
+                DisplayIndex::Regular(1),
+                DisplayIndex::Regular(1),
+            ])),
+        )
+        .unwrap();
+
+        let flat = pads_by_selectors(
+            &store,
+            Scope::Project,
+            &[PadSelector::Path(vec![DisplayIndex::Regular(1)])],
+            false,
+        )
+        .unwrap();
+        let nested = collect_nested_pads(&store, Scope::Project, &flat).unwrap();
+
+        let depths: Vec<usize> = nested.iter().map(|np| np.depth).collect();
+        assert_eq!(depths, vec![0, 1, 2]);
+    }
+
+    #[test]
+    fn collect_nested_skips_deleted_children() {
+        let mut store = BucketedStore::new(
+            MemBackend::new(),
+            MemBackend::new(),
+            MemBackend::new(),
+            MemBackend::new(),
+        );
+        create::run(&mut store, Scope::Project, "Parent".into(), "".into(), None).unwrap();
+        create::run(
+            &mut store,
+            Scope::Project,
+            "Keep".into(),
+            "".into(),
+            Some(PadSelector::Path(vec![DisplayIndex::Regular(1)])),
+        )
+        .unwrap();
+        create::run(
+            &mut store,
+            Scope::Project,
+            "Delete Me".into(),
+            "".into(),
+            Some(PadSelector::Path(vec![DisplayIndex::Regular(1)])),
+        )
+        .unwrap();
+        // Delete the newest child (index 1.1)
+        crate::commands::delete::run(
+            &mut store,
+            Scope::Project,
+            &[PadSelector::Path(vec![
+                DisplayIndex::Regular(1),
+                DisplayIndex::Regular(1),
+            ])],
+        )
+        .unwrap();
+
+        let flat = pads_by_selectors(
+            &store,
+            Scope::Project,
+            &[PadSelector::Path(vec![DisplayIndex::Regular(1)])],
+            false,
+        )
+        .unwrap();
+        let nested = collect_nested_pads(&store, Scope::Project, &flat).unwrap();
+
+        assert_eq!(nested.len(), 2);
+        assert_eq!(nested[0].pad.pad.metadata.title, "Parent");
+        assert_eq!(nested[1].pad.pad.metadata.title, "Keep");
+    }
+
+    #[test]
+    fn collect_nested_leaf_pad_returns_single() {
+        let mut store = BucketedStore::new(
+            MemBackend::new(),
+            MemBackend::new(),
+            MemBackend::new(),
+            MemBackend::new(),
+        );
+        create::run(
+            &mut store,
+            Scope::Project,
+            "Leaf".into(),
+            "body".into(),
+            None,
+        )
+        .unwrap();
+
+        let flat = pads_by_selectors(
+            &store,
+            Scope::Project,
+            &[PadSelector::Path(vec![DisplayIndex::Regular(1)])],
+            false,
+        )
+        .unwrap();
+        let nested = collect_nested_pads(&store, Scope::Project, &flat).unwrap();
+
+        assert_eq!(nested.len(), 1);
+        assert_eq!(nested[0].depth, 0);
+        assert_eq!(nested[0].pad.pad.metadata.title, "Leaf");
+    }
+
+    #[test]
+    fn collect_nested_multiple_roots_each_expand() {
+        let mut store = BucketedStore::new(
+            MemBackend::new(),
+            MemBackend::new(),
+            MemBackend::new(),
+            MemBackend::new(),
+        );
+        create::run(&mut store, Scope::Project, "Root A".into(), "".into(), None).unwrap();
+        create::run(&mut store, Scope::Project, "Root B".into(), "".into(), None).unwrap();
+        // Root B is 1, Root A is 2
+        create::run(
+            &mut store,
+            Scope::Project,
+            "Child of A".into(),
+            "".into(),
+            Some(PadSelector::Path(vec![DisplayIndex::Regular(2)])),
+        )
+        .unwrap();
+
+        let flat = pads_by_selectors(
+            &store,
+            Scope::Project,
+            &[
+                PadSelector::Path(vec![DisplayIndex::Regular(1)]),
+                PadSelector::Path(vec![DisplayIndex::Regular(2)]),
+            ],
+            false,
+        )
+        .unwrap();
+        let nested = collect_nested_pads(&store, Scope::Project, &flat).unwrap();
+
+        // Root B (no children) + Root A + Child of A
+        assert_eq!(nested.len(), 3);
+        assert_eq!(nested[0].pad.pad.metadata.title, "Root B");
+        assert_eq!(nested[0].depth, 0);
+        assert_eq!(nested[1].pad.pad.metadata.title, "Root A");
+        assert_eq!(nested[1].depth, 0);
+        assert_eq!(nested[2].pad.pad.metadata.title, "Child of A");
+        assert_eq!(nested[2].depth, 1);
+    }
 }

@@ -385,6 +385,7 @@ fn sanitize_output_filename(title: &str, format: SingleFileFormat) -> String {
 mod tests {
     use super::*;
     use crate::commands::create;
+    use crate::index::{DisplayIndex, PadSelector};
     use crate::model::Scope;
     use crate::store::bucketed::BucketedStore;
     use crate::store::mem_backend::MemBackend;
@@ -766,6 +767,136 @@ mod tests {
         assert!(output.contains("### Child"));
         // H1 in child body bumped by (2 + 1) = 3 -> H4
         assert!(output.contains("#### H1 in child"));
+    }
+
+    #[test]
+    fn test_merge_as_text_nested_from_store() {
+        let mut store = BucketedStore::new(
+            MemBackend::new(),
+            MemBackend::new(),
+            MemBackend::new(),
+            MemBackend::new(),
+        );
+        create::run(
+            &mut store,
+            Scope::Project,
+            "Groceries".into(),
+            "Weekly shopping".into(),
+            None,
+        )
+        .unwrap();
+        create::run(
+            &mut store,
+            Scope::Project,
+            "Bread".into(),
+            "Whole wheat".into(),
+            Some(PadSelector::Path(vec![DisplayIndex::Regular(1)])),
+        )
+        .unwrap();
+
+        let pads = resolve_pads(&store, Scope::Project, &[]).unwrap();
+        let nested = resolve_nested(&store, Scope::Project, &pads, NestingMode::Tree).unwrap();
+
+        let output = merge_as_text(&nested);
+
+        // Parent present
+        assert!(output.contains("Groceries"), "should contain parent title");
+        assert!(
+            output.contains("Weekly shopping"),
+            "should contain parent body"
+        );
+        // Child present with indent (depth 1 = 4-space indent in text export)
+        assert!(
+            output.contains("    Bread"),
+            "child title should be indented"
+        );
+        assert!(
+            output.contains("    Whole wheat"),
+            "child body should be indented"
+        );
+    }
+
+    #[test]
+    fn test_merge_as_markdown_nested_from_store() {
+        let mut store = BucketedStore::new(
+            MemBackend::new(),
+            MemBackend::new(),
+            MemBackend::new(),
+            MemBackend::new(),
+        );
+        create::run(
+            &mut store,
+            Scope::Project,
+            "Project".into(),
+            "# Overview\n\nProject description".into(),
+            None,
+        )
+        .unwrap();
+        create::run(
+            &mut store,
+            Scope::Project,
+            "Module A".into(),
+            "## API\n\nEndpoints here".into(),
+            Some(PadSelector::Path(vec![DisplayIndex::Regular(1)])),
+        )
+        .unwrap();
+
+        let pads = resolve_pads(&store, Scope::Project, &[]).unwrap();
+        let nested = resolve_nested(&store, Scope::Project, &pads, NestingMode::Tree).unwrap();
+
+        let output = merge_as_markdown(&nested, "Docs");
+
+        // Export title
+        assert!(output.starts_with("# Docs"));
+        // Parent at depth 0 -> H2
+        assert!(output.contains("## Project"), "parent should be H2");
+        // Child at depth 1 -> H3
+        assert!(output.contains("### Module A"), "child should be H3");
+        // Parent body H1 bumped by 2 -> H3
+        assert!(
+            output.contains("### Overview"),
+            "parent body H1 should become H3"
+        );
+        // Child body H2 bumped by 3 (2+1) -> H5
+        assert!(
+            output.contains("##### API"),
+            "child body H2 should become H5"
+        );
+    }
+
+    #[test]
+    fn test_flat_nesting_produces_no_children_in_export() {
+        let mut store = BucketedStore::new(
+            MemBackend::new(),
+            MemBackend::new(),
+            MemBackend::new(),
+            MemBackend::new(),
+        );
+        create::run(
+            &mut store,
+            Scope::Project,
+            "Parent".into(),
+            "Parent content".into(),
+            None,
+        )
+        .unwrap();
+        create::run(
+            &mut store,
+            Scope::Project,
+            "Child".into(),
+            "Child content".into(),
+            Some(PadSelector::Path(vec![DisplayIndex::Regular(1)])),
+        )
+        .unwrap();
+
+        let pads = resolve_pads(&store, Scope::Project, &[]).unwrap();
+        // Flat mode: should NOT include children
+        let nested = resolve_nested(&store, Scope::Project, &pads, NestingMode::Flat).unwrap();
+
+        // Only root-level pads (Parent) — no Child
+        assert_eq!(nested.len(), 1);
+        assert_eq!(nested[0].pad.pad.metadata.title, "Parent");
+        assert_eq!(nested[0].depth, 0);
     }
 
     #[test]
