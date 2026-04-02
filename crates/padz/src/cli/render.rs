@@ -1006,6 +1006,145 @@ mod tests {
         assert_eq!(total2, w, "Todos: columns sum {total2} != line_width {w}");
     }
 
+    fn make_display_pad_with_children(
+        pad: Pad,
+        index: DisplayIndex,
+        children: Vec<DisplayPad>,
+    ) -> DisplayPad {
+        DisplayPad {
+            pad,
+            index,
+            matches: None,
+            children,
+        }
+    }
+
+    fn default_list_options() -> ListOptions {
+        ListOptions {
+            peek: false,
+            show_deleted_help: false,
+            output_mode: OutputMode::Text,
+            mode: PadzMode::Todos,
+            show_uuid: false,
+            filtered: false,
+        }
+    }
+
+    #[test]
+    fn test_build_list_nested_pad_produces_indent() {
+        let child = make_display_pad(make_pad("Child Note", false), DisplayIndex::Regular(1));
+        let parent = make_display_pad_with_children(
+            make_pad("Parent Note", false),
+            DisplayIndex::Regular(1),
+            vec![child],
+        );
+
+        let data = build_list_result_value(&[parent], &[], default_list_options());
+
+        let pads = data.get("pads").and_then(|v| v.as_array()).unwrap();
+        // Should be flattened: parent + child = 2 entries
+        assert_eq!(pads.len(), 2, "parent + child should produce 2 pad entries");
+
+        // Parent at depth 0: no indent
+        let parent_indent = pads[0].get("indent").and_then(|v| v.as_str()).unwrap();
+        assert_eq!(parent_indent, "", "root pad should have empty indent");
+
+        // Child at depth 1: 2-space indent
+        let child_indent = pads[1].get("indent").and_then(|v| v.as_str()).unwrap();
+        assert_eq!(
+            child_indent, "  ",
+            "depth-1 child should have 2-space indent"
+        );
+    }
+
+    #[test]
+    fn test_build_list_nested_title_width_reduced_by_indent() {
+        let child = make_display_pad(make_pad("Child", false), DisplayIndex::Regular(1));
+        let parent = make_display_pad_with_children(
+            make_pad("Parent", false),
+            DisplayIndex::Regular(1),
+            vec![child],
+        );
+
+        let data = build_list_result_value(&[parent], &[], default_list_options());
+        let pads = data.get("pads").and_then(|v| v.as_array()).unwrap();
+
+        let parent_width = pads[0].get("title_width").and_then(|v| v.as_u64()).unwrap();
+        let child_width = pads[1].get("title_width").and_then(|v| v.as_u64()).unwrap();
+
+        // Child title_width should be exactly 2 less than parent (indent = depth * 2)
+        assert_eq!(
+            parent_width - child_width,
+            2,
+            "child title_width should be 2 less than parent"
+        );
+    }
+
+    #[test]
+    fn test_build_list_deep_nesting_indent_accumulates() {
+        let grandchild = make_display_pad(make_pad("Grandchild", false), DisplayIndex::Regular(1));
+        let child = make_display_pad_with_children(
+            make_pad("Child", false),
+            DisplayIndex::Regular(1),
+            vec![grandchild],
+        );
+        let parent = make_display_pad_with_children(
+            make_pad("Parent", false),
+            DisplayIndex::Regular(1),
+            vec![child],
+        );
+
+        let data = build_list_result_value(&[parent], &[], default_list_options());
+        let pads = data.get("pads").and_then(|v| v.as_array()).unwrap();
+
+        assert_eq!(pads.len(), 3, "3-level tree should produce 3 entries");
+
+        let indents: Vec<&str> = pads
+            .iter()
+            .map(|p| p.get("indent").and_then(|v| v.as_str()).unwrap())
+            .collect();
+        assert_eq!(indents, vec!["", "  ", "    "]);
+    }
+
+    #[test]
+    fn test_build_list_nested_preserves_order_parent_then_children() {
+        let child_a = make_display_pad(make_pad("Alpha", false), DisplayIndex::Regular(2));
+        let child_b = make_display_pad(make_pad("Beta", false), DisplayIndex::Regular(1));
+        let parent = make_display_pad_with_children(
+            make_pad("Root", false),
+            DisplayIndex::Regular(1),
+            vec![child_b, child_a],
+        );
+
+        let data = build_list_result_value(&[parent], &[], default_list_options());
+        let pads = data.get("pads").and_then(|v| v.as_array()).unwrap();
+
+        let titles: Vec<&str> = pads
+            .iter()
+            .map(|p| p.get("title").and_then(|v| v.as_str()).unwrap())
+            .collect();
+        assert_eq!(titles, vec!["Root", "Beta", "Alpha"]);
+    }
+
+    #[test]
+    fn test_build_list_nested_pin_marker_only_at_root() {
+        let child = make_display_pad(make_pad("Child", true), DisplayIndex::Pinned(1));
+        let parent = make_display_pad_with_children(
+            make_pad("Parent", true),
+            DisplayIndex::Pinned(1),
+            vec![child],
+        );
+
+        let data = build_list_result_value(&[parent], &[], default_list_options());
+        let pads = data.get("pads").and_then(|v| v.as_array()).unwrap();
+
+        let parent_pin = pads[0].get("left_pin").and_then(|v| v.as_str()).unwrap();
+        let child_pin = pads[1].get("left_pin").and_then(|v| v.as_str()).unwrap();
+
+        assert_eq!(parent_pin, PIN_MARKER, "root pinned pad should show marker");
+        assert_eq!(child_pin, "", "nested pinned pad should NOT show marker");
+    }
+
     #[test]
     fn test_modification_result_title_width_invariant() {
         let pad = make_pad("Test", false);

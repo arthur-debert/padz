@@ -415,6 +415,18 @@ pub enum Commands {
         /// Show UUID in view output
         #[arg(long)]
         uuid: bool,
+
+        /// Show only the selected pad(s), no children
+        #[arg(long, conflicts_with_all = ["tree", "indented"])]
+        flat: bool,
+
+        /// Recursively include children (default)
+        #[arg(long, conflicts_with_all = ["flat", "indented"])]
+        tree: bool,
+
+        /// Recursively include children with 4-space indentation per level
+        #[arg(long, conflicts_with_all = ["flat", "tree"])]
+        indented: bool,
     },
 
     /// Copy one or more pads to the clipboard (without printing)
@@ -428,6 +440,18 @@ pub enum Commands {
         /// Peek at pad content
         #[arg(long)]
         peek: bool,
+
+        /// Show only the selected pad(s), no children
+        #[arg(long, conflicts_with_all = ["tree", "indented"])]
+        flat: bool,
+
+        /// Recursively include children (default)
+        #[arg(long, conflicts_with_all = ["flat", "indented"])]
+        tree: bool,
+
+        /// Recursively include children with 4-space indentation per level
+        #[arg(long, conflicts_with_all = ["flat", "tree"])]
+        indented: bool,
     },
 
     /// Edit a pad in the editor
@@ -585,6 +609,18 @@ pub enum Commands {
         /// Indexes of the pads (e.g. 1 2) - if omitted, exports all active pads
         #[arg(required = false, num_args = 0.., add = active_pads_completer())]
         indexes: Vec<String>,
+
+        /// Show only the selected pad(s), no children
+        #[arg(long, conflicts_with_all = ["tree", "indented"])]
+        flat: bool,
+
+        /// Recursively include children (default)
+        #[arg(long, conflicts_with_all = ["flat", "indented"])]
+        tree: bool,
+
+        /// Recursively include children with 4-space indentation per level
+        #[arg(long, conflicts_with_all = ["flat", "tree"])]
+        indented: bool,
     },
 
     /// Import files as pads

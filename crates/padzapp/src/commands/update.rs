@@ -126,7 +126,7 @@ pub fn run_from_content<S: DataStore>(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::commands::{create, get, view};
+    use crate::commands::{create, get, view, NestingMode};
     use crate::index::{DisplayIndex, PadSelector};
     use crate::model::Scope;
     use crate::store::bucketed::BucketedStore;
@@ -155,6 +155,7 @@ mod tests {
             &store,
             Scope::Project,
             &[PadSelector::Path(vec![DisplayIndex::Regular(1)])],
+            NestingMode::Flat,
         )
         .unwrap()
         .listed_pads;
@@ -201,6 +202,7 @@ mod tests {
             &store,
             Scope::Project,
             &[PadSelector::Path(vec![DisplayIndex::Regular(1)])],
+            NestingMode::Flat,
         )
         .unwrap()
         .listed_pads;
@@ -279,6 +281,7 @@ mod tests {
             &store,
             Scope::Project,
             &[PadSelector::Path(vec![DisplayIndex::Regular(1)])],
+            NestingMode::Flat,
         )
         .unwrap()
         .listed_pads;

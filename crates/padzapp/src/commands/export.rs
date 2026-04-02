@@ -1,4 +1,4 @@
-use crate::commands::{CmdMessage, CmdResult};
+use crate::commands::{CmdMessage, CmdResult, NestingMode};
 use crate::error::{PadzError, Result};
 use crate::index::DisplayIndex;
 use crate::index::DisplayPad;
@@ -13,7 +13,7 @@ use pulldown_cmark_to_cmark::cmark;
 use std::fs::File;
 use std::io::Write;
 
-use super::helpers::{indexed_pads, pads_by_selectors};
+use super::helpers::{collect_nested_pads, indexed_pads, pads_by_selectors, NestedPad};
 
 /// Format for single-file export, determined by file extension.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -41,7 +41,12 @@ pub struct SingleFileExportResult {
     pub format: SingleFileFormat,
 }
 
-pub fn run<S: DataStore>(store: &S, scope: Scope, selectors: &[PadSelector]) -> Result<CmdResult> {
+pub fn run<S: DataStore>(
+    store: &S,
+    scope: Scope,
+    selectors: &[PadSelector],
+    nesting: NestingMode,
+) -> Result<CmdResult> {
     // 1. Resolve pads
     let pads = resolve_pads(store, scope, selectors)?;
 
@@ -51,17 +56,37 @@ pub fn run<S: DataStore>(store: &S, scope: Scope, selectors: &[PadSelector]) -> 
         return Ok(res);
     }
 
+    let nested = resolve_nested(store, scope, &pads, nesting)?;
+
     // 2. Prepare output file
     let now = Utc::now();
     let filename = format!("padz-{}.tar.gz", now.format("%Y-%m-%d_%H:%M:%S"));
     let file = File::create(&filename).map_err(PadzError::Io)?;
 
     // 3. Write archive
-    write_archive(file, &pads)?;
+    write_archive(file, &nested)?;
 
     let mut result = CmdResult::default();
     result.add_message(CmdMessage::success(format!("Exported to {}", filename)));
     Ok(result)
+}
+
+fn resolve_nested<S: DataStore>(
+    store: &S,
+    scope: Scope,
+    pads: &[DisplayPad],
+    nesting: NestingMode,
+) -> Result<Vec<NestedPad>> {
+    match nesting {
+        NestingMode::Flat => Ok(pads
+            .iter()
+            .map(|dp| NestedPad {
+                pad: dp.clone(),
+                depth: 0,
+            })
+            .collect()),
+        NestingMode::Tree | NestingMode::Indented => collect_nested_pads(store, scope, pads),
+    }
 }
 
 fn resolve_pads<S: DataStore>(
@@ -79,11 +104,12 @@ fn resolve_pads<S: DataStore>(
     }
 }
 
-fn write_archive<W: Write>(writer: W, pads: &[DisplayPad]) -> Result<()> {
+fn write_archive<W: Write>(writer: W, pads: &[NestedPad]) -> Result<()> {
     let enc = GzEncoder::new(writer, Compression::default());
     let mut tar = tar::Builder::new(enc);
 
-    for dp in pads {
+    for np in pads {
+        let dp = &np.pad;
         let title = &dp.pad.metadata.title;
         let safe_title = sanitize_filename(title);
         let entry_name = format!(
@@ -127,6 +153,7 @@ pub fn run_single_file<S: DataStore>(
     scope: Scope,
     selectors: &[PadSelector],
     title: &str,
+    nesting: NestingMode,
 ) -> Result<CmdResult> {
     let pads = resolve_pads(store, scope, selectors)?;
 
@@ -136,8 +163,10 @@ pub fn run_single_file<S: DataStore>(
         return Ok(res);
     }
 
+    let nested = resolve_nested(store, scope, &pads, nesting)?;
+
     let format = SingleFileFormat::from_filename(title);
-    let result = merge_pads_to_single_file(&pads, title, format);
+    let result = merge_pads_to_single_file(&nested, title, format);
 
     // Write to file
     let filename = sanitize_output_filename(title, format);
@@ -154,7 +183,7 @@ pub fn run_single_file<S: DataStore>(
 
 /// Merge pads into a single file content string.
 pub fn merge_pads_to_single_file(
-    pads: &[DisplayPad],
+    pads: &[NestedPad],
     title: &str,
     format: SingleFileFormat,
 ) -> SingleFileExportResult {
@@ -166,28 +195,51 @@ pub fn merge_pads_to_single_file(
 }
 
 /// Merge pads as plain text with headers separating each file.
-fn merge_as_text(pads: &[DisplayPad]) -> String {
+fn merge_as_text(pads: &[NestedPad]) -> String {
     let mut output = String::new();
 
-    for (i, dp) in pads.iter().enumerate() {
+    for (i, np) in pads.iter().enumerate() {
+        let dp = &np.pad;
         if i > 0 {
             output.push_str("\n\n");
         }
 
+        let indent = "    ".repeat(np.depth);
+
         // Add header with pad title
         let title = &dp.pad.metadata.title;
         let separator = "=".repeat(title.len().max(40));
+        output.push_str(&indent);
         output.push_str(&separator);
         output.push('\n');
+        output.push_str(&indent);
         output.push_str(title);
         output.push('\n');
+        output.push_str(&indent);
         output.push_str(&separator);
         output.push_str("\n\n");
 
         // Add pad content (skip the title line since we already printed it)
         let content = &dp.pad.content;
         if let Some(body_start) = content.find("\n\n") {
-            output.push_str(content[body_start + 2..].trim());
+            let body = content[body_start + 2..].trim();
+            if !indent.is_empty() {
+                for line in body.lines() {
+                    if line.is_empty() {
+                        output.push('\n');
+                    } else {
+                        output.push_str(&indent);
+                        output.push_str(line);
+                        output.push('\n');
+                    }
+                }
+                // Remove trailing newline to match original behavior
+                if output.ends_with('\n') && body.ends_with(|_: char| true) {
+                    output.pop();
+                }
+            } else {
+                output.push_str(body);
+            }
         }
     }
 
@@ -195,7 +247,7 @@ fn merge_as_text(pads: &[DisplayPad]) -> String {
 }
 
 /// Merge pads as markdown with the export title as H1 and bumped headers.
-fn merge_as_markdown(pads: &[DisplayPad], export_title: &str) -> String {
+fn merge_as_markdown(pads: &[NestedPad], export_title: &str) -> String {
     let mut output = String::new();
 
     // Export title as H1
@@ -203,13 +255,17 @@ fn merge_as_markdown(pads: &[DisplayPad], export_title: &str) -> String {
     output.push_str(export_title);
     output.push_str("\n\n");
 
-    for (i, dp) in pads.iter().enumerate() {
+    for (i, np) in pads.iter().enumerate() {
+        let dp = &np.pad;
         if i > 0 {
             output.push_str("\n\n---\n\n");
         }
 
-        // Pad title becomes H2
-        output.push_str("## ");
+        // Pad title heading level based on depth: depth 0 = H2, depth 1 = H3, etc.
+        let heading_level = (2 + np.depth).min(6);
+        let hashes = "#".repeat(heading_level);
+        output.push_str(&hashes);
+        output.push(' ');
         output.push_str(&dp.pad.metadata.title);
         output.push_str("\n\n");
 
@@ -222,8 +278,8 @@ fn merge_as_markdown(pads: &[DisplayPad], export_title: &str) -> String {
         };
 
         if !body.is_empty() {
-            // Bump all headers in the body
-            let bumped = bump_markdown_headers(body);
+            // Bump all headers in the body by (2 + depth) to nest under the pad heading
+            let bumped = bump_markdown_headers_by(body, 2 + np.depth);
             output.push_str(&bumped);
         }
     }
@@ -234,6 +290,11 @@ fn merge_as_markdown(pads: &[DisplayPad], export_title: &str) -> String {
 /// Bump all markdown header levels by 2 (H1->H3, H2->H4, etc., H6 stays H6).
 /// Uses pulldown-cmark for proper markdown parsing.
 pub fn bump_markdown_headers(content: &str) -> String {
+    bump_markdown_headers_by(content, 2)
+}
+
+/// Bump all markdown header levels by `amount`, capped at H6.
+pub fn bump_markdown_headers_by(content: &str, amount: usize) -> String {
     let options = Options::all();
     let parser = Parser::new_ext(content, options);
 
@@ -245,7 +306,7 @@ pub fn bump_markdown_headers(content: &str) -> String {
                 classes,
                 attrs,
             }) => {
-                let new_level = bump_heading_level(level);
+                let new_level = bump_heading_level_by(level, amount);
                 Event::Start(Tag::Heading {
                     level: new_level,
                     id,
@@ -254,7 +315,7 @@ pub fn bump_markdown_headers(content: &str) -> String {
                 })
             }
             Event::End(TagEnd::Heading(level)) => {
-                let new_level = bump_heading_level(level);
+                let new_level = bump_heading_level_by(level, amount);
                 Event::End(TagEnd::Heading(new_level))
             }
             other => other,
@@ -262,20 +323,28 @@ pub fn bump_markdown_headers(content: &str) -> String {
         .collect();
 
     let mut output = String::new();
-    // cmark returns Result, unwrap is safe for valid events
     cmark(events.iter(), &mut output).expect("cmark serialization failed");
     output
 }
 
-/// Bump a heading level by 2, capped at H6.
-fn bump_heading_level(level: HeadingLevel) -> HeadingLevel {
-    match level {
-        HeadingLevel::H1 => HeadingLevel::H3,
-        HeadingLevel::H2 => HeadingLevel::H4,
-        HeadingLevel::H3 => HeadingLevel::H5,
-        HeadingLevel::H4 => HeadingLevel::H6,
-        HeadingLevel::H5 => HeadingLevel::H6,
-        HeadingLevel::H6 => HeadingLevel::H6,
+/// Bump a heading level by `amount`, capped at H6.
+fn bump_heading_level_by(level: HeadingLevel, amount: usize) -> HeadingLevel {
+    let current = match level {
+        HeadingLevel::H1 => 1,
+        HeadingLevel::H2 => 2,
+        HeadingLevel::H3 => 3,
+        HeadingLevel::H4 => 4,
+        HeadingLevel::H5 => 5,
+        HeadingLevel::H6 => 6,
+    };
+    let new = (current + amount).min(6);
+    match new {
+        1 => HeadingLevel::H1,
+        2 => HeadingLevel::H2,
+        3 => HeadingLevel::H3,
+        4 => HeadingLevel::H4,
+        5 => HeadingLevel::H5,
+        _ => HeadingLevel::H6,
     }
 }
 
@@ -316,6 +385,7 @@ fn sanitize_output_filename(title: &str, format: SingleFileFormat) -> String {
 mod tests {
     use super::*;
     use crate::commands::create;
+    use crate::index::{DisplayIndex, PadSelector};
     use crate::model::Scope;
     use crate::store::bucketed::BucketedStore;
     use crate::store::mem_backend::MemBackend;
@@ -340,6 +410,15 @@ mod tests {
         assert_eq!(pads[0].pad.metadata.title, "Active");
     }
 
+    fn flat_nested(pads: &[DisplayPad]) -> Vec<NestedPad> {
+        pads.iter()
+            .map(|dp| NestedPad {
+                pad: dp.clone(),
+                depth: 0,
+            })
+            .collect()
+    }
+
     #[test]
     fn test_write_archive_produces_content() {
         let mut store = BucketedStore::new(
@@ -359,7 +438,7 @@ mod tests {
         let pads = resolve_pads(&store, Scope::Project, &[]).unwrap();
 
         let mut buf = Vec::new();
-        write_archive(&mut buf, &pads).unwrap();
+        write_archive(&mut buf, &flat_nested(&pads)).unwrap();
 
         assert!(!buf.is_empty());
         // Could verify tar content but that requires untarring.
@@ -446,17 +525,23 @@ mod tests {
     fn test_merge_as_text() {
         use crate::index::DisplayIndex;
 
-        let pad1 = DisplayPad {
-            pad: crate::model::Pad::new("First Pad".into(), "Content one".into()),
-            index: DisplayIndex::Regular(1),
-            matches: None,
-            children: vec![],
+        let pad1 = NestedPad {
+            pad: DisplayPad {
+                pad: crate::model::Pad::new("First Pad".into(), "Content one".into()),
+                index: DisplayIndex::Regular(1),
+                matches: None,
+                children: vec![],
+            },
+            depth: 0,
         };
-        let pad2 = DisplayPad {
-            pad: crate::model::Pad::new("Second Pad".into(), "Content two".into()),
-            index: DisplayIndex::Regular(2),
-            matches: None,
-            children: vec![],
+        let pad2 = NestedPad {
+            pad: DisplayPad {
+                pad: crate::model::Pad::new("Second Pad".into(), "Content two".into()),
+                index: DisplayIndex::Regular(2),
+                matches: None,
+                children: vec![],
+            },
+            depth: 0,
         };
 
         let output = merge_as_text(&[pad1, pad2]);
@@ -475,17 +560,29 @@ mod tests {
     fn test_merge_as_markdown() {
         use crate::index::DisplayIndex;
 
-        let pad1 = DisplayPad {
-            pad: crate::model::Pad::new("First Pad".into(), "# Internal H1\n\nBody text".into()),
-            index: DisplayIndex::Regular(1),
-            matches: None,
-            children: vec![],
+        let pad1 = NestedPad {
+            pad: DisplayPad {
+                pad: crate::model::Pad::new(
+                    "First Pad".into(),
+                    "# Internal H1\n\nBody text".into(),
+                ),
+                index: DisplayIndex::Regular(1),
+                matches: None,
+                children: vec![],
+            },
+            depth: 0,
         };
-        let pad2 = DisplayPad {
-            pad: crate::model::Pad::new("Second Pad".into(), "## Internal H2\n\nMore body".into()),
-            index: DisplayIndex::Regular(2),
-            matches: None,
-            children: vec![],
+        let pad2 = NestedPad {
+            pad: DisplayPad {
+                pad: crate::model::Pad::new(
+                    "Second Pad".into(),
+                    "## Internal H2\n\nMore body".into(),
+                ),
+                index: DisplayIndex::Regular(2),
+                matches: None,
+                children: vec![],
+            },
+            depth: 0,
         };
 
         let output = merge_as_markdown(&[pad1, pad2], "My Export");
@@ -542,13 +639,14 @@ mod tests {
             MemBackend::new(),
         );
         // No pads created
-        let res = run(&store, Scope::Project, &[]).unwrap();
+        let res = run(&store, Scope::Project, &[], NestingMode::Flat).unwrap();
         assert!(res
             .messages
             .iter()
             .any(|m| m.content.contains("No pads to export")));
 
-        let res_single = run_single_file(&store, Scope::Project, &[], "out.md").unwrap();
+        let res_single =
+            run_single_file(&store, Scope::Project, &[], "out.md", NestingMode::Flat).unwrap();
         assert!(res_single
             .messages
             .iter()
@@ -579,7 +677,8 @@ mod tests {
         // So passing "Title.md" results in "Title.md".
         let input_title = format!("{}.md", unique_title);
 
-        let res = run_single_file(&store, Scope::Project, &[], &input_title).unwrap();
+        let res =
+            run_single_file(&store, Scope::Project, &[], &input_title, NestingMode::Flat).unwrap();
 
         assert!(res.messages[0].content.contains("Exported 1 pads"));
         assert!(
@@ -594,5 +693,229 @@ mod tests {
 
         // Cleanup
         let _ = std::fs::remove_file(expected_path);
+    }
+
+    // --- Nesting mode tests ---
+
+    #[test]
+    fn test_merge_as_text_nested() {
+        use crate::index::DisplayIndex;
+
+        let pads = vec![
+            NestedPad {
+                pad: DisplayPad {
+                    pad: crate::model::Pad::new("Parent".into(), "Parent body".into()),
+                    index: DisplayIndex::Regular(1),
+                    matches: None,
+                    children: vec![],
+                },
+                depth: 0,
+            },
+            NestedPad {
+                pad: DisplayPad {
+                    pad: crate::model::Pad::new("Child".into(), "Child body".into()),
+                    index: DisplayIndex::Regular(1),
+                    matches: None,
+                    children: vec![],
+                },
+                depth: 1,
+            },
+        ];
+
+        let output = merge_as_text(&pads);
+
+        // Parent header at depth 0 (no indent)
+        assert!(output.contains("Parent"));
+        assert!(output.contains("Parent body"));
+        // Child header at depth 1 (4-space indent)
+        assert!(output.contains("    Child"));
+        assert!(output.contains("    Child body"));
+    }
+
+    #[test]
+    fn test_merge_as_markdown_nested() {
+        use crate::index::DisplayIndex;
+
+        let pads = vec![
+            NestedPad {
+                pad: DisplayPad {
+                    pad: crate::model::Pad::new("Parent".into(), "Parent body".into()),
+                    index: DisplayIndex::Regular(1),
+                    matches: None,
+                    children: vec![],
+                },
+                depth: 0,
+            },
+            NestedPad {
+                pad: DisplayPad {
+                    pad: crate::model::Pad::new("Child".into(), "# H1 in child".into()),
+                    index: DisplayIndex::Regular(1),
+                    matches: None,
+                    children: vec![],
+                },
+                depth: 1,
+            },
+        ];
+
+        let output = merge_as_markdown(&pads, "Export");
+
+        // H1 title
+        assert!(output.starts_with("# Export"));
+        // Parent at depth 0 -> H2
+        assert!(output.contains("## Parent"));
+        // Child at depth 1 -> H3
+        assert!(output.contains("### Child"));
+        // H1 in child body bumped by (2 + 1) = 3 -> H4
+        assert!(output.contains("#### H1 in child"));
+    }
+
+    #[test]
+    fn test_merge_as_text_nested_from_store() {
+        let mut store = BucketedStore::new(
+            MemBackend::new(),
+            MemBackend::new(),
+            MemBackend::new(),
+            MemBackend::new(),
+        );
+        create::run(
+            &mut store,
+            Scope::Project,
+            "Groceries".into(),
+            "Weekly shopping".into(),
+            None,
+        )
+        .unwrap();
+        create::run(
+            &mut store,
+            Scope::Project,
+            "Bread".into(),
+            "Whole wheat".into(),
+            Some(PadSelector::Path(vec![DisplayIndex::Regular(1)])),
+        )
+        .unwrap();
+
+        let pads = resolve_pads(&store, Scope::Project, &[]).unwrap();
+        let nested = resolve_nested(&store, Scope::Project, &pads, NestingMode::Tree).unwrap();
+
+        let output = merge_as_text(&nested);
+
+        // Parent present
+        assert!(output.contains("Groceries"), "should contain parent title");
+        assert!(
+            output.contains("Weekly shopping"),
+            "should contain parent body"
+        );
+        // Child present with indent (depth 1 = 4-space indent in text export)
+        assert!(
+            output.contains("    Bread"),
+            "child title should be indented"
+        );
+        assert!(
+            output.contains("    Whole wheat"),
+            "child body should be indented"
+        );
+    }
+
+    #[test]
+    fn test_merge_as_markdown_nested_from_store() {
+        let mut store = BucketedStore::new(
+            MemBackend::new(),
+            MemBackend::new(),
+            MemBackend::new(),
+            MemBackend::new(),
+        );
+        create::run(
+            &mut store,
+            Scope::Project,
+            "Project".into(),
+            "# Overview\n\nProject description".into(),
+            None,
+        )
+        .unwrap();
+        create::run(
+            &mut store,
+            Scope::Project,
+            "Module A".into(),
+            "## API\n\nEndpoints here".into(),
+            Some(PadSelector::Path(vec![DisplayIndex::Regular(1)])),
+        )
+        .unwrap();
+
+        let pads = resolve_pads(&store, Scope::Project, &[]).unwrap();
+        let nested = resolve_nested(&store, Scope::Project, &pads, NestingMode::Tree).unwrap();
+
+        let output = merge_as_markdown(&nested, "Docs");
+
+        // Export title
+        assert!(output.starts_with("# Docs"));
+        // Parent at depth 0 -> H2
+        assert!(output.contains("## Project"), "parent should be H2");
+        // Child at depth 1 -> H3
+        assert!(output.contains("### Module A"), "child should be H3");
+        // Parent body H1 bumped by 2 -> H3
+        assert!(
+            output.contains("### Overview"),
+            "parent body H1 should become H3"
+        );
+        // Child body H2 bumped by 3 (2+1) -> H5
+        assert!(
+            output.contains("##### API"),
+            "child body H2 should become H5"
+        );
+    }
+
+    #[test]
+    fn test_flat_nesting_produces_no_children_in_export() {
+        let mut store = BucketedStore::new(
+            MemBackend::new(),
+            MemBackend::new(),
+            MemBackend::new(),
+            MemBackend::new(),
+        );
+        create::run(
+            &mut store,
+            Scope::Project,
+            "Parent".into(),
+            "Parent content".into(),
+            None,
+        )
+        .unwrap();
+        create::run(
+            &mut store,
+            Scope::Project,
+            "Child".into(),
+            "Child content".into(),
+            Some(PadSelector::Path(vec![DisplayIndex::Regular(1)])),
+        )
+        .unwrap();
+
+        let pads = resolve_pads(&store, Scope::Project, &[]).unwrap();
+        // Flat mode: should NOT include children
+        let nested = resolve_nested(&store, Scope::Project, &pads, NestingMode::Flat).unwrap();
+
+        // Only root-level pads (Parent) — no Child
+        assert_eq!(nested.len(), 1);
+        assert_eq!(nested[0].pad.pad.metadata.title, "Parent");
+        assert_eq!(nested[0].depth, 0);
+    }
+
+    #[test]
+    fn test_merge_as_markdown_deep_nesting_caps_at_h6() {
+        use crate::index::DisplayIndex;
+
+        let pads = vec![NestedPad {
+            pad: DisplayPad {
+                pad: crate::model::Pad::new("Deep".into(), "# Heading".into()),
+                index: DisplayIndex::Regular(1),
+                matches: None,
+                children: vec![],
+            },
+            depth: 5, // depth 5 -> heading level 2+5=7 -> capped at 6
+        }];
+
+        let output = merge_as_markdown(&pads, "Export");
+
+        // Title at depth 5 should cap at H6
+        assert!(output.contains("###### Deep"));
     }
 }

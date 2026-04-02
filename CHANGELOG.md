@@ -6,6 +6,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+- **Added**
+  - **Nested pad output** — `view`, `copy`, and `export` commands now recursively include children by default (`--tree`). Use `--flat` for the previous behavior (selected pad only) or `--indented` for 4-space indentation per nesting level. Centralized tree-walking logic ensures consistent behavior across all content-output commands.
+
 ## [0.27.1] - 2026-03-28
 
 ## [0.27.1] - 2026-03-28
