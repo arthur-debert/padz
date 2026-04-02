@@ -335,12 +335,15 @@ impl<'a> ScopedApi<'a> {
     ) -> Result<Output<Value>, anyhow::Error> {
         let result = self.call(|api, scope| api.view_pads(scope, indexes, nesting))?;
 
-        // Copy content to clipboard
-        for dp in &result.listed_pads {
-            copy_content_to_clipboard(&dp.pad.content);
+        // Copy content to clipboard (only root-level pads for tree/indented)
+        for (i, dp) in result.listed_pads.iter().enumerate() {
+            let depth = result.listed_depths.get(i).copied().unwrap_or(0);
+            if depth == 0 {
+                copy_content_to_clipboard(&dp.pad.content);
+            }
         }
 
-        let indent_per_level = match nesting {
+        let indent_per_level: usize = match nesting {
             NestingMode::Indented => 4,
             _ => 0,
         };
@@ -362,17 +365,7 @@ impl<'a> ScopedApi<'a> {
                 let (display_title, display_body) = if indent.is_empty() {
                     (dp.pad.metadata.title.clone(), body)
                 } else {
-                    let indented_body = body
-                        .lines()
-                        .map(|line| {
-                            if line.is_empty() {
-                                String::new()
-                            } else {
-                                format!("{}{}", indent, line)
-                            }
-                        })
-                        .collect::<Vec<_>>()
-                        .join("\n");
+                    let indented_body = indent_lines(&body, &indent);
                     (
                         format!("{}{}", indent, dp.pad.metadata.title),
                         indented_body,
@@ -382,6 +375,7 @@ impl<'a> ScopedApi<'a> {
                 let mut v = serde_json::json!({
                     "title": display_title,
                     "content": display_body,
+                    "depth": depth,
                 });
                 if show_uuid {
                     v["uuid"] = serde_json::json!(dp.pad.metadata.id.to_string());
@@ -401,47 +395,37 @@ impl<'a> ScopedApi<'a> {
     ) -> Result<Output<Value>, anyhow::Error> {
         let result = self.call(|api, scope| api.view_pads(scope, indexes, nesting))?;
 
-        // Copy content to clipboard
-        let indent_per_level = match nesting {
+        let indent_per_level: usize = match nesting {
             NestingMode::Indented => 4,
             _ => 0,
         };
 
-        let mut clipboard_parts: Vec<String> = Vec::new();
+        // Build clipboard text: root pads separated by ---, children appended under parent
+        let mut clipboard_text = String::new();
         for (i, dp) in result.listed_pads.iter().enumerate() {
             let depth = result.listed_depths.get(i).copied().unwrap_or(0);
             let indent = " ".repeat(depth * indent_per_level);
-            let formatted = if indent.is_empty() {
-                format_for_clipboard(
-                    &dp.pad.metadata.title,
-                    &extract_title_and_body(&dp.pad.content)
-                        .map(|(_, b)| b)
-                        .unwrap_or_default(),
-                )
+            let body = extract_title_and_body(&dp.pad.content)
+                .map(|(_, b)| b)
+                .unwrap_or_default();
+
+            // --- separator only between root-level pads (not between parent and child)
+            if depth == 0 && !clipboard_text.is_empty() {
+                clipboard_text.push_str("\n---\n\n");
+            } else if depth > 0 {
+                clipboard_text.push_str("\n\n");
+            }
+
+            if indent.is_empty() {
+                clipboard_text.push_str(&format_for_clipboard(&dp.pad.metadata.title, &body));
             } else {
-                let body = extract_title_and_body(&dp.pad.content)
-                    .map(|(_, b)| b)
-                    .unwrap_or_default();
-                let indented_body = body
-                    .lines()
-                    .map(|line| {
-                        if line.is_empty() {
-                            String::new()
-                        } else {
-                            format!("{}{}", indent, line)
-                        }
-                    })
-                    .collect::<Vec<_>>()
-                    .join("\n");
-                format_for_clipboard(
+                clipboard_text.push_str(&format_for_clipboard(
                     &format!("{}{}", indent, dp.pad.metadata.title),
-                    &indented_body,
-                )
-            };
-            clipboard_parts.push(formatted);
+                    &indent_lines(&body, &indent),
+                ));
+            }
         }
 
-        let clipboard_text = clipboard_parts.join("\n---\n\n");
         let _ = copy_to_clipboard(&clipboard_text);
 
         // Report using only the root-level (depth 0) pad titles
@@ -493,6 +477,20 @@ fn copy_content_to_clipboard(content: &str) {
         let clipboard_text = format_for_clipboard(&title, &body);
         let _ = copy_to_clipboard(&clipboard_text);
     }
+}
+
+/// Indent each non-empty line with the given prefix.
+fn indent_lines(text: &str, prefix: &str) -> String {
+    text.lines()
+        .map(|line| {
+            if line.is_empty() {
+                String::new()
+            } else {
+                format!("{}{}", prefix, line)
+            }
+        })
+        .collect::<Vec<_>>()
+        .join("\n")
 }
 
 /// Try to read content from piped stdin.
