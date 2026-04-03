@@ -99,6 +99,44 @@ pub fn resolve_selectors<S: DataStore>(
                     }
                 }
             }
+            PadSelector::ShortUuid(hex) => {
+                let matches: Vec<&(Vec<DisplayIndex>, &DisplayPad)> = linearized
+                    .iter()
+                    .filter(|(_, dp)| {
+                        dp.pad
+                            .metadata
+                            .id
+                            .to_string()
+                            .replace('-', "")
+                            .starts_with(hex.as_str())
+                    })
+                    .collect();
+
+                match matches.len() {
+                    0 => {
+                        return Err(PadzError::Api(format!(
+                            "No pad found with UUID prefix {}",
+                            hex
+                        )));
+                    }
+                    1 => {
+                        let (path, dp) = matches[0];
+                        if check_delete_protection && dp.pad.metadata.delete_protected {
+                            return Err(PadzError::Api(
+                                "Pinned pads are delete protected, unpin then delete it"
+                                    .to_string(),
+                            ));
+                        }
+                        results.push((path.clone(), dp.pad.metadata.id));
+                    }
+                    n => {
+                        return Err(PadzError::Api(format!(
+                            "UUID prefix \"{}\" matches {} pads. Use more characters to be unique.",
+                            hex, n
+                        )));
+                    }
+                }
+            }
             PadSelector::Title(term) => {
                 let term_lower = term.to_lowercase();
                 let matches: Vec<&(Vec<DisplayIndex>, &DisplayPad)> = linearized
@@ -1307,5 +1345,92 @@ mod tests {
         assert_eq!(nested[1].depth, 0);
         assert_eq!(nested[2].pad.pad.metadata.title, "Child of A");
         assert_eq!(nested[2].depth, 1);
+    }
+
+    // ==================== Short UUID resolution tests ====================
+
+    #[test]
+    fn test_short_uuid_resolves_to_pad() {
+        let mut store = BucketedStore::new(
+            MemBackend::new(),
+            MemBackend::new(),
+            MemBackend::new(),
+            MemBackend::new(),
+        );
+        let result =
+            create::run(&mut store, Scope::Project, "Pad A".into(), "".into(), None).unwrap();
+        let pad_uuid = result.affected_pads[0].pad.metadata.id;
+
+        // Use full hex (no hyphens) as a short UUID — should match
+        let hex = pad_uuid.to_string().replace('-', "");
+        let short = &hex[..8];
+
+        let resolved = resolve_selectors(
+            &store,
+            Scope::Project,
+            &[PadSelector::ShortUuid(short.to_string())],
+            false,
+        )
+        .unwrap();
+
+        assert_eq!(resolved.len(), 1);
+        assert_eq!(resolved[0].1, pad_uuid);
+    }
+
+    #[test]
+    fn test_short_uuid_not_found() {
+        let mut store = BucketedStore::new(
+            MemBackend::new(),
+            MemBackend::new(),
+            MemBackend::new(),
+            MemBackend::new(),
+        );
+        create::run(&mut store, Scope::Project, "Pad A".into(), "".into(), None).unwrap();
+
+        let result = resolve_selectors(
+            &store,
+            Scope::Project,
+            &[PadSelector::ShortUuid("00000000".to_string())],
+            false,
+        );
+
+        assert!(result.is_err());
+        let err = result.unwrap_err();
+        assert!(err.to_string().contains("No pad found with UUID prefix"));
+    }
+
+    #[test]
+    fn test_short_uuid_delete_protection() {
+        let mut store = BucketedStore::new(
+            MemBackend::new(),
+            MemBackend::new(),
+            MemBackend::new(),
+            MemBackend::new(),
+        );
+        let result =
+            create::run(&mut store, Scope::Project, "Pad A".into(), "".into(), None).unwrap();
+        let pad_uuid = result.affected_pads[0].pad.metadata.id;
+
+        // Set delete protection
+        let pads = store.list_pads(Scope::Project, Bucket::Active).unwrap();
+        let mut pad = pads[0].clone();
+        pad.metadata.delete_protected = true;
+        store
+            .save_pad(&pad, Scope::Project, Bucket::Active)
+            .unwrap();
+
+        let hex = pad_uuid.to_string().replace('-', "");
+        let short = &hex[..8];
+
+        let result = resolve_selectors(
+            &store,
+            Scope::Project,
+            &[PadSelector::ShortUuid(short.to_string())],
+            true,
+        );
+
+        assert!(result.is_err());
+        let err = result.unwrap_err();
+        assert!(err.to_string().contains("delete protected"));
     }
 }

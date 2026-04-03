@@ -80,6 +80,7 @@ use crate::index::{parse_index_or_range, PadSelector};
 use crate::model::{Pad, Scope};
 use crate::store::fs::FileStore;
 use crate::store::DataStore;
+use uuid::Uuid;
 
 /// The main API facade for padz operations.
 ///
@@ -512,7 +513,12 @@ fn parse_selectors_for_archived<I: AsRef<str>>(inputs: &[I]) -> Result<Vec<PadSe
 
 /// Normalizes an index string to an archived index if it's a bare number.
 /// "3" -> "ar3", "ar3" -> "ar3", "p1" -> "p1", "3-5" -> "ar3-ar5"
+/// UUIDs (full or short hex) pass through unchanged.
 fn normalize_to_archived_index(s: &str) -> String {
+    // Full UUIDs and short hex prefixes pass through unchanged
+    if Uuid::parse_str(s).is_ok() || looks_like_short_uuid(s) {
+        return s.to_string();
+    }
     if let Some(dash_pos) = s.find('-') {
         if dash_pos > 0 {
             let start_str = &s[..dash_pos];
@@ -537,7 +543,12 @@ fn normalize_path_for_archived(s: &str) -> String {
 
 /// Normalizes an index string to a deleted index if it's a bare number.
 /// "3" -> "d3", "d3" -> "d3", "p1" -> "p1", "3-5" -> "d3-d5"
+/// UUIDs (full or short hex) pass through unchanged.
 fn normalize_to_deleted_index(s: &str) -> String {
+    // Full UUIDs and short hex prefixes pass through unchanged
+    if Uuid::parse_str(s).is_ok() || looks_like_short_uuid(s) {
+        return s.to_string();
+    }
     if let Some(dash_pos) = s.find('-') {
         if dash_pos > 0 {
             let start_str = &s[..dash_pos];
@@ -573,6 +584,15 @@ fn normalize_single_to_deleted(s: &str) -> String {
     } else {
         s.to_string()
     }
+}
+
+/// A short UUID is a hex string that isn't parseable as a DisplayIndex.
+/// We check: non-empty, all hex digits, AND contains at least one non-digit
+/// (otherwise it would have parsed as a Regular DI).
+fn looks_like_short_uuid(s: &str) -> bool {
+    !s.is_empty()
+        && s.chars().all(|c| c.is_ascii_hexdigit())
+        && s.chars().any(|c| c.is_ascii_alphabetic())
 }
 
 // parse_index_or_range and parse_path removed (imported from index.rs)
@@ -697,6 +717,75 @@ mod tests {
 
         assert_eq!(selectors.len(), 1);
         assert!(matches!(selectors[0], PadSelector::Range(_, _)));
+    }
+
+    // --- Short UUID + DI interchangeability tests ---
+
+    #[test]
+    fn test_parse_selectors_mixed_di_and_short_uuid() {
+        // "1 4 766d5dab" — DIs and short UUID in one command
+        let inputs = vec!["1", "4", "766d5dab"];
+        let selectors = parse_selectors(&inputs).unwrap();
+
+        assert_eq!(selectors.len(), 3);
+        assert!(matches!(&selectors[0], PadSelector::Path(_)));
+        assert!(matches!(&selectors[1], PadSelector::Path(_)));
+        assert!(matches!(&selectors[2], PadSelector::ShortUuid(h) if h == "766d5dab"));
+    }
+
+    #[test]
+    fn test_parse_selectors_short_uuid_only() {
+        let inputs = vec!["abcdef01"];
+        let selectors = parse_selectors(&inputs).unwrap();
+
+        assert_eq!(selectors.len(), 1);
+        assert!(matches!(&selectors[0], PadSelector::ShortUuid(h) if h == "abcdef01"));
+    }
+
+    #[test]
+    fn test_parse_selectors_full_uuid_still_works() {
+        let inputs = vec!["550e8400-e29b-41d4-a716-446655440000"];
+        let selectors = parse_selectors(&inputs).unwrap();
+
+        assert_eq!(selectors.len(), 1);
+        assert!(matches!(&selectors[0], PadSelector::Uuid(_)));
+    }
+
+    #[test]
+    fn test_parse_selectors_non_hex_still_becomes_title() {
+        // "meeting" contains non-hex chars → title search
+        let inputs = vec!["meeting"];
+        let selectors = parse_selectors(&inputs).unwrap();
+
+        assert_eq!(selectors.len(), 1);
+        assert!(matches!(&selectors[0], PadSelector::Title(_)));
+    }
+
+    #[test]
+    fn test_normalize_to_deleted_preserves_short_uuid() {
+        // Short UUID should not be prefixed with 'd'
+        assert_eq!(normalize_to_deleted_index("766d5dab"), "766d5dab");
+    }
+
+    #[test]
+    fn test_normalize_to_deleted_preserves_full_uuid() {
+        assert_eq!(
+            normalize_to_deleted_index("550e8400-e29b-41d4-a716-446655440000"),
+            "550e8400-e29b-41d4-a716-446655440000"
+        );
+    }
+
+    #[test]
+    fn test_normalize_to_archived_preserves_short_uuid() {
+        assert_eq!(normalize_to_archived_index("766d5dab"), "766d5dab");
+    }
+
+    #[test]
+    fn test_normalize_to_archived_preserves_full_uuid() {
+        assert_eq!(
+            normalize_to_archived_index("550e8400-e29b-41d4-a716-446655440000"),
+            "550e8400-e29b-41d4-a716-446655440000"
+        );
     }
 
     // --- API facade integration tests ---
