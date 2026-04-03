@@ -92,6 +92,9 @@ pub enum PadSelector {
     Path(Vec<DisplayIndex>),
     Range(Vec<DisplayIndex>, Vec<DisplayIndex>), // Start Path, End Path
     Uuid(Uuid),
+    /// A hex prefix of a UUID (e.g. "766d5dab" from `padz list --short-uuid`).
+    /// Resolved by prefix-matching against pad UUIDs.
+    ShortUuid(String),
     Title(String),
 }
 
@@ -108,6 +111,7 @@ impl std::fmt::Display for PadSelector {
                 write!(f, "{}-{}", s_start.join("."), s_end.join("."))
             }
             PadSelector::Uuid(uuid) => write!(f, "{}", uuid),
+            PadSelector::ShortUuid(hex) => write!(f, "{}", hex),
             PadSelector::Title(t) => write!(f, "\"{}\"", t),
         }
     }
@@ -316,8 +320,17 @@ pub fn parse_index_or_range(s: &str) -> Result<PadSelector, String> {
         }
     }
 
-    // Not a range
-    parse_path(s).map(PadSelector::Path)
+    // Not a range — try as a DI path first, fall back to short UUID hex prefix
+    match parse_path(s) {
+        Ok(path) => Ok(PadSelector::Path(path)),
+        Err(_) if is_hex_string(s) => Ok(PadSelector::ShortUuid(s.to_lowercase())),
+        Err(e) => Err(e),
+    }
+}
+
+/// Returns true if the string is a non-empty hex string (0-9, a-f, case-insensitive).
+fn is_hex_string(s: &str) -> bool {
+    !s.is_empty() && s.chars().all(|c| c.is_ascii_hexdigit())
 }
 
 /// Parses a dot-separated path string into a vector of DisplayIndex.
@@ -772,6 +785,95 @@ mod tests {
         let uuid = Uuid::parse_str(uuid_str).unwrap();
         let selector = PadSelector::Uuid(uuid);
         assert_eq!(format!("{}", selector), uuid_str);
+    }
+
+    // ==================== Short UUID parsing tests ====================
+
+    #[test]
+    fn test_parse_short_uuid_hex_prefix() {
+        // 8-char hex string (like --short-uuid output) should parse as ShortUuid
+        assert_eq!(
+            parse_index_or_range("766d5dab"),
+            Ok(PadSelector::ShortUuid("766d5dab".to_string()))
+        );
+        assert_eq!(
+            parse_index_or_range("4e704ff3"),
+            Ok(PadSelector::ShortUuid("4e704ff3".to_string()))
+        );
+    }
+
+    #[test]
+    fn test_parse_short_uuid_various_lengths() {
+        // Shorter hex prefixes
+        assert_eq!(
+            parse_index_or_range("abcd"),
+            Ok(PadSelector::ShortUuid("abcd".to_string()))
+        );
+        // Longer hex prefix (but not a full UUID)
+        assert_eq!(
+            parse_index_or_range("550e8400e29b"),
+            Ok(PadSelector::ShortUuid("550e8400e29b".to_string()))
+        );
+    }
+
+    #[test]
+    fn test_parse_short_uuid_case_insensitive() {
+        // Upper-case hex should be normalized to lowercase
+        assert_eq!(
+            parse_index_or_range("ABCDEF01"),
+            Ok(PadSelector::ShortUuid("abcdef01".to_string()))
+        );
+        assert_eq!(
+            parse_index_or_range("AbCd"),
+            Ok(PadSelector::ShortUuid("abcd".to_string()))
+        );
+    }
+
+    #[test]
+    fn test_di_takes_priority_over_short_uuid() {
+        // "d3" is valid as Deleted(3) — DI wins
+        assert_eq!(
+            parse_index_or_range("d3"),
+            Ok(PadSelector::Path(vec![DisplayIndex::Deleted(3)]))
+        );
+        // Pure numbers remain Regular DIs, not hex
+        assert_eq!(
+            parse_index_or_range("123"),
+            Ok(PadSelector::Path(vec![DisplayIndex::Regular(123)]))
+        );
+        // "p1" is Pinned(1), not hex (p isn't hex anyway)
+        assert_eq!(
+            parse_index_or_range("p1"),
+            Ok(PadSelector::Path(vec![DisplayIndex::Pinned(1)]))
+        );
+    }
+
+    #[test]
+    fn test_hex_with_non_di_chars_becomes_short_uuid() {
+        // "d3f" can't be a DI (d + "3f" isn't a number), so falls to ShortUuid
+        assert_eq!(
+            parse_index_or_range("d3f"),
+            Ok(PadSelector::ShortUuid("d3f".to_string()))
+        );
+        // "1a" isn't a valid DI either
+        assert_eq!(
+            parse_index_or_range("1a"),
+            Ok(PadSelector::ShortUuid("1a".to_string()))
+        );
+    }
+
+    #[test]
+    fn test_non_hex_strings_still_error() {
+        // Strings with non-hex characters should still fail
+        assert!(parse_index_or_range("xyz").is_err());
+        assert!(parse_index_or_range("meeting").is_err());
+        assert!(parse_index_or_range("hello").is_err());
+    }
+
+    #[test]
+    fn test_short_uuid_display() {
+        let selector = PadSelector::ShortUuid("766d5dab".to_string());
+        assert_eq!(format!("{}", selector), "766d5dab");
     }
 
     #[test]

@@ -199,6 +199,43 @@ fn filter_by_selectors(
                     }
                 }
             }
+            PadSelector::ShortUuid(hex) => {
+                let matches: Vec<&&DisplayPad> = linearized
+                    .iter()
+                    .filter(|(_, dp)| {
+                        dp.pad
+                            .metadata
+                            .id
+                            .to_string()
+                            .replace('-', "")
+                            .starts_with(hex.as_str())
+                    })
+                    .map(|(_, dp)| dp)
+                    .collect();
+
+                match matches.len() {
+                    0 => {
+                        return Err(PadzError::Api(format!(
+                            "No pad found with UUID prefix {}",
+                            hex
+                        )));
+                    }
+                    1 => {
+                        if !matched
+                            .iter()
+                            .any(|m: &DisplayPad| m.pad.metadata.id == matches[0].pad.metadata.id)
+                        {
+                            matched.push((*matches[0]).clone());
+                        }
+                    }
+                    n => {
+                        return Err(PadzError::Api(format!(
+                            "UUID prefix \"{}\" matches {} pads. Use more characters to be unique.",
+                            hex, n
+                        )));
+                    }
+                }
+            }
             PadSelector::Title(term) => {
                 let term_lower = term.to_lowercase();
                 let matches: Vec<&DisplayPad> = linearized

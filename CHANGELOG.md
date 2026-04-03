@@ -7,6 +7,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 ## [Unreleased]
 
 - **Added**
+  - **Interchangeable UUIDs and Display Indices** — Commands that accept pad IDs now accept UUIDs (full or short hex prefix) interchangeably with Display Indices. For example, `padz view 1 4 766d5dab` mixes DIs and a short UUID. Short UUIDs are the hex prefixes shown by `--short-uuid` listings. DI formats (`1`, `p1`, `d2`, `ar3`) take priority; hex strings that don't match a DI pattern are treated as UUID prefixes. Ambiguous prefixes (matching multiple pads) produce a clear error.
   - **Nested pad output** — `view`, `copy`, and `export` commands now recursively include children by default (`--tree`). Use `--flat` for the previous behavior (selected pad only) or `--indented` for 4-space indentation per nesting level. Centralized tree-walking logic ensures consistent behavior across all content-output commands.
 
 - **Fixed**
