@@ -358,6 +358,16 @@ impl<S: DataStore> PadzApi<S> {
         self.store.delete_pad(&id, scope, Bucket::Active)
     }
 
+    /// Propagate todo status changes upward from a child's parent.
+    ///
+    /// Called after create/delete/status-change operations to keep ancestor
+    /// statuses consistent. Separated from `create_pad` because propagation
+    /// triggers reconciliation (via `list_pads`), which garbage-collects empty
+    /// files — a problem when the pad hasn't been filled yet (editor flow).
+    pub fn propagate_status(&mut self, scope: Scope, parent_id: Option<uuid::Uuid>) -> Result<()> {
+        crate::todos::propagate_status_change(&mut self.store, scope, parent_id)
+    }
+
     pub fn init(&self, scope: Scope) -> Result<commands::CmdResult> {
         commands::init::run(&self.paths, scope)
     }
@@ -1245,5 +1255,64 @@ mod tests {
             .get_pads(Scope::Project, PadFilter::default(), &[] as &[String])
             .unwrap();
         assert_eq!(list.listed_pads.len(), 0);
+    }
+
+    /// Regression test: simulates the full editor flow for nested pad creation.
+    ///
+    /// The sequence is: create empty pad with parent → (editor fills content)
+    /// → refresh_pad → propagate_status. Before the fix, propagation was called
+    /// inside create, which triggered reconciliation that deleted the empty file
+    /// and its index entry (with parent_id). The pad was then recovered as an
+    /// orphan with parent_id: None.
+    #[test]
+    fn test_editor_flow_preserves_nested_parent() {
+        let mut api = make_api();
+
+        // Create parent pad
+        api.create_pad(Scope::Project, "Parent".into(), "".into(), None)
+            .unwrap();
+
+        // Create child with empty content (simulates `padz create -i 1 -e`)
+        let result = api
+            .create_pad(Scope::Project, "".into(), "".into(), Some("1"))
+            .unwrap();
+        let child_id = result.affected_pads[0].pad.metadata.id;
+        assert!(result.affected_pads[0].pad.metadata.parent_id.is_some());
+
+        // Simulate editor: write content to the pad file
+        api.store
+            .active_store_mut()
+            .backend
+            .write_content(&child_id, Scope::Project, "Editor Content")
+            .unwrap();
+
+        // refresh_pad re-reads content from disk (like after editor closes)
+        let refreshed = api.refresh_pad(Scope::Project, &child_id).unwrap();
+        assert!(refreshed.is_some(), "Pad should exist after refresh");
+        let pad = refreshed.unwrap();
+        assert_eq!(pad.metadata.title, "Editor Content");
+        assert!(
+            pad.metadata.parent_id.is_some(),
+            "Parent ID must be preserved through editor flow"
+        );
+
+        // Now propagate status (caller responsibility after editor)
+        api.propagate_status(Scope::Project, pad.metadata.parent_id)
+            .unwrap();
+
+        // Verify the pad is a child in the tree (children are nested under parents)
+        let all = api
+            .get_pads(Scope::Project, PadFilter::default(), &[] as &[String])
+            .unwrap();
+        assert_eq!(all.listed_pads.len(), 1, "Should have one root pad");
+        let parent_dp = &all.listed_pads[0];
+        assert_eq!(parent_dp.pad.metadata.title, "Parent");
+        assert_eq!(parent_dp.children.len(), 1, "Parent should have one child");
+        let child_dp = &parent_dp.children[0];
+        assert_eq!(child_dp.pad.metadata.id, child_id);
+        assert_eq!(
+            child_dp.pad.metadata.parent_id, pad.metadata.parent_id,
+            "Parent ID must survive the full create→editor→refresh→propagate cycle"
+        );
     }
 }

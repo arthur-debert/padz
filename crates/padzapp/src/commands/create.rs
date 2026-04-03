@@ -37,8 +37,12 @@ pub fn run<S: DataStore>(
 
     store.save_pad(&pad, scope, Bucket::Active)?;
 
-    // Propagate status change to parent (e.g. adding a "Planned" child might revert parent from "Done")
-    crate::todos::propagate_status_change(store, scope, pad.metadata.parent_id)?;
+    // NOTE: We intentionally do NOT call propagate_status_change here.
+    // Propagation triggers list_pads → reconciliation, which garbage-collects
+    // empty content files. In the editor flow, the pad starts with empty content
+    // (user hasn't typed yet), so reconciliation would delete the file AND its
+    // index entry — destroying the parent_id. The caller is responsible for
+    // calling propagate_status after the pad has real content.
 
     // Get the path for the created pad (for editor integration)
     let pad_path = store.get_pad_path(&pad.metadata.id, scope, Bucket::Active)?;
@@ -61,6 +65,7 @@ pub fn run<S: DataStore>(
 mod tests {
     use super::*;
     use crate::index::{DisplayIndex, PadSelector};
+    use crate::store::backend::StorageBackend;
     use crate::store::bucketed::BucketedStore;
     use crate::store::mem_backend::MemBackend;
 
@@ -226,6 +231,106 @@ mod tests {
         let pads = store.list_pads(Scope::Project, Bucket::Active).unwrap();
         assert_eq!(pads.len(), 1);
         assert!(pads[0].metadata.parent_id.is_none());
+    }
+
+    /// Regression test: creating a nested pad with empty content must not trigger
+    /// reconciliation (which would delete the empty file and lose parent_id).
+    ///
+    /// Before the fix, create::run called propagate_status_change which called
+    /// list_pads → reconcile. Reconciliation garbage-collected the empty content
+    /// file AND its index entry (with parent_id). Now create::run does NOT call
+    /// propagation — the caller handles it after the pad has real content.
+    #[test]
+    fn nested_empty_content_no_propagation_during_create() {
+        let mut store = BucketedStore::new(
+            MemBackend::new(),
+            MemBackend::new(),
+            MemBackend::new(),
+            MemBackend::new(),
+        );
+
+        // Create parent
+        run(&mut store, Scope::Project, "Parent".into(), "".into(), None).unwrap();
+
+        // Create child with EMPTY content — simulates `padz create -i 1 -e` (editor flow)
+        let parent_sel = PadSelector::Path(vec![DisplayIndex::Regular(1)]);
+        let result = run(
+            &mut store,
+            Scope::Project,
+            "".into(),
+            "".into(),
+            Some(parent_sel),
+        )
+        .unwrap();
+        let child_id = result.affected_pads[0].pad.metadata.id;
+        let parent_id = result.affected_pads[0].pad.metadata.parent_id;
+
+        // The child was created with parent_id set
+        assert!(parent_id.is_some());
+
+        // Crucially: get_pad must find the child (no reconciliation ran to delete it)
+        let child = store
+            .get_pad(&child_id, Scope::Project, Bucket::Active)
+            .expect("Child pad must exist — create should not trigger reconciliation");
+        assert_eq!(child.metadata.parent_id, parent_id);
+    }
+
+    /// Simulates the full editor flow: create empty → editor writes content →
+    /// refresh → propagate. Parent_id must be preserved throughout.
+    #[test]
+    fn nested_editor_flow_preserves_parent_id() {
+        let mut store = BucketedStore::new(
+            MemBackend::new(),
+            MemBackend::new(),
+            MemBackend::new(),
+            MemBackend::new(),
+        );
+
+        // Create parent
+        run(&mut store, Scope::Project, "Parent".into(), "".into(), None).unwrap();
+
+        // Create child with empty content (editor hasn't filled it yet)
+        let parent_sel = PadSelector::Path(vec![DisplayIndex::Regular(1)]);
+        let result = run(
+            &mut store,
+            Scope::Project,
+            "".into(),
+            "".into(),
+            Some(parent_sel),
+        )
+        .unwrap();
+        let child_id = result.affected_pads[0].pad.metadata.id;
+        let parent_id = result.affected_pads[0].pad.metadata.parent_id;
+        assert!(parent_id.is_some());
+
+        // Simulate editor writing content
+        store
+            .active_store_mut()
+            .backend
+            .write_content(&child_id, Scope::Project, "Editor Content")
+            .unwrap();
+
+        // Simulate refresh_pad: get_pad + update
+        let mut pad = store
+            .get_pad(&child_id, Scope::Project, Bucket::Active)
+            .expect("Pad must exist after editor write");
+        pad.update_from_raw("Editor Content");
+        store
+            .save_pad(&pad, Scope::Project, Bucket::Active)
+            .unwrap();
+
+        // NOW propagate (caller responsibility) — this triggers list_pads → reconcile
+        crate::todos::propagate_status_change(&mut store, Scope::Project, parent_id).unwrap();
+
+        // Verify parent_id survived the full cycle
+        let final_pad = store
+            .get_pad(&child_id, Scope::Project, Bucket::Active)
+            .unwrap();
+        assert_eq!(
+            final_pad.metadata.parent_id, parent_id,
+            "Parent ID must survive create → editor → refresh → propagate cycle"
+        );
+        assert_eq!(final_pad.metadata.title, "Editor Content");
     }
 
     #[test]

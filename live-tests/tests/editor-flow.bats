@@ -199,3 +199,61 @@ teardown() {
 
     [[ "${tmp_before}" == "${tmp_after}" ]]
 }
+
+# -----------------------------------------------------------------------------
+# NESTED PAD CREATION VIA PIPED CONTENT (regression: parent_id preservation)
+# -----------------------------------------------------------------------------
+# These tests verify the fix for the bug where creating a nested pad via
+# editor/pipe lost the parent_id. The root cause was that create::run called
+# propagate_status_change (which triggers reconciliation) before the pad had
+# real content, causing reconciliation to delete the empty file + index entry.
+
+@test "piped nested create preserves parent relationship" {
+    # Create parent pad
+    bash -c "printf 'Parent Pad\n\nParent body' | \"${PADZ_BIN}\" -g create" >/dev/null
+
+    # Create child pad with parent reference
+    bash -c "printf 'Child Pad\n\nChild body' | \"${PADZ_BIN}\" -g create -i 1" >/dev/null
+
+    # Verify parent exists
+    assert_pad_exists "Parent Pad" global
+
+    # Child should be nested under parent (not a top-level pad)
+    local json child_parent_id
+    json=$(list_pads global)
+
+    # Only 1 root pad (the parent)
+    local root_count
+    root_count=$(echo "${json}" | jq '.pads | length')
+    [[ "${root_count}" -eq 1 ]]
+
+    # The parent should have the child nested inside
+    child_parent_id=$(echo "${json}" | jq -r '.pads[0].children[0].pad.metadata.parent_id')
+    [[ "${child_parent_id}" != "null" ]]
+
+    local child_title
+    child_title=$(echo "${json}" | jq -r '.pads[0].children[0].pad.metadata.title')
+    [[ "${child_title}" == "Child Pad" ]]
+}
+
+@test "piped nested create shows child in tree listing" {
+    # Create parent
+    bash -c "printf 'Tree Parent\n\nContent' | \"${PADZ_BIN}\" -g create" >/dev/null
+
+    # Create two children
+    bash -c "printf 'Tree Child A\n\nContent A' | \"${PADZ_BIN}\" -g create -i 1" >/dev/null
+    bash -c "printf 'Tree Child B\n\nContent B' | \"${PADZ_BIN}\" -g create -i 1" >/dev/null
+
+    # Both children should be nested under the parent
+    local json children_count
+    json=$(list_pads global)
+    children_count=$(echo "${json}" | jq '.pads[0].children | length')
+    [[ "${children_count}" -eq 2 ]]
+
+    # Newest first
+    local first_child second_child
+    first_child=$(echo "${json}" | jq -r '.pads[0].children[0].pad.metadata.title')
+    second_child=$(echo "${json}" | jq -r '.pads[0].children[1].pad.metadata.title')
+    [[ "${first_child}" == "Tree Child B" ]]
+    [[ "${second_child}" == "Tree Child A" ]]
+}

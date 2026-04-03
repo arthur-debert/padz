@@ -586,6 +586,9 @@ pub fn create(
         let (title, body) =
             extract_title_and_body(&expanded).unwrap_or_else(|| (String::new(), String::new()));
         let result = do_create(state, title.clone(), body.clone(), inside, format_ref)?;
+        // Propagate status now — content is non-empty, safe from reconciliation
+        let parent_id = result.affected_pads[0].pad.metadata.parent_id;
+        state.with_api(|api| api.propagate_status(state.scope, parent_id))?;
         // Copy to clipboard
         let clipboard_text = format_for_clipboard(&title, &body);
         let _ = copy_to_clipboard(&clipboard_text);
@@ -607,6 +610,9 @@ pub fn create(
             (None, true) => String::new(),
         };
         let result = do_create(state, final_title, parsed.content, inside, format_ref)?;
+        // Propagate status now — content is non-empty, safe from reconciliation
+        let parent_id = result.affected_pads[0].pad.metadata.parent_id;
+        state.with_api(|api| api.propagate_status(state.scope, parent_id))?;
         // Copy to clipboard
         copy_content_to_clipboard(&raw);
         result
@@ -630,6 +636,13 @@ pub fn create(
                 .map_err(|e| anyhow::anyhow!("{}", e))
         })? {
             Some(pad) => {
+                // Propagate status now — pad has real content after editor,
+                // safe from reconciliation deleting the empty file.
+                let parent_id = pad.metadata.parent_id;
+                state.with_api(|api| {
+                    api.propagate_status(state.scope, parent_id)
+                        .map_err(|e| anyhow::anyhow!("{}", e))
+                })?;
                 // Copy to clipboard
                 copy_content_to_clipboard(&pad.content);
                 // Build result
