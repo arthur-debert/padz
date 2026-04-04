@@ -6,6 +6,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+- **Fixed**
+  - **`padz init` now uses cwd instead of upward discovery** — Previously, `padz init` used the same `find_project_root()` upward-walk as other commands, which could silently resolve to a parent directory's store instead of creating one in the current directory. Init is a creation operation ("create a store here"), so it now always uses `cwd/.padz` directly. All other commands continue using upward discovery to find existing stores.
+
 ## [0.28.0] - 2026-04-03
 
 ## [0.28.0] - 2026-04-03
