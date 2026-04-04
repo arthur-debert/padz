@@ -8,6 +8,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 - **Fixed**
   - **`padz init` now uses cwd instead of upward discovery** — Previously, `padz init` used the same `find_project_root()` upward-walk as other commands, which could silently resolve to a parent directory's store instead of creating one in the current directory. Init is a creation operation ("create a store here"), so it now always uses `cwd/.padz` directly. All other commands continue using upward discovery to find existing stores.
+  - **Fall back to global scope when no project store is found** — Running `padz` outside any project (no `.padz` found by upward walk) now transparently uses the global store instead of pointing at a nonexistent `cwd/.padz` and showing "No pads yet". The `-g` flag is no longer required outside project directories.
 
 ## [0.28.0] - 2026-04-03
 

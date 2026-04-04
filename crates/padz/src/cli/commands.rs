@@ -144,15 +144,10 @@ fn create_app_state(cli: &Cli, output_mode: OutputMode) -> Result<AppState> {
     };
 
     let padz_ctx = initialize(&cwd, cli.global, data_override);
-    let scope = if cli.global {
-        padzapp::model::Scope::Global
-    } else {
-        padzapp::model::Scope::Project
-    };
 
     Ok(AppState::new(
         padz_ctx.api,
-        scope,
+        padz_ctx.scope,
         padz_ctx.config.import_extensions(),
         output_mode,
         padz_ctx.config.mode,

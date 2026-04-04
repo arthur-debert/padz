@@ -35,16 +35,24 @@
 //! When working in nested repos (e.g., `parent-repo/child-repo`):
 //! - If only `parent-repo` has `.padz`, starting from `child-repo` will find and use `parent-repo`
 //! - If both have `.padz`, the innermost one (closest to cwd) wins
-//! - If neither has `.padz`, uses `cwd/.padz` as default (may need `init`)
+//! - If neither has `.padz`, falls back to global scope
 //!
 //! ## Scope Resolution Flow
 //!
 //! The scope is resolved during [`initialize`]:
 //! 1. If `-g` flag is present → Force `Scope::Global`.
-//! 2. If `data_override` is provided → Use that path directly as project data directory.
+//! 2. If `data_override` is provided → Use that path directly as project data directory (`Scope::Project`).
 //! 3. Otherwise → Run [`find_project_root`].
 //!    - Found → `Scope::Project`.
-//!    - Not Found → `Scope::Project` with `cwd/.padz` as path.
+//!    - Not Found → `Scope::Global` (fall back to global store).
+//!
+//! This means that outside any project, commands transparently use the global store.
+//! Users don't need `-g` unless they want to explicitly access global pads while
+//! inside a project directory.
+//!
+//! **Note:** The CLI layer overrides this for `padz init` (plain, non-global): init is a
+//! creation operation ("create a store HERE"), so it always uses `cwd/.padz` directly,
+//! bypassing upward discovery. All other commands use [`find_project_root`] for discovery.
 //!
 //! **Note:** The CLI layer overrides this for `padz init` (plain, non-global): init is a
 //! creation operation ("create a store HERE"), so it always uses `cwd/.padz` directly,
@@ -208,32 +216,6 @@ pub fn resolve_link(padz_dir: &Path) -> crate::error::Result<Option<PathBuf>> {
 /// let ctx = initialize(&cwd, false, Some(PathBuf::from("/path/to/project")));
 /// ```
 pub fn initialize(cwd: &Path, use_global: bool, data_override: Option<PathBuf>) -> PadzContext {
-    // Determine project data directory:
-    // 1. If data_override provided:
-    //    - If it ends with ".padz", use it directly
-    //    - Otherwise, append ".padz" to it
-    // 2. Otherwise, try to find a project root with both .git and .padz
-    // 3. Fallback to cwd/.padz
-    let project_padz_dir = match data_override {
-        Some(path) => {
-            if path.file_name().is_some_and(|name| name == ".padz") {
-                path
-            } else {
-                path.join(".padz")
-            }
-        }
-        None => {
-            let detected = find_project_root(cwd)
-                .map(|root| root.join(".padz"))
-                .unwrap_or_else(|| cwd.join(".padz"));
-            // Follow .padz/link if present
-            match resolve_link(&detected) {
-                Ok(Some(linked)) => linked,
-                _ => detected,
-            }
-        }
-    };
-
     // Determine global data directory:
     // 1. Check PADZ_GLOBAL_DATA environment variable (primarily for testing)
     // 2. Fall back to OS-appropriate data directory via directories crate
@@ -246,23 +228,45 @@ pub fn initialize(cwd: &Path, use_global: bool, data_override: Option<PathBuf>) 
             proj_dirs.data_dir().to_path_buf()
         });
 
-    let scope = if use_global {
-        Scope::Global
+    // Determine project data directory and scope:
+    // 1. If use_global → Global scope, no project dir
+    // 2. If data_override provided → Project scope with explicit path
+    // 3. find_project_root found something → Project scope
+    // 4. No project found → fall back to Global scope
+    let (project_padz_dir, scope) = if use_global {
+        (None, Scope::Global)
     } else {
-        Scope::Project
+        match data_override {
+            Some(path) => {
+                let dir = if path.file_name().is_some_and(|name| name == ".padz") {
+                    path
+                } else {
+                    path.join(".padz")
+                };
+                (Some(dir), Scope::Project)
+            }
+            None => match find_project_root(cwd) {
+                Some(root) => {
+                    let detected = root.join(".padz");
+                    // Follow .padz/link if present
+                    let resolved = match resolve_link(&detected) {
+                        Ok(Some(linked)) => linked,
+                        _ => detected,
+                    };
+                    (Some(resolved), Scope::Project)
+                }
+                None => (None, Scope::Global),
+            },
+        }
     };
 
     // Config search paths depend on scope:
     // - Global: only global dir (project config must not affect global operations)
     // - Project: both dirs merged (global provides defaults, project overrides)
-    let config_search_paths = if use_global {
-        vec![SearchPath::Path(global_data_dir.clone())]
-    } else {
-        vec![
-            SearchPath::Path(global_data_dir.clone()),
-            SearchPath::Path(project_padz_dir.clone()),
-        ]
-    };
+    let mut config_search_paths = vec![SearchPath::Path(global_data_dir.clone())];
+    if let Some(ref project_dir) = project_padz_dir {
+        config_search_paths.push(SearchPath::Path(project_dir.clone()));
+    }
 
     let config: PadzConfig = Clapfig::builder()
         .app_name("padz")
@@ -274,13 +278,15 @@ pub fn initialize(cwd: &Path, use_global: bool, data_override: Option<PathBuf>) 
     let format_ext = config.format_ext();
 
     // Migrate legacy flat layout to bucketed layout (if needed)
-    migrate_if_needed(&project_padz_dir);
+    if let Some(ref project_dir) = project_padz_dir {
+        migrate_if_needed(project_dir);
+    }
     migrate_if_needed(&global_data_dir);
 
-    let store = FileStore::new_fs(Some(project_padz_dir.clone()), global_data_dir.clone())
+    let store = FileStore::new_fs(project_padz_dir.clone(), global_data_dir.clone())
         .with_format(&format_ext);
     let paths = PadzPaths {
-        project: Some(project_padz_dir),
+        project: project_padz_dir,
         global: global_data_dir,
     };
     let api = PadzApi::new(store, paths);
@@ -620,11 +626,11 @@ mod tests {
         fs::create_dir_all(&override_dir).unwrap();
 
         // Initialize with override AND global flag
-        // The override still sets project path, but scope is Global
-        // Note: CLI prevents this combination, but library allows it
-        let ctx = initialize(repo, true, Some(override_dir.clone()));
+        // Global flag wins: scope is Global, project path is None
+        // Note: CLI prevents this combination (--data conflicts with -g)
+        let ctx = initialize(repo, true, Some(override_dir));
 
-        assert_eq!(ctx.api.paths().project, Some(override_dir));
+        assert_eq!(ctx.api.paths().project, None);
         assert_eq!(ctx.scope, crate::model::Scope::Global);
     }
 
