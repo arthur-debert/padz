@@ -46,6 +46,10 @@
 //!    - Found → `Scope::Project`.
 //!    - Not Found → `Scope::Project` with `cwd/.padz` as path.
 //!
+//! **Note:** The CLI layer overrides this for `padz init` (plain, non-global): init is a
+//! creation operation ("create a store HERE"), so it always uses `cwd/.padz` directly,
+//! bypassing upward discovery. All other commands use [`find_project_root`] for discovery.
+//!
 //! ## Data Path Override
 //!
 //! The `data_override` parameter allows explicitly specifying the data directory,

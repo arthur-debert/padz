@@ -113,6 +113,22 @@ fn create_app_state(cli: &Cli, output_mode: OutputMode) -> Result<AppState> {
     let cwd = std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from("."));
     let data_override = cli.data.as_ref().map(std::path::PathBuf::from);
 
+    // `padz init` (plain, non-global) is a creation operation: "create a store HERE".
+    // It should use cwd directly, not walk up to find an existing store.
+    // All other commands use find_project_root() for discovery, which is correct.
+    let is_plain_init = matches!(
+        cli.command,
+        Some(Commands::Init {
+            link: None,
+            unlink: false
+        })
+    );
+    let data_override = if is_plain_init && data_override.is_none() && !cli.global {
+        Some(cwd.clone())
+    } else {
+        data_override
+    };
+
     // Compute the local .padz dir BEFORE link resolution (used by link/unlink commands)
     let local_padz_dir = match &data_override {
         Some(path) => {
