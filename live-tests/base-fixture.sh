@@ -62,6 +62,7 @@ padz -g list --deleted
 # Create from inside project-a (git repo = project scope)
 
 cd projects/project-a
+padz init
 
 # Simple project pads
 padz create --no-editor "Project pad: Feature Implementation"
