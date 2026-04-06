@@ -529,6 +529,12 @@ fn split_indexes_and_content(args: &[String]) -> (Vec<String>, Vec<String>) {
         }
     }
 
+    // If no indexes were found, all args are likely a title search term.
+    // Return them as indexes so parse_selectors can apply its title fallback.
+    if indexes.is_empty() && !content.is_empty() {
+        return (std::mem::take(&mut content), vec![]);
+    }
+
     (indexes, content)
 }
 
