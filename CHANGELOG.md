@@ -6,6 +6,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [1.0.0] - 2026-04-06
+
+## [1.0.0] - 2026-04-06
+
 - **Fixed**
   - **`edit`/`open` now support title matching** — `padz open On Ids` and `padz edit My Note` now work, matching the behavior of `view`, `copy`, and all other commands. Previously, `split_indexes_and_content` classified non-index args as inline content, leaving no index selector and erroring with "No pad index provided". When no args parse as indexes, they are now treated as a title search term.
   - **`padz init` now uses cwd instead of upward discovery** — Previously, `padz init` used the same `find_project_root()` upward-walk as other commands, which could silently resolve to a parent directory's store instead of creating one in the current directory. Init is a creation operation ("create a store here"), so it now always uses `cwd/.padz` directly. All other commands continue using upward discovery to find existing stores.
@@ -354,7 +358,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
   - Demo flow verification script
   - Live testing shell
 
-[Unreleased]: https://github.com/arthur-debert/padz/compare/v0.28.0...HEAD
+[Unreleased]: https://github.com/arthur-debert/padz/compare/v1.0.0...HEAD
+[1.0.0]: https://github.com/arthur-debert/padz/compare/v1.0.0-rc.1...v1.0.0
+[1.0.0]: https://github.com/arthur-debert/padz/compare/v1.0.0-rc.1...v1.0.0
 [0.28.0]: https://github.com/arthur-debert/padz/compare/v0.27.1...v0.28.0
 [0.28.0]: https://github.com/arthur-debert/padz/compare/v0.27.1...v0.28.0
 [0.27.1]: https://github.com/arthur-debert/padz/compare/v0.27.0...v0.27.1
