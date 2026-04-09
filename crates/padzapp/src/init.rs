@@ -273,6 +273,7 @@ pub fn initialize(cwd: &Path, use_global: bool, data_override: Option<PathBuf>) 
         .file_name("padz.toml")
         .search_paths(config_search_paths)
         .search_mode(SearchMode::Merge)
+        .strict(false)
         .load()
         .unwrap_or_default();
     let format_ext = config.format_ext();

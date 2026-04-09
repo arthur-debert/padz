@@ -219,6 +219,7 @@ fn handle_config(cli: &Cli, subcommand: &Option<ConfigSubcommand>) -> Result<()>
             SearchPath::Path(project_padz_dir.clone()),
         ])
         .search_mode(SearchMode::Merge)
+        .strict(false)
         .persist_scope("local", SearchPath::Path(project_padz_dir))
         .persist_scope("global", SearchPath::Path(global_data_dir))
         .handle_and_print(&action)
