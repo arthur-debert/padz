@@ -319,3 +319,40 @@ fn test_format_alias_text_creates_txt() {
 
     assert_eq!(txt_count, 1, "\"text\" alias should create .txt file");
 }
+
+#[test]
+fn test_config_with_stale_keys_still_loads_format() {
+    let temp = TempDir::new().unwrap();
+    let (project, global_dir) = setup_project(&temp);
+
+    // Write a config file with stale/unknown keys (simulates schema evolution)
+    let config_path = project.join(".padz").join("padz.toml");
+    fs::write(
+        &config_path,
+        "modes = \"todos\"\nmode = \"todos\"\nformat = \"lex\"\n",
+    )
+    .unwrap();
+
+    // Create a pad — should use "lex" from config despite the stale "modes" key
+    padz_cmd()
+        .env("PADZ_GLOBAL_DATA", global_dir.as_os_str())
+        .current_dir(&project)
+        .args(["create", "--no-editor", "stale key test"])
+        .assert()
+        .success();
+
+    let active_dir = project.join(".padz").join("active");
+    let lex_count = fs::read_dir(&active_dir)
+        .unwrap()
+        .filter_map(|e| e.ok())
+        .filter(|e| {
+            let name = e.file_name().to_string_lossy().to_string();
+            name.starts_with("pad-") && name.ends_with(".lex")
+        })
+        .count();
+
+    assert_eq!(
+        lex_count, 1,
+        "Config with stale keys should still apply format = lex"
+    );
+}

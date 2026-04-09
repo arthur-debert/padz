@@ -6,6 +6,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [1.0.1] - 2026-04-08
+
+- **Fixed**
+  - **Config with stale keys silently ignored** — `padz config set format lex` followed by `padz create` would still create `.txt` files. Clapfig's strict mode (the default) rejects unknown keys in config files, and `initialize()` swallowed the error via `unwrap_or_default()`, silently falling back to `format = "txt"`. Config files with stale keys from schema evolution (e.g. `modes` from an older version) triggered this. Fixed by setting `strict(false)` on both config loading paths so unknown keys are tolerated.
+
 ## [1.0.0] - 2026-04-06
 
 ## [1.0.0] - 2026-04-06
