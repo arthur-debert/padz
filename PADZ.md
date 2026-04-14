@@ -131,7 +131,8 @@ List all pad in current scope.
 - `-g, --global`: Show only global pad
 - `-s, --search <term>`: Search for pad containing term
 - `--deleted`: Show only soft-deleted pad
-- `--include-deleted`: Include deleted pad in listing
+- `--archived`: Show only archived pad
+- `--all`: Show all pad (active, archived, and deleted) grouped with section headers
 
 **Output Format:**
 ```
@@ -157,7 +158,8 @@ padz                         # Same (default command)
 padz ls -g                   # List global pad
 padz ls -s "TODO"            # Search for "TODO"
 padz ls --deleted            # Show only deleted pad
-padz ls --include-deleted    # Show active + deleted pad
+padz ls --archived           # Show only archived pad
+padz ls --all                # Show active, archived, and deleted pad
 ```
 
 #### `padz view <index> [flags]`
@@ -236,7 +238,7 @@ padz d 1          # Same (alias)
 
 **Note:** Soft-deleted pad are:
 - Hidden from normal listings
-- Visible with `padz ls --deleted` or `padz ls --include-deleted`
+- Visible with `padz ls --deleted` or `padz ls --all`
 - Auto-cleaned after 7 days by default
 - Can be restored with `padz restore`
 - Can be permanently deleted with `padz flush`
@@ -295,7 +297,9 @@ Search through pad titles and content using regular expressions.
 
 **Flags:**
 - `-g, --global`: Search only global pad
-- `-p, --project <name>`: Limit search to specific project
+- `--deleted`: Search only soft-deleted pad
+- `--archived`: Search only archived pad
+- `--all`: Search across all pad (active, archived, and deleted) grouped with section headers
 
 **Examples:**
 ```bash
@@ -304,6 +308,8 @@ padz search my term             # Same (spaces automatically joined)
 padz search "TODO|FIXME"        # Search using regex
 padz search "func.*main"        # Regex pattern
 padz search -g "global notes"   # Search only global pad
+padz search "TODO" --all        # Search across all shards
+padz search "old" --archived    # Search only archived pad
 ```
 
 **Note:** The search command is separate from `padz ls -s`. Both perform search, but `search` is a dedicated command with additional options.
@@ -692,5 +698,5 @@ Indexes are divided into three stable "buckets":
     *   The standard list of active notes.
     *   Numbered sequentially based on creation time (or configured sort order).
 3.  **Deleted (`d1`, `d2`...)**:
-    *   Soft-deleted items, only visible when using flags like `--deleted`.
+    *   Soft-deleted items, only visible when using flags like `--deleted` or `--all`.
     *   They form a separate list with its own sequence, ensuring they don't shift the indexes of active notes.
