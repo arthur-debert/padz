@@ -30,9 +30,13 @@ pub fn run<S: DataStore>(
         // Find descendants (children, grandchildren, etc.)
         let descendants = super::helpers::get_descendant_ids(store, scope, &[uuid])?;
 
-        // Move pad + all descendants from Active to Deleted
+        // Move pad + all descendants from Active to Deleted.
+        // Filter out already-processed descendants: when both a parent and child
+        // are in the delete set (e.g. delete --completed), the child may have
+        // already been moved to Deleted in an earlier iteration, so re-moving
+        // it from Active would fail with PadNotFound.
         let mut ids_to_move = vec![uuid];
-        ids_to_move.extend(&descendants);
+        ids_to_move.extend(descendants.iter().filter(|id| !processed_ids.contains(id)));
         store.move_pads(&ids_to_move, scope, Bucket::Active, Bucket::Deleted)?;
 
         for id in &descendants {
@@ -415,5 +419,88 @@ mod tests {
         let active = get::run(&store, Scope::Project, get::PadFilter::default(), &[]).unwrap();
         assert_eq!(active.listed_pads.len(), 1);
         assert_eq!(active.listed_pads[0].pad.metadata.title, "In Progress");
+    }
+
+    #[test]
+    fn delete_completed_with_done_parent_and_done_child() {
+        // Regression test: when both a parent and its child are Done,
+        // delete_completed must not fail regardless of processing order.
+        // The child UUID may be iterated before the parent (HashMap order),
+        // causing the child to be moved first; when the parent is processed,
+        // get_descendant_ids still finds the child (now in Deleted bucket)
+        // and must not try to re-move it from Active.
+        let mut store = BucketedStore::new(
+            MemBackend::new(),
+            MemBackend::new(),
+            MemBackend::new(),
+            MemBackend::new(),
+        );
+
+        // Create parent
+        create::run(&mut store, Scope::Project, "Parent".into(), "".into(), None).unwrap();
+
+        // Create child inside parent
+        create::run(
+            &mut store,
+            Scope::Project,
+            "Child".into(),
+            "".into(),
+            Some(PadSelector::Path(vec![DisplayIndex::Regular(1)])),
+        )
+        .unwrap();
+
+        // Mark both as Done
+        crate::commands::status::complete(
+            &mut store,
+            Scope::Project,
+            &[PadSelector::Path(vec![DisplayIndex::Regular(1)])],
+        )
+        .unwrap();
+        crate::commands::status::complete(
+            &mut store,
+            Scope::Project,
+            &[PadSelector::Path(vec![
+                DisplayIndex::Regular(1),
+                DisplayIndex::Regular(1),
+            ])],
+        )
+        .unwrap();
+
+        // Also test the worst-case ordering directly: child UUID before parent UUID
+        let active_pads = store.list_pads(Scope::Project, Bucket::Active).unwrap();
+        let child_pad = active_pads
+            .iter()
+            .find(|p| p.metadata.title == "Child")
+            .unwrap();
+        let parent_pad = active_pads
+            .iter()
+            .find(|p| p.metadata.title == "Parent")
+            .unwrap();
+
+        // Force child-first ordering to guarantee the bug scenario
+        let selectors = vec![
+            PadSelector::Uuid(child_pad.metadata.id),
+            PadSelector::Uuid(parent_pad.metadata.id),
+        ];
+        let result = run(&mut store, Scope::Project, &selectors).unwrap();
+
+        // Both should be deleted
+        assert!(!result.affected_pads.is_empty());
+
+        let active = get::run(&store, Scope::Project, get::PadFilter::default(), &[]).unwrap();
+        assert_eq!(active.listed_pads.len(), 0);
+
+        let deleted = get::run(
+            &store,
+            Scope::Project,
+            get::PadFilter {
+                status: get::PadStatusFilter::Deleted,
+                ..Default::default()
+            },
+            &[],
+        )
+        .unwrap();
+        assert_eq!(deleted.listed_pads.len(), 1); // parent with child nested
+        assert_eq!(deleted.listed_pads[0].children.len(), 1);
     }
 }
