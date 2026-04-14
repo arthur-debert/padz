@@ -6,6 +6,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [1.1.0] - 2026-04-14
+
+## [1.1.0] - 2026-04-14
+
 - **Added**
   - **`--all` flag for `list` and `search`** — Shows all three shards (active, archived, deleted) in a single view, grouped with section headers. Each shard keeps its own index namespace (`1`, `ar1`, `d1`).
   - **`--deleted` and `--archived` flags on `search`** — Search can now target specific shards, matching `list` parity. Previously `search` was hardcoded to active pads only.
@@ -374,7 +378,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
   - Demo flow verification script
   - Live testing shell
 
-[Unreleased]: https://github.com/arthur-debert/padz/compare/v1.0.2...HEAD
+[Unreleased]: https://github.com/arthur-debert/padz/compare/v1.1.0...HEAD
+[1.1.0]: https://github.com/arthur-debert/padz/compare/v1.0.2...v1.1.0
+[1.1.0]: https://github.com/arthur-debert/padz/compare/v1.0.2...v1.1.0
 [1.0.2]: https://github.com/arthur-debert/padz/compare/v1.0.1...v1.0.2
 [1.0.2]: https://github.com/arthur-debert/padz/compare/v1.0.1...v1.0.2
 [1.0.0]: https://github.com/arthur-debert/padz/compare/v1.0.0-rc.1...v1.0.0
