@@ -6,6 +6,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+- **Fixed**
+  - **`delete --completed` crashes when parent and child are both Done** — `get_descendant_ids` re-indexes all buckets, so when a Done child is processed before its Done parent (HashMap iteration order is non-deterministic), the child moves to Deleted first. The parent then finds the child as a descendant and tries to re-move it from Active, failing with `Pad not found`. Fixed by filtering already-processed IDs from the move list.
+
 ## [1.1.0] - 2026-04-14
 
 ## [1.1.0] - 2026-04-14
