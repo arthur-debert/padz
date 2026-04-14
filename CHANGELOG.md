@@ -6,6 +6,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [1.0.2] - 2026-04-14
+
+## [1.0.2] - 2026-04-14
+
 - **Fixed**
   - **Search match line numbers looked like pad indexes** — `padz search` displayed content line numbers (e.g., `19`) that users mistook for child pad indexes (e.g., `9.19`), leading to confusing "not found" errors on `padz view 9.19`. Line numbers now render as `19L` in italic, visually distinguishing them from pad indexes. Context ellipsis also changed from `...` (3 chars) to `…` (1 char).
 
@@ -366,7 +370,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
   - Demo flow verification script
   - Live testing shell
 
-[Unreleased]: https://github.com/arthur-debert/padz/compare/v1.0.0...HEAD
+[Unreleased]: https://github.com/arthur-debert/padz/compare/v1.0.2...HEAD
+[1.0.2]: https://github.com/arthur-debert/padz/compare/v1.0.1...v1.0.2
+[1.0.2]: https://github.com/arthur-debert/padz/compare/v1.0.1...v1.0.2
 [1.0.0]: https://github.com/arthur-debert/padz/compare/v1.0.0-rc.1...v1.0.0
 [1.0.0]: https://github.com/arthur-debert/padz/compare/v1.0.0-rc.1...v1.0.0
 [0.28.0]: https://github.com/arthur-debert/padz/compare/v0.27.1...v0.28.0
