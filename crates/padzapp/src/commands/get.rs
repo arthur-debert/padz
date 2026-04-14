@@ -453,9 +453,9 @@ fn highlight_matches(text: &str, term_lower: &str) -> Vec<MatchSegment> {
 }
 
 /// Extracts context around the first occurrence of `term` in `line`.
-/// Returns segments with "..." if truncated.
+/// Returns segments with "…" if truncated.
 /// Extracts context around the first occurrence of `term` in `line`.
-/// Returns segments with "..." if truncated.
+/// Returns segments with "…" if truncated.
 fn extract_context(line: &str, term_lower: &str, context_words: usize) -> Vec<MatchSegment> {
     let line_lower = line.to_lowercase();
     let start_idx = match line_lower.find(term_lower) {
@@ -522,7 +522,7 @@ fn extract_context(line: &str, term_lower: &str, context_words: usize) -> Vec<Ma
     let mut segments = Vec::new();
 
     if start_context_idx > 0 {
-        segments.push(MatchSegment::Plain("...".to_string()));
+        segments.push(MatchSegment::Plain("…".to_string()));
     }
 
     // Now highlighting inside the window [start_context_idx, end_context_idx]
@@ -545,7 +545,7 @@ fn extract_context(line: &str, term_lower: &str, context_words: usize) -> Vec<Ma
     }
 
     if end_context_idx < line.len() {
-        segments.push(MatchSegment::Plain("...".to_string()));
+        segments.push(MatchSegment::Plain("…".to_string()));
     }
 
     segments

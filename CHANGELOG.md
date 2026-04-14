@@ -6,6 +6,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+- **Fixed**
+  - **Search match line numbers looked like pad indexes** — `padz search` displayed content line numbers (e.g., `19`) that users mistook for child pad indexes (e.g., `9.19`), leading to confusing "not found" errors on `padz view 9.19`. Line numbers now render as `19L` in italic, visually distinguishing them from pad indexes. Context ellipsis also changed from `...` (3 chars) to `…` (1 char).
+
 ## [1.0.1] - 2026-04-08
 
 - **Fixed**

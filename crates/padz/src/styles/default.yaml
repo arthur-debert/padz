@@ -167,5 +167,10 @@ section-header: _secondary
 empty-message: _secondary
 preview: _tertiary
 truncation: _secondary
-line-number: _secondary
+line-number:
+  italic: true
+  light:
+    fg: [115, 115, 115]
+  dark:
+    fg: [138, 138, 138]
 separator: _tertiary
