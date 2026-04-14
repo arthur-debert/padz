@@ -181,6 +181,7 @@ pub fn build_modification_result_value(
 pub struct ListOptions {
     pub peek: bool,
     pub show_deleted_help: bool,
+    pub show_all_sections: bool,
     pub output_mode: OutputMode,
     pub mode: PadzMode,
     pub show_uuid: bool,
@@ -376,8 +377,12 @@ pub fn build_list_result_value(
         }
     }
 
+    let mut entered_archived = false;
+    let mut entered_deleted = false;
+
     for dp in pads {
         let is_pinned_section = matches!(dp.index, DisplayIndex::Pinned(_));
+        let is_archived_section = matches!(dp.index, DisplayIndex::Archived(_));
         let is_deleted_section = matches!(dp.index, DisplayIndex::Deleted(_));
 
         // Separator between pinned and regular roots
@@ -395,12 +400,29 @@ pub fn build_list_result_value(
                 "is_pinned_section": false,
                 "is_deleted": false,
                 "is_separator": true,
+                "is_section_header": false,
                 "matches": [],
                 "more_matches_count": 0,
                 "peek": serde_json::Value::Null,
             }));
         }
         last_was_pinned = is_pinned_section;
+
+        // Section headers for --all mode
+        if opts.show_all_sections {
+            if is_archived_section && !entered_archived {
+                entered_archived = true;
+                pad_lines
+                    .push(serde_json::json!({ "is_separator": true, "is_section_header": false }));
+                pad_lines.push(serde_json::json!({ "is_section_header": true, "section_title": "Archived Pads" }));
+            }
+            if is_deleted_section && !entered_deleted {
+                entered_deleted = true;
+                pad_lines
+                    .push(serde_json::json!({ "is_separator": true, "is_section_header": false }));
+                pad_lines.push(serde_json::json!({ "is_section_header": true, "section_title": "Deleted Pads" }));
+            }
+        }
 
         process_pad_to_json(
             dp,
@@ -560,6 +582,7 @@ mod tests {
             ListOptions {
                 peek: false,
                 show_deleted_help: false,
+                show_all_sections: false,
                 output_mode: OutputMode::Text,
                 mode: PadzMode::Todos,
                 show_uuid: false,
@@ -585,6 +608,7 @@ mod tests {
             ListOptions {
                 peek: false,
                 show_deleted_help: false,
+                show_all_sections: false,
                 output_mode: OutputMode::Text,
                 mode: PadzMode::Todos,
                 show_uuid: false,
@@ -618,6 +642,7 @@ mod tests {
             ListOptions {
                 peek: false,
                 show_deleted_help: false,
+                show_all_sections: false,
                 output_mode: OutputMode::Text,
                 mode: PadzMode::Todos,
                 show_uuid: false,
@@ -650,6 +675,7 @@ mod tests {
             ListOptions {
                 peek: false,
                 show_deleted_help: true,
+                show_all_sections: false,
                 output_mode: OutputMode::Text,
                 mode: PadzMode::Todos,
                 show_uuid: false,
@@ -687,6 +713,7 @@ mod tests {
             ListOptions {
                 peek: false,
                 show_deleted_help: false,
+                show_all_sections: false,
                 output_mode: OutputMode::Text,
                 mode: PadzMode::Todos,
                 show_uuid: false,
@@ -719,6 +746,7 @@ mod tests {
             ListOptions {
                 peek: false,
                 show_deleted_help: false,
+                show_all_sections: false,
                 output_mode: OutputMode::Text,
                 mode: PadzMode::Todos,
                 show_uuid: false,
@@ -747,6 +775,7 @@ mod tests {
             ListOptions {
                 peek: false,
                 show_deleted_help: false,
+                show_all_sections: false,
                 output_mode: OutputMode::Text,
                 mode: PadzMode::Todos,
                 show_uuid: false,
@@ -780,6 +809,7 @@ mod tests {
             ListOptions {
                 peek: false,
                 show_deleted_help: false,
+                show_all_sections: false,
                 output_mode: OutputMode::Json,
                 mode: PadzMode::Todos,
                 show_uuid: false,
@@ -855,6 +885,7 @@ mod tests {
             ListOptions {
                 peek: false,
                 show_deleted_help: false,
+                show_all_sections: false,
                 output_mode: OutputMode::Text,
                 mode: PadzMode::Notes,
                 show_uuid: false,
@@ -881,6 +912,7 @@ mod tests {
             ListOptions {
                 peek: false,
                 show_deleted_help: false,
+                show_all_sections: false,
                 output_mode: OutputMode::Text,
                 mode: PadzMode::Todos,
                 show_uuid: false,
@@ -911,6 +943,7 @@ mod tests {
             ListOptions {
                 peek: false,
                 show_deleted_help: false,
+                show_all_sections: false,
                 output_mode: OutputMode::Text,
                 mode: PadzMode::Notes,
                 show_uuid: false,
@@ -923,6 +956,7 @@ mod tests {
             ListOptions {
                 peek: false,
                 show_deleted_help: false,
+                show_all_sections: false,
                 output_mode: OutputMode::Text,
                 mode: PadzMode::Todos,
                 show_uuid: false,
@@ -965,6 +999,7 @@ mod tests {
             ListOptions {
                 peek: false,
                 show_deleted_help: false,
+                show_all_sections: false,
                 output_mode: OutputMode::Text,
                 mode: PadzMode::Notes,
                 show_uuid: false,
@@ -988,6 +1023,7 @@ mod tests {
             ListOptions {
                 peek: false,
                 show_deleted_help: false,
+                show_all_sections: false,
                 output_mode: OutputMode::Text,
                 mode: PadzMode::Todos,
                 show_uuid: false,
@@ -1023,6 +1059,7 @@ mod tests {
         ListOptions {
             peek: false,
             show_deleted_help: false,
+            show_all_sections: false,
             output_mode: OutputMode::Text,
             mode: PadzMode::Todos,
             show_uuid: false,

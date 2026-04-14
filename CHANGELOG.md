@@ -6,6 +6,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+- **Added**
+  - **`--all` flag for `list` and `search`** — Shows all three shards (active, archived, deleted) in a single view, grouped with section headers. Each shard keeps its own index namespace (`1`, `ar1`, `d1`).
+  - **`--deleted` and `--archived` flags on `search`** — Search can now target specific shards, matching `list` parity. Previously `search` was hardcoded to active pads only.
+
 ## [1.0.2] - 2026-04-14
 
 ## [1.0.2] - 2026-04-14

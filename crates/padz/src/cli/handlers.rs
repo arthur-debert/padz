@@ -303,6 +303,7 @@ impl<'a> ScopedApi<'a> {
         filter: PadFilter,
         peek: bool,
         show_deleted_help: bool,
+        show_all_sections: bool,
         ids: &[String],
         show_uuid: bool,
     ) -> Result<Output<Value>, anyhow::Error> {
@@ -317,6 +318,7 @@ impl<'a> ScopedApi<'a> {
             ListOptions {
                 peek,
                 show_deleted_help,
+                show_all_sections,
                 output_mode: self.state.output_mode,
                 mode: self.state.mode,
                 show_uuid,
@@ -695,6 +697,7 @@ pub fn list(
     #[arg] search: Option<String>,
     #[flag] deleted: bool,
     #[flag] archived: bool,
+    #[flag] all: bool,
     #[flag] peek: bool,
     #[flag] planned: bool,
     #[flag] completed: bool,
@@ -713,7 +716,9 @@ pub fn list(
     };
 
     let filter = PadFilter {
-        status: if deleted {
+        status: if all {
+            PadStatusFilter::All
+        } else if deleted {
             PadStatusFilter::Deleted
         } else if archived {
             PadStatusFilter::Archived
@@ -725,7 +730,7 @@ pub fn list(
         tags: if tags.is_empty() { None } else { Some(tags) },
     };
 
-    api(ctx).list_pads(filter, peek, deleted || archived, &ids, uuid)
+    api(ctx).list_pads(filter, peek, deleted || archived, all, &ids, uuid)
 }
 
 #[handler]
@@ -741,19 +746,31 @@ pub fn peek(
         todo_status: None,
         tags: if tags.is_empty() { None } else { Some(tags) },
     };
-    api(ctx).list_pads(filter, true, false, &ids, uuid)
+    api(ctx).list_pads(filter, true, false, false, &ids, uuid)
 }
 
+#[allow(clippy::too_many_arguments)]
 #[handler]
 pub fn search(
     #[ctx] ctx: &CommandContext,
     #[arg] term: String,
+    #[flag] deleted: bool,
+    #[flag] archived: bool,
+    #[flag] all: bool,
     #[flag] completed: bool,
     #[arg] tags: Vec<String>,
     #[flag] uuid: bool,
 ) -> Result<Output<Value>, anyhow::Error> {
     let filter = PadFilter {
-        status: PadStatusFilter::Active,
+        status: if all {
+            PadStatusFilter::All
+        } else if deleted {
+            PadStatusFilter::Deleted
+        } else if archived {
+            PadStatusFilter::Archived
+        } else {
+            PadStatusFilter::Active
+        },
         search_term: Some(term),
         todo_status: if completed {
             Some(TodoStatus::Done)
@@ -763,7 +780,7 @@ pub fn search(
         tags: if tags.is_empty() { None } else { Some(tags) },
     };
 
-    api(ctx).list_pads(filter, false, false, &[], uuid)
+    api(ctx).list_pads(filter, false, deleted || archived, all, &[], uuid)
 }
 
 // =============================================================================

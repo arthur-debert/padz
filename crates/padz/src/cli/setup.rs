@@ -330,12 +330,16 @@ pub enum Commands {
         search: Option<String>,
 
         /// Show deleted pads
-        #[arg(long)]
+        #[arg(long, conflicts_with = "all")]
         deleted: bool,
 
         /// Show archived pads
-        #[arg(long)]
+        #[arg(long, conflicts_with = "all")]
         archived: bool,
+
+        /// Show all pads (active, archived, and deleted)
+        #[arg(long)]
+        all: bool,
 
         /// Peek at pad content
         #[arg(long)]
@@ -368,6 +372,18 @@ pub enum Commands {
     Search {
         /// Search term
         term: String,
+
+        /// Show deleted pads
+        #[arg(long, conflicts_with = "all")]
+        deleted: bool,
+
+        /// Show archived pads
+        #[arg(long, conflicts_with = "all")]
+        archived: bool,
+
+        /// Show all pads (active, archived, and deleted)
+        #[arg(long)]
+        all: bool,
 
         /// Show only completed pads
         #[arg(long)]

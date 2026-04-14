@@ -5,7 +5,9 @@
 {{ help_text }}
 {%- else -%}
 {%- for pad in pads -%}
-{%- if pad.is_separator -%}
+{%- if pad.is_section_header -%}
+[section-header]{{ pad.section_title }}[/section-header]{{ "" | nl }}
+{%- elif pad.is_separator -%}
 {{- "" | nl -}}
 {%- else -%}
 {%- include "_pad_line.jinja" -%}
