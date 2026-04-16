@@ -6,6 +6,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [1.2.0] - 2026-04-16
+
+## [1.2.0] - 2026-04-16
+
 - **Added**
   - **`--show-status` flag for `list`** — Displays status icons (planned/in-progress/done) even in notes mode.
   - **Status icons on `complete`/`reopen` feedback** — When completing or reopening pads, the confirmation output now always shows status icons regardless of mode.
@@ -389,7 +393,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
   - Demo flow verification script
   - Live testing shell
 
-[Unreleased]: https://github.com/arthur-debert/padz/compare/v1.1.1...HEAD
+[Unreleased]: https://github.com/arthur-debert/padz/compare/v1.2.0...HEAD
+[1.2.0]: https://github.com/arthur-debert/padz/compare/v1.1.1...v1.2.0
+[1.2.0]: https://github.com/arthur-debert/padz/compare/v1.1.1...v1.2.0
 [1.1.1]: https://github.com/arthur-debert/padz/compare/v1.1.0...v1.1.1
 [1.1.1]: https://github.com/arthur-debert/padz/compare/v1.1.0...v1.1.1
 [1.1.0]: https://github.com/arthur-debert/padz/compare/v1.0.2...v1.1.0
