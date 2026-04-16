@@ -82,6 +82,7 @@ pub fn build_modification_result_value(
     trailing_messages: &[CmdMessage],
     output_mode: OutputMode,
     mode: PadzMode,
+    force_show_status: bool,
 ) -> serde_json::Value {
     use serde_json::json;
 
@@ -94,7 +95,7 @@ pub fn build_modification_result_value(
         });
     }
 
-    let show_status = mode == PadzMode::Todos;
+    let show_status = force_show_status || mode == PadzMode::Todos;
     let col_status = if show_status { COL_STATUS } else { 0 };
     let width = line_width();
 
@@ -186,6 +187,7 @@ pub struct ListOptions {
     pub mode: PadzMode,
     pub show_uuid: bool,
     pub filtered: bool,
+    pub show_status: bool,
 }
 
 /// Builds list result data as serde_json::Value for Dispatch handlers.
@@ -210,7 +212,7 @@ pub fn build_list_result_value(
         });
     }
 
-    let show_status = opts.mode == PadzMode::Todos;
+    let show_status = opts.show_status || opts.mode == PadzMode::Todos;
     let col_status = if show_status { COL_STATUS } else { 0 };
     let width = line_width();
 
@@ -587,6 +589,7 @@ mod tests {
                 mode: PadzMode::Todos,
                 show_uuid: false,
                 filtered: false,
+                show_status: false,
             },
         );
         assert!(data.get("empty").and_then(|v| v.as_bool()).unwrap_or(false));
@@ -613,6 +616,7 @@ mod tests {
                 mode: PadzMode::Todos,
                 show_uuid: false,
                 filtered: false,
+                show_status: false,
             },
         );
 
@@ -647,6 +651,7 @@ mod tests {
                 mode: PadzMode::Todos,
                 show_uuid: false,
                 filtered: false,
+                show_status: false,
             },
         );
 
@@ -680,6 +685,7 @@ mod tests {
                 mode: PadzMode::Todos,
                 show_uuid: false,
                 filtered: false,
+                show_status: false,
             },
         );
 
@@ -718,6 +724,7 @@ mod tests {
                 mode: PadzMode::Todos,
                 show_uuid: false,
                 filtered: false,
+                show_status: false,
             },
         );
 
@@ -751,6 +758,7 @@ mod tests {
                 mode: PadzMode::Todos,
                 show_uuid: false,
                 filtered: false,
+                show_status: false,
             },
         );
 
@@ -780,6 +788,7 @@ mod tests {
                 mode: PadzMode::Todos,
                 show_uuid: false,
                 filtered: false,
+                show_status: false,
             },
         );
 
@@ -814,6 +823,7 @@ mod tests {
                 mode: PadzMode::Todos,
                 show_uuid: false,
                 filtered: false,
+                show_status: false,
             },
         );
 
@@ -835,6 +845,7 @@ mod tests {
             &[],
             OutputMode::Text,
             PadzMode::Todos,
+            false,
         );
 
         assert_eq!(
@@ -890,6 +901,7 @@ mod tests {
                 mode: PadzMode::Notes,
                 show_uuid: false,
                 filtered: false,
+                show_status: false,
             },
         );
 
@@ -917,7 +929,65 @@ mod tests {
                 mode: PadzMode::Todos,
                 show_uuid: false,
                 filtered: false,
+                show_status: false,
             },
+        );
+
+        let pads = data.get("pads").and_then(|v| v.as_array()).unwrap();
+        assert_eq!(
+            pads[0].get("status_icon").and_then(|v| v.as_str()),
+            Some(STATUS_PLANNED)
+        );
+        assert_eq!(
+            data.get("col_status").and_then(|v| v.as_u64()),
+            Some(COL_STATUS as u64)
+        );
+    }
+
+    #[test]
+    fn test_show_status_flag_overrides_notes_mode() {
+        let pad = make_pad("Test Note", false);
+        let dp = make_display_pad(pad, DisplayIndex::Regular(1));
+
+        let data = build_list_result_value(
+            &[dp],
+            &[],
+            ListOptions {
+                peek: false,
+                show_deleted_help: false,
+                show_all_sections: false,
+                output_mode: OutputMode::Text,
+                mode: PadzMode::Notes,
+                show_uuid: false,
+                filtered: false,
+                show_status: true,
+            },
+        );
+
+        let pads = data.get("pads").and_then(|v| v.as_array()).unwrap();
+        assert_eq!(
+            pads[0].get("status_icon").and_then(|v| v.as_str()),
+            Some(STATUS_PLANNED)
+        );
+        assert_eq!(
+            data.get("col_status").and_then(|v| v.as_u64()),
+            Some(COL_STATUS as u64)
+        );
+    }
+
+    #[test]
+    fn test_force_show_status_in_modification_result() {
+        let pad = make_pad("Test Note", false);
+        let dp = make_display_pad(pad, DisplayIndex::Regular(1));
+
+        // Notes mode with force_show_status=true should show status
+        let data = build_modification_result_value(
+            "Completed",
+            &[dp],
+            &[],
+            OutputMode::Text,
+            PadzMode::Notes,
+            true,
         );
 
         let pads = data.get("pads").and_then(|v| v.as_array()).unwrap();
@@ -948,6 +1018,7 @@ mod tests {
                 mode: PadzMode::Notes,
                 show_uuid: false,
                 filtered: false,
+                show_status: false,
             },
         );
         let todos_data = build_list_result_value(
@@ -961,6 +1032,7 @@ mod tests {
                 mode: PadzMode::Todos,
                 show_uuid: false,
                 filtered: false,
+                show_status: false,
             },
         );
 
@@ -1004,6 +1076,7 @@ mod tests {
                 mode: PadzMode::Notes,
                 show_uuid: false,
                 filtered: false,
+                show_status: false,
             },
         );
 
@@ -1028,6 +1101,7 @@ mod tests {
                 mode: PadzMode::Todos,
                 show_uuid: false,
                 filtered: false,
+                show_status: false,
             },
         );
 
@@ -1064,6 +1138,7 @@ mod tests {
             mode: PadzMode::Todos,
             show_uuid: false,
             filtered: false,
+            show_status: false,
         }
     }
 
@@ -1193,6 +1268,7 @@ mod tests {
             &[],
             OutputMode::Text,
             PadzMode::Notes,
+            false,
         );
 
         let pads = data.get("pads").and_then(|v| v.as_array()).unwrap();
