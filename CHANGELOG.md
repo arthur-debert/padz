@@ -6,6 +6,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+- **Added**
+  - **`--show-status` flag for `list`** — Displays status icons (planned/in-progress/done) even in notes mode.
+  - **Status icons on `complete`/`reopen` feedback** — When completing or reopening pads, the confirmation output now always shows status icons regardless of mode.
+
 ## [1.1.1] - 2026-04-14
 
 ## [1.1.1] - 2026-04-14

@@ -364,6 +364,10 @@ pub enum Commands {
         /// Show short UUIDs next to pad titles
         #[arg(long)]
         uuid: bool,
+
+        /// Show status icons (even in notes mode)
+        #[arg(long)]
+        show_status: bool,
     },
 
     /// Search pads (dedicated command)

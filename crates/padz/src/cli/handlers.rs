@@ -118,11 +118,13 @@ impl<'a> ScopedApi<'a> {
             .with_api(|api| f(api, self.state.scope).map_err(|e| anyhow::anyhow!("{}", e)))
     }
 
-    /// Wrap a CmdResult (modification) into rendered output
+    /// Wrap a CmdResult (modification) into rendered output.
+    /// When `force_show_status` is true, status icons are shown regardless of mode.
     fn modification(
         &self,
         action: &str,
         result: CmdResult,
+        force_show_status: bool,
     ) -> Result<Output<Value>, anyhow::Error> {
         Ok(Output::Render(build_modification_result_value(
             action,
@@ -130,6 +132,7 @@ impl<'a> ScopedApi<'a> {
             &result.messages,
             self.state.output_mode,
             self.state.mode,
+            force_show_status,
         )))
     }
 
@@ -144,17 +147,17 @@ impl<'a> ScopedApi<'a> {
 
     pub fn pin_pads(&self, indexes: &[String]) -> Result<Output<Value>, anyhow::Error> {
         let result = self.call(|api, scope| api.pin_pads(scope, indexes))?;
-        self.modification("Pinned", result)
+        self.modification("Pinned", result, false)
     }
 
     pub fn unpin_pads(&self, indexes: &[String]) -> Result<Output<Value>, anyhow::Error> {
         let result = self.call(|api, scope| api.unpin_pads(scope, indexes))?;
-        self.modification("Unpinned", result)
+        self.modification("Unpinned", result, false)
     }
 
     pub fn delete_pads(&self, indexes: &[String]) -> Result<Output<Value>, anyhow::Error> {
         let result = self.call(|api, scope| api.delete_pads(scope, indexes))?;
-        self.modification("Deleted", result)
+        self.modification("Deleted", result, false)
     }
 
     pub fn delete_completed_pads(&self) -> Result<Output<Value>, anyhow::Error> {
@@ -168,32 +171,32 @@ impl<'a> ScopedApi<'a> {
             })));
         }
 
-        self.modification("Deleted", result)
+        self.modification("Deleted", result, false)
     }
 
     pub fn restore_pads(&self, indexes: &[String]) -> Result<Output<Value>, anyhow::Error> {
         let result = self.call(|api, scope| api.restore_pads(scope, indexes))?;
-        self.modification("Restored", result)
+        self.modification("Restored", result, false)
     }
 
     pub fn archive_pads(&self, indexes: &[String]) -> Result<Output<Value>, anyhow::Error> {
         let result = self.call(|api, scope| api.archive_pads(scope, indexes))?;
-        self.modification("Archived", result)
+        self.modification("Archived", result, false)
     }
 
     pub fn unarchive_pads(&self, indexes: &[String]) -> Result<Output<Value>, anyhow::Error> {
         let result = self.call(|api, scope| api.unarchive_pads(scope, indexes))?;
-        self.modification("Unarchived", result)
+        self.modification("Unarchived", result, false)
     }
 
     pub fn complete_pads(&self, indexes: &[String]) -> Result<Output<Value>, anyhow::Error> {
         let result = self.call(|api, scope| api.complete_pads(scope, indexes))?;
-        self.modification("Completed", result)
+        self.modification("Completed", result, true)
     }
 
     pub fn reopen_pads(&self, indexes: &[String]) -> Result<Output<Value>, anyhow::Error> {
         let result = self.call(|api, scope| api.reopen_pads(scope, indexes))?;
-        self.modification("Reopened", result)
+        self.modification("Reopened", result, true)
     }
 
     pub fn move_pads(
@@ -212,7 +215,7 @@ impl<'a> ScopedApi<'a> {
             let (sources, dest) = indexes.split_at(indexes.len() - 1);
             self.call(|api, scope| api.move_pads(scope, sources, Some(dest[0].as_str())))?
         };
-        self.modification("Moved", result)
+        self.modification("Moved", result, false)
     }
 
     // --- Message-only operations ---
@@ -298,6 +301,7 @@ impl<'a> ScopedApi<'a> {
 
     // --- List operations ---
 
+    #[allow(clippy::too_many_arguments)]
     pub fn list_pads(
         &self,
         filter: PadFilter,
@@ -306,6 +310,7 @@ impl<'a> ScopedApi<'a> {
         show_all_sections: bool,
         ids: &[String],
         show_uuid: bool,
+        show_status: bool,
     ) -> Result<Output<Value>, anyhow::Error> {
         let filtered = filter.search_term.is_some()
             || filter.todo_status.is_some()
@@ -323,6 +328,7 @@ impl<'a> ScopedApi<'a> {
                 mode: self.state.mode,
                 show_uuid,
                 filtered,
+                show_status,
             },
         )))
     }
@@ -682,6 +688,7 @@ pub fn create(
         &result.messages,
         state.output_mode,
         state.mode,
+        false,
     );
     Ok(Output::Render(data))
 }
@@ -704,6 +711,7 @@ pub fn list(
     #[flag(name = "in_progress")] in_progress: bool,
     #[arg] tags: Vec<String>,
     #[flag] uuid: bool,
+    #[flag(name = "show_status")] show_status: bool,
 ) -> Result<Output<Value>, anyhow::Error> {
     let todo_status = if planned {
         Some(TodoStatus::Planned)
@@ -730,7 +738,15 @@ pub fn list(
         tags: if tags.is_empty() { None } else { Some(tags) },
     };
 
-    api(ctx).list_pads(filter, peek, deleted || archived, all, &ids, uuid)
+    api(ctx).list_pads(
+        filter,
+        peek,
+        deleted || archived,
+        all,
+        &ids,
+        uuid,
+        show_status,
+    )
 }
 
 #[handler]
@@ -746,7 +762,7 @@ pub fn peek(
         todo_status: None,
         tags: if tags.is_empty() { None } else { Some(tags) },
     };
-    api(ctx).list_pads(filter, true, false, false, &ids, uuid)
+    api(ctx).list_pads(filter, true, false, false, &ids, uuid, false)
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -780,7 +796,7 @@ pub fn search(
         tags: if tags.is_empty() { None } else { Some(tags) },
     };
 
-    api(ctx).list_pads(filter, false, deleted || archived, all, &[], uuid)
+    api(ctx).list_pads(filter, false, deleted || archived, all, &[], uuid, false)
 }
 
 // =============================================================================
@@ -856,6 +872,7 @@ pub fn edit(
             &result.messages,
             state.output_mode,
             state.mode,
+            false,
         );
         return Ok(Output::Render(data));
     }
@@ -878,6 +895,7 @@ pub fn edit(
             &result.messages,
             state.output_mode,
             state.mode,
+            false,
         );
         return Ok(Output::Render(data));
     }
@@ -931,6 +949,7 @@ pub fn edit(
                 &result.messages,
                 state.output_mode,
                 state.mode,
+                false,
             );
             Ok(Output::Render(data))
         }
@@ -1171,6 +1190,7 @@ pub mod tag {
             &result.messages,
             state.output_mode,
             state.mode,
+            false,
         )))
     }
 
@@ -1191,6 +1211,7 @@ pub mod tag {
             &result.messages,
             state.output_mode,
             state.mode,
+            false,
         )))
     }
 
