@@ -35,7 +35,7 @@ If a `.padz` is found, padz uses it (resolving a `link` file if present). If not
 Used **only** by write commands (`create`, `import`) when read discovery found nothing.
 
 -   **Location**: `crates/padzapp/src/init.rs` — function `find_git_root`
--   **Algorithm**: Same walk, but looking for `.git/` instead of `.padz/`.
+-   **Algorithm**: Same walk, but matches a `.git` entry — either a directory (normal repo) or a regular file (git worktrees and submodules leave a `.git` file pointing at the real gitdir). Using `exists()` rather than `is_dir()` here is deliberate so worktrees auto-init correctly. Contrast with `find_padz_root`, which requires `.padz` to be a directory so a stray same-named file can't masquerade as a store.
 -   **Effect**: If a git root is found, padz creates a fresh `.padz/` at that location and uses it for the new pad. This prevents a new pad from being silently dropped into global when the user is clearly inside a project.
 
 ### 4. Write Fallback Chain

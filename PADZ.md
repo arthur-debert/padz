@@ -46,7 +46,7 @@ The scope only changes the path to the data store, nothing else.
 PADZ uses two separate discovery algorithms:
 
 - **Reads** (list, view, search, …): walk up the directory tree looking for `.padz/`. The first match is the project root. If nothing is found before `$HOME`/`/`, fall back to global.
-- **Writes** (create, import): same walk, but if no `.padz/` is found upward, walk up again looking for `.git/`. If a git repo is found, auto-create `.padz/` at the git root and use it — so a new pad lands inside its project instead of silently going global. If neither `.padz/` nor `.git/` is found, use global.
+- **Writes** (create, import): same walk, but if no `.padz/` is found upward, walk up again looking for a `.git` entry — either a directory or a regular file (git worktrees and submodules leave a `.git` file pointing at the real gitdir). If a git repo is found, auto-create `.padz/` at the git root and use it — so a new pad lands inside its project instead of silently going global. If neither `.padz/` nor a `.git` entry is found, use global.
 
 `padz init` is always explicit: it creates `.padz/` at the current directory regardless of git status or any surrounding project.
 

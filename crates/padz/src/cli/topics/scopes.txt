@@ -32,8 +32,10 @@ Read commands (list, view, search, etc.):
 
 Write commands (create, import):
   Same as above, but with one extra step before falling back to global:
-  if no .padz was found upward, padz walks up again looking for a .git/
-  directory. If one is found, padz auto-creates .padz/ at that git root
+  if no .padz was found upward, padz walks up again looking for a .git
+  entry — either a directory (normal repo) or a regular file (git
+  worktrees and submodules leave a `.git` file pointing at the real
+  gitdir). If one is found, padz auto-creates .padz/ at that git root
   and puts the new pad there. This keeps new pads scoped to their enclosing
   git project instead of silently dropping them into global.
 
