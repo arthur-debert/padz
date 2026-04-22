@@ -233,30 +233,45 @@ pub fn resolve_link(padz_dir: &Path) -> crate::error::Result<Option<PathBuf>> {
 /// * `PADZ_GLOBAL_DATA` - If set, overrides the default global data directory.
 ///   This is primarily used for testing to isolate global state.
 ///
+/// # Errors
+///
+/// Returns `Err` when the user's intent is clearly project-scoped but the
+/// project store is unusable:
+/// - A `.padz/link` file exists but resolves to a broken, uninitialized, or
+///   chained target. Silently falling back to the local `.padz` would send
+///   writes to a different store than the user configured.
+/// - Auto-init was requested (`auto_init_for_write = true`) and a git root
+///   was found, but creating `.padz/` at that root failed. Silently going
+///   to Global would drop the new pad somewhere the user almost certainly
+///   did not mean; making the caller abort is the safer default.
+///
+/// All other paths (no `.padz` upward on a read, no `.git` on a write, etc.)
+/// fall back to `Scope::Global` successfully.
+///
 /// # Examples
 ///
 /// ```ignore
 /// // Read path: discover .padz upward, else global
-/// let ctx = initialize(&cwd, false, None, false);
+/// let ctx = initialize(&cwd, false, None, false)?;
 ///
 /// // Write path: discover .padz upward; if none, auto-init at git root; else global
-/// let ctx = initialize(&cwd, false, None, true);
+/// let ctx = initialize(&cwd, false, None, true)?;
 ///
 /// // Force global scope
-/// let ctx = initialize(&cwd, true, None, false);
+/// let ctx = initialize(&cwd, true, None, false)?;
 ///
 /// // Use explicit data directory - path ends with .padz, used directly
-/// let ctx = initialize(&cwd, false, Some(PathBuf::from("/path/to/project/.padz")), false);
+/// let ctx = initialize(&cwd, false, Some(PathBuf::from("/path/to/project/.padz")), false)?;
 ///
 /// // Use explicit project directory - .padz is appended
-/// let ctx = initialize(&cwd, false, Some(PathBuf::from("/path/to/project")), false);
+/// let ctx = initialize(&cwd, false, Some(PathBuf::from("/path/to/project")), false)?;
 /// ```
 pub fn initialize(
     cwd: &Path,
     use_global: bool,
     data_override: Option<PathBuf>,
     auto_init_for_write: bool,
-) -> PadzContext {
+) -> crate::error::Result<PadzContext> {
     // Determine global data directory:
     // 1. Check PADZ_GLOBAL_DATA environment variable (primarily for testing)
     // 2. Fall back to OS-appropriate data directory via directories crate
@@ -272,9 +287,11 @@ pub fn initialize(
     // Determine project data directory and scope:
     // 1. If use_global → Global scope, no project dir
     // 2. If data_override provided → Project scope with explicit path
-    // 3. find_padz_root found something → Project scope (follow link if present)
+    // 3. find_padz_root found something → Project scope (follow link if present,
+    //    propagate link-resolution errors rather than silently using the local path)
     // 4. Else if auto_init_for_write and find_git_root found something → create
-    //    .padz at that git root and use it (Project scope)
+    //    .padz at that git root and use it (Project scope), propagating bucket-
+    //    creation errors rather than silently dropping the pad into global
     // 5. Else → fall back to Global scope
     let (project_padz_dir, scope) = if use_global {
         (None, Scope::Global)
@@ -291,41 +308,41 @@ pub fn initialize(
             None => match find_padz_root(cwd) {
                 Some(root) => {
                     let detected = root.join(".padz");
-                    // Follow .padz/link if present
-                    let resolved = match resolve_link(&detected) {
-                        Ok(Some(linked)) => linked,
-                        _ => detected,
+                    // Follow .padz/link if present. A broken/uninitialized/
+                    // chained link is the user's declared intent going wrong;
+                    // bubble the error up so it is visible instead of silently
+                    // operating on the local (unlinked) directory, which might
+                    // be a different store.
+                    let resolved = match resolve_link(&detected)? {
+                        Some(linked) => linked,
+                        None => detected,
                     };
                     (Some(resolved), Scope::Project)
                 }
-                None => {
+                None if auto_init_for_write => {
                     // Write path: try to auto-init a project store at the
-                    // enclosing git root. If either no git root exists or the
-                    // directory creation itself fails (e.g. read-only FS,
-                    // permissions), fall back to Global rather than returning
-                    // a Project scope backed by an unusable path.
-                    let auto_init = auto_init_for_write
-                        .then(|| find_git_root(cwd))
-                        .flatten()
-                        .map(|git_root| git_root.join(".padz"))
-                        .filter(|new_padz| {
-                            if let Err(err) = create_bucket_layout(new_padz) {
-                                eprintln!(
-                                    "Warning: could not auto-init padz store at {}: {}. Falling back to global.",
+                    // enclosing git root. If no git root is found, fall back
+                    // to Global (the user isn't clearly inside a project). If
+                    // a git root IS found but layout creation fails, surface
+                    // the error — the write would otherwise silently land in
+                    // Global despite the user sitting in a git repo.
+                    match find_git_root(cwd) {
+                        Some(git_root) => {
+                            let new_padz = git_root.join(".padz");
+                            create_bucket_layout(&new_padz).map_err(|err| {
+                                PadzError::Store(format!(
+                                    "could not auto-init padz store at {}: {}. \
+                                     Run `padz init` there (or `-g` to force global) to proceed.",
                                     new_padz.display(),
                                     err
-                                );
-                                false
-                            } else {
-                                true
-                            }
-                        });
-
-                    match auto_init {
-                        Some(new_padz) => (Some(new_padz), Scope::Project),
+                                ))
+                            })?;
+                            (Some(new_padz), Scope::Project)
+                        }
                         None => (None, Scope::Global),
                     }
                 }
+                None => (None, Scope::Global),
             },
         }
     };
@@ -362,7 +379,7 @@ pub fn initialize(
     };
     let api = PadzApi::new(store, paths);
 
-    PadzContext { api, scope, config }
+    Ok(PadzContext { api, scope, config })
 }
 
 /// Migrates a legacy flat `.padz/` layout to the bucketed layout.
@@ -637,11 +654,11 @@ mod tests {
     }
 
     #[test]
-    fn test_initialize_write_auto_init_failure_falls_back_to_global() {
+    fn test_initialize_write_auto_init_failure_errors() {
         // If auto-init cannot materialize the layout (here: there's already a
         // *file* at the target .padz path so create_dir_all fails), we must
-        // not return a Project scope pointing at an unusable path. Fall back
-        // to Global instead.
+        // error out rather than silently sending the new pad to Global — the
+        // user is clearly inside a git repo and expects project scope.
         let temp = TempDir::new().unwrap();
         let repo = temp.path().join("repo");
         fs::create_dir_all(&repo).unwrap();
@@ -650,10 +667,41 @@ mod tests {
         let sub = repo.join("src");
         fs::create_dir_all(&sub).unwrap();
 
-        let ctx = initialize(&sub, false, None, true);
+        let msg = match initialize(&sub, false, None, true) {
+            Ok(_) => panic!("expected auto-init failure, got Ok"),
+            Err(e) => e.to_string(),
+        };
+        assert!(
+            msg.contains("could not auto-init"),
+            "unexpected error: {msg}"
+        );
+        assert!(
+            msg.contains("padz init"),
+            "error should hint at `padz init`: {msg}"
+        );
+    }
 
-        assert_eq!(ctx.scope, Scope::Global);
-        assert_eq!(ctx.api.paths().project, None);
+    #[test]
+    fn test_initialize_surfaces_broken_link_error() {
+        // A `.padz` with a link pointing at a non-existent target used to be
+        // swallowed — `initialize` silently fell back to the local (unlinked)
+        // directory, which may be a completely different store than the user
+        // configured. That is now a hard error on every command so the broken
+        // link surfaces instead of misrouting writes.
+        let temp = TempDir::new().unwrap();
+        let project = temp.path().join("project");
+        fs::create_dir_all(project.join(".padz")).unwrap();
+        fs::write(
+            project.join(".padz").join("link"),
+            "/definitely/not/a/real/path",
+        )
+        .unwrap();
+
+        let msg = match initialize(&project, false, None, false) {
+            Ok(_) => panic!("expected broken-link error, got Ok"),
+            Err(e) => e.to_string(),
+        };
+        assert!(msg.contains("does not exist"), "unexpected error: {msg}");
     }
 
     #[test]
@@ -692,7 +740,7 @@ mod tests {
         fs::create_dir_all(&override_dir).unwrap();
 
         // Initialize with override ending in .padz - should use it directly
-        let ctx = initialize(repo, false, Some(override_dir.clone()), false);
+        let ctx = initialize(repo, false, Some(override_dir.clone()), false).unwrap();
 
         // Verify the override path is used directly (no .padz appended)
         assert_eq!(ctx.api.paths().project, Some(override_dir));
@@ -712,7 +760,7 @@ mod tests {
         fs::create_dir_all(&override_dir).unwrap();
 
         // Initialize with override - should append .padz
-        let ctx = initialize(repo, false, Some(override_dir.clone()), false);
+        let ctx = initialize(repo, false, Some(override_dir.clone()), false).unwrap();
 
         // Verify .padz was appended
         assert_eq!(ctx.api.paths().project, Some(override_dir.join(".padz")));
@@ -728,7 +776,7 @@ mod tests {
         fs::create_dir(repo.join(".padz")).unwrap();
 
         // Initialize without override - should use detected .padz
-        let ctx = initialize(repo, false, None, false);
+        let ctx = initialize(repo, false, None, false).unwrap();
 
         // Verify the detected path is used
         assert_eq!(ctx.api.paths().project, Some(repo.join(".padz")));
@@ -750,7 +798,7 @@ mod tests {
         // Initialize with override AND global flag
         // Global flag wins: scope is Global, project path is None
         // Note: CLI prevents this combination (--data conflicts with -g)
-        let ctx = initialize(repo, true, Some(override_dir), false);
+        let ctx = initialize(repo, true, Some(override_dir), false).unwrap();
 
         assert_eq!(ctx.api.paths().project, None);
         assert_eq!(ctx.scope, crate::model::Scope::Global);
@@ -771,7 +819,7 @@ mod tests {
         fs::create_dir_all(&workdir).unwrap();
 
         // Initialize from workdir, pointing to project's .padz
-        let ctx = initialize(&workdir, false, Some(project.join(".padz")), false);
+        let ctx = initialize(&workdir, false, Some(project.join(".padz")), false).unwrap();
 
         // Should use project's .padz path
         assert_eq!(ctx.api.paths().project, Some(project.join(".padz")));
@@ -789,7 +837,7 @@ mod tests {
         fs::create_dir_all(project.join(".padz").join("active")).unwrap();
         // No .git on purpose.
 
-        let ctx = initialize(&project, false, None, false);
+        let ctx = initialize(&project, false, None, false).unwrap();
 
         assert_eq!(ctx.api.paths().project, Some(project.join(".padz")));
         assert_eq!(ctx.scope, Scope::Project);
@@ -807,7 +855,7 @@ mod tests {
         fs::create_dir_all(&sub).unwrap();
         fs::create_dir(repo.join(".git")).unwrap();
 
-        let ctx = initialize(&sub, false, None, true);
+        let ctx = initialize(&sub, false, None, true).unwrap();
 
         assert_eq!(ctx.api.paths().project, Some(repo.join(".padz")));
         assert_eq!(ctx.scope, Scope::Project);
@@ -827,7 +875,7 @@ mod tests {
         fs::create_dir_all(&sub).unwrap();
         fs::create_dir(repo.join(".git")).unwrap();
 
-        let ctx = initialize(&sub, false, None, false);
+        let ctx = initialize(&sub, false, None, false).unwrap();
 
         assert_eq!(ctx.scope, Scope::Global);
         assert_eq!(ctx.api.paths().project, None);
@@ -841,7 +889,7 @@ mod tests {
         let dir = temp.path().join("loose").join("dir");
         fs::create_dir_all(&dir).unwrap();
 
-        let ctx = initialize(&dir, false, None, true);
+        let ctx = initialize(&dir, false, None, true).unwrap();
 
         assert_eq!(ctx.scope, Scope::Global);
         assert_eq!(ctx.api.paths().project, None);
@@ -859,7 +907,7 @@ mod tests {
         fs::create_dir(parent.join(".padz")).unwrap();
         fs::create_dir(child.join(".git")).unwrap();
 
-        let ctx = initialize(&child, false, None, true);
+        let ctx = initialize(&child, false, None, true).unwrap();
 
         assert_eq!(ctx.api.paths().project, Some(parent.join(".padz")));
         // Child must not have had a .padz created under it.
@@ -1145,7 +1193,7 @@ mod tests {
         .unwrap();
 
         // Initialize from project-b — should follow link to project-a
-        let ctx = initialize(&project_b, false, None, false);
+        let ctx = initialize(&project_b, false, None, false).unwrap();
         assert_eq!(
             ctx.api.paths().project,
             Some(project_a.canonicalize().unwrap().join(".padz"))

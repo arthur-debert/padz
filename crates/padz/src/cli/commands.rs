@@ -153,7 +153,7 @@ fn create_app_state(cli: &Cli, output_mode: OutputMode) -> Result<AppState> {
             .unwrap_or_else(|| cwd.join(".padz")),
     };
 
-    let padz_ctx = initialize(&cwd, cli.global, data_override, auto_init_for_write);
+    let padz_ctx = initialize(&cwd, cli.global, data_override, auto_init_for_write)?;
 
     Ok(AppState::new(
         padz_ctx.api,
