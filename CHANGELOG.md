@@ -6,6 +6,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [1.3.0] - 2026-04-22
+
+## [1.3.0] - 2026-04-22
+
 - **Changed**
   - **Scope discovery split into read and write modes** — Previously, a directory was only treated as a project root if it contained both `.git` and `.padz`. That silently broke `.padz` directories in non-git parents: `padz init` succeeded but every subsequent command still used global because the detection step missed the new `.padz`. Discovery is now two independent algorithms. **Reads** (list, view, search, …) walk up looking for `.padz` alone — `.git` is irrelevant. **Writes** (create, import) use the same read discovery first; if no `.padz` is found upward, they walk up looking for `.git` and auto-create `.padz` at the git root so new pads land inside their enclosing project instead of silently going global. `padz init` continues to create `.padz` at cwd unconditionally — it is user intent and is never blocked.
 
@@ -396,7 +400,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
   - Demo flow verification script
   - Live testing shell
 
-[Unreleased]: https://github.com/arthur-debert/padz/compare/v1.2.0...HEAD
+[Unreleased]: https://github.com/arthur-debert/padz/compare/v1.3.0...HEAD
+[1.3.0]: https://github.com/arthur-debert/padz/compare/v1.2.0...v1.3.0
+[1.3.0]: https://github.com/arthur-debert/padz/compare/v1.2.0...v1.3.0
 [1.2.0]: https://github.com/arthur-debert/padz/compare/v1.1.1...v1.2.0
 [1.2.0]: https://github.com/arthur-debert/padz/compare/v1.1.1...v1.2.0
 [1.1.1]: https://github.com/arthur-debert/padz/compare/v1.1.0...v1.1.1
