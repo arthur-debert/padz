@@ -21,7 +21,7 @@ fn get_pad_candidates(include_deleted: bool) -> Vec<CompletionCandidate> {
 
     // Initialize context (completions don't support --data override)
     let cwd = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
-    let ctx = initialize(&cwd, is_global, None);
+    let ctx = initialize(&cwd, is_global, None, false);
     let api: PadzApi<FileStore> = ctx.api;
 
     // Query pads
@@ -84,7 +84,7 @@ pub fn archived_pads_completer() -> ArgValueCandidates {
         let is_global = args.iter().any(|a| a == "-g" || a == "--global");
 
         let cwd = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
-        let ctx = initialize(&cwd, is_global, None);
+        let ctx = initialize(&cwd, is_global, None, false);
         let api: PadzApi<FileStore> = ctx.api;
 
         let filter = PadFilter {
@@ -118,7 +118,7 @@ pub fn deleted_pads_completer() -> ArgValueCandidates {
         let is_global = args.iter().any(|a| a == "-g" || a == "--global");
 
         let cwd = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
-        let ctx = initialize(&cwd, is_global, None);
+        let ctx = initialize(&cwd, is_global, None, false);
         let api: PadzApi<FileStore> = ctx.api;
 
         let filter = PadFilter {

@@ -10,53 +10,54 @@
 //!
 //! ## The Scopes
 //!
-//! - **Project**: Bound to a specific code repository. Data lives in `<repo_root>/.padz/`.
+//! - **Project**: Bound to a specific `.padz/` directory. Data lives in `<project_root>/.padz/`.
 //! - **Global**: Bound to the user. Data lives in the OS-appropriate data directory
 //!   (via the `directories` crate).
 //!
-//! ## Scope Detection Algorithm
+//! ## Two Discovery Modes
 //!
-//! [`find_project_root`] implements git-aware scope detection:
+//! Padz uses **two different discovery algorithms** depending on what the command does:
 //!
-//! 1. Start at `CWD` (Current Working Directory).
-//! 2. Check: Does this directory have BOTH `.git` AND `.padz`?
-//! 3. **Match**: If yes, this is the Project Root.
-//! 4. **No Match**: Move to parent directory.
-//! 5. **Stop**: If we reach `HOME` or filesystem root, return `None`.
+//! ### Read discovery — used by every command
 //!
-//! **Why require both `.git` AND `.padz`?**
-//! - If we only checked `.git`: We might accidentally use a parent repo in monorepos.
-//! - If we only checked `.padz`: We lose the semantic binding to the "Project" concept.
+//! [`find_padz_root`] walks up from cwd looking for `.padz` alone:
 //!
-//! This means you must explicitly `padz init` in a repo to opt-in to project scope.
+//! 1. Start at `CWD`.
+//! 2. If `current/.padz` exists → this is the project root.
+//! 3. Otherwise move to the parent directory.
+//! 4. Stop at `$HOME` or the filesystem root; return `None`.
+//!
+//! If a `.padz` is found, it is used (resolving any `link` file). Otherwise the read
+//! falls back to the global store.
+//!
+//! ### Auto-init discovery — used only by write commands (create, import)
+//!
+//! If read discovery finds nothing and the command is creating a new pad, padz tries
+//! to place that pad inside a project rather than silently dropping it into global.
+//! It runs [`find_git_root`] — the same upward walk, but looking for `.git` — and, if
+//! a git repo is found, creates a fresh `.padz/` at the git root and uses it.
+//!
+//! **Summary of the fallback chain for writes:**
+//!
+//! 1. `.padz` found upward → use it.
+//! 2. Else `.git` found upward → auto-init `.padz` at the git root, use it.
+//! 3. Else → global.
+//!
+//! Reads never auto-init; they simply fall through to step 3 if step 1 misses.
+//!
+//! ## Explicit `padz init`
+//!
+//! `padz init` is user intent and is never blocked: it always creates `.padz/` at
+//! cwd, regardless of whether the directory is a git repo, already inside another
+//! project, or anywhere else. The CLI layer handles this by forcing `cwd` as the
+//! data override for plain-init, bypassing the discovery logic entirely.
 //!
 //! ## Nested Repositories
 //!
-//! When working in nested repos (e.g., `parent-repo/child-repo`):
-//! - If only `parent-repo` has `.padz`, starting from `child-repo` will find and use `parent-repo`
-//! - If both have `.padz`, the innermost one (closest to cwd) wins
-//! - If neither has `.padz`, falls back to global scope
-//!
-//! ## Scope Resolution Flow
-//!
-//! The scope is resolved during [`initialize`]:
-//! 1. If `-g` flag is present → Force `Scope::Global`.
-//! 2. If `data_override` is provided → Use that path directly as project data directory (`Scope::Project`).
-//! 3. Otherwise → Run [`find_project_root`].
-//!    - Found → `Scope::Project`.
-//!    - Not Found → `Scope::Global` (fall back to global store).
-//!
-//! This means that outside any project, commands transparently use the global store.
-//! Users don't need `-g` unless they want to explicitly access global pads while
-//! inside a project directory.
-//!
-//! **Note:** The CLI layer overrides this for `padz init` (plain, non-global): init is a
-//! creation operation ("create a store HERE"), so it always uses `cwd/.padz` directly,
-//! bypassing upward discovery. All other commands use [`find_project_root`] for discovery.
-//!
-//! **Note:** The CLI layer overrides this for `padz init` (plain, non-global): init is a
-//! creation operation ("create a store HERE"), so it always uses `cwd/.padz` directly,
-//! bypassing upward discovery. All other commands use [`find_project_root`] for discovery.
+//! With the `.padz`-only read rule, nested behavior is straightforward:
+//! - The innermost `.padz` (closest to cwd on the upward walk) wins.
+//! - Subprojects inherit their parent's store unless they run `padz init` themselves.
+//! - A `.padz/link` file transparently redirects to another project's store.
 //!
 //! ## Data Path Override
 //!
@@ -69,7 +70,7 @@
 //! When `data_override` is provided:
 //! - If the path ends with `.padz`, it's used directly as the data directory
 //! - Otherwise, `.padz` is appended to the path (e.g., `/path/to/project` becomes `/path/to/project/.padz`)
-//! - Scope detection via [`find_project_root`] is skipped
+//! - Both discovery algorithms are skipped
 //! - The scope defaults to `Scope::Project` (unless `-g` forces global)
 
 use crate::api::{PadzApi, PadzPaths};
@@ -88,39 +89,49 @@ pub struct PadzContext {
     pub config: PadzConfig,
 }
 
-/// Find the project root by walking up from cwd looking for a directory
-/// that has both .git and .padz. If a directory has .git but no .padz,
-/// continue searching upward (to support nested repos where parent has padz).
-/// Returns None if no matching directory is found before reaching home or root.
-pub fn find_project_root(cwd: &Path) -> Option<PathBuf> {
+/// Walk upward from `cwd` looking for a directory that contains `.padz/`.
+///
+/// This is the **read** discovery function: every command uses it to locate an
+/// existing store, regardless of whether the enclosing directory is a git repo.
+/// Stops at `$HOME` or the filesystem root and returns `None`.
+pub fn find_padz_root(cwd: &Path) -> Option<PathBuf> {
+    walk_up_for(cwd, ".padz")
+}
+
+/// Walk upward from `cwd` looking for a directory that contains `.git/`.
+///
+/// This is the **auto-init** discovery function: used by write commands to decide
+/// where to create a new `.padz/` when none is found upward. When a pad is being
+/// created and there is no existing store, we want it scoped to the enclosing git
+/// project rather than dropped into global.
+/// Stops at `$HOME` or the filesystem root and returns `None`.
+pub fn find_git_root(cwd: &Path) -> Option<PathBuf> {
+    walk_up_for(cwd, ".git")
+}
+
+/// Shared upward-walk helper. Returns the first ancestor (including `cwd`
+/// itself) that contains a child entry named `marker`. Stops at `$HOME` or
+/// the filesystem root.
+fn walk_up_for(cwd: &Path, marker: &str) -> Option<PathBuf> {
     let home_dir = BaseDirs::new().map(|bd| bd.home_dir().to_path_buf());
     let mut current = cwd.to_path_buf();
 
     loop {
-        let git_dir = current.join(".git");
-        let padz_dir = current.join(".padz");
-
-        // Found a repo with padz - use it
-        if git_dir.exists() && padz_dir.exists() {
+        if current.join(marker).exists() {
             return Some(current);
         }
 
-        // Check stop conditions: reached home dir or volume root
         if let Some(ref home) = home_dir {
             if &current == home {
                 return None;
             }
         }
 
-        // Try to move up to parent
         match current.parent() {
             Some(parent) if parent != current => {
                 current = parent.to_path_buf();
             }
-            _ => {
-                // Reached filesystem root
-                return None;
-            }
+            _ => return None,
         }
     }
 }
@@ -194,6 +205,10 @@ pub fn resolve_link(padz_dir: &Path) -> crate::error::Result<Option<PathBuf>> {
 ///   When provided, bypasses automatic scope detection.
 ///   - If path ends with `.padz`, it's used as the data directory directly
 ///   - Otherwise, `.padz` is appended to the path
+/// * `auto_init_for_write` - If true and read discovery finds no `.padz`, fall
+///   through to `find_git_root` and create `.padz/` at the git root before
+///   returning `Scope::Project`. Only write commands (`create`, `import`) should
+///   pass `true`; reads pass `false` and fall back to global cleanly.
 ///
 /// # Environment Variables
 ///
@@ -203,19 +218,27 @@ pub fn resolve_link(padz_dir: &Path) -> crate::error::Result<Option<PathBuf>> {
 /// # Examples
 ///
 /// ```ignore
-/// // Normal initialization with automatic scope detection
-/// let ctx = initialize(&cwd, false, None);
+/// // Read path: discover .padz upward, else global
+/// let ctx = initialize(&cwd, false, None, false);
+///
+/// // Write path: discover .padz upward; if none, auto-init at git root; else global
+/// let ctx = initialize(&cwd, false, None, true);
 ///
 /// // Force global scope
-/// let ctx = initialize(&cwd, true, None);
+/// let ctx = initialize(&cwd, true, None, false);
 ///
 /// // Use explicit data directory - path ends with .padz, used directly
-/// let ctx = initialize(&cwd, false, Some(PathBuf::from("/path/to/project/.padz")));
+/// let ctx = initialize(&cwd, false, Some(PathBuf::from("/path/to/project/.padz")), false);
 ///
 /// // Use explicit project directory - .padz is appended
-/// let ctx = initialize(&cwd, false, Some(PathBuf::from("/path/to/project")));
+/// let ctx = initialize(&cwd, false, Some(PathBuf::from("/path/to/project")), false);
 /// ```
-pub fn initialize(cwd: &Path, use_global: bool, data_override: Option<PathBuf>) -> PadzContext {
+pub fn initialize(
+    cwd: &Path,
+    use_global: bool,
+    data_override: Option<PathBuf>,
+    auto_init_for_write: bool,
+) -> PadzContext {
     // Determine global data directory:
     // 1. Check PADZ_GLOBAL_DATA environment variable (primarily for testing)
     // 2. Fall back to OS-appropriate data directory via directories crate
@@ -231,8 +254,10 @@ pub fn initialize(cwd: &Path, use_global: bool, data_override: Option<PathBuf>) 
     // Determine project data directory and scope:
     // 1. If use_global → Global scope, no project dir
     // 2. If data_override provided → Project scope with explicit path
-    // 3. find_project_root found something → Project scope
-    // 4. No project found → fall back to Global scope
+    // 3. find_padz_root found something → Project scope (follow link if present)
+    // 4. Else if auto_init_for_write and find_git_root found something → create
+    //    .padz at that git root and use it (Project scope)
+    // 5. Else → fall back to Global scope
     let (project_padz_dir, scope) = if use_global {
         (None, Scope::Global)
     } else {
@@ -245,7 +270,7 @@ pub fn initialize(cwd: &Path, use_global: bool, data_override: Option<PathBuf>) 
                 };
                 (Some(dir), Scope::Project)
             }
-            None => match find_project_root(cwd) {
+            None => match find_padz_root(cwd) {
                 Some(root) => {
                     let detected = root.join(".padz");
                     // Follow .padz/link if present
@@ -255,7 +280,24 @@ pub fn initialize(cwd: &Path, use_global: bool, data_override: Option<PathBuf>) 
                     };
                     (Some(resolved), Scope::Project)
                 }
-                None => (None, Scope::Global),
+                None => {
+                    if auto_init_for_write {
+                        if let Some(git_root) = find_git_root(cwd) {
+                            let new_padz = git_root.join(".padz");
+                            // Best-effort create of the bucket layout. If this
+                            // fails (e.g. read-only FS), downstream writes will
+                            // surface the actual I/O error.
+                            let _ = std::fs::create_dir_all(new_padz.join("active"));
+                            let _ = std::fs::create_dir_all(new_padz.join("archived"));
+                            let _ = std::fs::create_dir_all(new_padz.join("deleted"));
+                            (Some(new_padz), Scope::Project)
+                        } else {
+                            (None, Scope::Global)
+                        }
+                    } else {
+                        (None, Scope::Global)
+                    }
+                }
             },
         }
     };
@@ -444,116 +486,117 @@ mod tests {
     use std::fs;
     use tempfile::TempDir;
 
+    // --- find_padz_root tests ---
+
     #[test]
-    fn test_find_project_root_with_git_and_padz() {
-        // Setup: single repo with both .git and .padz
+    fn test_find_padz_root_at_cwd() {
+        // `.padz` in the current directory is found immediately, no `.git` needed.
+        // Regression: previously find_project_root required both and would skip this.
         let temp = TempDir::new().unwrap();
         let root = temp.path();
-        fs::create_dir(root.join(".git")).unwrap();
         fs::create_dir(root.join(".padz")).unwrap();
 
-        let result = find_project_root(root);
+        let result = find_padz_root(root);
         assert_eq!(result, Some(root.to_path_buf()));
     }
 
     #[test]
-    fn test_find_project_root_git_only_continues_up() {
-        // Setup: child repo with .git only, parent with both .git and .padz
+    fn test_find_padz_root_walks_up() {
         let temp = TempDir::new().unwrap();
         let parent = temp.path();
-        let child = parent.join("child-repo");
-
-        fs::create_dir(&child).unwrap();
-        fs::create_dir(parent.join(".git")).unwrap();
-        fs::create_dir(parent.join(".padz")).unwrap();
-        fs::create_dir(child.join(".git")).unwrap();
-        // child has NO .padz
-
-        let result = find_project_root(&child);
-        assert_eq!(result, Some(parent.to_path_buf()));
-    }
-
-    #[test]
-    fn test_find_project_root_nested_repos_child_has_padz() {
-        // Setup: child repo with both .git and .padz should be used
-        let temp = TempDir::new().unwrap();
-        let parent = temp.path();
-        let child = parent.join("child-repo");
-
-        fs::create_dir(&child).unwrap();
-        fs::create_dir(parent.join(".git")).unwrap();
-        fs::create_dir(parent.join(".padz")).unwrap();
-        fs::create_dir(child.join(".git")).unwrap();
-        fs::create_dir(child.join(".padz")).unwrap();
-
-        let result = find_project_root(&child);
-        assert_eq!(result, Some(child.clone()));
-    }
-
-    #[test]
-    fn test_find_project_root_deep_nested() {
-        // Setup: deeply nested path finds grandparent with .git and .padz
-        let temp = TempDir::new().unwrap();
-        let grandparent = temp.path();
-        let parent = grandparent.join("parent");
         let child = parent.join("child");
-
         fs::create_dir_all(&child).unwrap();
-        fs::create_dir(grandparent.join(".git")).unwrap();
-        fs::create_dir(grandparent.join(".padz")).unwrap();
-        // parent and child have no .git or .padz
+        fs::create_dir(parent.join(".padz")).unwrap();
 
-        let result = find_project_root(&child);
-        assert_eq!(result, Some(grandparent.to_path_buf()));
+        assert_eq!(find_padz_root(&child), Some(parent.to_path_buf()));
     }
 
     #[test]
-    fn test_find_project_root_no_git_no_padz() {
-        // Setup: no .git or .padz anywhere in temp dir
+    fn test_find_padz_root_inner_wins() {
+        // Innermost .padz (closest to cwd) is picked over an outer one.
         let temp = TempDir::new().unwrap();
-        let dir = temp.path().join("some").join("deep").join("path");
+        let outer = temp.path();
+        let inner = outer.join("inner");
+        fs::create_dir_all(&inner).unwrap();
+        fs::create_dir(outer.join(".padz")).unwrap();
+        fs::create_dir(inner.join(".padz")).unwrap();
+
+        assert_eq!(find_padz_root(&inner), Some(inner));
+    }
+
+    #[test]
+    fn test_find_padz_root_no_match() {
+        let temp = TempDir::new().unwrap();
+        let dir = temp.path().join("a").join("b");
         fs::create_dir_all(&dir).unwrap();
 
-        let result = find_project_root(&dir);
-        assert_eq!(result, None);
+        assert_eq!(find_padz_root(&dir), None);
     }
 
+    // --- find_git_root tests ---
+
     #[test]
-    fn test_find_project_root_padz_only_no_git() {
-        // Setup: .padz without .git should not match
+    fn test_find_git_root_at_cwd() {
         let temp = TempDir::new().unwrap();
         let root = temp.path();
-        fs::create_dir(root.join(".padz")).unwrap();
-        // No .git
+        fs::create_dir(root.join(".git")).unwrap();
 
-        let result = find_project_root(root);
-        assert_eq!(result, None);
+        assert_eq!(find_git_root(root), Some(root.to_path_buf()));
     }
 
     #[test]
-    fn test_find_project_root_multiple_nested_git_only_repos() {
-        // Setup: multiple nested repos, only topmost has .padz
-        // grandparent-repo/ (.git + .padz)
-        //   parent-repo/ (.git only)
-        //     child-repo/ (.git only)
+    fn test_find_git_root_walks_up() {
+        // Subdir of a git repo resolves to the repo root.
         let temp = TempDir::new().unwrap();
-        let grandparent = temp.path();
-        let parent = grandparent.join("parent-repo");
-        let child = parent.join("child-repo");
+        let repo = temp.path();
+        let sub = repo.join("src").join("cli");
+        fs::create_dir_all(&sub).unwrap();
+        fs::create_dir(repo.join(".git")).unwrap();
 
-        fs::create_dir_all(&child).unwrap();
-        fs::create_dir(grandparent.join(".git")).unwrap();
-        fs::create_dir(grandparent.join(".padz")).unwrap();
-        fs::create_dir(parent.join(".git")).unwrap();
-        fs::create_dir(child.join(".git")).unwrap();
+        assert_eq!(find_git_root(&sub), Some(repo.to_path_buf()));
+    }
 
-        // From child, should find grandparent
-        let result = find_project_root(&child);
-        assert_eq!(result, Some(grandparent.to_path_buf()));
+    #[test]
+    fn test_find_git_root_innermost_wins() {
+        // Nested repos: innermost .git is used, not the parent.
+        let temp = TempDir::new().unwrap();
+        let outer = temp.path();
+        let inner = outer.join("submodule");
+        fs::create_dir_all(&inner).unwrap();
+        fs::create_dir(outer.join(".git")).unwrap();
+        fs::create_dir(inner.join(".git")).unwrap();
 
-        // From parent, should also find grandparent
-        let result = find_project_root(&parent);
-        assert_eq!(result, Some(grandparent.to_path_buf()));
+        assert_eq!(find_git_root(&inner), Some(inner));
+    }
+
+    #[test]
+    fn test_find_git_root_no_match() {
+        let temp = TempDir::new().unwrap();
+        let dir = temp.path().join("a");
+        fs::create_dir_all(&dir).unwrap();
+
+        assert_eq!(find_git_root(&dir), None);
+    }
+
+    #[test]
+    fn test_discovery_independent() {
+        // The two discovery algorithms are independent: a dir with only `.padz`
+        // and no `.git` is found by find_padz_root; a dir with only `.git` and
+        // no `.padz` is found by find_git_root. This is the core of the split —
+        // the old find_project_root required both at the same location.
+        let temp = TempDir::new().unwrap();
+        let padz_only = temp.path().join("padz-only");
+        let git_only = temp.path().join("git-only");
+        fs::create_dir_all(&padz_only).unwrap();
+        fs::create_dir_all(&git_only).unwrap();
+        fs::create_dir(padz_only.join(".padz")).unwrap();
+        fs::create_dir(git_only.join(".git")).unwrap();
+
+        assert_eq!(find_padz_root(&padz_only), Some(padz_only.clone()));
+        assert_eq!(find_git_root(&padz_only), None);
+
+        assert_eq!(find_git_root(&git_only), Some(git_only.clone()));
+        assert_eq!(find_padz_root(&git_only), None);
     }
 
     // --- initialize() with data_override tests ---
@@ -571,7 +614,7 @@ mod tests {
         fs::create_dir_all(&override_dir).unwrap();
 
         // Initialize with override ending in .padz - should use it directly
-        let ctx = initialize(repo, false, Some(override_dir.clone()));
+        let ctx = initialize(repo, false, Some(override_dir.clone()), false);
 
         // Verify the override path is used directly (no .padz appended)
         assert_eq!(ctx.api.paths().project, Some(override_dir));
@@ -591,7 +634,7 @@ mod tests {
         fs::create_dir_all(&override_dir).unwrap();
 
         // Initialize with override - should append .padz
-        let ctx = initialize(repo, false, Some(override_dir.clone()));
+        let ctx = initialize(repo, false, Some(override_dir.clone()), false);
 
         // Verify .padz was appended
         assert_eq!(ctx.api.paths().project, Some(override_dir.join(".padz")));
@@ -607,7 +650,7 @@ mod tests {
         fs::create_dir(repo.join(".padz")).unwrap();
 
         // Initialize without override - should use detected .padz
-        let ctx = initialize(repo, false, None);
+        let ctx = initialize(repo, false, None, false);
 
         // Verify the detected path is used
         assert_eq!(ctx.api.paths().project, Some(repo.join(".padz")));
@@ -629,7 +672,7 @@ mod tests {
         // Initialize with override AND global flag
         // Global flag wins: scope is Global, project path is None
         // Note: CLI prevents this combination (--data conflicts with -g)
-        let ctx = initialize(repo, true, Some(override_dir));
+        let ctx = initialize(repo, true, Some(override_dir), false);
 
         assert_eq!(ctx.api.paths().project, None);
         assert_eq!(ctx.scope, crate::model::Scope::Global);
@@ -650,10 +693,99 @@ mod tests {
         fs::create_dir_all(&workdir).unwrap();
 
         // Initialize from workdir, pointing to project's .padz
-        let ctx = initialize(&workdir, false, Some(project.join(".padz")));
+        let ctx = initialize(&workdir, false, Some(project.join(".padz")), false);
 
         // Should use project's .padz path
         assert_eq!(ctx.api.paths().project, Some(project.join(".padz")));
+    }
+
+    // --- Read-path discovery: .padz alone is enough ---
+
+    #[test]
+    fn test_initialize_finds_padz_without_git() {
+        // Regression for the bug that motivated the split: a directory with
+        // `.padz` but no `.git` used to fall through to global. With the new
+        // read-path rules, find_padz_root picks it up.
+        let temp = TempDir::new().unwrap();
+        let project = temp.path().join("project");
+        fs::create_dir_all(project.join(".padz").join("active")).unwrap();
+        // No .git on purpose.
+
+        let ctx = initialize(&project, false, None, false);
+
+        assert_eq!(ctx.api.paths().project, Some(project.join(".padz")));
+        assert_eq!(ctx.scope, Scope::Project);
+    }
+
+    // --- Auto-init-on-write discovery ---
+
+    #[test]
+    fn test_initialize_auto_inits_at_git_root_on_write() {
+        // Write op in a git repo with no `.padz` anywhere should materialize
+        // `.padz/` at the git root and return Project scope.
+        let temp = TempDir::new().unwrap();
+        let repo = temp.path().join("repo");
+        let sub = repo.join("src");
+        fs::create_dir_all(&sub).unwrap();
+        fs::create_dir(repo.join(".git")).unwrap();
+
+        let ctx = initialize(&sub, false, None, true);
+
+        assert_eq!(ctx.api.paths().project, Some(repo.join(".padz")));
+        assert_eq!(ctx.scope, Scope::Project);
+        // Auto-init must have created the bucket layout on disk.
+        assert!(repo.join(".padz").join("active").is_dir());
+        assert!(repo.join(".padz").join("archived").is_dir());
+        assert!(repo.join(".padz").join("deleted").is_dir());
+    }
+
+    #[test]
+    fn test_initialize_read_never_auto_inits() {
+        // Same setup as the auto-init test, but `auto_init_for_write = false`.
+        // Should fall back to Global and leave the filesystem untouched.
+        let temp = TempDir::new().unwrap();
+        let repo = temp.path().join("repo");
+        let sub = repo.join("src");
+        fs::create_dir_all(&sub).unwrap();
+        fs::create_dir(repo.join(".git")).unwrap();
+
+        let ctx = initialize(&sub, false, None, false);
+
+        assert_eq!(ctx.scope, Scope::Global);
+        assert_eq!(ctx.api.paths().project, None);
+        assert!(!repo.join(".padz").exists());
+    }
+
+    #[test]
+    fn test_initialize_write_outside_git_goes_global() {
+        // No `.padz`, no `.git` → global, even on a write op.
+        let temp = TempDir::new().unwrap();
+        let dir = temp.path().join("loose").join("dir");
+        fs::create_dir_all(&dir).unwrap();
+
+        let ctx = initialize(&dir, false, None, true);
+
+        assert_eq!(ctx.scope, Scope::Global);
+        assert_eq!(ctx.api.paths().project, None);
+    }
+
+    #[test]
+    fn test_initialize_write_prefers_existing_padz_over_git() {
+        // Parent has `.padz`, child has `.git` with no `.padz`. The write should
+        // use the parent's existing store, not auto-init a new one at the child.
+        // (The read discovery matches first and short-circuits.)
+        let temp = TempDir::new().unwrap();
+        let parent = temp.path().join("parent");
+        let child = parent.join("child");
+        fs::create_dir_all(&child).unwrap();
+        fs::create_dir(parent.join(".padz")).unwrap();
+        fs::create_dir(child.join(".git")).unwrap();
+
+        let ctx = initialize(&child, false, None, true);
+
+        assert_eq!(ctx.api.paths().project, Some(parent.join(".padz")));
+        // Child must not have had a .padz created under it.
+        assert!(!child.join(".padz").exists());
     }
 
     // --- Migration tests ---
@@ -935,7 +1067,7 @@ mod tests {
         .unwrap();
 
         // Initialize from project-b — should follow link to project-a
-        let ctx = initialize(&project_b, false, None);
+        let ctx = initialize(&project_b, false, None, false);
         assert_eq!(
             ctx.api.paths().project,
             Some(project_a.canonicalize().unwrap().join(".padz"))

@@ -8,51 +8,73 @@ Command line tools typically operate in one of two modes:
 
 For a developer-focused note tool, neither is sufficient. You want context-aware notes ("TODOs for *this* project") but occasionally need global notes ("Grocery list") without leaving your terminal. Furthermore, in nested repository structures (monorepos), "Local" is ambiguous.
 
-## The Solution: Heuristic Scope Detection
+## The Solution: Two Discovery Modes
 
-Padz implements a git-aware scope detection algorithm to robustly identify the "Project Root".
+Padz uses **two separate discovery algorithms**, applied depending on whether the command is reading or writing.
 
 ### 1. The Scopes
--   **Project**: Bound to a specific code repository. Data lives in `<repo_root>/.padz/`.
+
+-   **Project**: Bound to a specific `.padz/` directory. Data lives in `<project_root>/.padz/`.
 -   **Global**: Bound to the user. Data lives in the OS-appropriate data directory (via `directories` crate).
 
-### 2. Detection Logic
+### 2. Read Discovery (`find_padz_root`)
 
--   **Location**: `src/padz/init.rs` — function `find_project_root`
+Used by every command to locate an existing store.
+
+-   **Location**: `crates/padzapp/src/init.rs` — function `find_padz_root`
 -   **Algorithm**:
-    1.  Start at `CWD` (Current Working Directory).
-    2.  Check for **Evidence**: Does this directory have BOTH `.git` AND `.padz`?
-    3.  **Match**: If yes, this is the Project Root.
-    4.  **No Match**: Move to parent directory.
-    5.  **Stop**: If we reach `HOME` or filesystem root, return `None`.
+    1.  Start at `CWD`.
+    2.  If the directory contains `.padz/`, that's the project root.
+    3.  Otherwise, move up one directory.
+    4.  Stop at `$HOME` or the filesystem root.
 
-**Why require both `.git` AND `.padz`?**
-This dual-check is the strictness filter:
--   If we only checked `.git`: We might accidentally use a parent repo (e.g., when working in a sub-repo inside a monorepo).
--   If we only checked `.padz`: We lose the semantic binding to the "Project" concept.
+If a `.padz` is found, padz uses it (resolving a `link` file if present). If not, padz falls back to global. `.git` is irrelevant here.
 
-The result is that you must explicitly `padz init` in a repo to opt-in to project scope. This prevents accidental pollution of parent directories.
+### 3. Auto-Init Discovery (`find_git_root`)
 
-### 3. Scope Resolution Flow
+Used **only** by write commands (`create`, `import`) when read discovery found nothing.
 
-The scope is resolved during `padz::init::initialize`:
-1.  If `-g` flag is present → Force `Scope::Global`.
-2.  If `--data <PATH>` is provided → Use that path directly as project data directory.
-3.  Otherwise → Run `find_project_root(cwd)`.
+-   **Location**: `crates/padzapp/src/init.rs` — function `find_git_root`
+-   **Algorithm**: Same walk, but looking for `.git/` instead of `.padz/`.
+-   **Effect**: If a git root is found, padz creates a fresh `.padz/` at that location and uses it for the new pad. This prevents a new pad from being silently dropped into global when the user is clearly inside a project.
+
+### 4. Write Fallback Chain
+
+For `create` and `import`:
+
+1.  `.padz` found upward → use it.
+2.  Else `.git` found upward → auto-init `.padz` at the git root, use it.
+3.  Else → global.
+
+Read commands skip step 2 — they never auto-init.
+
+### 5. Scope Resolution Flow
+
+The scope is resolved during `padzapp::init::initialize`:
+
+1.  If `-g` flag is present → force `Scope::Global`.
+2.  If `--data <PATH>` is provided → use that path directly; `Scope::Project`.
+3.  Otherwise → run `find_padz_root(cwd)`.
     -   Found → `Scope::Project`.
-    -   Not Found → `Scope::Project` with `cwd/.padz` as path (may need `init`).
+    -   Not found, and write op → run `find_git_root(cwd)`.
+        -   Found → create `.padz` there; `Scope::Project`.
+        -   Not found → `Scope::Global`.
+    -   Not found, and read op → `Scope::Global`.
 
-### 3.1 Data Path Override (--data option)
+### 6. Explicit `padz init`
 
-The `--data <PATH>` option allows explicitly specifying the data directory,
-bypassing automatic scope detection. This is useful when:
--   Working in a git worktree that should share data with the main repo
--   Working in a temp directory for a project located elsewhere
--   Explicitly pointing to a specific data store location
+`padz init` is user intent and is never blocked. It always creates `.padz/` at the current directory, regardless of git status or any ancestor `.padz`. The CLI layer short-circuits discovery for plain-init by passing `cwd` as the data override.
+
+### 7. Data Path Override (--data option)
+
+The `--data <PATH>` option allows explicitly specifying the data directory, bypassing both discovery algorithms. Useful when:
+-   Working in a git worktree that should share data with the main repo.
+-   Working in a temp directory for a project located elsewhere.
+-   Explicitly pointing to a specific data store location.
 
 **Path handling:**
--   If the path ends with `.padz`, it's used directly as the data directory
--   Otherwise, `.padz` is appended to the path
+-   If the path ends with `.padz`, it's used directly as the data directory.
+-   Otherwise, `.padz` is appended to the path.
 
 Example usage:
 ```bash
@@ -64,18 +86,20 @@ padz --data ~/projects/myproject list
 padz --data ~/projects/myproject/.padz list
 # Uses: ~/projects/myproject/.padz
 
-# Create a pad from temp directory, saved to project
+# Create a pad from a temp directory, saved to the project
 padz --data /home/user/myproject create "temp notes"
 ```
 
 When `--data` is provided:
--   Scope detection via `find_project_root` is skipped
--   The scope defaults to `Scope::Project`
--   Note: `--data` and `-g` are mutually exclusive
+-   Both discovery algorithms are skipped.
+-   The scope defaults to `Scope::Project`.
+-   `--data` and `-g` are mutually exclusive.
 
-### 4. Nested Repositories
+### 8. Nested Repositories
 
-When working in nested repos (e.g., `parent-repo/child-repo`):
-- If only `parent-repo` has `.padz`, starting from `child-repo` will find and use `parent-repo`
-- If both have `.padz`, the innermost one (closest to cwd) wins
-- If neither has `.padz`, scope resolution returns `None` and uses `cwd/.padz` as default
+With the split rules, nested behavior is straightforward:
+
+-   The innermost `.padz` (closest to cwd on the upward walk) wins.
+-   A subdirectory without its own `.padz` inherits the enclosing project's store.
+-   A `.padz/link` file transparently redirects to another project's store.
+-   On writes, if no ancestor has `.padz` but the current dir is inside a git repo, auto-init places a new `.padz` at the git root — never deeper, never shallower.

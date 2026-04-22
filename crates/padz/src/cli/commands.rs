@@ -115,7 +115,7 @@ fn create_app_state(cli: &Cli, output_mode: OutputMode) -> Result<AppState> {
 
     // `padz init` (plain, non-global) is a creation operation: "create a store HERE".
     // It should use cwd directly, not walk up to find an existing store.
-    // All other commands use find_project_root() for discovery, which is correct.
+    // All other commands use find_padz_root() for discovery, which is correct.
     let is_plain_init = matches!(
         cli.command,
         Some(Commands::Init {
@@ -129,6 +129,16 @@ fn create_app_state(cli: &Cli, output_mode: OutputMode) -> Result<AppState> {
         data_override
     };
 
+    // Commands that create new pads opt into auto-init: if no `.padz` is found
+    // upward, a fresh store is materialized at the enclosing git root (if any)
+    // so the new pad is project-scoped rather than silently dropped into global.
+    // Every other command operates on existing pads and reads fall back to global
+    // cleanly; they pass `false`.
+    let auto_init_for_write = matches!(
+        cli.command,
+        Some(Commands::Create { .. }) | Some(Commands::Import { .. })
+    );
+
     // Compute the local .padz dir BEFORE link resolution (used by link/unlink commands)
     let local_padz_dir = match &data_override {
         Some(path) => {
@@ -138,12 +148,12 @@ fn create_app_state(cli: &Cli, output_mode: OutputMode) -> Result<AppState> {
                 path.join(".padz")
             }
         }
-        None => padzapp::init::find_project_root(&cwd)
+        None => padzapp::init::find_padz_root(&cwd)
             .map(|root| root.join(".padz"))
             .unwrap_or_else(|| cwd.join(".padz")),
     };
 
-    let padz_ctx = initialize(&cwd, cli.global, data_override);
+    let padz_ctx = initialize(&cwd, cli.global, data_override, auto_init_for_write);
 
     Ok(AppState::new(
         padz_ctx.api,
@@ -168,7 +178,7 @@ fn handle_config(cli: &Cli, subcommand: &Option<ConfigSubcommand>) -> Result<()>
                 path.join(".padz")
             }
         }
-        None => padzapp::init::find_project_root(&cwd)
+        None => padzapp::init::find_padz_root(&cwd)
             .map(|root| root.join(".padz"))
             .unwrap_or_else(|| cwd.join(".padz")),
     };
