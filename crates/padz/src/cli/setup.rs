@@ -623,8 +623,14 @@ pub enum Commands {
     #[dispatch(pure, template = "messages")]
     Export {
         /// Export all pads to a single file with this title (format detected from extension: .md for markdown, otherwise text)
-        #[arg(long, value_name = "TITLE")]
+        #[arg(long, value_name = "TITLE", conflicts_with = "json")]
         single_file: Option<String>,
+
+        /// Export as a JSON archive (.tar.gz) preserving full metadata:
+        /// timestamps, status, pinning, tags, and parent relationships.
+        /// Round-trippable via `padz import`.
+        #[arg(long, conflicts_with = "single_file")]
+        json: bool,
 
         /// Indexes of the pads (e.g. 1 2) - if omitted, exports all active pads
         #[arg(required = false, num_args = 0.., add = active_pads_completer())]

@@ -6,6 +6,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+- **Added**
+  - **`padz export --json`** — Full-fidelity archive format. Produces a `.tar.gz` that preserves all metadata (timestamps, pinning, delete protection, status, tags, parent relationships) alongside the raw pad files. Round-trippable: `padz import` auto-detects the archive and restores pads + their referenced tag registry entries into the destination store. Import is defensive per metadata field — unknown or malformed fields become warnings and never block the pad from landing. Parent IDs that aren't present in the archive are orphaned to root (hierarchy is only preserved when the full subtree is exported). Conflicts with `--single-file`.
+
 ## [1.3.0] - 2026-04-22
 
 ## [1.3.0] - 2026-04-22

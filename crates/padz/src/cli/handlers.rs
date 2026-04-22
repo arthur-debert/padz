@@ -259,10 +259,13 @@ impl<'a> ScopedApi<'a> {
         &self,
         indexes: &[String],
         single_file: Option<&str>,
+        json: bool,
         nesting: NestingMode,
     ) -> Result<Output<Value>, anyhow::Error> {
         let result = if let Some(title) = single_file {
             self.call(|api, scope| api.export_pads_single_file(scope, indexes, title, nesting))?
+        } else if json {
+            self.call(|api, scope| api.export_pads_json(scope, indexes, nesting))?
         } else {
             self.call(|api, scope| api.export_pads(scope, indexes, nesting))?
         };
@@ -1087,13 +1090,14 @@ pub fn purge(
 pub fn export(
     #[ctx] ctx: &CommandContext,
     #[arg(name = "single_file")] single_file: Option<String>,
+    #[flag] json: bool,
     #[arg] indexes: Vec<String>,
     #[flag] flat: bool,
     #[flag] tree: bool,
     #[flag] indented: bool,
 ) -> Result<Output<Value>, anyhow::Error> {
     let nesting = parse_nesting_mode(flat, tree, indented);
-    api(ctx).export_pads(&indexes, single_file.as_deref(), nesting)
+    api(ctx).export_pads(&indexes, single_file.as_deref(), json, nesting)
 }
 
 #[handler]

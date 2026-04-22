@@ -301,6 +301,16 @@ impl<S: DataStore> PadzApi<S> {
         commands::export::run_single_file(&self.store, scope, &selectors, title, nesting)
     }
 
+    pub fn export_pads_json<I: AsRef<str>>(
+        &self,
+        scope: Scope,
+        indexes: &[I],
+        nesting: commands::NestingMode,
+    ) -> Result<commands::CmdResult> {
+        let selectors = parse_selectors(indexes)?;
+        commands::export::run_json(&self.store, scope, &selectors, nesting)
+    }
+
     pub fn import_pads(
         &mut self,
         scope: Scope,

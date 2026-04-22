@@ -89,6 +89,7 @@ pub mod import;
 pub mod init;
 pub mod move_pads;
 
+pub mod metadata_schema;
 pub mod paths;
 pub mod pinning;
 pub mod purge;

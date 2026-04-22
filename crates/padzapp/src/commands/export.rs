@@ -1,17 +1,20 @@
+use crate::commands::metadata_schema::{Archive, PadEntry, TagRegistryEntry, SCHEMA_VERSION};
 use crate::commands::{CmdMessage, CmdResult, NestingMode};
 use crate::error::{PadzError, Result};
 use crate::index::DisplayIndex;
 use crate::index::DisplayPad;
 use crate::index::PadSelector;
 use crate::model::Scope;
-use crate::store::DataStore;
+use crate::store::{Bucket, DataStore};
 use chrono::Utc;
 use flate2::write::GzEncoder;
 use flate2::Compression;
 use pulldown_cmark::{Event, HeadingLevel, Options, Parser, Tag, TagEnd};
 use pulldown_cmark_to_cmark::cmark;
+use std::collections::HashSet;
 use std::fs::File;
 use std::io::Write;
+use uuid::Uuid;
 
 use super::helpers::{collect_nested_pads, indexed_pads, pads_by_selectors, NestedPad};
 
@@ -346,6 +349,162 @@ fn bump_heading_level_by(level: HeadingLevel, amount: usize) -> HeadingLevel {
         5 => HeadingLevel::H5,
         _ => HeadingLevel::H6,
     }
+}
+
+/// Run JSON-format export: tar.gz containing raw pad files + `db.json` with
+/// full metadata.
+///
+/// See [`crate::commands::metadata_schema`] for the archive format.
+pub fn run_json<S: DataStore>(
+    store: &S,
+    scope: Scope,
+    selectors: &[PadSelector],
+    nesting: NestingMode,
+) -> Result<CmdResult> {
+    let pads = resolve_pads(store, scope, selectors)?;
+
+    if pads.is_empty() {
+        let mut res = CmdResult::default();
+        res.add_message(CmdMessage::info("No pads to export."));
+        return Ok(res);
+    }
+
+    let nested = resolve_nested(store, scope, &pads, nesting)?;
+
+    let now = Utc::now();
+    let filename = format!("padz-{}.json.tar.gz", now.format("%Y-%m-%d_%H:%M:%S"));
+    let file = File::create(&filename).map_err(PadzError::Io)?;
+
+    write_json_archive(file, store, scope, &nested, now)?;
+
+    let mut result = CmdResult::default();
+    result.add_message(CmdMessage::success(format!("Exported to {}", filename)));
+    Ok(result)
+}
+
+/// Collect the resolved + nested pads for a JSON export. Public for tests that
+/// want to drive `write_json_archive` directly without writing to CWD.
+#[cfg(test)]
+pub(crate) fn collect_export_pads<S: DataStore>(
+    store: &S,
+    scope: Scope,
+    selectors: &[PadSelector],
+    nesting: NestingMode,
+) -> Result<Vec<NestedPad>> {
+    let pads = resolve_pads(store, scope, selectors)?;
+    resolve_nested(store, scope, &pads, nesting)
+}
+
+pub(crate) fn write_json_archive<W: Write, S: DataStore>(
+    writer: W,
+    store: &S,
+    scope: Scope,
+    pads: &[NestedPad],
+    exported_at: chrono::DateTime<Utc>,
+) -> Result<()> {
+    let enc = GzEncoder::new(writer, Compression::default());
+    let mut tar = tar::Builder::new(enc);
+
+    // 1. Write each pad file (raw content, preserving extension).
+    //
+    // Dedupe by UUID: pinned pads appear twice in the indexed tree (once with
+    // a Pinned index, once with a Regular one). In the archive we want exactly
+    // one file + db entry per pad.
+    let mut pad_entries = Vec::with_capacity(pads.len());
+    let mut referenced_tags: HashSet<String> = HashSet::new();
+    let mut seen: HashSet<Uuid> = HashSet::new();
+
+    for np in pads {
+        let dp = &np.pad;
+        let meta = &dp.pad.metadata;
+        if !seen.insert(meta.id) {
+            continue;
+        }
+
+        for t in &meta.tags {
+            referenced_tags.insert(t.clone());
+        }
+
+        // Locate the pad in whichever bucket still holds it. Active first
+        // (fast path), then Archived. Deleted is intentionally skipped:
+        // resolve_pads filters deleted indexes out of the export set.
+        let (bucket_name, source_path) = [Bucket::Active, Bucket::Archived]
+            .iter()
+            .find_map(|b| {
+                store
+                    .get_pad_path(&meta.id, scope, *b)
+                    .ok()
+                    .map(|p| (bucket_label(*b), p))
+            })
+            .unwrap_or_else(|| ("Active".to_string(), std::path::PathBuf::new()));
+
+        let ext = source_path
+            .extension()
+            .and_then(|e| e.to_str())
+            .map(str::to_owned)
+            .unwrap_or_else(|| "txt".to_string());
+
+        let file_name = format!("pads/pad-{}.{}", meta.id, ext);
+        let entry_path = format!("padz/{}", file_name);
+        let content_bytes = dp.pad.content.as_bytes();
+
+        let mut header = tar::Header::new_gnu();
+        header.set_size(content_bytes.len() as u64);
+        header.set_mode(0o644);
+        header.set_cksum();
+        tar.append_data(&mut header, entry_path, content_bytes)
+            .map_err(PadzError::Io)?;
+
+        let metadata_value = serde_json::to_value(meta)
+            .map_err(|e| PadzError::Api(format!("Failed to serialize pad metadata: {}", e)))?;
+
+        pad_entries.push(PadEntry {
+            file: file_name,
+            bucket: bucket_name,
+            metadata: metadata_value,
+        });
+    }
+
+    // 2. Collect the referenced subset of the tag registry.
+    let all_tags = store.load_tags(scope).unwrap_or_default();
+    let tags: Vec<TagRegistryEntry> = all_tags
+        .into_iter()
+        .filter(|t| referenced_tags.contains(&t.name))
+        .map(|t| TagRegistryEntry {
+            name: t.name,
+            created_at: t.created_at,
+        })
+        .collect();
+
+    // 3. Write db.json
+    let archive = Archive {
+        schema_version: SCHEMA_VERSION,
+        exported_at,
+        padz_version: env!("CARGO_PKG_VERSION").to_string(),
+        pads: pad_entries,
+        tags,
+    };
+    let json = serde_json::to_vec_pretty(&archive)
+        .map_err(|e| PadzError::Api(format!("Failed to serialize archive: {}", e)))?;
+
+    let mut header = tar::Header::new_gnu();
+    header.set_size(json.len() as u64);
+    header.set_mode(0o644);
+    header.set_cksum();
+    tar.append_data(&mut header, "padz/db.json", json.as_slice())
+        .map_err(PadzError::Io)?;
+
+    tar.finish().map_err(PadzError::Io)?;
+    Ok(())
+}
+
+fn bucket_label(b: Bucket) -> String {
+    match b {
+        Bucket::Active => "Active",
+        Bucket::Archived => "Archived",
+        Bucket::Deleted => "Deleted",
+    }
+    .to_string()
 }
 
 /// Generate output filename, ensuring proper extension.
