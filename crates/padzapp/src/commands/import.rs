@@ -1,13 +1,16 @@
+use crate::commands::inline_metadata::{parse_lex_metadata, parse_md_frontmatter};
+use crate::commands::metadata_apply::{
+    apply_metadata_defensively, parse_bucket_or_active, ParentPolicy,
+};
 use crate::commands::metadata_schema::{Archive, PadEntry};
 use crate::commands::{CmdMessage, CmdResult};
 use crate::error::{PadzError, Result};
-use crate::model::{parse_pad_content, Metadata, Pad, Scope, TodoStatus};
+use crate::model::{parse_pad_content, Pad, Scope};
 use crate::store::{Bucket, DataStore};
 use crate::tags::TagEntry;
-use chrono::{DateTime, Utc};
 use flate2::read::GzDecoder;
-use serde_json::Value;
 use std::collections::{HashMap, HashSet};
+use std::ffi::OsStr;
 use std::fs;
 use std::io::Read;
 use std::path::{Path, PathBuf};
@@ -57,12 +60,15 @@ pub fn run<S: DataStore>(
                     if let Some(ext) = sub_path.extension() {
                         let ext_str = format!(".{}", ext.to_string_lossy());
                         if import_exts.contains(&ext_str) {
-                            if let Ok(count) = import_file(store, scope, &sub_path) {
-                                imported_count += count;
+                            if let Ok(res) = import_file(store, scope, &sub_path) {
+                                imported_count += res.imported;
                                 result.add_message(CmdMessage::info(format!(
                                     "Imported: {}",
                                     sub_path.display()
                                 )));
+                                for w in res.warnings {
+                                    result.add_message(w);
+                                }
                             }
                         }
                     }
@@ -70,14 +76,20 @@ pub fn run<S: DataStore>(
             }
         } else if path.is_file() {
             // Import file directly (try as text)
-            if let Ok(count) = import_file(store, scope, &path) {
-                imported_count += count;
-                result.add_message(CmdMessage::info(format!("Imported: {}", path.display())));
-            } else {
-                result.add_message(CmdMessage::warning(format!(
-                    "Failed to import: {}",
-                    path.display()
-                )));
+            match import_file(store, scope, &path) {
+                Ok(res) => {
+                    imported_count += res.imported;
+                    result.add_message(CmdMessage::info(format!("Imported: {}", path.display())));
+                    for w in res.warnings {
+                        result.add_message(w);
+                    }
+                }
+                Err(_) => {
+                    result.add_message(CmdMessage::warning(format!(
+                        "Failed to import: {}",
+                        path.display()
+                    )));
+                }
             }
         } else {
             result.add_message(CmdMessage::warning(format!(
@@ -108,18 +120,92 @@ fn is_json_archive(path: &Path) -> bool {
     name.ends_with(".tar.gz") || name.ends_with(".tgz")
 }
 
-fn import_file<S: DataStore>(store: &mut S, scope: Scope, path: &Path) -> Result<usize> {
-    let content_raw = fs::read_to_string(path).map_err(PadzError::Io)?;
-    import_content(store, scope, &content_raw)
+/// Result of importing a single file: pads created + any per-field warnings.
+struct FileImportResult {
+    imported: usize,
+    warnings: Vec<CmdMessage>,
 }
 
-fn import_content<S: DataStore>(store: &mut S, scope: Scope, content_raw: &str) -> Result<usize> {
+fn import_file<S: DataStore>(store: &mut S, scope: Scope, path: &Path) -> Result<FileImportResult> {
+    let content_raw = fs::read_to_string(path).map_err(PadzError::Io)?;
+    let ext = path
+        .extension()
+        .and_then(OsStr::to_str)
+        .map(str::to_ascii_lowercase)
+        .unwrap_or_default();
+    let label = path.display().to_string();
+    import_content(store, scope, &content_raw, &ext, &label)
+}
+
+fn import_content<S: DataStore>(
+    store: &mut S,
+    scope: Scope,
+    content_raw: &str,
+    ext: &str,
+    source_label: &str,
+) -> Result<FileImportResult> {
+    // Try inline metadata first, picking the dialect by file extension.
+    let detected = match ext {
+        "md" | "markdown" => parse_md_frontmatter(content_raw),
+        "lex" => parse_lex_metadata(content_raw),
+        _ => None,
+    };
+
+    if let Some((metadata_value, body)) = detected {
+        // Body may still have leading whitespace; treat it as a raw pad doc.
+        let Some((title, normalized)) = parse_pad_content(&body) else {
+            return Ok(FileImportResult {
+                imported: 0,
+                warnings: Vec::new(),
+            });
+        };
+
+        let mut pad = Pad::new(title.clone(), strip_title_from_body(&normalized, &title));
+        let mut warnings = apply_metadata_defensively(
+            &mut pad,
+            &metadata_value,
+            ParentPolicy::Trust,
+            source_label,
+        );
+
+        if !title.is_empty() {
+            pad.metadata.title = title;
+        }
+
+        // Bucket comes from metadata too; default to Active if missing.
+        let bucket = metadata_value
+            .get("bucket")
+            .and_then(|v| v.as_str())
+            .map(parse_bucket_or_active)
+            .unwrap_or(Bucket::Active);
+
+        store.save_pad(&pad, scope, bucket)?;
+
+        if !warnings.is_empty() {
+            warnings.insert(
+                0,
+                CmdMessage::info(format!("{}: applied inline metadata", source_label)),
+            );
+        }
+
+        return Ok(FileImportResult {
+            imported: 1,
+            warnings,
+        });
+    }
+
+    // No inline metadata — plain content path (backwards compatible).
     if let Some((title, body)) = crate::model::extract_title_and_body(content_raw) {
         crate::commands::create::run(store, scope, title, body, None)?;
-        Ok(1)
+        Ok(FileImportResult {
+            imported: 1,
+            warnings: Vec::new(),
+        })
     } else {
-        // Empty content, treated as ignore
-        Ok(0)
+        Ok(FileImportResult {
+            imported: 0,
+            warnings: Vec::new(),
+        })
     }
 }
 
@@ -247,8 +333,6 @@ fn import_pad_entry<S: DataStore>(
     files: &HashMap<String, Vec<u8>>,
     archive_ids: &HashSet<Uuid>,
 ) -> Result<(Uuid, Vec<CmdMessage>)> {
-    let mut warnings: Vec<CmdMessage> = Vec::new();
-
     // Resolve file: db.json uses relative paths ("pads/pad-<uuid>.lex"); tar
     // entries include the "padz/" prefix.
     let content_bytes = files
@@ -264,186 +348,29 @@ fn import_pad_entry<S: DataStore>(
     // Start from a fresh Pad so we have a valid baseline, then overlay fields.
     let mut pad = Pad::new(title.clone(), strip_title_from_body(&content, &title));
 
-    let obj = entry.metadata.as_object();
+    let warnings = apply_metadata_defensively(
+        &mut pad,
+        &entry.metadata,
+        ParentPolicy::OrphanUnknown(archive_ids),
+        &entry.file,
+    );
 
-    // Apply id if available and valid. Parent_id mapping below relies on this.
-    if let Some(obj) = obj {
-        if let Some(id_val) = obj.get("id") {
-            match value_to_uuid(id_val) {
-                Some(u) => pad.metadata.id = u,
-                None => warnings.push(CmdMessage::warning(format!(
-                    "{}: invalid id field, assigned a new UUID",
-                    entry.file
-                ))),
-            }
-        }
-
-        apply_datetime(obj, "created_at", &mut pad.metadata, &mut warnings, entry);
-        apply_datetime(obj, "updated_at", &mut pad.metadata, &mut warnings, entry);
-
-        if let Some(v) = obj.get("is_pinned") {
-            match v.as_bool() {
-                Some(b) => pad.metadata.is_pinned = b,
-                None => warnings.push(CmdMessage::warning(format!(
-                    "{}: invalid is_pinned",
-                    entry.file
-                ))),
-            }
-        }
-        if let Some(v) = obj.get("pinned_at") {
-            if v.is_null() {
-                pad.metadata.pinned_at = None;
-            } else {
-                match value_to_datetime(v) {
-                    Some(dt) => pad.metadata.pinned_at = Some(dt),
-                    None => warnings.push(CmdMessage::warning(format!(
-                        "{}: invalid pinned_at",
-                        entry.file
-                    ))),
-                }
-            }
-        }
-        if let Some(v) = obj.get("delete_protected") {
-            match v.as_bool() {
-                Some(b) => pad.metadata.delete_protected = b,
-                None => warnings.push(CmdMessage::warning(format!(
-                    "{}: invalid delete_protected",
-                    entry.file
-                ))),
-            }
-        }
-        if let Some(v) = obj.get("status") {
-            match v.as_str().and_then(parse_todo_status) {
-                Some(s) => pad.metadata.status = s,
-                None => warnings.push(CmdMessage::warning(format!(
-                    "{}: invalid status",
-                    entry.file
-                ))),
-            }
-        }
-        if let Some(v) = obj.get("tags") {
-            match v.as_array() {
-                Some(arr) => {
-                    let mut tags = Vec::with_capacity(arr.len());
-                    let mut bad = 0;
-                    for t in arr {
-                        match t.as_str() {
-                            Some(s) => tags.push(s.to_string()),
-                            None => bad += 1,
-                        }
-                    }
-                    pad.metadata.tags = tags;
-                    if bad > 0 {
-                        warnings.push(CmdMessage::warning(format!(
-                            "{}: {} non-string tag entries ignored",
-                            entry.file, bad
-                        )));
-                    }
-                }
-                None => warnings.push(CmdMessage::warning(format!(
-                    "{}: invalid tags (not an array)",
-                    entry.file
-                ))),
-            }
-        }
-
-        // parent_id: orphan if the parent isn't in this archive.
-        if let Some(v) = obj.get("parent_id") {
-            if v.is_null() {
-                pad.metadata.parent_id = None;
-            } else {
-                match value_to_uuid(v) {
-                    Some(pid) => {
-                        if archive_ids.contains(&pid) {
-                            pad.metadata.parent_id = Some(pid);
-                        } else {
-                            pad.metadata.parent_id = None;
-                            warnings.push(CmdMessage::info(format!(
-                                "{}: parent not in archive, orphaned to root",
-                                entry.file
-                            )));
-                        }
-                    }
-                    None => warnings.push(CmdMessage::warning(format!(
-                        "{}: invalid parent_id",
-                        entry.file
-                    ))),
-                }
-            }
-        }
-    } else {
-        warnings.push(CmdMessage::warning(format!(
-            "{}: metadata is not an object, keeping defaults",
-            entry.file
-        )));
-    }
-
-    // Re-sync title on metadata in case the pad carried a cached one that
-    // differs from first-line of content (metadata truncation).
+    // The content's first line is the authoritative title — metadata.title may
+    // be truncated to 60 chars, so prefer what we parsed out of the file.
     if !title.is_empty() {
         pad.metadata.title = title;
     }
 
-    let bucket = parse_bucket(&entry.bucket).unwrap_or(Bucket::Active);
+    let bucket = parse_bucket_or_active(&entry.bucket);
     store.save_pad(&pad, scope, bucket)?;
 
     Ok((pad.metadata.id, warnings))
 }
 
-fn apply_datetime(
-    obj: &serde_json::Map<String, Value>,
-    key: &str,
-    meta: &mut Metadata,
-    warnings: &mut Vec<CmdMessage>,
-    entry: &PadEntry,
-) {
-    if let Some(v) = obj.get(key) {
-        match value_to_datetime(v) {
-            Some(dt) => match key {
-                "created_at" => meta.created_at = dt,
-                "updated_at" => meta.updated_at = dt,
-                _ => {}
-            },
-            None => warnings.push(CmdMessage::warning(format!(
-                "{}: invalid {}",
-                entry.file, key
-            ))),
-        }
-    }
-}
-
-fn value_to_uuid(v: &Value) -> Option<Uuid> {
-    v.as_str().and_then(|s| Uuid::parse_str(s).ok())
-}
-
-fn value_to_datetime(v: &Value) -> Option<DateTime<Utc>> {
-    v.as_str()
-        .and_then(|s| DateTime::parse_from_rfc3339(s).ok())
-        .map(|dt| dt.with_timezone(&Utc))
-}
-
-fn parse_todo_status(s: &str) -> Option<TodoStatus> {
-    match s {
-        "Planned" => Some(TodoStatus::Planned),
-        "InProgress" => Some(TodoStatus::InProgress),
-        "Done" => Some(TodoStatus::Done),
-        _ => None,
-    }
-}
-
-fn parse_bucket(s: &str) -> Option<Bucket> {
-    match s {
-        "Active" => Some(Bucket::Active),
-        "Archived" => Some(Bucket::Archived),
-        "Deleted" => Some(Bucket::Deleted),
-        _ => None,
-    }
-}
-
 /// `parse_pad_content` returns `(title, "title\n\nbody")`. `Pad::new` expects
 /// title + body separately (it re-normalizes). This helper extracts just the
 /// body so `Pad::new` doesn't end up with a doubled title line.
-fn strip_title_from_body(normalized: &str, title: &str) -> String {
+pub(crate) fn strip_title_from_body(normalized: &str, title: &str) -> String {
     if let Some(rest) = normalized.strip_prefix(title) {
         rest.trim_start_matches('\n').trim_start().to_string()
     } else {
@@ -467,11 +394,19 @@ mod tests {
         )
     }
 
+    fn import_content_simple<S: DataStore>(
+        store: &mut S,
+        scope: Scope,
+        raw: &str,
+    ) -> FileImportResult {
+        import_content(store, scope, raw, "", "<test>").unwrap()
+    }
+
     #[test]
     fn test_import_content_extracts_title() {
         let mut store = new_store();
         let raw = "My Title\nLine 1\nLine 2";
-        import_content(&mut store, Scope::Project, raw).unwrap();
+        import_content_simple(&mut store, Scope::Project, raw);
 
         let pads = store
             .list_pads(Scope::Project, crate::store::Bucket::Active)
@@ -485,7 +420,7 @@ mod tests {
     fn test_import_content_trims_leading_blanks() {
         let mut store = new_store();
         let raw = "Title\n\n\nReal Content";
-        import_content(&mut store, Scope::Project, raw).unwrap();
+        import_content_simple(&mut store, Scope::Project, raw);
 
         let pads = store
             .list_pads(Scope::Project, crate::store::Bucket::Active)
@@ -580,8 +515,8 @@ mod tests {
     #[test]
     fn test_import_empty_content_returns_zero() {
         let mut store = new_store();
-        let result = import_content(&mut store, Scope::Project, "   \n\n  ").unwrap();
-        assert_eq!(result, 0);
+        let result = import_content_simple(&mut store, Scope::Project, "   \n\n  ");
+        assert_eq!(result.imported, 0);
 
         let pads = store
             .list_pads(Scope::Project, crate::store::Bucket::Active)
@@ -749,12 +684,153 @@ mod tests {
     }
 
     // =========================================================================
+    // Inline metadata (md/lex) tests
+    // =========================================================================
+
+    use crate::commands::inline_metadata::{serialize_lex_metadata, serialize_md_frontmatter};
+
+    #[test]
+    fn test_import_md_with_frontmatter_applies_metadata() {
+        let mut store = new_store();
+
+        // Build a pad, serialize its metadata as md frontmatter, write to a
+        // file, and import it into a fresh store. Expect metadata preserved.
+        let mut seed = crate::model::Pad::new("Alpha".into(), "Body text".into());
+        seed.metadata.is_pinned = true;
+        seed.metadata.delete_protected = true;
+        seed.metadata.status = crate::model::TodoStatus::Done;
+        seed.metadata.tags = vec!["work".into()];
+        let expected_id = seed.metadata.id;
+
+        let block = serialize_md_frontmatter(&seed.metadata, Bucket::Active);
+        let body = format!("{}Alpha\n\nBody text", block);
+
+        let temp = tempfile::tempdir().unwrap();
+        let path = temp.path().join("alpha.md");
+        std::fs::write(&path, body).unwrap();
+
+        let res = run(&mut store, Scope::Project, vec![path], &[".md".into()]).unwrap();
+        assert!(res
+            .messages
+            .iter()
+            .any(|m| m.content.contains("Total imported: 1")));
+
+        let pads = store.list_pads(Scope::Project, Bucket::Active).unwrap();
+        assert_eq!(pads.len(), 1);
+        let p = &pads[0];
+        assert_eq!(p.metadata.id, expected_id, "uuid preserved");
+        assert_eq!(p.metadata.title, "Alpha");
+        assert!(p.metadata.is_pinned);
+        assert!(p.metadata.delete_protected);
+        assert_eq!(p.metadata.status, crate::model::TodoStatus::Done);
+        assert_eq!(p.metadata.tags, vec!["work".to_string()]);
+        // Body should not contain the frontmatter
+        assert!(!p.content.contains("padz.id"));
+        assert!(!p.content.contains("---\n"));
+    }
+
+    #[test]
+    fn test_import_lex_with_metadata_applies_metadata() {
+        let mut store = new_store();
+
+        let mut seed = crate::model::Pad::new("Beta".into(), "Some body".into());
+        seed.metadata.status = crate::model::TodoStatus::InProgress;
+        seed.metadata.tags = vec!["rust".into(), "cli".into()];
+        let expected_id = seed.metadata.id;
+
+        let block = serialize_lex_metadata(&seed.metadata, Bucket::Active);
+        let body = format!("{}Beta\n\n    Some body", block);
+
+        let temp = tempfile::tempdir().unwrap();
+        let path = temp.path().join("beta.lex");
+        std::fs::write(&path, body).unwrap();
+
+        let res = run(&mut store, Scope::Project, vec![path], &[".lex".into()]).unwrap();
+        assert!(res
+            .messages
+            .iter()
+            .any(|m| m.content.contains("Total imported: 1")));
+
+        let pads = store.list_pads(Scope::Project, Bucket::Active).unwrap();
+        assert_eq!(pads.len(), 1);
+        let p = &pads[0];
+        assert_eq!(p.metadata.id, expected_id, "uuid preserved");
+        assert_eq!(p.metadata.title, "Beta");
+        assert_eq!(p.metadata.status, crate::model::TodoStatus::InProgress);
+        assert_eq!(p.metadata.tags, vec!["rust".to_string(), "cli".to_string()]);
+        // Body should not contain the annotation block
+        assert!(!p.content.contains(":: padz."));
+    }
+
+    #[test]
+    fn test_import_md_without_frontmatter_falls_back_to_plain() {
+        let mut store = new_store();
+
+        let temp = tempfile::tempdir().unwrap();
+        let path = temp.path().join("plain.md");
+        std::fs::write(&path, "# Heading\n\nBody").unwrap();
+
+        run(&mut store, Scope::Project, vec![path], &[".md".into()]).unwrap();
+
+        let pads = store.list_pads(Scope::Project, Bucket::Active).unwrap();
+        assert_eq!(pads.len(), 1);
+        assert_eq!(pads[0].metadata.title, "# Heading");
+    }
+
+    #[test]
+    fn test_import_md_ignores_non_padz_frontmatter_keys() {
+        let mut store = new_store();
+
+        let body = "---\nauthor: Alice\ndate: 2026-01-01\n---\n\nTitle\n\nBody";
+        let temp = tempfile::tempdir().unwrap();
+        let path = temp.path().join("blog.md");
+        std::fs::write(&path, body).unwrap();
+
+        run(&mut store, Scope::Project, vec![path], &[".md".into()]).unwrap();
+
+        // No padz.* keys -> treat as plain content; the frontmatter stays in
+        // the body because our detector only fires when padz.* keys exist.
+        let pads = store.list_pads(Scope::Project, Bucket::Active).unwrap();
+        assert_eq!(pads.len(), 1);
+        // Title should still be "---" from the first line of the raw content
+        // (we didn't extract frontmatter, so the title is "---")
+        assert_eq!(pads[0].metadata.title, "---");
+    }
+
+    #[test]
+    fn test_import_md_tolerates_invalid_status_field() {
+        let mut store = new_store();
+
+        let body = "---\npadz.id: \"11111111-2222-3333-4444-555555555555\"\npadz.status: NotAThing\n---\n\nTitle\n\nBody";
+        let temp = tempfile::tempdir().unwrap();
+        let path = temp.path().join("bad.md");
+        std::fs::write(&path, body).unwrap();
+
+        let res = run(&mut store, Scope::Project, vec![path], &[".md".into()]).unwrap();
+
+        assert!(res
+            .messages
+            .iter()
+            .any(|m| m.content.contains("invalid status")));
+
+        let pads = store.list_pads(Scope::Project, Bucket::Active).unwrap();
+        assert_eq!(pads.len(), 1);
+        // uuid preserved, status fell back to default
+        assert_eq!(
+            pads[0].metadata.id.to_string(),
+            "11111111-2222-3333-4444-555555555555"
+        );
+        assert_eq!(pads[0].metadata.status, crate::model::TodoStatus::Planned);
+    }
+
+    // =========================================================================
     // JSON archive tests
     // =========================================================================
 
     use crate::commands::export;
     use crate::commands::{create, NestingMode};
     use crate::index::{DisplayIndex, PadSelector};
+    use crate::store::Bucket;
     use chrono::Utc;
 
     /// Build a JSON archive from the source store into a tempfile and return

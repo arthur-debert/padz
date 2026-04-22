@@ -49,6 +49,7 @@ pub fn run<S: DataStore>(
     scope: Scope,
     selectors: &[PadSelector],
     nesting: NestingMode,
+    with_metadata: bool,
 ) -> Result<CmdResult> {
     // 1. Resolve pads
     let pads = resolve_pads(store, scope, selectors)?;
@@ -63,13 +64,21 @@ pub fn run<S: DataStore>(
 
     // 2. Prepare output file
     let now = Utc::now();
-    let filename = format!("padz-{}.tar.gz", now.format("%Y-%m-%d_%H:%M:%S"));
+    let suffix = if with_metadata { "meta" } else { "tar" };
+    let filename = format!("padz-{}.{}.gz", now.format("%Y-%m-%d_%H:%M:%S"), suffix);
     let file = File::create(&filename).map_err(PadzError::Io)?;
 
     // 3. Write archive
-    write_archive(file, &nested)?;
-
     let mut result = CmdResult::default();
+    let messages = if with_metadata {
+        write_archive_with_metadata(file, store, scope, &nested)?
+    } else {
+        write_archive(file, &nested)?;
+        Vec::new()
+    };
+    for m in messages {
+        result.add_message(m);
+    }
     result.add_message(CmdMessage::success(format!("Exported to {}", filename)));
     Ok(result)
 }
@@ -134,6 +143,93 @@ fn write_archive<W: Write>(writer: W, pads: &[NestedPad]) -> Result<()> {
 
     tar.finish().map_err(PadzError::Io)?;
     Ok(())
+}
+
+/// Write a tar.gz where each pad is stored in its native format with an
+/// inline metadata header (md frontmatter / lex annotations). Pads in the
+/// `.txt` format have no metadata dialect — they are exported without
+/// metadata and counted into a single trailing warning.
+pub(crate) fn write_archive_with_metadata<W: Write, S: DataStore>(
+    writer: W,
+    store: &S,
+    scope: Scope,
+    pads: &[NestedPad],
+) -> Result<Vec<CmdMessage>> {
+    use crate::commands::inline_metadata::{serialize_lex_metadata, serialize_md_frontmatter};
+
+    let enc = GzEncoder::new(writer, Compression::default());
+    let mut tar = tar::Builder::new(enc);
+
+    let mut seen: HashSet<Uuid> = HashSet::new();
+    let mut skipped_txt: Vec<String> = Vec::new();
+
+    for np in pads {
+        let dp = &np.pad;
+        let meta = &dp.pad.metadata;
+        if !seen.insert(meta.id) {
+            continue;
+        }
+
+        // Source bucket: Active first, then Archived. Matches JSON export.
+        let (bucket, source_path) = [Bucket::Active, Bucket::Archived]
+            .iter()
+            .find_map(|b| {
+                store
+                    .get_pad_path(&meta.id, scope, *b)
+                    .ok()
+                    .map(|p| (*b, p))
+            })
+            .unwrap_or((Bucket::Active, std::path::PathBuf::new()));
+
+        let ext = source_path
+            .extension()
+            .and_then(|e| e.to_str())
+            .map(str::to_ascii_lowercase)
+            .unwrap_or_else(|| "txt".to_string());
+
+        let safe_title = sanitize_filename(&meta.title);
+        let entry_name = format!("padz/{}-{}.{}", safe_title, &meta.id.to_string()[..8], ext);
+
+        let metadata_block = match ext.as_str() {
+            "md" | "markdown" => Some(serialize_md_frontmatter(meta, bucket)),
+            "lex" => Some(serialize_lex_metadata(meta, bucket)),
+            _ => {
+                skipped_txt.push(meta.title.clone());
+                None
+            }
+        };
+
+        let content = match metadata_block {
+            Some(block) => format!("{}{}", block, dp.pad.content),
+            None => dp.pad.content.clone(),
+        };
+
+        let mut header = tar::Header::new_gnu();
+        header.set_size(content.len() as u64);
+        header.set_mode(0o644);
+        header.set_cksum();
+        tar.append_data(&mut header, entry_name, content.as_bytes())
+            .map_err(PadzError::Io)?;
+    }
+
+    tar.finish().map_err(PadzError::Io)?;
+
+    let mut messages = Vec::new();
+    if !skipped_txt.is_empty() {
+        let preview: Vec<&str> = skipped_txt.iter().take(3).map(String::as_str).collect();
+        let suffix = if skipped_txt.len() > 3 {
+            format!(" (+ {} more)", skipped_txt.len() - 3)
+        } else {
+            String::new()
+        };
+        messages.push(CmdMessage::warning(format!(
+            "{} .txt pad(s) exported without metadata (txt has no metadata format): {}{}",
+            skipped_txt.len(),
+            preview.join(", "),
+            suffix,
+        )));
+    }
+    Ok(messages)
 }
 
 fn sanitize_filename(name: &str) -> String {
@@ -798,7 +894,7 @@ mod tests {
             MemBackend::new(),
         );
         // No pads created
-        let res = run(&store, Scope::Project, &[], NestingMode::Flat).unwrap();
+        let res = run(&store, Scope::Project, &[], NestingMode::Flat, false).unwrap();
         assert!(res
             .messages
             .iter()

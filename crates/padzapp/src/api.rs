@@ -285,9 +285,10 @@ impl<S: DataStore> PadzApi<S> {
         scope: Scope,
         indexes: &[I],
         nesting: commands::NestingMode,
+        with_metadata: bool,
     ) -> Result<commands::CmdResult> {
         let selectors = parse_selectors(indexes)?;
-        commands::export::run(&self.store, scope, &selectors, nesting)
+        commands::export::run(&self.store, scope, &selectors, nesting, with_metadata)
     }
 
     pub fn export_pads_single_file<I: AsRef<str>>(

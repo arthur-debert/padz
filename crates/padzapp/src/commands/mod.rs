@@ -89,6 +89,8 @@ pub mod import;
 pub mod init;
 pub mod move_pads;
 
+pub mod inline_metadata;
+pub mod metadata_apply;
 pub mod metadata_schema;
 pub mod paths;
 pub mod pinning;

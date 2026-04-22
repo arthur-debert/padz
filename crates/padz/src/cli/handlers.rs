@@ -255,11 +255,13 @@ impl<'a> ScopedApi<'a> {
         self.messages(result)
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub fn export_pads(
         &self,
         indexes: &[String],
         single_file: Option<&str>,
         json: bool,
+        with_metadata: bool,
         nesting: NestingMode,
     ) -> Result<Output<Value>, anyhow::Error> {
         let result = if let Some(title) = single_file {
@@ -267,7 +269,7 @@ impl<'a> ScopedApi<'a> {
         } else if json {
             self.call(|api, scope| api.export_pads_json(scope, indexes, nesting))?
         } else {
-            self.call(|api, scope| api.export_pads(scope, indexes, nesting))?
+            self.call(|api, scope| api.export_pads(scope, indexes, nesting, with_metadata))?
         };
         self.messages(result)
     }
@@ -1086,18 +1088,26 @@ pub fn purge(
     api(ctx).purge_pads(&indexes, yes, recursive)
 }
 
+#[allow(clippy::too_many_arguments)]
 #[handler]
 pub fn export(
     #[ctx] ctx: &CommandContext,
     #[arg(name = "single_file")] single_file: Option<String>,
     #[flag] json: bool,
+    #[flag(name = "with_metadata")] with_metadata: bool,
     #[arg] indexes: Vec<String>,
     #[flag] flat: bool,
     #[flag] tree: bool,
     #[flag] indented: bool,
 ) -> Result<Output<Value>, anyhow::Error> {
     let nesting = parse_nesting_mode(flat, tree, indented);
-    api(ctx).export_pads(&indexes, single_file.as_deref(), json, nesting)
+    api(ctx).export_pads(
+        &indexes,
+        single_file.as_deref(),
+        json,
+        with_metadata,
+        nesting,
+    )
 }
 
 #[handler]

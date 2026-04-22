@@ -629,8 +629,15 @@ pub enum Commands {
         /// Export as a JSON archive (.tar.gz) preserving full metadata:
         /// timestamps, status, pinning, tags, and parent relationships.
         /// Round-trippable via `padz import`.
-        #[arg(long, conflicts_with = "single_file")]
+        #[arg(long, conflicts_with_all = ["single_file", "with_metadata"])]
         json: bool,
+
+        /// Embed metadata inline in each exported file (md frontmatter /
+        /// lex annotations). Exported files use each pad's native extension;
+        /// .txt pads are exported without metadata (txt has no metadata
+        /// format) and listed in a trailing warning.
+        #[arg(long = "with-metadata", conflicts_with_all = ["single_file", "json"])]
+        with_metadata: bool,
 
         /// Indexes of the pads (e.g. 1 2) - if omitted, exports all active pads
         #[arg(required = false, num_args = 0.., add = active_pads_completer())]
