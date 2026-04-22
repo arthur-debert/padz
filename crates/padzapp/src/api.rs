@@ -321,6 +321,52 @@ impl<S: DataStore> PadzApi<S> {
         commands::import::run(&mut self.store, scope, paths, import_exts)
     }
 
+    /// Direction for clone/migrate: the external path is either the
+    /// destination (`--to`) or the source (`--from`).
+    pub fn transfer_pads_to<I: AsRef<str>>(
+        &mut self,
+        scope: Scope,
+        indexes: &[I],
+        dest_path: &std::path::Path,
+        mode: commands::transfer::TransferMode,
+    ) -> Result<commands::CmdResult> {
+        let selectors = parse_selectors(indexes)?;
+        let dest_padz = commands::transfer::resolve_target_dir(dest_path)?;
+        let mut dest_store = commands::transfer::open_target_store(&dest_padz)?;
+        commands::transfer::run(
+            &mut self.store,
+            scope,
+            &mut dest_store,
+            Scope::Project,
+            &selectors,
+            &dest_padz,
+            mode,
+        )
+    }
+
+    /// `--from <path>`: read selectors from the external store, write into
+    /// the current store.
+    pub fn transfer_pads_from<I: AsRef<str>>(
+        &mut self,
+        scope: Scope,
+        indexes: &[I],
+        source_path: &std::path::Path,
+        mode: commands::transfer::TransferMode,
+    ) -> Result<commands::CmdResult> {
+        let source_padz = commands::transfer::resolve_target_dir(source_path)?;
+        let mut source_store = commands::transfer::open_target_store(&source_padz)?;
+        let selectors = parse_selectors(indexes).map_err(|e| PadzError::Api(format!("{}", e)))?;
+        commands::transfer::run(
+            &mut source_store,
+            Scope::Project,
+            &mut self.store,
+            scope,
+            &selectors,
+            &source_padz,
+            mode,
+        )
+    }
+
     pub fn doctor(&mut self, scope: Scope) -> Result<commands::CmdResult> {
         commands::doctor::run(&mut self.store, scope)
     }

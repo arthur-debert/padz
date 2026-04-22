@@ -186,6 +186,8 @@ fn should_show_custom_help() -> bool {
         "purge",
         "export",
         "import",
+        "clone",
+        "migrate",
         "tag",
         "doctor",
         "config",
@@ -248,6 +250,8 @@ fn command_groups() -> Vec<CommandGroup> {
                 None,
                 Some("import".into()),
                 Some("export".into()),
+                Some("clone".into()),
+                Some("migrate".into()),
                 None,
                 Some("tag".into()),
             ],
@@ -663,6 +667,40 @@ pub enum Commands {
         /// Paths to files or directories to import
         #[arg(required = true, num_args = 1..)]
         paths: Vec<String>,
+    },
+
+    /// Copy pads to (or from) another padz store (source is kept)
+    #[command(display_order = 23)]
+    #[dispatch(pure, template = "messages")]
+    Clone {
+        /// Indexes of the pads (e.g. 1 2) - if omitted, all active pads
+        #[arg(required = false, num_args = 0.., add = active_pads_completer())]
+        indexes: Vec<String>,
+
+        /// Copy pads from the current store into <PATH>
+        #[arg(long, value_name = "PATH", conflicts_with = "from")]
+        to: Option<String>,
+
+        /// Copy pads from <PATH> into the current store
+        #[arg(long, value_name = "PATH", conflicts_with = "to")]
+        from: Option<String>,
+    },
+
+    /// Move pads to (or from) another padz store (source is removed on success)
+    #[command(display_order = 24)]
+    #[dispatch(pure, template = "messages")]
+    Migrate {
+        /// Indexes of the pads (e.g. 1 2) - if omitted, all active pads
+        #[arg(required = false, num_args = 0.., add = active_pads_completer())]
+        indexes: Vec<String>,
+
+        /// Move pads from the current store into <PATH>
+        #[arg(long, value_name = "PATH", conflicts_with = "from")]
+        to: Option<String>,
+
+        /// Move pads from <PATH> into the current store
+        #[arg(long, value_name = "PATH", conflicts_with = "to")]
+        from: Option<String>,
     },
 
     // --- Tags (nested subcommand) ---

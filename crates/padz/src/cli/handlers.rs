@@ -283,6 +283,31 @@ impl<'a> ScopedApi<'a> {
         self.messages(result)
     }
 
+    pub fn transfer_pads(
+        &self,
+        indexes: &[String],
+        to: Option<&str>,
+        from: Option<&str>,
+        mode: padzapp::commands::transfer::TransferMode,
+    ) -> Result<Output<Value>, anyhow::Error> {
+        match (to, from) {
+            (Some(dest), None) => {
+                let path = std::path::PathBuf::from(dest);
+                let result =
+                    self.call(|api, scope| api.transfer_pads_to(scope, indexes, &path, mode))?;
+                self.messages(result)
+            }
+            (None, Some(src)) => {
+                let path = std::path::PathBuf::from(src);
+                let result =
+                    self.call(|api, scope| api.transfer_pads_from(scope, indexes, &path, mode))?;
+                self.messages(result)
+            }
+            (Some(_), Some(_)) => Err(anyhow::anyhow!("--to and --from are mutually exclusive")),
+            (None, None) => Err(anyhow::anyhow!("exactly one of --to or --from is required")),
+        }
+    }
+
     // --- Tags subcommand operations ---
 
     pub fn list_tags(&self) -> Result<Output<Value>, anyhow::Error> {
@@ -1117,6 +1142,36 @@ pub fn import(
 ) -> Result<Output<Value>, anyhow::Error> {
     let paths: Vec<std::path::PathBuf> = paths.into_iter().map(std::path::PathBuf::from).collect();
     api(ctx).import_pads(paths)
+}
+
+#[handler]
+pub fn clone(
+    #[ctx] ctx: &CommandContext,
+    #[arg] indexes: Vec<String>,
+    #[arg] to: Option<String>,
+    #[arg] from: Option<String>,
+) -> Result<Output<Value>, anyhow::Error> {
+    api(ctx).transfer_pads(
+        &indexes,
+        to.as_deref(),
+        from.as_deref(),
+        padzapp::commands::transfer::TransferMode::Clone,
+    )
+}
+
+#[handler]
+pub fn migrate(
+    #[ctx] ctx: &CommandContext,
+    #[arg] indexes: Vec<String>,
+    #[arg] to: Option<String>,
+    #[arg] from: Option<String>,
+) -> Result<Output<Value>, anyhow::Error> {
+    api(ctx).transfer_pads(
+        &indexes,
+        to.as_deref(),
+        from.as_deref(),
+        padzapp::commands::transfer::TransferMode::Migrate,
+    )
 }
 
 // =============================================================================
