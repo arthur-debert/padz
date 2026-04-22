@@ -89,35 +89,53 @@ pub struct PadzContext {
     pub config: PadzConfig,
 }
 
-/// Walk upward from `cwd` looking for a directory that contains `.padz/`.
+/// Materialize the padz store layout (`active/`, `archived/`, `deleted/`) at
+/// `padz_dir`. Idempotent — safe to call on an existing store. Shared between
+/// explicit `padz init` (in `commands::init`) and the auto-init-on-write path
+/// in [`initialize`]; callers decide how to react to failure.
+pub fn create_bucket_layout(padz_dir: &Path) -> std::io::Result<()> {
+    std::fs::create_dir_all(padz_dir.join("active"))?;
+    std::fs::create_dir_all(padz_dir.join("archived"))?;
+    std::fs::create_dir_all(padz_dir.join("deleted"))?;
+    Ok(())
+}
+
+/// Walk upward from `cwd` looking for a directory that contains a `.padz/`
+/// subdirectory.
 ///
 /// This is the **read** discovery function: every command uses it to locate an
 /// existing store, regardless of whether the enclosing directory is a git repo.
+/// `.padz` must be a directory; a stray regular file with that name is ignored
+/// so it cannot masquerade as a store and trip later I/O.
 /// Stops at `$HOME` or the filesystem root and returns `None`.
 pub fn find_padz_root(cwd: &Path) -> Option<PathBuf> {
-    walk_up_for(cwd, ".padz")
+    walk_up_matching(cwd, |dir| dir.join(".padz").is_dir())
 }
 
-/// Walk upward from `cwd` looking for a directory that contains `.git/`.
+/// Walk upward from `cwd` looking for a directory that contains a `.git` entry
+/// (directory or file).
 ///
 /// This is the **auto-init** discovery function: used by write commands to decide
-/// where to create a new `.padz/` when none is found upward. When a pad is being
-/// created and there is no existing store, we want it scoped to the enclosing git
-/// project rather than dropped into global.
+/// where to create a new `.padz/` when none is found upward. Accepts `.git` as
+/// either a directory (normal repo) or a regular file (git worktrees and
+/// submodules store the real gitdir elsewhere and leave a `.git` file pointer).
 /// Stops at `$HOME` or the filesystem root and returns `None`.
 pub fn find_git_root(cwd: &Path) -> Option<PathBuf> {
-    walk_up_for(cwd, ".git")
+    walk_up_matching(cwd, |dir| dir.join(".git").exists())
 }
 
 /// Shared upward-walk helper. Returns the first ancestor (including `cwd`
-/// itself) that contains a child entry named `marker`. Stops at `$HOME` or
-/// the filesystem root.
-fn walk_up_for(cwd: &Path, marker: &str) -> Option<PathBuf> {
+/// itself) for which `matches` returns true. Stops at `$HOME` or the
+/// filesystem root.
+fn walk_up_matching<F>(cwd: &Path, matches: F) -> Option<PathBuf>
+where
+    F: Fn(&Path) -> bool,
+{
     let home_dir = BaseDirs::new().map(|bd| bd.home_dir().to_path_buf());
     let mut current = cwd.to_path_buf();
 
     loop {
-        if current.join(marker).exists() {
+        if matches(&current) {
             return Some(current);
         }
 
@@ -281,21 +299,31 @@ pub fn initialize(
                     (Some(resolved), Scope::Project)
                 }
                 None => {
-                    if auto_init_for_write {
-                        if let Some(git_root) = find_git_root(cwd) {
-                            let new_padz = git_root.join(".padz");
-                            // Best-effort create of the bucket layout. If this
-                            // fails (e.g. read-only FS), downstream writes will
-                            // surface the actual I/O error.
-                            let _ = std::fs::create_dir_all(new_padz.join("active"));
-                            let _ = std::fs::create_dir_all(new_padz.join("archived"));
-                            let _ = std::fs::create_dir_all(new_padz.join("deleted"));
-                            (Some(new_padz), Scope::Project)
-                        } else {
-                            (None, Scope::Global)
-                        }
-                    } else {
-                        (None, Scope::Global)
+                    // Write path: try to auto-init a project store at the
+                    // enclosing git root. If either no git root exists or the
+                    // directory creation itself fails (e.g. read-only FS,
+                    // permissions), fall back to Global rather than returning
+                    // a Project scope backed by an unusable path.
+                    let auto_init = auto_init_for_write
+                        .then(|| find_git_root(cwd))
+                        .flatten()
+                        .map(|git_root| git_root.join(".padz"))
+                        .filter(|new_padz| {
+                            if let Err(err) = create_bucket_layout(new_padz) {
+                                eprintln!(
+                                    "Warning: could not auto-init padz store at {}: {}. Falling back to global.",
+                                    new_padz.display(),
+                                    err
+                                );
+                                false
+                            } else {
+                                true
+                            }
+                        });
+
+                    match auto_init {
+                        Some(new_padz) => (Some(new_padz), Scope::Project),
+                        None => (None, Scope::Global),
                     }
                 }
             },
@@ -576,6 +604,56 @@ mod tests {
         fs::create_dir_all(&dir).unwrap();
 
         assert_eq!(find_git_root(&dir), None);
+    }
+
+    #[test]
+    fn test_find_padz_root_ignores_file_marker() {
+        // A regular file named `.padz` must not count as a store. Otherwise an
+        // accidental same-named file would mis-detect a project root and blow
+        // up when later code tried to create bucket subdirectories under a
+        // non-directory path.
+        let temp = TempDir::new().unwrap();
+        let root = temp.path();
+        fs::write(root.join(".padz"), "not a store").unwrap();
+
+        assert_eq!(find_padz_root(root), None);
+    }
+
+    #[test]
+    fn test_find_git_root_accepts_file_marker() {
+        // Git worktrees and submodules use a regular `.git` *file* that points
+        // at the real gitdir. `find_git_root` must accept this so auto-init
+        // still scopes new pads to the worktree's root.
+        let temp = TempDir::new().unwrap();
+        let worktree = temp.path().join("worktree");
+        fs::create_dir_all(&worktree).unwrap();
+        fs::write(
+            worktree.join(".git"),
+            "gitdir: /elsewhere/.git/worktrees/x\n",
+        )
+        .unwrap();
+
+        assert_eq!(find_git_root(&worktree), Some(worktree));
+    }
+
+    #[test]
+    fn test_initialize_write_auto_init_failure_falls_back_to_global() {
+        // If auto-init cannot materialize the layout (here: there's already a
+        // *file* at the target .padz path so create_dir_all fails), we must
+        // not return a Project scope pointing at an unusable path. Fall back
+        // to Global instead.
+        let temp = TempDir::new().unwrap();
+        let repo = temp.path().join("repo");
+        fs::create_dir_all(&repo).unwrap();
+        fs::create_dir(repo.join(".git")).unwrap();
+        fs::write(repo.join(".padz"), "blocking file").unwrap();
+        let sub = repo.join("src");
+        fs::create_dir_all(&sub).unwrap();
+
+        let ctx = initialize(&sub, false, None, true);
+
+        assert_eq!(ctx.scope, Scope::Global);
+        assert_eq!(ctx.api.paths().project, None);
     }
 
     #[test]
