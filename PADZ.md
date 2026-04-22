@@ -29,21 +29,26 @@ A "pad" is a single note with:
 
 PADZ operates in two scopes:
 
-1. **Project Scope** (default): Notes associated with the current Git project
-   - When you run `padz` inside a Git repository, notes are scoped to that project
+1. **Project Scope** (default when a `.padz/` is found): Notes associated with a specific directory's store
+   - When you run `padz` inside (or under) a directory that contains `.padz/`, notes are scoped to that store
    - Different projects have separate note lists
    - Useful for project-specific TODOs, ideas, snippets
 
-2. **Global Scope** (via `-g` flag): Notes not tied to any project
+2. **Global Scope** (via `-g` flag, or fallback): Notes not tied to any project
    - Available from anywhere
    - Use for personal notes, general snippets, cross-project information
    - Access with `--global` or `-g` flag
 
-Now, the scope only changes the path to the data store , nothing else.
+The scope only changes the path to the data store, nothing else.
 
 ### Project Detection
 
-PADZ determines the current project by walking up the directory tree looking for a `.git` directory. If found, the project name is the basename of that directory. If no `.git` is found, you're in "global" scope.
+PADZ uses two separate discovery algorithms:
+
+- **Reads** (list, view, search, …): walk up the directory tree looking for `.padz/`. The first match is the project root. If nothing is found before `$HOME`/`/`, fall back to global.
+- **Writes** (create, import): same walk, but if no `.padz/` is found upward, walk up again looking for a `.git` entry — either a directory or a regular file (git worktrees and submodules leave a `.git` file pointing at the real gitdir). If a git repo is found, auto-create `.padz/` at the git root and use it — so a new pad lands inside its project instead of silently going global. If neither `.padz/` nor a `.git` entry is found, use global.
+
+`padz init` is always explicit: it creates `.padz/` at the current directory regardless of git status or any surrounding project.
 
 ### Indexing
 

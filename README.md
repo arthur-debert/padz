@@ -4,7 +4,7 @@ A terminal app for creating and managing scratch notes that is a good Unix citiz
 
 Designed for maximum ergonomics with a clever ID system for less typing, advanced completion for IDs and titles, batch editing, import/export, nested notes, soft delete, search, tags, and file type (txt, markdown) support.
 
-Context-aware: automatically separates global pads (in your data dir) from project pads (in Git repos), providing sensible project-related and general notes.
+Context-aware: automatically separates global pads (in your data dir) from project pads (in any directory with a `.padz/`, auto-created at the git root on the first `create`/`import`), so project-related and general notes stay distinct.
 
 Sports a smart-looking UI with dark/light mode awareness.
 
@@ -75,7 +75,7 @@ Completions include:
 ## Features
 
 - **Unix-friendly**: uses your `$EDITOR`, stores data as plain text files
-- **Context-aware**: project pads (in Git repos) and global pads (in data dir)
+- **Context-aware**: project pads (any directory with `.padz/`; auto-created at the git root on the first `create`/`import`) and global pads (in data dir)
 - **Ergonomic**: clever ID system, advanced completion for IDs and titles
 - **Organized**: tags, pinning, nested notes, soft delete
 - **Powerful**: full-text search, batch editing, import/export

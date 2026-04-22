@@ -1,15 +1,16 @@
 Projects and Global Notes
 
-Padz stores notes in two scopes: Project (local to a repo) or Global (user-wide).
+Padz stores notes in two scopes: Project (a specific .padz/ directory) or
+Global (user-wide).
 
 THE TWO SCOPES
 --------------
 
-Project Scope (default):
-  Data stored in: <repo_root>/.padz/
+Project Scope (default when a .padz is found):
+  Data stored in: <project_root>/.padz/
   Use case: Project-specific notes, TODOs, code snippets
 
-Global Scope (-g flag):
+Global Scope (-g flag, or fallback):
   Data stored in: OS data directory
     - macOS:   ~/Library/Application Support/com.padz.padz/
     - Linux:   ~/.local/share/padz/
@@ -17,43 +18,61 @@ Global Scope (-g flag):
   Use case: Cross-project notes, personal reminders, grocery lists
 
 
-HOW PADZ FINDS YOUR PROJECT
----------------------------
+HOW PADZ FINDS YOUR STORE
+-------------------------
 
-When you run padz (without -g), it searches for your project root:
+Padz uses two separate discovery algorithms depending on what the command does.
 
-1. Start at your current directory
-2. Look for a directory with BOTH .git AND .padz
-3. If found: use that as project root
-4. If not found: check parent directory
-5. Stop at home directory or filesystem root
+Read commands (list, view, search, etc.):
+  1. Start at your current directory.
+  2. If the directory contains a .padz/, use it.
+  3. Otherwise, move up one directory.
+  4. Stop at $HOME or the filesystem root.
+  5. If nothing is found, use the global store.
 
-Why require BOTH .git AND .padz?
-  - .git alone isn't enough: avoids accidentally using parent repos in monorepos
-  - .padz alone isn't enough: maintains semantic binding to "project" concept
+Write commands (create, import):
+  Same as above, but with one extra step before falling back to global:
+  if no .padz was found upward, padz walks up again looking for a .git
+  entry — either a directory (normal repo) or a regular file (git
+  worktrees and submodules leave a `.git` file pointing at the real
+  gitdir). If one is found, padz auto-creates .padz/ at that git root
+  and puts the new pad there. This keeps new pads scoped to their enclosing
+  git project instead of silently dropping them into global.
 
-This means you must run `padz init` in a repo to opt-in to project scope.
+Summary of the write fallback chain:
+  .padz found upward  → use it
+  else .git upward    → auto-init .padz at the git root, use it
+  else                → global
+
+
+EXPLICIT padz init
+------------------
+
+`padz init` is an explicit user intent and is never blocked. It creates
+.padz/ in the current directory regardless of whether it is a git repo or
+already sits inside another project's store. Use it any time you want a
+store in a specific location; the auto-init behavior above is a convenience
+only for write commands that would otherwise land in global.
 
 
 NESTED REPOSITORIES
 -------------------
 
-In monorepos or nested git structures:
+The innermost .padz (closest to cwd) wins. Subprojects inherit the parent's
+store unless they run `padz init` themselves:
 
-  parent-repo/        (.git + .padz)
-    child-repo/       (.git only)
+  parent-repo/        (.padz)
+    child-repo/       (.git, no .padz)
       your-code/
 
-Running padz from child-repo/ will use parent-repo/.padz/ (walks up until
-it finds both .git and .padz together).
-
-To give child-repo its own notes: run `padz init` inside child-repo.
+Running padz from child-repo/ uses parent-repo/.padz/. To give child-repo
+its own notes: run `padz init` inside child-repo.
 
 
 USING THE GLOBAL FLAG
 ---------------------
 
-Add -g to any command to use global scope:
+Add -g to any command to force global scope, even inside a project:
 
   padz -g list          # List global notes
   padz -g create        # Create global note
@@ -66,7 +85,8 @@ SWITCHING BETWEEN SCOPES
 ------------------------
 
 Project and global notes are completely separate. Use -g to access global
-notes from any directory. Without -g, you're always in project scope.
+notes from any directory. Without -g, padz uses whichever scope discovery
+resolves to.
 
 Example workflow:
   cd ~/projects/myapp
@@ -79,7 +99,7 @@ Example workflow:
 INITIALIZING PROJECT SCOPE
 --------------------------
 
-To enable project-scope notes in a git repository:
+To create a project store in a specific directory:
 
   cd /path/to/your/repo
   padz init

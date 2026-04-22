@@ -1,5 +1,6 @@
 use crate::commands::{CmdMessage, CmdResult, PadzPaths};
 use crate::error::{PadzError, Result};
+use crate::init::create_bucket_layout;
 use crate::model::Scope;
 use std::fs;
 use std::path::Path;
@@ -7,10 +8,7 @@ use std::path::Path;
 pub fn run(paths: &PadzPaths, scope: Scope) -> Result<CmdResult> {
     let dir = paths.scope_dir(scope)?;
 
-    // Create scope root and bucket subdirectories
-    fs::create_dir_all(dir.join("active"))?;
-    fs::create_dir_all(dir.join("archived"))?;
-    fs::create_dir_all(dir.join("deleted"))?;
+    create_bucket_layout(&dir)?;
 
     let mut result = CmdResult::default();
     result.add_message(CmdMessage::success(format!(
