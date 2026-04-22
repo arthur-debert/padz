@@ -65,7 +65,7 @@ pub fn run<S: DataStore>(
     // 2. Prepare output file
     let now = Utc::now();
     let suffix = if with_metadata { "meta" } else { "tar" };
-    let filename = format!("padz-{}.{}.gz", now.format("%Y-%m-%d_%H:%M:%S"), suffix);
+    let filename = format!("padz-{}.{}.gz", now.format("%Y-%m-%d_%H-%M-%S"), suffix);
     let file = File::create(&filename).map_err(PadzError::Io)?;
 
     // 3. Write archive
@@ -468,7 +468,7 @@ pub fn run_json<S: DataStore>(
     let nested = resolve_nested(store, scope, &pads, nesting)?;
 
     let now = Utc::now();
-    let filename = format!("padz-{}.json.tar.gz", now.format("%Y-%m-%d_%H:%M:%S"));
+    let filename = format!("padz-{}.json.tar.gz", now.format("%Y-%m-%d_%H-%M-%S"));
     let file = File::create(&filename).map_err(PadzError::Io)?;
 
     write_json_archive(file, store, scope, &nested, now)?;
