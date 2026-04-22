@@ -173,10 +173,11 @@ pub fn run<Src: DataStore, Dst: DataStore>(
 ) -> Result<CmdResult> {
     let mut result = CmdResult::default();
 
-    // 1. Resolve selectors on the source. Empty selectors mean "all active
-    //    pads" to match the CLI help text and the behavior of `padz export`.
+    // 1. Resolve selectors on the source. Empty selectors mean "all non-
+    //    deleted pads" (active + archived), matching `padz export`'s default
+    //    set so the two commands behave consistently.
     let resolved = if selectors.is_empty() {
-        default_active_ids(source, source_scope)?
+        default_non_deleted_ids(source, source_scope)?
     } else {
         resolve_selectors(source, source_scope, selectors, false)?
     };
@@ -186,9 +187,16 @@ pub fn run<Src: DataStore, Dst: DataStore>(
     }
 
     // 2. Build the move set. Pads whose parent lives outside the move set
-    //    AND outside the destination get orphaned to root.
+    //    AND outside the destination get orphaned to root. An inability to
+    //    enumerate the destination surfaces as a warning rather than being
+    //    silently swallowed — an incomplete `dest_ids` set can incorrectly
+    //    orphan parent relationships.
     let move_set: HashSet<Uuid> = resolved.iter().map(|(_, uuid)| *uuid).collect();
-    let dest_ids: HashSet<Uuid> = collect_all_ids(dest, dest_scope);
+    let mut dest_ids_warnings = Vec::new();
+    let dest_ids = collect_all_ids(dest, dest_scope, &mut dest_ids_warnings);
+    for w in dest_ids_warnings {
+        result.add_message(w);
+    }
     let known_ids: HashSet<Uuid> = move_set.union(&dest_ids).copied().collect();
 
     // 3. Transfer pad-by-pad. `copy_one_pad` returns the source pad's tags so
@@ -242,21 +250,42 @@ pub fn run<Src: DataStore, Dst: DataStore>(
         }
     }
 
-    result.add_message(CmdMessage::success(format!(
-        "{} {} pad(s) to {}",
-        mode.verb(),
-        copied.len(),
-        summary_path.display()
-    )));
+    if copied.is_empty() {
+        result.add_message(CmdMessage::warning(format!(
+            "No pads were {} to {}",
+            mode.verb().to_lowercase(),
+            summary_path.display()
+        )));
+    } else {
+        result.add_message(CmdMessage::success(format!(
+            "{} {} pad(s) to {}",
+            mode.verb(),
+            copied.len(),
+            summary_path.display()
+        )));
+    }
     Ok(result)
 }
 
-fn collect_all_ids<S: DataStore>(store: &S, scope: Scope) -> HashSet<Uuid> {
+fn collect_all_ids<S: DataStore>(
+    store: &S,
+    scope: Scope,
+    warnings: &mut Vec<CmdMessage>,
+) -> HashSet<Uuid> {
     let mut ids = HashSet::new();
     for bucket in [Bucket::Active, Bucket::Archived, Bucket::Deleted] {
-        if let Ok(pads) = store.list_pads(scope, bucket) {
-            for p in pads {
-                ids.insert(p.metadata.id);
+        match store.list_pads(scope, bucket) {
+            Ok(pads) => {
+                for p in pads {
+                    ids.insert(p.metadata.id);
+                }
+            }
+            Err(e) => {
+                warnings.push(CmdMessage::warning(format!(
+                    "Could not enumerate destination bucket {:?}: {}. \
+Parent relationships that cross this bucket may be orphaned.",
+                    bucket, e
+                )));
             }
         }
     }
@@ -265,7 +294,7 @@ fn collect_all_ids<S: DataStore>(store: &S, scope: Scope) -> HashSet<Uuid> {
 
 /// Default selection when the user passes no indexes: active + archived
 /// pads (matches `padz export`'s default set).
-fn default_active_ids<S: DataStore>(
+fn default_non_deleted_ids<S: DataStore>(
     store: &S,
     scope: Scope,
 ) -> Result<Vec<(Vec<DisplayIndex>, Uuid)>> {

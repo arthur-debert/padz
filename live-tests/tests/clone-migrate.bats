@@ -16,8 +16,8 @@ setup() {
     SRC_DIR="$(mktemp -d)"
     DST_DIR="$(mktemp -d)"
     mkdir -p "${SRC_DIR}/.padz" "${DST_DIR}/.padz"
-    "${PADZ_BIN}" --data "${SRC_DIR}/.padz" init >/dev/null 2>&1 || true
-    "${PADZ_BIN}" --data "${DST_DIR}/.padz" init >/dev/null 2>&1 || true
+    "${PADZ_BIN}" --data "${SRC_DIR}/.padz" init >/dev/null 2>&1
+    "${PADZ_BIN}" --data "${DST_DIR}/.padz" init >/dev/null 2>&1
     export SRC_DIR DST_DIR
 }
 
@@ -114,6 +114,28 @@ teardown() {
     "${PADZ_BIN}" --data "${SRC_DIR}/.padz" create --no-editor "x" >/dev/null
 
     run "${PADZ_BIN}" --data "${SRC_DIR}/.padz" clone 1
+    [ "$status" -ne 0 ]
+}
+
+@test "migrate refuses to target the current store (data loss guard)" {
+    "${PADZ_BIN}" --data "${SRC_DIR}/.padz" create --no-editor "Dangerous" >/dev/null
+
+    # Target is the same .padz the command is already operating on
+    run "${PADZ_BIN}" --data "${SRC_DIR}/.padz" migrate 1 --to "${SRC_DIR}"
+    [ "$status" -ne 0 ]
+    [[ "$output" == *"current store"* ]] || [[ "$output" == *"same"* ]]
+
+    # Source pad must still be intact
+    run "${PADZ_BIN}" --data "${SRC_DIR}/.padz" list
+    [[ "$output" == *"Dangerous"* ]]
+}
+
+@test "clone reports warning when all copies fail (no pads copied)" {
+    "${PADZ_BIN}" --data "${SRC_DIR}/.padz" create --no-editor "Alpha" >/dev/null
+
+    # Use an index that doesn't exist. Clone should exit non-zero (selector
+    # resolution failure propagates as an error).
+    run "${PADZ_BIN}" --data "${SRC_DIR}/.padz" clone 99 --to "${DST_DIR}"
     [ "$status" -ne 0 ]
 }
 

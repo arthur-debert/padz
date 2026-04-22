@@ -673,7 +673,7 @@ pub enum Commands {
     #[command(display_order = 23)]
     #[dispatch(pure, template = "messages")]
     Clone {
-        /// Indexes of the pads (e.g. 1 2) - if omitted, all active pads
+        /// Indexes of the pads (e.g. 1 2) - if omitted, all non-deleted pads (active + archived)
         #[arg(required = false, num_args = 0.., add = active_pads_completer())]
         indexes: Vec<String>,
 
@@ -690,7 +690,7 @@ pub enum Commands {
     #[command(display_order = 24)]
     #[dispatch(pure, template = "messages")]
     Migrate {
-        /// Indexes of the pads (e.g. 1 2) - if omitted, all active pads
+        /// Indexes of the pads (e.g. 1 2) - if omitted, all non-deleted pads (active + archived)
         #[arg(required = false, num_args = 0.., add = active_pads_completer())]
         indexes: Vec<String>,
 
