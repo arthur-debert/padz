@@ -31,18 +31,20 @@ use crate::commands::metadata_apply::{
     apply_metadata_defensively, parse_bucket_or_active, ParentPolicy,
 };
 use crate::commands::{CmdMessage, CmdResult};
+use crate::config::PadzConfig;
 use crate::error::{PadzError, Result};
-use crate::index::PadSelector;
-use crate::init::find_padz_root;
+use crate::index::{DisplayIndex, PadSelector};
+use crate::init::{find_padz_root, resolve_link};
 use crate::model::{parse_pad_content, Pad, Scope};
 use crate::store::fs::FileStore;
 use crate::store::{Bucket, DataStore};
 use crate::tags::TagEntry;
+use clapfig::{Clapfig, SearchMode, SearchPath};
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use uuid::Uuid;
 
-use super::helpers::resolve_selectors;
+use super::helpers::{indexed_pads, resolve_selectors};
 
 /// Whether the source keeps or loses the pads after a transfer.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -68,35 +70,45 @@ impl TransferMode {
 /// 1. `<path>` is itself a `.padz` directory → use it
 /// 2. `<path>/.padz` exists → use that
 /// 3. Walk upward from `<path>` for `.padz`
+///
+/// If the resolved `.padz/` contains a `link` file, follow it through
+/// `init::resolve_link` — matches the CLI's read-side discovery so a
+/// linked store is treated the same whether accessed via `clone`/`migrate`
+/// or the normal command pipeline.
 pub fn resolve_target_dir(path: &Path) -> Result<PathBuf> {
     let path = path
         .canonicalize()
         .map_err(|e| PadzError::Api(format!("Target path '{}': {}", path.display(), e)))?;
 
-    if path.file_name().is_some_and(|n| n == ".padz") && path.is_dir() {
-        return Ok(path);
-    }
+    let padz_dir = if path.file_name().is_some_and(|n| n == ".padz") && path.is_dir() {
+        path
+    } else if path.join(".padz").is_dir() {
+        path.join(".padz")
+    } else if let Some(root) = find_padz_root(&path) {
+        root.join(".padz")
+    } else {
+        return Err(PadzError::Api(format!(
+            "No padz store found at or above '{}'",
+            path.display()
+        )));
+    };
 
-    let direct = path.join(".padz");
-    if direct.is_dir() {
-        return Ok(direct);
+    // Follow .padz/link — writes to the wrong store are silently destructive,
+    // so propagate link errors instead of swallowing them.
+    match resolve_link(&padz_dir) {
+        Ok(Some(linked)) => Ok(linked),
+        Ok(None) => Ok(padz_dir),
+        Err(e) => Err(e),
     }
-
-    if let Some(root) = find_padz_root(&path) {
-        return Ok(root.join(".padz"));
-    }
-
-    Err(PadzError::Api(format!(
-        "No padz store found at or above '{}'",
-        path.display()
-    )))
 }
 
 /// Open a read-write FileStore pointing at a `.padz/` directory.
 ///
 /// The scope is always `Scope::Project` (a `.padz/` dir is project-scoped
-/// by definition). Format defaults to `.txt`; individual pads on disk keep
-/// their own extensions (FileStore scans for matching files regardless).
+/// by definition). The store's default format is loaded from its
+/// `padz.toml` if present so newly-written pads match the destination's
+/// configured format. Individual pads already on disk keep their own
+/// extensions (FileStore scans for matching files regardless).
 pub fn open_target_store(padz_dir: &Path) -> Result<FileStore> {
     if !padz_dir.exists() {
         return Err(PadzError::Api(format!(
@@ -104,11 +116,40 @@ pub fn open_target_store(padz_dir: &Path) -> Result<FileStore> {
             padz_dir.display()
         )));
     }
-    // Use an arbitrary global_data placeholder; we only touch the project root.
-    Ok(FileStore::new_fs(
-        Some(padz_dir.to_path_buf()),
-        padz_dir.to_path_buf(),
-    ))
+
+    if !padz_dir.is_dir() {
+        return Err(PadzError::Api(format!(
+            "Target '{}' is not a directory",
+            padz_dir.display()
+        )));
+    }
+
+    let active_dir = padz_dir.join("active");
+    if !active_dir.is_dir() {
+        return Err(PadzError::Api(format!(
+            "Target '{}' is not an initialized padz store (missing '{}'). Run `padz init` there first.",
+            padz_dir.display(),
+            active_dir.display()
+        )));
+    }
+
+    // Load the target's config so new files match its configured format.
+    // Failure to load is not fatal — fall back to the default `.txt`, same
+    // as the main CLI path in `init::initialize`.
+    let format_ext = Clapfig::builder::<PadzConfig>()
+        .app_name("padz")
+        .file_name("padz.toml")
+        .search_paths(vec![SearchPath::Path(padz_dir.to_path_buf())])
+        .search_mode(SearchMode::Merge)
+        .strict(false)
+        .load()
+        .map(|c| c.format_ext())
+        .unwrap_or_else(|_| ".txt".to_string());
+
+    Ok(
+        FileStore::new_fs(Some(padz_dir.to_path_buf()), padz_dir.to_path_buf())
+            .with_format(&format_ext),
+    )
 }
 
 /// Run a clone or migrate operation between two `DataStore` instances.
@@ -132,8 +173,13 @@ pub fn run<Src: DataStore, Dst: DataStore>(
 ) -> Result<CmdResult> {
     let mut result = CmdResult::default();
 
-    // 1. Resolve selectors on the source.
-    let resolved = resolve_selectors(source, source_scope, selectors, false)?;
+    // 1. Resolve selectors on the source. Empty selectors mean "all active
+    //    pads" to match the CLI help text and the behavior of `padz export`.
+    let resolved = if selectors.is_empty() {
+        default_active_ids(source, source_scope)?
+    } else {
+        resolve_selectors(source, source_scope, selectors, false)?
+    };
     if resolved.is_empty() {
         result.add_message(CmdMessage::info("No pads to transfer."));
         return Ok(result);
@@ -145,18 +191,17 @@ pub fn run<Src: DataStore, Dst: DataStore>(
     let dest_ids: HashSet<Uuid> = collect_all_ids(dest, dest_scope);
     let known_ids: HashSet<Uuid> = move_set.union(&dest_ids).copied().collect();
 
-    // 3. Transfer pad-by-pad.
+    // 3. Transfer pad-by-pad. `copy_one_pad` returns the source pad's tags so
+    //    we can merge the registry without re-reading.
     let mut copied: Vec<Uuid> = Vec::new();
     let mut referenced_tags: HashSet<String> = HashSet::new();
 
     for (_, id) in &resolved {
         match copy_one_pad(source, source_scope, dest, dest_scope, *id, &known_ids) {
-            Ok(mut warnings) => {
+            Ok(CopyOutcome { mut warnings, tags }) => {
                 copied.push(*id);
-                if let Ok((pad, _)) = read_source_pad_any_bucket(source, source_scope, *id) {
-                    for t in &pad.metadata.tags {
-                        referenced_tags.insert(t.clone());
-                    }
+                for t in tags {
+                    referenced_tags.insert(t);
                 }
                 result.messages.append(&mut warnings);
             }
@@ -218,6 +263,35 @@ fn collect_all_ids<S: DataStore>(store: &S, scope: Scope) -> HashSet<Uuid> {
     ids
 }
 
+/// Default selection when the user passes no indexes: active + archived
+/// pads (matches `padz export`'s default set).
+fn default_active_ids<S: DataStore>(
+    store: &S,
+    scope: Scope,
+) -> Result<Vec<(Vec<DisplayIndex>, Uuid)>> {
+    let pads = indexed_pads(store, scope)?;
+    let mut out = Vec::new();
+    let mut seen: HashSet<Uuid> = HashSet::new();
+    for dp in pads {
+        if matches!(dp.index, DisplayIndex::Deleted(_)) {
+            continue;
+        }
+        if !seen.insert(dp.pad.metadata.id) {
+            continue;
+        }
+        out.push((vec![dp.index.clone()], dp.pad.metadata.id));
+    }
+    Ok(out)
+}
+
+/// Result of a successful per-pad copy: carries warnings from defensive
+/// metadata application plus the source pad's tags (so the caller can
+/// merge the tag registry without another source read).
+struct CopyOutcome {
+    warnings: Vec<CmdMessage>,
+    tags: Vec<String>,
+}
+
 /// Read a pad from whichever bucket it lives in on the source side. Returns
 /// the pad + its original bucket so we can restore on the destination.
 fn read_source_pad_any_bucket<S: DataStore>(
@@ -248,8 +322,9 @@ fn copy_one_pad<Src: DataStore, Dst: DataStore>(
     dest_scope: Scope,
     id: Uuid,
     known_ids: &HashSet<Uuid>,
-) -> Result<Vec<CmdMessage>> {
+) -> Result<CopyOutcome> {
     let (source_pad, bucket) = read_source_pad_any_bucket(source, source_scope, id)?;
+    let tags = source_pad.metadata.tags.clone();
 
     // Serialize metadata through a JSON value so apply_metadata_defensively
     // can surface per-field issues (future cross-version scenarios).
@@ -288,7 +363,7 @@ fn copy_one_pad<Src: DataStore, Dst: DataStore>(
         );
     }
 
-    Ok(warnings)
+    Ok(CopyOutcome { warnings, tags })
 }
 
 fn bucket_or_active_label(b: Bucket) -> Bucket {
