@@ -340,6 +340,30 @@ fn install_path(shell: CompletionShell) -> Result<std::path::PathBuf> {
     })
 }
 
+/// POSIX-shell single-quote a string so it is safe to paste into a shell line,
+/// including paths containing spaces, `$`, backticks, or embedded `'`. The
+/// embedded-quote form `'\''` closes, escapes, reopens. The returned string is
+/// not quoted if it consists only of characters that are always literal.
+fn shell_quote(s: &str) -> String {
+    let safe = !s.is_empty()
+        && s.chars()
+            .all(|c| c.is_ascii_alphanumeric() || matches!(c, '_' | '-' | '/' | '.' | ':' | '@'));
+    if safe {
+        return s.to_string();
+    }
+    let mut out = String::with_capacity(s.len() + 2);
+    out.push('\'');
+    for c in s.chars() {
+        if c == '\'' {
+            out.push_str("'\\''");
+        } else {
+            out.push(c);
+        }
+    }
+    out.push('\'');
+    out
+}
+
 /// Post-install messaging — tells the user exactly what (if anything) they
 /// still need to do for completions to activate.
 fn post_install_hint(shell: CompletionShell, path: &std::path::Path) -> Vec<String> {
@@ -357,7 +381,7 @@ fn post_install_hint(shell: CompletionShell, path: &std::path::Path) -> Vec<Stri
             } else {
                 vec![
                     "To activate, add this line to ~/.zshrc (one-time setup):".into(),
-                    format!("  fpath=({} $fpath)", dir),
+                    format!("  fpath=({} $fpath)", shell_quote(&dir)),
                     "Then restart your shell (or run: autoload -Uz compinit && compinit).".into(),
                 ]
             }
@@ -365,7 +389,10 @@ fn post_install_hint(shell: CompletionShell, path: &std::path::Path) -> Vec<Stri
         CompletionShell::Bash => {
             let mut hints = vec![
                 "Completions will activate in new bash shells.".into(),
-                format!("To use now in the current shell: source {}", path.display()),
+                format!(
+                    "To use now in the current shell: source {}",
+                    shell_quote(&path.display().to_string())
+                ),
             ];
             if cfg!(target_os = "macos") && !macos_bash_completion_available() {
                 hints.push(String::new());
@@ -383,16 +410,50 @@ fn post_install_hint(shell: CompletionShell, path: &std::path::Path) -> Vec<Stri
 }
 
 /// Probe zsh to check if `dir` is already on `$fpath`. Non-interactive zsh
-/// skips `.zshrc`, so we run an interactive instance with a short timeout to
-/// get the user's real fpath. Returns false on any failure (the fallback path
-/// just asks the user to add the fpath line manually, which is always safe).
+/// skips `.zshrc`, so we run an interactive instance — but bound it to a short
+/// timeout, because a slow/prompting `.zshrc` could otherwise hang
+/// `padz completion install` forever. Returns false on any failure (the
+/// fallback path just asks the user to add the fpath line manually, which is
+/// always safe).
 fn zsh_dir_on_fpath(dir: &str) -> bool {
-    use std::process::Command;
-    let Ok(output) = Command::new("zsh")
+    use std::process::{Command, Stdio};
+    use std::thread;
+    use std::time::{Duration, Instant};
+
+    const TIMEOUT: Duration = Duration::from_secs(2);
+    const POLL: Duration = Duration::from_millis(25);
+
+    let Ok(mut child) = Command::new("zsh")
         .arg("-ic")
         .arg("print -rl -- $fpath")
-        .output()
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
     else {
+        return false;
+    };
+
+    let deadline = Instant::now() + TIMEOUT;
+    loop {
+        match child.try_wait() {
+            Ok(Some(_)) => break,
+            Ok(None) => {
+                if Instant::now() >= deadline {
+                    let _ = child.kill();
+                    let _ = child.wait();
+                    return false;
+                }
+                thread::sleep(POLL);
+            }
+            Err(_) => {
+                let _ = child.kill();
+                let _ = child.wait();
+                return false;
+            }
+        }
+    }
+
+    let Ok(output) = child.wait_with_output() else {
         return false;
     };
     if !output.status.success() {
@@ -426,4 +487,42 @@ fn macos_bash_completion_available() -> bool {
         }
     }
     false
+}
+
+#[cfg(test)]
+mod completion_tests {
+    use super::shell_quote;
+
+    #[test]
+    fn safe_chars_unquoted() {
+        assert_eq!(
+            shell_quote("/home/user/.config/padz"),
+            "/home/user/.config/padz"
+        );
+        assert_eq!(shell_quote("abc-123_ok"), "abc-123_ok");
+    }
+
+    #[test]
+    fn spaces_quoted() {
+        assert_eq!(
+            shell_quote("/Users/a b/.local/share/zsh/site-functions"),
+            "'/Users/a b/.local/share/zsh/site-functions'"
+        );
+    }
+
+    #[test]
+    fn embedded_single_quote_escaped() {
+        assert_eq!(shell_quote("it's/fine"), "'it'\\''s/fine'");
+    }
+
+    #[test]
+    fn shell_special_chars_quoted() {
+        assert_eq!(shell_quote("/tmp/$HOME/x"), "'/tmp/$HOME/x'");
+        assert_eq!(shell_quote("a`b`c"), "'a`b`c'");
+    }
+
+    #[test]
+    fn empty_quoted() {
+        assert_eq!(shell_quote(""), "''");
+    }
 }
