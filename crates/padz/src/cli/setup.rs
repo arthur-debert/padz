@@ -14,6 +14,18 @@ use super::handlers;
 pub enum CompletionShell {
     Bash,
     Zsh,
+    Fish,
+}
+
+impl CompletionShell {
+    /// The shell name as expected by clap_complete's COMPLETE env var.
+    pub fn as_complete_env(self) -> &'static str {
+        match self {
+            CompletionShell::Bash => "bash",
+            CompletionShell::Zsh => "zsh",
+            CompletionShell::Fish => "fish",
+        }
+    }
 }
 
 /// Returns the version string, including git hash and commit date for non-release builds.
@@ -886,6 +898,19 @@ mod tests {
             Some(Commands::Completion {
                 shell: Some(CompletionShell::Zsh),
                 action: CompletionAction::Print,
+            })
+        ));
+    }
+
+    #[test]
+    fn test_completion_install_fish() {
+        let cli =
+            Cli::try_parse_from(["padz", "completion", "--shell", "fish", "install"]).unwrap();
+        assert!(matches!(
+            cli.command,
+            Some(Commands::Completion {
+                shell: Some(CompletionShell::Fish),
+                action: CompletionAction::Install,
             })
         ));
     }
