@@ -27,15 +27,12 @@
 //! This means `padz clone --to /tmp/work` works whether the user points at
 //! `/tmp/work`, `/tmp/work/.padz`, or a subdirectory of the project.
 
-use crate::commands::metadata_apply::{
-    apply_metadata_defensively, parse_bucket_or_active, ParentPolicy,
-};
 use crate::commands::{CmdMessage, CmdResult};
 use crate::config::PadzConfig;
 use crate::error::{PadzError, Result};
 use crate::index::{DisplayIndex, PadSelector};
 use crate::init::{find_padz_root, resolve_link};
-use crate::model::{parse_pad_content, Pad, Scope};
+use crate::model::{Pad, Scope};
 use crate::store::fs::FileStore;
 use crate::store::{Bucket, DataStore};
 use crate::tags::TagEntry;
@@ -339,11 +336,21 @@ fn read_source_pad_any_bucket<S: DataStore>(
     )))
 }
 
-/// Copy a single pad from source to dest, returning per-field warnings.
+/// Copy a single pad from source to dest.
 ///
-/// The file-level content copy is treated as the critical path. A failure
-/// here propagates out as an Err so the caller can report the pad as
-/// failed. Metadata field failures are non-fatal and come back as warnings.
+/// Live store-to-store transfer: the source hands us a valid [`Pad`] with
+/// valid [`Metadata`], so we just forward it. The only policy here is
+/// parent-orphan: if the pad's `parent_id` points outside the known set
+/// (the pads being moved + those already at the destination), we drop the
+/// link so the destination never has a dangling reference.
+///
+/// Writing to the destination is the critical path; failure surfaces as
+/// `Err` and the caller reports the pad as failed.
+///
+/// Cross-version defensive parsing (field-by-field tolerance) is reserved
+/// for reading *archives* on disk — see
+/// [`crate::model::Metadata::apply_json_patch`] — not needed for live
+/// same-version transfers.
 fn copy_one_pad<Src: DataStore, Dst: DataStore>(
     source: &Src,
     source_scope: Scope,
@@ -352,58 +359,24 @@ fn copy_one_pad<Src: DataStore, Dst: DataStore>(
     id: Uuid,
     known_ids: &HashSet<Uuid>,
 ) -> Result<CopyOutcome> {
-    let (source_pad, bucket) = read_source_pad_any_bucket(source, source_scope, id)?;
-    let tags = source_pad.metadata.tags.clone();
+    let (mut pad, bucket) = read_source_pad_any_bucket(source, source_scope, id)?;
+    let tags = pad.metadata.tags.clone();
 
-    // Serialize metadata through a JSON value so apply_metadata_defensively
-    // can surface per-field issues (future cross-version scenarios).
-    let metadata_value = serde_json::to_value(&source_pad.metadata)
-        .map_err(|e| PadzError::Api(format!("Failed to serialize metadata for {}: {}", id, e)))?;
-
-    let (title, normalized) = parse_pad_content(&source_pad.content)
-        .ok_or_else(|| PadzError::Api(format!("Pad {} has empty content", id)))?;
-
-    let body = super::import::strip_title_from_body(&normalized, &title);
-    let mut dest_pad = Pad::new(title.clone(), body);
-
-    let mut warnings = apply_metadata_defensively(
-        &mut dest_pad,
-        &metadata_value,
-        ParentPolicy::OrphanUnknown(known_ids),
-        &format!("pad {}", id),
-    );
-
-    if !title.is_empty() {
-        dest_pad.metadata.title = title;
+    let mut warnings = Vec::new();
+    if let Some(pid) = pad.metadata.parent_id {
+        if !known_ids.contains(&pid) {
+            pad.metadata.parent_id = None;
+            warnings.push(CmdMessage::info(format!(
+                "Pad {}: parent not in move set, orphaned to root",
+                id
+            )));
+        }
     }
 
-    let dest_bucket = bucket_or_active_label(bucket);
-    dest.save_pad(&dest_pad, dest_scope, dest_bucket)
+    dest.save_pad(&pad, dest_scope, bucket)
         .map_err(|e| PadzError::Api(format!("Writing pad {} to destination failed: {}", id, e)))?;
 
-    if !warnings.is_empty() {
-        warnings.insert(
-            0,
-            CmdMessage::info(format!(
-                "Pad {}: copied with {} metadata warning(s)",
-                id,
-                warnings.len()
-            )),
-        );
-    }
-
     Ok(CopyOutcome { warnings, tags })
-}
-
-fn bucket_or_active_label(b: Bucket) -> Bucket {
-    // Round-trip through the string form so any future extension is handled
-    // uniformly. Today this is the identity map.
-    let label = match b {
-        Bucket::Active => "Active",
-        Bucket::Archived => "Archived",
-        Bucket::Deleted => "Deleted",
-    };
-    parse_bucket_or_active(label)
 }
 
 fn delete_from_source<S: DataStore>(source: &mut S, scope: Scope, id: Uuid) -> Result<()> {
