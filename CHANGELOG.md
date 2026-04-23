@@ -11,6 +11,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 - **Added**
   - **Fish shell completions** — `padz completion --shell fish install` drops a script at `$XDG_CONFIG_HOME/fish/completions/padz.fish`, which fish auto-loads. No shell-profile edits required.
+  - **Homebrew distribution** — `brew install arthur-debert/padz/padz` now works on macOS (Apple Silicon + Intel) and Linux (x86_64 + ARM64). The formula is regenerated on every release from `.github/homebrew-formula.rb.tmpl` and pushed to the `arthur-debert/homebrew-padz` tap automatically. Installs the binary plus bash/zsh/fish completions into Homebrew's standard completion directories, so completions just work (no post-install `padz completion install` needed for brew users).
 
 - **Changed**
   - **zsh completion install path** — moved from `~/.zfunc/_padz` to the more standard XDG location `$XDG_DATA_HOME/zsh/site-functions/_padz`. The installer now probes zsh itself to check whether the directory is already on `$fpath`; the one-time `fpath=(... $fpath)` hint is only printed when it isn't (so package-manager installs that land in an fpath-covered dir will say "done" instead of suggesting a redundant edit).

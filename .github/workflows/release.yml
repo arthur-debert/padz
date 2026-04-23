@@ -33,6 +33,13 @@ env:
   # Seconds to wait after each `cargo publish` so the crates.io index
   # catches up before the next dependent publish.
   PUBLISH_WAIT_SECONDS: "30"
+  # ─── Homebrew tap (optional) ──────────────────────────────────────────
+  # Owner/repo of the tap. Leave blank or delete the `homebrew-formula`
+  # job to disable brew distribution. Requires a `HOMEBREW_TAP_TOKEN`
+  # secret — a PAT with contents:write scope on the tap repo.
+  HOMEBREW_TAP: arthur-debert/homebrew-padz
+  # Formula filename (without `.rb`). Usually equals BIN_NAME.
+  HOMEBREW_FORMULA: padz
 
 jobs:
   prepare:
@@ -240,3 +247,133 @@ jobs:
           tag_name: v${{ needs.prepare.outputs.version }}
           files: ${{ env.BIN_NAME }}-*.tar.gz
           draft: false
+
+  homebrew-formula:
+    # Generates a Homebrew formula from .github/homebrew-formula.rb.tmpl
+    # and pushes it to the tap repo. Skips cleanly if HOMEBREW_TAP_TOKEN
+    # isn't configured, so this job is safe to keep in a reused workflow
+    # even before the tap is set up.
+    needs: [prepare, finalize]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check tap token
+        id: guard
+        env:
+          TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+        run: |
+          if [ -z "$TAP_TOKEN" ]; then
+            echo "HOMEBREW_TAP_TOKEN not configured — skipping formula update."
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "skip=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Checkout source (for template and Cargo.toml)
+        if: steps.guard.outputs.skip != 'true'
+        uses: actions/checkout@v5
+
+      - name: Install Rust (for cargo metadata)
+        if: steps.guard.outputs.skip != 'true'
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Download release artifacts
+        if: steps.guard.outputs.skip != 'true'
+        uses: actions/download-artifact@v5
+        with:
+          pattern: ${{ env.BIN_NAME }}-*
+          merge-multiple: true
+
+      - name: Render Homebrew formula
+        if: steps.guard.outputs.skip != 'true'
+        env:
+          VERSION: ${{ needs.prepare.outputs.version }}
+        run: |
+          set -euo pipefail
+
+          # Derive the formula class name (PascalCase from HOMEBREW_FORMULA,
+          # splitting on `-` and `_`). `padz` → `Padz`, `my-tool` → `MyTool`.
+          CLASS_NAME=$(echo "$HOMEBREW_FORMULA" | awk -F'[-_]' '{
+            for(i=1;i<=NF;i++) printf "%s", toupper(substr($i,1,1)) tolower(substr($i,2))
+          }')
+          echo "Formula class: $CLASS_NAME"
+
+          # Pull metadata from Cargo.toml (falls back to repository when
+          # homepage is unset, which is typical for workspace crates).
+          META=$(cargo metadata --no-deps --format-version=1)
+          DESC=$(echo "$META" | jq -r --arg c "$CRATE_NAME" \
+            '.packages[] | select(.name==$c) | .description // ""')
+          LICENSE=$(echo "$META" | jq -r --arg c "$CRATE_NAME" \
+            '.packages[] | select(.name==$c) | .license // ""')
+          HOMEPAGE=$(echo "$META" | jq -r --arg c "$CRATE_NAME" \
+            '.packages[] | select(.name==$c) | .homepage // .repository // ""')
+
+          URL_BASE="https://github.com/${GITHUB_REPOSITORY}/releases/download/v${VERSION}/${BIN_NAME}"
+
+          sha_for() {
+            sha256sum "${BIN_NAME}-$1.tar.gz" | cut -d' ' -f1
+          }
+          SHA_AARCH64_APPLE_DARWIN=$(sha_for aarch64-apple-darwin)
+          SHA_X86_64_APPLE_DARWIN=$(sha_for  x86_64-apple-darwin)
+          SHA_X86_64_LINUX_GNU=$(sha_for     x86_64-linux-gnu)
+          SHA_AARCH64_LINUX_GNU=$(sha_for    aarch64-linux-gnu)
+
+          mkdir -p out
+          sed \
+            -e "s|{{CLASS_NAME}}|${CLASS_NAME}|g" \
+            -e "s|{{DESC}}|${DESC}|g" \
+            -e "s|{{HOMEPAGE}}|${HOMEPAGE}|g" \
+            -e "s|{{VERSION}}|${VERSION}|g" \
+            -e "s|{{LICENSE}}|${LICENSE}|g" \
+            -e "s|{{BIN_NAME}}|${BIN_NAME}|g" \
+            -e "s|{{URL_AARCH64_APPLE_DARWIN}}|${URL_BASE}-aarch64-apple-darwin.tar.gz|g" \
+            -e "s|{{URL_X86_64_APPLE_DARWIN}}|${URL_BASE}-x86_64-apple-darwin.tar.gz|g" \
+            -e "s|{{URL_X86_64_LINUX_GNU}}|${URL_BASE}-x86_64-linux-gnu.tar.gz|g" \
+            -e "s|{{URL_AARCH64_LINUX_GNU}}|${URL_BASE}-aarch64-linux-gnu.tar.gz|g" \
+            -e "s|{{SHA_AARCH64_APPLE_DARWIN}}|${SHA_AARCH64_APPLE_DARWIN}|g" \
+            -e "s|{{SHA_X86_64_APPLE_DARWIN}}|${SHA_X86_64_APPLE_DARWIN}|g" \
+            -e "s|{{SHA_X86_64_LINUX_GNU}}|${SHA_X86_64_LINUX_GNU}|g" \
+            -e "s|{{SHA_AARCH64_LINUX_GNU}}|${SHA_AARCH64_LINUX_GNU}|g" \
+            .github/homebrew-formula.rb.tmpl > "out/${HOMEBREW_FORMULA}.rb"
+
+          # Fail loudly if any placeholder survived (missing env var or
+          # broken sed expression). The template has `{{NAME}}` in a
+          # header comment, so exclude that line before checking.
+          LEFTOVER=$(grep -v '^#' "out/${HOMEBREW_FORMULA}.rb" | grep -oE '\{\{[A-Z_]+\}\}' || true)
+          if [ -n "$LEFTOVER" ]; then
+            echo "::error::Unsubstituted placeholders in generated formula: $LEFTOVER"
+            exit 1
+          fi
+
+          echo "=== Generated formula ==="
+          cat "out/${HOMEBREW_FORMULA}.rb"
+
+      - name: Ruby syntax check
+        if: steps.guard.outputs.skip != 'true'
+        run: ruby -c "out/${HOMEBREW_FORMULA}.rb"
+
+      - name: Checkout tap repo
+        if: steps.guard.outputs.skip != 'true'
+        uses: actions/checkout@v5
+        with:
+          repository: ${{ env.HOMEBREW_TAP }}
+          token: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+          path: tap
+
+      - name: Commit and push formula
+        if: steps.guard.outputs.skip != 'true'
+        env:
+          VERSION: ${{ needs.prepare.outputs.version }}
+        run: |
+          set -euo pipefail
+          mkdir -p tap/Formula
+          cp "out/${HOMEBREW_FORMULA}.rb" "tap/Formula/${HOMEBREW_FORMULA}.rb"
+          cd tap
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add "Formula/${HOMEBREW_FORMULA}.rb"
+          if git diff --cached --quiet; then
+            echo "Formula unchanged — nothing to push."
+            exit 0
+          fi
+          git commit -m "${HOMEBREW_FORMULA} ${VERSION}"
+          git push
