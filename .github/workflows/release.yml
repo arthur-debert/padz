@@ -1,5 +1,18 @@
 name: Release
 
+# Reusable release workflow for cargo projects.
+#
+# Project-specific values live in `env:` below — copy this file to a new
+# cargo project and change only that block.
+#
+# Triggered on tag push `vX.Y.Z`. Does:
+#  1. Extract version + release notes from CHANGELOG.md
+#  2. Bump workspace version to match the tag (defensive; cargo-release
+#     typically handles this locally, but we re-assert for safety)
+#  3. Publish all workspace crates to crates.io in dependency order
+#  4. Build release binaries for the target matrix
+#  5. Attach tarballs to the GitHub Release
+
 on:
   push:
     tags:
@@ -10,6 +23,16 @@ permissions:
 
 env:
   CARGO_TERM_COLOR: always
+  # ─── Project-specific values — edit these when reusing ────────────────
+  BIN_NAME: padz
+  # The top-level crate to publish last (the one users install).
+  CRATE_NAME: padz
+  # Space-separated list of dependency crates to publish *before* CRATE_NAME,
+  # in dependency order. Leave empty if the project has a single crate.
+  EXTRA_CRATES: "padzapp"
+  # Seconds to wait after each `cargo publish` so the crates.io index
+  # catches up before the next dependent publish.
+  PUBLISH_WAIT_SECONDS: "30"
 
 jobs:
   prepare:
@@ -24,8 +47,8 @@ jobs:
       - name: Extract version from tag
         id: version
         run: |
-          VERSION=${GITHUB_REF#refs/tags/v}
-          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          VERSION="${GITHUB_REF#refs/tags/v}"
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
           echo "Release version: $VERSION"
 
       - name: Extract release notes from CHANGELOG
@@ -33,7 +56,6 @@ jobs:
           VERSION="${{ steps.version.outputs.version }}"
           # Extract section for this version (between ## [VERSION] and next ## [)
           awk '/^## \['"$VERSION"'\]/{found=1; next} /^## \[/{if(found) exit} found{print}' CHANGELOG.md > release-notes.md
-          # If empty, provide fallback
           if [ ! -s release-notes.md ]; then
             echo "Release v$VERSION" > release-notes.md
           fi
@@ -54,57 +76,58 @@ jobs:
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
 
-      - name: Set version from tag
+      - name: Install cargo-edit (for `cargo set-version`)
+        run: cargo install cargo-edit --locked
+
+      - name: Bump workspace version to tag
         env:
           VERSION: ${{ needs.prepare.outputs.version }}
         run: |
-          echo "Setting version to $VERSION"
-          # Update workspace version
-          sed -i 's/^version = ".*"/version = "'"$VERSION"'"/' Cargo.toml
-          # Update padzapp dependency version in padz crate
-          sed -i 's/padzapp = { version = "[^"]*"/padzapp = { version = "'"$VERSION"'"/' crates/padz/Cargo.toml
-          echo "=== Root Cargo.toml ==="
-          grep "^version" Cargo.toml
-          echo "=== padz/Cargo.toml padzapp dep ==="
-          grep "padzapp" crates/padz/Cargo.toml
+          # Bumps every workspace member AND every intra-workspace dep pin
+          # in a single command — no per-project sed needed.
+          cargo set-version --workspace "$VERSION"
           cargo update -w
+          echo "=== Resolved versions ==="
+          cargo pkgid --workspace || true
 
       - name: Commit version bump
         run: |
+          if git diff --quiet; then
+            echo "Workspace already at target version; skipping bump commit."
+            exit 0
+          fi
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add Cargo.toml Cargo.lock crates/padz/Cargo.toml
+          git add -u
           git commit -m "chore: bump version to ${{ needs.prepare.outputs.version }}"
           git push origin HEAD:main
 
-      - name: Publish padzapp to crates.io
+      - name: Publish crates to crates.io
         env:
           VERSION: ${{ needs.prepare.outputs.version }}
+          CARGO_REGISTRY_TOKEN: ${{ secrets.CRATES_IO_KEY }}
         run: |
-          cargo publish --token ${{ secrets.CRATES_IO_KEY }} -p padzapp 2>&1 || {
-            if cargo search padzapp --limit 1 2>/dev/null | grep -q "padzapp.*\"$VERSION\""; then
-              echo "padzapp@$VERSION already published, skipping"
-            else
-              echo "Failed to publish padzapp"
-              exit 1
+          publish_one() {
+            local crate="$1"
+            echo "=== Publishing $crate@$VERSION ==="
+            if cargo publish -p "$crate" 2>&1; then
+              return 0
             fi
+            # Tolerate "already published" — common if a release is retried
+            if cargo search "$crate" --limit 1 2>/dev/null | grep -q "^$crate = \"$VERSION\""; then
+              echo "$crate@$VERSION already on crates.io, skipping."
+              return 0
+            fi
+            echo "Failed to publish $crate@$VERSION"
+            return 1
           }
 
-      - name: Wait for crates.io index update
-        run: sleep 30
-
-      - name: Publish padz to crates.io
-        env:
-          VERSION: ${{ needs.prepare.outputs.version }}
-        run: |
-          cargo publish --token ${{ secrets.CRATES_IO_KEY }} -p padz 2>&1 || {
-            if cargo search padz --limit 1 2>/dev/null | grep -q "padz.*\"$VERSION\""; then
-              echo "padz@$VERSION already published, skipping"
-            else
-              echo "Failed to publish padz"
-              exit 1
-            fi
-          }
+          for crate in $EXTRA_CRATES; do
+            publish_one "$crate"
+            echo "Waiting ${PUBLISH_WAIT_SECONDS}s for crates.io index..."
+            sleep "$PUBLISH_WAIT_SECONDS"
+          done
+          publish_one "$CRATE_NAME"
 
   release:
     needs: prepare
@@ -132,60 +155,65 @@ jobs:
         include:
           - target: aarch64-apple-darwin
             os: macos-latest
-            artifact: padz-aarch64-apple-darwin
+            artifact-suffix: aarch64-apple-darwin
+            cross: false
+          - target: x86_64-apple-darwin
+            os: macos-latest
+            artifact-suffix: x86_64-apple-darwin
             cross: false
           - target: x86_64-unknown-linux-gnu
             os: ubuntu-latest
-            artifact: padz-x86_64-linux-gnu
+            artifact-suffix: x86_64-linux-gnu
             cross: false
           - target: aarch64-unknown-linux-gnu
             os: ubuntu-latest
-            artifact: padz-aarch64-linux-gnu
+            artifact-suffix: aarch64-linux-gnu
             cross: true
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v5
-
-      - name: Set version from tag
-        env:
-          VERSION: ${{ needs.prepare.outputs.version }}
-        run: |
-          if [[ "$OSTYPE" == "darwin"* ]]; then
-            sed -i '' 's/^version = ".*"/version = "'"$VERSION"'"/' Cargo.toml
-            sed -i '' 's/padzapp = { version = "[^"]*"/padzapp = { version = "'"$VERSION"'"/' crates/padz/Cargo.toml
-          else
-            sed -i 's/^version = ".*"/version = "'"$VERSION"'"/' Cargo.toml
-            sed -i 's/padzapp = { version = "[^"]*"/padzapp = { version = "'"$VERSION"'"/' crates/padz/Cargo.toml
-          fi
 
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
         with:
           targets: ${{ matrix.target }}
 
+      - name: Install cargo-edit (for `cargo set-version`)
+        run: cargo install cargo-edit --locked
+
+      - name: Bump workspace version to tag
+        env:
+          VERSION: ${{ needs.prepare.outputs.version }}
+        run: cargo set-version --workspace "$VERSION"
+
       - name: Install cross
         if: matrix.cross
-        run: cargo install cross --git https://github.com/cross-rs/cross
+        run: cargo install cross --git https://github.com/cross-rs/cross --locked
 
-      - name: Build binary
+      - name: Build release binary
         run: |
           if [ "${{ matrix.cross }}" = "true" ]; then
-            cross build --release --target ${{ matrix.target }} -p padz
+            cross build --release --target "${{ matrix.target }}" -p "$CRATE_NAME"
           else
-            cargo build --release --target ${{ matrix.target }} -p padz
+            cargo build --release --target "${{ matrix.target }}" -p "$CRATE_NAME"
           fi
 
       - name: Package binary
         run: |
-          mkdir -p dist
-          cp target/${{ matrix.target }}/release/padz dist/${{ matrix.artifact }}
+          ARTIFACT="${BIN_NAME}-${{ matrix.artifact-suffix }}"
+          mkdir -p "dist/$ARTIFACT"
+          cp "target/${{ matrix.target }}/release/$BIN_NAME" "dist/$ARTIFACT/"
+          # Bundle top-level docs if present — generic across cargo projects
+          for f in README.md CHANGELOG.md LICENSE LICENSE.md LICENSE-MIT LICENSE-APACHE; do
+            [ -f "$f" ] && cp "$f" "dist/$ARTIFACT/" || true
+          done
           cd dist
-          tar -czvf ../${{ matrix.artifact }}.tar.gz ${{ matrix.artifact }}
+          tar -czvf "../${ARTIFACT}.tar.gz" "$ARTIFACT"
 
       - uses: actions/upload-artifact@v5
         with:
-          name: ${{ matrix.artifact }}
-          path: ${{ matrix.artifact }}.tar.gz
+          name: ${{ env.BIN_NAME }}-${{ matrix.artifact-suffix }}
+          path: ${{ env.BIN_NAME }}-${{ matrix.artifact-suffix }}.tar.gz
 
   finalize:
     needs: [prepare, release, build-binaries, publish]
@@ -193,7 +221,7 @@ jobs:
     steps:
       - uses: actions/download-artifact@v5
         with:
-          pattern: padz-*
+          pattern: ${{ env.BIN_NAME }}-*
           merge-multiple: true
 
       - name: List artifacts
@@ -203,5 +231,5 @@ jobs:
         uses: softprops/action-gh-release@v3
         with:
           tag_name: v${{ needs.prepare.outputs.version }}
-          files: padz-*.tar.gz
+          files: ${{ env.BIN_NAME }}-*.tar.gz
           draft: false

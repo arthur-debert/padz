@@ -15,6 +15,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - **Changed**
   - **zsh completion install path** — moved from `~/.zfunc/_padz` to the more standard XDG location `$XDG_DATA_HOME/zsh/site-functions/_padz`. The installer now probes zsh itself to check whether the directory is already on `$fpath`; the one-time `fpath=(... $fpath)` hint is only printed when it isn't (so package-manager installs that land in an fpath-covered dir will say "done" instead of suggesting a redundant edit).
   - **bash completion post-install messaging** — on macOS the installer now detects whether the `bash-completion` package is actually present and, if not, tells the user to `brew install bash-completion@2`. Previously it suggested sourcing the file without flagging that the OS bash wouldn't auto-load completions at all.
+  - **Release workflow refactor (internal)** — parameterized `.github/workflows/release.yml` with a top-of-file `env:` block (`BIN_NAME`, `CRATE_NAME`, `EXTRA_CRATES`, `PUBLISH_WAIT_SECONDS`) so the same workflow can be reused across cargo projects by editing only that block. Replaced per-crate sed-based version bumps with `cargo set-version --workspace`, which handles workspace members and intra-workspace dep pins generically. Added `x86_64-apple-darwin` (Intel Mac) to the release build matrix. Each tarball now includes `README.md`, `CHANGELOG.md`, and any `LICENSE*` file alongside the binary.
 
 ## [1.4.0] - 2026-04-23
 
