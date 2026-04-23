@@ -51,6 +51,7 @@
 
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
+use std::collections::HashSet;
 use uuid::Uuid;
 
 use crate::attributes::{AttrSideEffect, AttrValue};
@@ -254,6 +255,198 @@ impl Metadata {
             }
             _ => None,
         }
+    }
+}
+
+/// Policy for applying a `parent_id` during a defensive metadata patch.
+///
+/// Export/import flows that move only part of a pad tree need to orphan
+/// children whose parent is outside the current set; a straight single-file
+/// import trusts the incoming metadata as-is.
+pub enum ParentPolicy<'a> {
+    /// Apply `parent_id` as-is.
+    Trust,
+    /// Keep `parent_id` only if it's present in `known`; otherwise orphan to root.
+    OrphanUnknown(&'a HashSet<Uuid>),
+}
+
+/// A per-field outcome from applying a JSON patch to [`Metadata`].
+///
+/// The patch is deliberately total: every field is optional and a failure to
+/// parse one never aborts the others. Use `Display` for a bare message; use
+/// [`MetadataPatchWarning::is_info`] to distinguish informational outcomes
+/// (e.g. an orphaned parent) from hard data warnings.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum MetadataPatchWarning {
+    /// The JSON value wasn't an object — nothing was applied.
+    NotAnObject,
+    /// `id` failed to parse; the prior UUID is kept.
+    InvalidIdReplaced,
+    /// The named field failed to parse; the prior value stands.
+    InvalidField(&'static str),
+    /// The tags array contained `n` non-string entries that were dropped.
+    NonStringTags(usize),
+    /// `parent_id` pointed outside the known set; orphaned to root.
+    ParentOrphaned,
+}
+
+impl MetadataPatchWarning {
+    /// Informational (orphaned parent) vs data-corruption warning.
+    pub fn is_info(&self) -> bool {
+        matches!(self, Self::ParentOrphaned)
+    }
+}
+
+impl std::fmt::Display for MetadataPatchWarning {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::NotAnObject => write!(f, "metadata is not an object, keeping defaults"),
+            Self::InvalidIdReplaced => write!(f, "invalid id field, assigned a new UUID"),
+            Self::InvalidField(name) => write!(f, "invalid {}", name),
+            Self::NonStringTags(n) => write!(f, "{} non-string tag entries ignored", n),
+            Self::ParentOrphaned => write!(f, "parent not in import set, orphaned to root"),
+        }
+    }
+}
+
+impl Metadata {
+    /// Apply a JSON patch to this metadata, defensively.
+    ///
+    /// Unknown keys are ignored (forward compat across padz versions). Each
+    /// known field is optional; failures become warnings without aborting the
+    /// rest of the patch. `title` is only applied when the current title is
+    /// empty — callers typically derive the authoritative title from the pad
+    /// content's first line and set it separately.
+    pub fn apply_json_patch(
+        &mut self,
+        value: &serde_json::Value,
+        parent_policy: &ParentPolicy<'_>,
+    ) -> Vec<MetadataPatchWarning> {
+        use MetadataPatchWarning as W;
+
+        let mut warnings = Vec::new();
+        let Some(obj) = value.as_object() else {
+            warnings.push(W::NotAnObject);
+            return warnings;
+        };
+
+        if let Some(id_val) = obj.get("id") {
+            match id_val.as_str().and_then(|s| Uuid::parse_str(s).ok()) {
+                Some(u) => self.id = u,
+                None => warnings.push(W::InvalidIdReplaced),
+            }
+        }
+
+        if let Some(v) = obj.get("created_at") {
+            match datetime_from_json(v) {
+                Some(dt) => self.created_at = dt,
+                None => warnings.push(W::InvalidField("created_at")),
+            }
+        }
+        if let Some(v) = obj.get("updated_at") {
+            match datetime_from_json(v) {
+                Some(dt) => self.updated_at = dt,
+                None => warnings.push(W::InvalidField("updated_at")),
+            }
+        }
+
+        if let Some(v) = obj.get("is_pinned") {
+            match v.as_bool() {
+                Some(b) => self.is_pinned = b,
+                None => warnings.push(W::InvalidField("is_pinned")),
+            }
+        }
+
+        if let Some(v) = obj.get("pinned_at") {
+            if v.is_null() {
+                self.pinned_at = None;
+            } else {
+                match datetime_from_json(v) {
+                    Some(dt) => self.pinned_at = Some(dt),
+                    None => warnings.push(W::InvalidField("pinned_at")),
+                }
+            }
+        }
+
+        if let Some(v) = obj.get("delete_protected") {
+            match v.as_bool() {
+                Some(b) => self.delete_protected = b,
+                None => warnings.push(W::InvalidField("delete_protected")),
+            }
+        }
+
+        if let Some(v) = obj.get("status") {
+            match v.as_str().and_then(parse_todo_status) {
+                Some(s) => self.status = s,
+                None => warnings.push(W::InvalidField("status")),
+            }
+        }
+
+        if let Some(v) = obj.get("tags") {
+            match v.as_array() {
+                Some(arr) => {
+                    let mut tags = Vec::with_capacity(arr.len());
+                    let mut bad = 0;
+                    for t in arr {
+                        match t.as_str() {
+                            Some(s) => tags.push(s.to_string()),
+                            None => bad += 1,
+                        }
+                    }
+                    self.tags = tags;
+                    if bad > 0 {
+                        warnings.push(W::NonStringTags(bad));
+                    }
+                }
+                None => warnings.push(W::InvalidField("tags")),
+            }
+        }
+
+        if let Some(v) = obj.get("title") {
+            if let Some(s) = v.as_str() {
+                if self.title.is_empty() {
+                    self.title = s.to_string();
+                }
+            }
+        }
+
+        if let Some(v) = obj.get("parent_id") {
+            if v.is_null() {
+                self.parent_id = None;
+            } else {
+                match v.as_str().and_then(|s| Uuid::parse_str(s).ok()) {
+                    Some(pid) => match parent_policy {
+                        ParentPolicy::Trust => self.parent_id = Some(pid),
+                        ParentPolicy::OrphanUnknown(known) => {
+                            if known.contains(&pid) {
+                                self.parent_id = Some(pid);
+                            } else {
+                                self.parent_id = None;
+                                warnings.push(W::ParentOrphaned);
+                            }
+                        }
+                    },
+                    None => warnings.push(W::InvalidField("parent_id")),
+                }
+            }
+        }
+
+        warnings
+    }
+}
+
+fn datetime_from_json(v: &serde_json::Value) -> Option<DateTime<Utc>> {
+    v.as_str()
+        .and_then(|s| DateTime::parse_from_rfc3339(s).ok())
+        .map(|dt| dt.with_timezone(&Utc))
+}
+
+fn parse_todo_status(s: &str) -> Option<TodoStatus> {
+    match s {
+        "Planned" => Some(TodoStatus::Planned),
+        "InProgress" => Some(TodoStatus::InProgress),
+        "Done" => Some(TodoStatus::Done),
+        _ => None,
     }
 }
 
@@ -820,5 +1013,139 @@ mod tests {
         let result = meta.set_attr("status", crate::attributes::AttrValue::Bool(true));
         assert!(result.is_none());
         assert_eq!(meta.status, TodoStatus::Planned); // Unchanged
+    }
+
+    // ----- apply_json_patch -----
+
+    use serde_json::json;
+
+    fn sample_meta() -> Metadata {
+        let mut m = Metadata::new("Sample".into());
+        m.id = Uuid::parse_str("11111111-2222-3333-4444-555555555555").unwrap();
+        m
+    }
+
+    #[test]
+    fn test_apply_json_patch_non_object_returns_warning() {
+        let mut meta = sample_meta();
+        let warnings = meta.apply_json_patch(&json!("not an object"), &ParentPolicy::Trust);
+        assert_eq!(warnings, vec![MetadataPatchWarning::NotAnObject]);
+    }
+
+    #[test]
+    fn test_apply_json_patch_applies_known_fields() {
+        let mut meta = sample_meta();
+        let new_id = "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee";
+        let patch = json!({
+            "id": new_id,
+            "created_at": "2026-01-01T00:00:00Z",
+            "is_pinned": true,
+            "status": "Done",
+            "tags": ["work", "rust"],
+        });
+        let warnings = meta.apply_json_patch(&patch, &ParentPolicy::Trust);
+        assert!(warnings.is_empty());
+        assert_eq!(meta.id.to_string(), new_id);
+        assert!(meta.is_pinned);
+        assert_eq!(meta.status, TodoStatus::Done);
+        assert_eq!(meta.tags, vec!["work".to_string(), "rust".to_string()]);
+    }
+
+    #[test]
+    fn test_apply_json_patch_unknown_keys_ignored() {
+        // Forward-compat: a future version of padz adds `padz.wibble`; older
+        // code must ignore it rather than fail.
+        let mut meta = sample_meta();
+        let patch = json!({ "wibble": "future", "status": "InProgress" });
+        let warnings = meta.apply_json_patch(&patch, &ParentPolicy::Trust);
+        assert!(warnings.is_empty());
+        assert_eq!(meta.status, TodoStatus::InProgress);
+    }
+
+    #[test]
+    fn test_apply_json_patch_bad_status_warns_and_keeps_default() {
+        let mut meta = sample_meta();
+        let patch = json!({ "status": "NotAStatus" });
+        let warnings = meta.apply_json_patch(&patch, &ParentPolicy::Trust);
+        assert_eq!(warnings, vec![MetadataPatchWarning::InvalidField("status")]);
+        assert_eq!(meta.status, TodoStatus::Planned);
+    }
+
+    #[test]
+    fn test_apply_json_patch_bad_uuid_is_replaced() {
+        let original = sample_meta().id;
+        let mut meta = sample_meta();
+        let patch = json!({ "id": "not-a-uuid" });
+        let warnings = meta.apply_json_patch(&patch, &ParentPolicy::Trust);
+        assert_eq!(warnings, vec![MetadataPatchWarning::InvalidIdReplaced]);
+        // The prior UUID is kept (we don't regenerate on failure).
+        assert_eq!(meta.id, original);
+    }
+
+    #[test]
+    fn test_apply_json_patch_non_string_tags_counted() {
+        let mut meta = sample_meta();
+        let patch = json!({ "tags": ["ok", 42, "alright", true] });
+        let warnings = meta.apply_json_patch(&patch, &ParentPolicy::Trust);
+        assert_eq!(warnings, vec![MetadataPatchWarning::NonStringTags(2)]);
+        assert_eq!(meta.tags, vec!["ok".to_string(), "alright".to_string()]);
+    }
+
+    #[test]
+    fn test_apply_json_patch_parent_policy_orphans_unknown() {
+        let mut meta = sample_meta();
+        let known: HashSet<Uuid> = HashSet::new();
+        let stranger = Uuid::new_v4();
+        let patch = json!({ "parent_id": stranger.to_string() });
+        let warnings = meta.apply_json_patch(&patch, &ParentPolicy::OrphanUnknown(&known));
+        assert_eq!(warnings, vec![MetadataPatchWarning::ParentOrphaned]);
+        assert_eq!(meta.parent_id, None);
+    }
+
+    #[test]
+    fn test_apply_json_patch_parent_policy_trust_keeps_stranger() {
+        let mut meta = sample_meta();
+        let stranger = Uuid::new_v4();
+        let patch = json!({ "parent_id": stranger.to_string() });
+        let warnings = meta.apply_json_patch(&patch, &ParentPolicy::Trust);
+        assert!(warnings.is_empty());
+        assert_eq!(meta.parent_id, Some(stranger));
+    }
+
+    #[test]
+    fn test_apply_json_patch_null_parent_clears() {
+        let mut meta = sample_meta();
+        meta.parent_id = Some(Uuid::new_v4());
+        let patch = json!({ "parent_id": null });
+        let warnings = meta.apply_json_patch(&patch, &ParentPolicy::Trust);
+        assert!(warnings.is_empty());
+        assert_eq!(meta.parent_id, None);
+    }
+
+    #[test]
+    fn test_apply_json_patch_title_only_overrides_empty() {
+        let mut meta = sample_meta();
+        meta.title = "existing".into();
+        let patch = json!({ "title": "ignored" });
+        meta.apply_json_patch(&patch, &ParentPolicy::Trust);
+        assert_eq!(meta.title, "existing");
+
+        meta.title.clear();
+        meta.apply_json_patch(&patch, &ParentPolicy::Trust);
+        assert_eq!(meta.title, "ignored");
+    }
+
+    #[test]
+    fn test_metadata_patch_warning_display() {
+        assert_eq!(
+            MetadataPatchWarning::InvalidField("created_at").to_string(),
+            "invalid created_at"
+        );
+        assert_eq!(
+            MetadataPatchWarning::NonStringTags(3).to_string(),
+            "3 non-string tag entries ignored"
+        );
+        assert!(MetadataPatchWarning::ParentOrphaned.is_info());
+        assert!(!MetadataPatchWarning::InvalidIdReplaced.is_info());
     }
 }
