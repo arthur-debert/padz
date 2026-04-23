@@ -34,7 +34,17 @@ class {{CLASS_NAME}} < Formula
   end
 
   def install
-    bin.install "{{BIN_NAME}}"
+    # Homebrew cd's into the single top-level directory when the tarball
+    # has one — which ours does (`{{BIN_NAME}}-<target>/{{BIN_NAME}}`).
+    # The Dir glob fallback covers reuse with flat tarballs or any other
+    # packaging layout.
+    executable = if File.exist?("{{BIN_NAME}}")
+      "{{BIN_NAME}}"
+    else
+      Dir["*/{{BIN_NAME}}"].find { |path| File.file?(path) }
+    end
+    raise "Could not find {{BIN_NAME}} in extracted archive" unless executable
+    bin.install executable
 
     # Generate completion scripts from the binary itself so they always
     # match the clap_complete wire protocol the binary implements.

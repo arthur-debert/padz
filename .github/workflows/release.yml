@@ -283,66 +283,87 @@ jobs:
           pattern: ${{ env.BIN_NAME }}-*
           merge-multiple: true
 
-      - name: Render Homebrew formula
+      - name: Gather values for formula
+        id: values
         if: steps.guard.outputs.skip != 'true'
         env:
           VERSION: ${{ needs.prepare.outputs.version }}
         run: |
           set -euo pipefail
 
-          # Derive the formula class name (PascalCase from HOMEBREW_FORMULA,
+          # Derive formula class name (PascalCase from HOMEBREW_FORMULA,
           # splitting on `-` and `_`). `padz` → `Padz`, `my-tool` → `MyTool`.
           CLASS_NAME=$(echo "$HOMEBREW_FORMULA" | awk -F'[-_]' '{
             for(i=1;i<=NF;i++) printf "%s", toupper(substr($i,1,1)) tolower(substr($i,2))
           }')
-          echo "Formula class: $CLASS_NAME"
 
-          # Pull metadata from Cargo.toml (falls back to repository when
-          # homepage is unset, which is typical for workspace crates).
-          META=$(cargo metadata --no-deps --format-version=1)
-          DESC=$(echo "$META" | jq -r --arg c "$CRATE_NAME" \
-            '.packages[] | select(.name==$c) | .description // ""')
-          LICENSE=$(echo "$META" | jq -r --arg c "$CRATE_NAME" \
-            '.packages[] | select(.name==$c) | .license // ""')
-          HOMEPAGE=$(echo "$META" | jq -r --arg c "$CRATE_NAME" \
-            '.packages[] | select(.name==$c) | .homepage // .repository // ""')
+          # Pull metadata once, then extract + validate each field. Brew
+          # rejects formulas with empty desc/homepage/license at audit
+          # time, so fail loudly here with a pointer to the fix.
+          PKG_META=$(cargo metadata --no-deps --format-version=1 \
+            | jq -cer --arg c "$CRATE_NAME" '.packages[] | select(.name==$c)')
+          DESC=$(echo     "$PKG_META" | jq -r '.description // ""')
+          LICENSE=$(echo  "$PKG_META" | jq -r '.license // ""')
+          HOMEPAGE=$(echo "$PKG_META" | jq -r '.homepage // .repository // ""')
+
+          die_if_empty() {
+            local name="$1" value="$2" fix="$3"
+            if [ -z "$value" ]; then
+              echo "::error::Missing $name for crate '$CRATE_NAME'. $fix"
+              exit 1
+            fi
+          }
+          die_if_empty description "$DESC"    "Set package.description in Cargo.toml."
+          die_if_empty license     "$LICENSE" "Set package.license in Cargo.toml."
+          die_if_empty homepage    "$HOMEPAGE" "Set package.homepage or package.repository in Cargo.toml."
 
           URL_BASE="https://github.com/${GITHUB_REPOSITORY}/releases/download/v${VERSION}/${BIN_NAME}"
 
-          sha_for() {
-            sha256sum "${BIN_NAME}-$1.tar.gz" | cut -d' ' -f1
-          }
-          SHA_AARCH64_APPLE_DARWIN=$(sha_for aarch64-apple-darwin)
-          SHA_X86_64_APPLE_DARWIN=$(sha_for  x86_64-apple-darwin)
-          SHA_X86_64_LINUX_GNU=$(sha_for     x86_64-linux-gnu)
-          SHA_AARCH64_LINUX_GNU=$(sha_for    aarch64-linux-gnu)
+          sha_for() { sha256sum "${BIN_NAME}-$1.tar.gz" | cut -d' ' -f1; }
 
+          # Emit everything as step outputs for the next step to consume
+          # via env.
+          {
+            echo "class_name=$CLASS_NAME"
+            echo "desc=$DESC"
+            echo "license=$LICENSE"
+            echo "homepage=$HOMEPAGE"
+            echo "url_aarch64_apple_darwin=${URL_BASE}-aarch64-apple-darwin.tar.gz"
+            echo "url_x86_64_apple_darwin=${URL_BASE}-x86_64-apple-darwin.tar.gz"
+            echo "url_x86_64_linux_gnu=${URL_BASE}-x86_64-linux-gnu.tar.gz"
+            echo "url_aarch64_linux_gnu=${URL_BASE}-aarch64-linux-gnu.tar.gz"
+            echo "sha_aarch64_apple_darwin=$(sha_for aarch64-apple-darwin)"
+            echo "sha_x86_64_apple_darwin=$(sha_for  x86_64-apple-darwin)"
+            echo "sha_x86_64_linux_gnu=$(sha_for     x86_64-linux-gnu)"
+            echo "sha_aarch64_linux_gnu=$(sha_for    aarch64-linux-gnu)"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Render Homebrew formula
+        if: steps.guard.outputs.skip != 'true'
+        env:
+          VERSION:                   ${{ needs.prepare.outputs.version }}
+          CLASS_NAME:                ${{ steps.values.outputs.class_name }}
+          DESC:                      ${{ steps.values.outputs.desc }}
+          LICENSE:                   ${{ steps.values.outputs.license }}
+          HOMEPAGE:                  ${{ steps.values.outputs.homepage }}
+          URL_AARCH64_APPLE_DARWIN:  ${{ steps.values.outputs.url_aarch64_apple_darwin }}
+          URL_X86_64_APPLE_DARWIN:   ${{ steps.values.outputs.url_x86_64_apple_darwin }}
+          URL_X86_64_LINUX_GNU:      ${{ steps.values.outputs.url_x86_64_linux_gnu }}
+          URL_AARCH64_LINUX_GNU:     ${{ steps.values.outputs.url_aarch64_linux_gnu }}
+          SHA_AARCH64_APPLE_DARWIN:  ${{ steps.values.outputs.sha_aarch64_apple_darwin }}
+          SHA_X86_64_APPLE_DARWIN:   ${{ steps.values.outputs.sha_x86_64_apple_darwin }}
+          SHA_X86_64_LINUX_GNU:      ${{ steps.values.outputs.sha_x86_64_linux_gnu }}
+          SHA_AARCH64_LINUX_GNU:     ${{ steps.values.outputs.sha_aarch64_linux_gnu }}
+        run: |
+          set -euo pipefail
           mkdir -p out
-          sed \
-            -e "s|{{CLASS_NAME}}|${CLASS_NAME}|g" \
-            -e "s|{{DESC}}|${DESC}|g" \
-            -e "s|{{HOMEPAGE}}|${HOMEPAGE}|g" \
-            -e "s|{{VERSION}}|${VERSION}|g" \
-            -e "s|{{LICENSE}}|${LICENSE}|g" \
-            -e "s|{{BIN_NAME}}|${BIN_NAME}|g" \
-            -e "s|{{URL_AARCH64_APPLE_DARWIN}}|${URL_BASE}-aarch64-apple-darwin.tar.gz|g" \
-            -e "s|{{URL_X86_64_APPLE_DARWIN}}|${URL_BASE}-x86_64-apple-darwin.tar.gz|g" \
-            -e "s|{{URL_X86_64_LINUX_GNU}}|${URL_BASE}-x86_64-linux-gnu.tar.gz|g" \
-            -e "s|{{URL_AARCH64_LINUX_GNU}}|${URL_BASE}-aarch64-linux-gnu.tar.gz|g" \
-            -e "s|{{SHA_AARCH64_APPLE_DARWIN}}|${SHA_AARCH64_APPLE_DARWIN}|g" \
-            -e "s|{{SHA_X86_64_APPLE_DARWIN}}|${SHA_X86_64_APPLE_DARWIN}|g" \
-            -e "s|{{SHA_X86_64_LINUX_GNU}}|${SHA_X86_64_LINUX_GNU}|g" \
-            -e "s|{{SHA_AARCH64_LINUX_GNU}}|${SHA_AARCH64_LINUX_GNU}|g" \
-            .github/homebrew-formula.rb.tmpl > "out/${HOMEBREW_FORMULA}.rb"
-
-          # Fail loudly if any placeholder survived (missing env var or
-          # broken sed expression). The template has `{{NAME}}` in a
-          # header comment, so exclude that line before checking.
-          LEFTOVER=$(grep -v '^#' "out/${HOMEBREW_FORMULA}.rb" | grep -oE '\{\{[A-Z_]+\}\}' || true)
-          if [ -n "$LEFTOVER" ]; then
-            echo "::error::Unsubstituted placeholders in generated formula: $LEFTOVER"
-            exit 1
-          fi
+          # Python renders the template. Ruby-string values (DESC, LICENSE,
+          # HOMEPAGE) are escaped for Ruby double-quoted context so values
+          # containing " or \ don't corrupt the generated formula — a real
+          # concern for reusability even if padz's current values are clean.
+          python3 .github/render-homebrew-formula.py \
+            .github/homebrew-formula.rb.tmpl \
+            "out/${HOMEBREW_FORMULA}.rb"
 
           echo "=== Generated formula ==="
           cat "out/${HOMEBREW_FORMULA}.rb"
