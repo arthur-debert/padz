@@ -240,13 +240,13 @@ fn handle_config(cli: &Cli, subcommand: &Option<ConfigSubcommand>) -> Result<()>
 
 fn handle_print(shell_override: Option<CompletionShell>) -> Result<()> {
     let shell = resolve_shell(shell_override)?;
-    print!("{}", completion_script(shell));
+    print!("{}", completion_script(shell)?);
     Ok(())
 }
 
 fn handle_install(shell_override: Option<CompletionShell>) -> Result<()> {
     let shell = resolve_shell(shell_override)?;
-    let script = completion_script(shell);
+    let script = completion_script(shell)?;
 
     let path = install_path(shell)?;
     if let Some(parent) = path.parent() {
@@ -255,19 +255,8 @@ fn handle_install(shell_override: Option<CompletionShell>) -> Result<()> {
     std::fs::write(&path, script)?;
 
     println!("Completions installed to {}", path.display());
-    match shell {
-        CompletionShell::Bash => {
-            println!("Restart your shell or run: source {}", path.display());
-        }
-        CompletionShell::Zsh => {
-            if !zshrc_has_zfunc() {
-                println!("Add the following to your ~/.zshrc:");
-                println!("  fpath=(~/.zfunc $fpath)");
-                println!("  autoload -Uz compinit && compinit");
-            } else {
-                println!("Restart your shell to activate.");
-            }
-        }
+    for line in post_install_hint(shell, &path) {
+        println!("{}", line);
     }
 
     Ok(())
@@ -276,7 +265,7 @@ fn handle_install(shell_override: Option<CompletionShell>) -> Result<()> {
 fn resolve_shell(shell_override: Option<CompletionShell>) -> Result<CompletionShell> {
     shell_override.or_else(detect_shell).ok_or_else(|| {
         padzapp::error::PadzError::Api(
-            "Could not detect shell from $SHELL. Use --shell bash or --shell zsh".into(),
+            "Could not detect shell from $SHELL. Use --shell bash|zsh|fish".into(),
         )
     })
 }
@@ -287,70 +276,253 @@ fn detect_shell() -> Option<CompletionShell> {
     match name {
         "bash" => Some(CompletionShell::Bash),
         "zsh" => Some(CompletionShell::Zsh),
+        "fish" => Some(CompletionShell::Fish),
         _ => None,
     }
 }
 
-fn completion_script(shell: CompletionShell) -> &'static str {
-    match shell {
-        CompletionShell::Bash => {
-            r#"# padz bash completions
-_padz() {
-    local IFS=$'\n'
-    local cur="${COMP_WORDS[COMP_CWORD]}"
-    local candidates
-    candidates=$(COMP_WORDS="${COMP_WORDS[*]}" COMP_CWORD="$COMP_CWORD" _CLAP_COMPLETE=bash padz 2>/dev/null)
-    if [[ $? -eq 0 ]]; then
-        COMPREPLY=($(compgen -W "$candidates" -- "$cur"))
-    fi
+/// Generate the completion script by re-invoking self with COMPLETE=<shell>.
+///
+/// clap_complete's `CompleteEnv` in main.rs intercepts this and prints the
+/// dynamic-completion registration script for the chosen shell. Re-using that
+/// path ensures the installed script always matches the binary's wire protocol.
+fn completion_script(shell: CompletionShell) -> Result<String> {
+    let exe = std::env::current_exe().map_err(|e| {
+        padzapp::error::PadzError::Api(format!("cannot locate current executable: {e}"))
+    })?;
+    let output = std::process::Command::new(&exe)
+        .env("COMPLETE", shell.as_complete_env())
+        .output()
+        .map_err(|e| {
+            padzapp::error::PadzError::Api(format!("failed to invoke {}: {e}", exe.display()))
+        })?;
+    if !output.status.success() {
+        return Err(padzapp::error::PadzError::Api(format!(
+            "completion generator exited with status {}: {}",
+            output.status,
+            String::from_utf8_lossy(&output.stderr)
+        )));
+    }
+    String::from_utf8(output.stdout).map_err(|e| {
+        padzapp::error::PadzError::Api(format!("completion script not valid UTF-8: {e}"))
+    })
 }
-complete -F _padz padz
-"#
+
+fn xdg_data_home() -> Result<std::path::PathBuf> {
+    if let Ok(dir) = std::env::var("XDG_DATA_HOME") {
+        if !dir.is_empty() {
+            return Ok(std::path::PathBuf::from(dir));
+        }
+    }
+    let home = std::env::var("HOME").map_err(|_| {
+        padzapp::error::PadzError::Api("$HOME not set; cannot determine install path".into())
+    })?;
+    Ok(std::path::PathBuf::from(home).join(".local/share"))
+}
+
+fn xdg_config_home() -> Result<std::path::PathBuf> {
+    if let Ok(dir) = std::env::var("XDG_CONFIG_HOME") {
+        if !dir.is_empty() {
+            return Ok(std::path::PathBuf::from(dir));
+        }
+    }
+    let home = std::env::var("HOME").map_err(|_| {
+        padzapp::error::PadzError::Api("$HOME not set; cannot determine install path".into())
+    })?;
+    Ok(std::path::PathBuf::from(home).join(".config"))
+}
+
+fn install_path(shell: CompletionShell) -> Result<std::path::PathBuf> {
+    Ok(match shell {
+        CompletionShell::Bash => xdg_data_home()?.join("bash-completion/completions/padz"),
+        CompletionShell::Zsh => xdg_data_home()?.join("zsh/site-functions/_padz"),
+        CompletionShell::Fish => xdg_config_home()?.join("fish/completions/padz.fish"),
+    })
+}
+
+/// POSIX-shell single-quote a string so it is safe to paste into a shell line,
+/// including paths containing spaces, `$`, backticks, or embedded `'`. The
+/// embedded-quote form `'\''` closes, escapes, reopens. The returned string is
+/// not quoted if it consists only of characters that are always literal.
+fn shell_quote(s: &str) -> String {
+    let safe = !s.is_empty()
+        && s.chars()
+            .all(|c| c.is_ascii_alphanumeric() || matches!(c, '_' | '-' | '/' | '.' | ':' | '@'));
+    if safe {
+        return s.to_string();
+    }
+    let mut out = String::with_capacity(s.len() + 2);
+    out.push('\'');
+    for c in s.chars() {
+        if c == '\'' {
+            out.push_str("'\\''");
+        } else {
+            out.push(c);
+        }
+    }
+    out.push('\'');
+    out
+}
+
+/// Post-install messaging — tells the user exactly what (if anything) they
+/// still need to do for completions to activate.
+fn post_install_hint(shell: CompletionShell, path: &std::path::Path) -> Vec<String> {
+    match shell {
+        CompletionShell::Fish => {
+            vec!["Completions will activate in new fish shells (no further action needed).".into()]
         }
         CompletionShell::Zsh => {
-            r#"#compdef padz
-
-_padz() {
-    local IFS=$'\n'
-    local candidates
-    candidates=("${(@f)$(COMP_WORDS="${words[*]}" COMP_CWORD=$((CURRENT - 1)) _CLAP_COMPLETE=zsh padz 2>/dev/null)}")
-    if [[ $? -eq 0 ]]; then
-        _describe 'command' candidates
-    fi
-}
-
-compdef _padz padz
-"#
+            let dir = path
+                .parent()
+                .map(|p| p.display().to_string())
+                .unwrap_or_default();
+            if zsh_dir_on_fpath(&dir) {
+                vec!["Completions will activate in new zsh shells.".into()]
+            } else {
+                vec![
+                    "To activate, add this line to ~/.zshrc (one-time setup):".into(),
+                    format!("  fpath=({} $fpath)", shell_quote(&dir)),
+                    "Then restart your shell (or run: autoload -Uz compinit && compinit).".into(),
+                ]
+            }
+        }
+        CompletionShell::Bash => {
+            let mut hints = vec![
+                "Completions will activate in new bash shells.".into(),
+                format!(
+                    "To use now in the current shell: source {}",
+                    shell_quote(&path.display().to_string())
+                ),
+            ];
+            if cfg!(target_os = "macos") && !macos_bash_completion_available() {
+                hints.push(String::new());
+                hints.push(
+                    "Note: on macOS, bash completions only load if the bash-completion".into(),
+                );
+                hints.push(
+                    "package is installed. Install it with: brew install bash-completion@2".into(),
+                );
+                hints.push("and follow the post-install instructions brew prints.".into());
+            }
+            hints
         }
     }
 }
 
-fn install_path(shell: CompletionShell) -> Result<std::path::PathBuf> {
-    let home = std::env::var("HOME").map_err(|_| {
-        padzapp::error::PadzError::Api("$HOME not set; cannot determine install path".into())
-    })?;
+/// Probe zsh to check if `dir` is already on `$fpath`. Non-interactive zsh
+/// skips `.zshrc`, so we run an interactive instance — but bound it to a short
+/// timeout, because a slow/prompting `.zshrc` could otherwise hang
+/// `padz completion install` forever. Returns false on any failure (the
+/// fallback path just asks the user to add the fpath line manually, which is
+/// always safe).
+fn zsh_dir_on_fpath(dir: &str) -> bool {
+    use std::process::{Command, Stdio};
+    use std::thread;
+    use std::time::{Duration, Instant};
 
-    Ok(match shell {
-        CompletionShell::Bash => {
-            let data_dir =
-                std::env::var("XDG_DATA_HOME").unwrap_or_else(|_| format!("{}/.local/share", home));
-            std::path::PathBuf::from(data_dir).join("bash-completion/completions/padz")
+    const TIMEOUT: Duration = Duration::from_secs(2);
+    const POLL: Duration = Duration::from_millis(25);
+
+    let Ok(mut child) = Command::new("zsh")
+        .arg("-ic")
+        .arg("print -rl -- $fpath")
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+    else {
+        return false;
+    };
+
+    let deadline = Instant::now() + TIMEOUT;
+    loop {
+        match child.try_wait() {
+            Ok(Some(_)) => break,
+            Ok(None) => {
+                if Instant::now() >= deadline {
+                    let _ = child.kill();
+                    let _ = child.wait();
+                    return false;
+                }
+                thread::sleep(POLL);
+            }
+            Err(_) => {
+                let _ = child.kill();
+                let _ = child.wait();
+                return false;
+            }
         }
-        CompletionShell::Zsh => std::path::PathBuf::from(&home).join(".zfunc/_padz"),
+    }
+
+    let Ok(output) = child.wait_with_output() else {
+        return false;
+    };
+    if !output.status.success() {
+        return false;
+    }
+    let canon = std::fs::canonicalize(dir).ok();
+    String::from_utf8_lossy(&output.stdout).lines().any(|line| {
+        let line = line.trim();
+        if line == dir {
+            return true;
+        }
+        match (canon.as_ref(), std::fs::canonicalize(line).ok()) {
+            (Some(a), Some(b)) => *a == b,
+            _ => false,
+        }
     })
 }
 
-/// Checks if ~/.zshrc contains a reference to .zfunc in fpath.
-fn zshrc_has_zfunc() -> bool {
-    let Ok(home) = std::env::var("HOME") else {
-        return false;
-    };
-    let zshrc = std::path::PathBuf::from(home).join(".zshrc");
-    let Ok(content) = std::fs::read_to_string(zshrc) else {
-        return false;
-    };
-    content.lines().any(|line| {
-        let trimmed = line.trim();
-        !trimmed.starts_with('#') && trimmed.contains("fpath") && trimmed.contains(".zfunc")
-    })
+/// Check whether /etc/bash_completion or a brew-installed bash-completion is
+/// present on macOS. Used only for advisory post-install messaging.
+fn macos_bash_completion_available() -> bool {
+    for path in [
+        "/opt/homebrew/etc/profile.d/bash_completion.sh",
+        "/usr/local/etc/profile.d/bash_completion.sh",
+        "/opt/homebrew/etc/bash_completion",
+        "/usr/local/etc/bash_completion",
+        "/etc/bash_completion",
+    ] {
+        if std::path::Path::new(path).exists() {
+            return true;
+        }
+    }
+    false
+}
+
+#[cfg(test)]
+mod completion_tests {
+    use super::shell_quote;
+
+    #[test]
+    fn safe_chars_unquoted() {
+        assert_eq!(
+            shell_quote("/home/user/.config/padz"),
+            "/home/user/.config/padz"
+        );
+        assert_eq!(shell_quote("abc-123_ok"), "abc-123_ok");
+    }
+
+    #[test]
+    fn spaces_quoted() {
+        assert_eq!(
+            shell_quote("/Users/a b/.local/share/zsh/site-functions"),
+            "'/Users/a b/.local/share/zsh/site-functions'"
+        );
+    }
+
+    #[test]
+    fn embedded_single_quote_escaped() {
+        assert_eq!(shell_quote("it's/fine"), "'it'\\''s/fine'");
+    }
+
+    #[test]
+    fn shell_special_chars_quoted() {
+        assert_eq!(shell_quote("/tmp/$HOME/x"), "'/tmp/$HOME/x'");
+        assert_eq!(shell_quote("a`b`c"), "'a`b`c'");
+    }
+
+    #[test]
+    fn empty_quoted() {
+        assert_eq!(shell_quote(""), "''");
+    }
 }
