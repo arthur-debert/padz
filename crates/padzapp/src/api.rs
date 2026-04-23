@@ -285,9 +285,10 @@ impl<S: DataStore> PadzApi<S> {
         scope: Scope,
         indexes: &[I],
         nesting: commands::NestingMode,
+        with_metadata: bool,
     ) -> Result<commands::CmdResult> {
         let selectors = parse_selectors(indexes)?;
-        commands::export::run(&self.store, scope, &selectors, nesting)
+        commands::export::run(&self.store, scope, &selectors, nesting, with_metadata)
     }
 
     pub fn export_pads_single_file<I: AsRef<str>>(
@@ -301,6 +302,16 @@ impl<S: DataStore> PadzApi<S> {
         commands::export::run_single_file(&self.store, scope, &selectors, title, nesting)
     }
 
+    pub fn export_pads_json<I: AsRef<str>>(
+        &self,
+        scope: Scope,
+        indexes: &[I],
+        nesting: commands::NestingMode,
+    ) -> Result<commands::CmdResult> {
+        let selectors = parse_selectors(indexes)?;
+        commands::export::run_json(&self.store, scope, &selectors, nesting)
+    }
+
     pub fn import_pads(
         &mut self,
         scope: Scope,
@@ -308,6 +319,69 @@ impl<S: DataStore> PadzApi<S> {
         import_exts: &[String],
     ) -> Result<commands::CmdResult> {
         commands::import::run(&mut self.store, scope, paths, import_exts)
+    }
+
+    /// Direction for clone/migrate: the external path is either the
+    /// destination (`--to`) or the source (`--from`).
+    pub fn transfer_pads_to<I: AsRef<str>>(
+        &mut self,
+        scope: Scope,
+        indexes: &[I],
+        dest_path: &std::path::Path,
+        mode: commands::transfer::TransferMode,
+    ) -> Result<commands::CmdResult> {
+        let selectors = parse_selectors(indexes)?;
+        let dest_padz = commands::transfer::resolve_target_dir(dest_path)?;
+        // Refuse to transfer to the same store. For migrate the user would
+        // see the pad copied over itself and then deleted — data loss.
+        // Clone would no-op at best; we reject both for a clear error.
+        let current_padz = self.paths.scope_dir(scope)?;
+        if canonicalize_or_self(&current_padz) == canonicalize_or_self(&dest_padz) {
+            return Err(PadzError::Api(format!(
+                "Destination '{}' is the current store. Use a different `--to` target.",
+                dest_padz.display()
+            )));
+        }
+        let mut dest_store = commands::transfer::open_target_store(&dest_padz)?;
+        commands::transfer::run(
+            &mut self.store,
+            scope,
+            &mut dest_store,
+            Scope::Project,
+            &selectors,
+            &dest_padz,
+            mode,
+        )
+    }
+
+    /// `--from <path>`: read selectors from the external store, write into
+    /// the current store.
+    pub fn transfer_pads_from<I: AsRef<str>>(
+        &mut self,
+        scope: Scope,
+        indexes: &[I],
+        source_path: &std::path::Path,
+        mode: commands::transfer::TransferMode,
+    ) -> Result<commands::CmdResult> {
+        let source_padz = commands::transfer::resolve_target_dir(source_path)?;
+        let current_padz = self.paths.scope_dir(scope)?;
+        if canonicalize_or_self(&current_padz) == canonicalize_or_self(&source_padz) {
+            return Err(PadzError::Api(format!(
+                "Source '{}' is the current store. Use a different `--from` target.",
+                source_padz.display()
+            )));
+        }
+        let mut source_store = commands::transfer::open_target_store(&source_padz)?;
+        let selectors = parse_selectors(indexes).map_err(|e| PadzError::Api(format!("{}", e)))?;
+        commands::transfer::run(
+            &mut source_store,
+            Scope::Project,
+            &mut self.store,
+            scope,
+            &selectors,
+            &source_padz,
+            mode,
+        )
     }
 
     pub fn doctor(&mut self, scope: Scope) -> Result<commands::CmdResult> {
@@ -449,6 +523,14 @@ impl<S: DataStore> PadzApi<S> {
         let selectors = parse_selectors(indexes)?;
         commands::tagging::remove_tags(&mut self.store, scope, &selectors, tags)
     }
+}
+
+/// Canonicalize if possible, else return the path as-is. Used when
+/// comparing resolved `.padz/` directories — a path that hasn't been
+/// created yet won't canonicalize, and we don't want that to silently
+/// succeed when the caller is attempting a real operation.
+fn canonicalize_or_self(p: &std::path::Path) -> std::path::PathBuf {
+    p.canonicalize().unwrap_or_else(|_| p.to_path_buf())
 }
 
 fn parse_selectors<I: AsRef<str>>(inputs: &[I]) -> Result<Vec<PadSelector>> {

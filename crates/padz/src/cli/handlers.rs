@@ -255,16 +255,21 @@ impl<'a> ScopedApi<'a> {
         self.messages(result)
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub fn export_pads(
         &self,
         indexes: &[String],
         single_file: Option<&str>,
+        json: bool,
+        with_metadata: bool,
         nesting: NestingMode,
     ) -> Result<Output<Value>, anyhow::Error> {
         let result = if let Some(title) = single_file {
             self.call(|api, scope| api.export_pads_single_file(scope, indexes, title, nesting))?
+        } else if json {
+            self.call(|api, scope| api.export_pads_json(scope, indexes, nesting))?
         } else {
-            self.call(|api, scope| api.export_pads(scope, indexes, nesting))?
+            self.call(|api, scope| api.export_pads(scope, indexes, nesting, with_metadata))?
         };
         self.messages(result)
     }
@@ -276,6 +281,31 @@ impl<'a> ScopedApi<'a> {
         let extensions = &self.state.import_extensions.0;
         let result = self.call(|api, scope| api.import_pads(scope, paths.clone(), extensions))?;
         self.messages(result)
+    }
+
+    pub fn transfer_pads(
+        &self,
+        indexes: &[String],
+        to: Option<&str>,
+        from: Option<&str>,
+        mode: padzapp::commands::transfer::TransferMode,
+    ) -> Result<Output<Value>, anyhow::Error> {
+        match (to, from) {
+            (Some(dest), None) => {
+                let path = std::path::PathBuf::from(dest);
+                let result =
+                    self.call(|api, scope| api.transfer_pads_to(scope, indexes, &path, mode))?;
+                self.messages(result)
+            }
+            (None, Some(src)) => {
+                let path = std::path::PathBuf::from(src);
+                let result =
+                    self.call(|api, scope| api.transfer_pads_from(scope, indexes, &path, mode))?;
+                self.messages(result)
+            }
+            (Some(_), Some(_)) => Err(anyhow::anyhow!("--to and --from are mutually exclusive")),
+            (None, None) => Err(anyhow::anyhow!("exactly one of --to or --from is required")),
+        }
     }
 
     // --- Tags subcommand operations ---
@@ -1083,17 +1113,26 @@ pub fn purge(
     api(ctx).purge_pads(&indexes, yes, recursive)
 }
 
+#[allow(clippy::too_many_arguments)]
 #[handler]
 pub fn export(
     #[ctx] ctx: &CommandContext,
     #[arg(name = "single_file")] single_file: Option<String>,
+    #[flag] json: bool,
+    #[flag(name = "with_metadata")] with_metadata: bool,
     #[arg] indexes: Vec<String>,
     #[flag] flat: bool,
     #[flag] tree: bool,
     #[flag] indented: bool,
 ) -> Result<Output<Value>, anyhow::Error> {
     let nesting = parse_nesting_mode(flat, tree, indented);
-    api(ctx).export_pads(&indexes, single_file.as_deref(), nesting)
+    api(ctx).export_pads(
+        &indexes,
+        single_file.as_deref(),
+        json,
+        with_metadata,
+        nesting,
+    )
 }
 
 #[handler]
@@ -1103,6 +1142,36 @@ pub fn import(
 ) -> Result<Output<Value>, anyhow::Error> {
     let paths: Vec<std::path::PathBuf> = paths.into_iter().map(std::path::PathBuf::from).collect();
     api(ctx).import_pads(paths)
+}
+
+#[handler]
+pub fn clone(
+    #[ctx] ctx: &CommandContext,
+    #[arg] indexes: Vec<String>,
+    #[arg] to: Option<String>,
+    #[arg] from: Option<String>,
+) -> Result<Output<Value>, anyhow::Error> {
+    api(ctx).transfer_pads(
+        &indexes,
+        to.as_deref(),
+        from.as_deref(),
+        padzapp::commands::transfer::TransferMode::Clone,
+    )
+}
+
+#[handler]
+pub fn migrate(
+    #[ctx] ctx: &CommandContext,
+    #[arg] indexes: Vec<String>,
+    #[arg] to: Option<String>,
+    #[arg] from: Option<String>,
+) -> Result<Output<Value>, anyhow::Error> {
+    api(ctx).transfer_pads(
+        &indexes,
+        to.as_deref(),
+        from.as_deref(),
+        padzapp::commands::transfer::TransferMode::Migrate,
+    )
 }
 
 // =============================================================================

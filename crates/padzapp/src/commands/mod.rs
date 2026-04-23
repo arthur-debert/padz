@@ -89,6 +89,9 @@ pub mod import;
 pub mod init;
 pub mod move_pads;
 
+pub mod inline_metadata;
+pub mod metadata_apply;
+pub mod metadata_schema;
 pub mod paths;
 pub mod pinning;
 pub mod purge;
@@ -96,6 +99,7 @@ pub mod restore;
 pub mod status;
 pub mod tagging;
 pub mod tags;
+pub mod transfer;
 
 pub mod unarchive;
 pub mod update;
