@@ -278,10 +278,10 @@ pub enum ParentPolicy<'a> {
 /// (e.g. an orphaned parent) from hard data warnings.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum MetadataPatchWarning {
-    /// The JSON value wasn't an object — nothing was applied.
+    /// The JSON value wasn't an object — the metadata is left unchanged.
     NotAnObject,
-    /// `id` failed to parse; the prior UUID is kept.
-    InvalidIdReplaced,
+    /// `id` failed to parse; the existing UUID on the metadata is kept.
+    InvalidId,
     /// The named field failed to parse; the prior value stands.
     InvalidField(&'static str),
     /// The tags array contained `n` non-string entries that were dropped.
@@ -300,8 +300,8 @@ impl MetadataPatchWarning {
 impl std::fmt::Display for MetadataPatchWarning {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Self::NotAnObject => write!(f, "metadata is not an object, keeping defaults"),
-            Self::InvalidIdReplaced => write!(f, "invalid id field, assigned a new UUID"),
+            Self::NotAnObject => write!(f, "metadata is not an object, keeping existing fields"),
+            Self::InvalidId => write!(f, "invalid id field, keeping existing UUID"),
             Self::InvalidField(name) => write!(f, "invalid {}", name),
             Self::NonStringTags(n) => write!(f, "{} non-string tag entries ignored", n),
             Self::ParentOrphaned => write!(f, "parent not in import set, orphaned to root"),
@@ -333,7 +333,7 @@ impl Metadata {
         if let Some(id_val) = obj.get("id") {
             match id_val.as_str().and_then(|s| Uuid::parse_str(s).ok()) {
                 Some(u) => self.id = u,
-                None => warnings.push(W::InvalidIdReplaced),
+                None => warnings.push(W::InvalidId),
             }
         }
 
@@ -1072,12 +1072,12 @@ mod tests {
     }
 
     #[test]
-    fn test_apply_json_patch_bad_uuid_is_replaced() {
+    fn test_apply_json_patch_bad_uuid_keeps_existing() {
         let original = sample_meta().id;
         let mut meta = sample_meta();
         let patch = json!({ "id": "not-a-uuid" });
         let warnings = meta.apply_json_patch(&patch, &ParentPolicy::Trust);
-        assert_eq!(warnings, vec![MetadataPatchWarning::InvalidIdReplaced]);
+        assert_eq!(warnings, vec![MetadataPatchWarning::InvalidId]);
         // The prior UUID is kept (we don't regenerate on failure).
         assert_eq!(meta.id, original);
     }
@@ -1146,6 +1146,6 @@ mod tests {
             "3 non-string tag entries ignored"
         );
         assert!(MetadataPatchWarning::ParentOrphaned.is_info());
-        assert!(!MetadataPatchWarning::InvalidIdReplaced.is_info());
+        assert!(!MetadataPatchWarning::InvalidId.is_info());
     }
 }

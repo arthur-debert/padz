@@ -1,11 +1,12 @@
-//! Thin CLI-layer adapter over [`Metadata::apply_json_patch`].
+//! Thin CLI-layer adapter over [`crate::model::Metadata::apply_json_patch`].
 //!
 //! The defensive "apply every field, collect per-field warnings" logic lives
 //! on the `Metadata` model — see [`crate::model::Metadata::apply_json_patch`].
 //! This module's job is only:
 //!
-//! - convert model-level [`MetadataPatchWarning`]s into user-facing
-//!   [`CmdMessage`]s, tagging each with the source (file name / pad id)
+//! - convert model-level [`crate::model::MetadataPatchWarning`]s into
+//!   user-facing [`CmdMessage`]s, tagging each with the source (file name /
+//!   pad id)
 //! - parse bucket labels coming off the wire (a store concept, not a model one)
 //!
 //! The JSON-archive import and the md/lex inline-metadata import both go

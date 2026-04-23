@@ -339,7 +339,7 @@ fn read_source_pad_any_bucket<S: DataStore>(
 /// Copy a single pad from source to dest.
 ///
 /// Live store-to-store transfer: the source hands us a valid [`Pad`] with
-/// valid [`Metadata`], so we just forward it. The only policy here is
+/// valid [`crate::model::Metadata`], so we just forward it. The only policy here is
 /// parent-orphan: if the pad's `parent_id` points outside the known set
 /// (the pads being moved + those already at the destination), we drop the
 /// link so the destination never has a dangling reference.
