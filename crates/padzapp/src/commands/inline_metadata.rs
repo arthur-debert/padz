@@ -43,12 +43,12 @@
 //! Files without the opening sentinel are imported as plain content (no
 //! metadata), preserving backwards compatibility.
 //!
-//! ## Non-goals
+//! ## Implementation
 //!
-//! We serialize **as text**, not through a YAML library. The key set is
-//! fixed and small, so the hand-rolled output is easier to audit than a
-//! dependency. Parsing uses `serde_yaml` for md (since arbitrary user
-//! frontmatter can be complex) and a line-by-line parser for lex.
+//! Markdown frontmatter uses `serde_yaml` for both emit and parse — the YAML
+//! surface is full-featured enough that hand-rolling is a foot-gun. Lex
+//! annotations are hand-parsed because the syntax is custom to lex and no
+//! published parser is (yet) a dependency here.
 
 use crate::commands::metadata_schema::SCHEMA_VERSION;
 use crate::model::{Metadata, TodoStatus};
@@ -61,48 +61,52 @@ pub const PADZ_PREFIX: &str = "padz.";
 /// Serialize a pad's metadata as YAML frontmatter. Returns the full
 /// `---\n...\n---\n\n` block, ready to prepend to the pad content.
 pub fn serialize_md_frontmatter(meta: &Metadata, bucket: Bucket) -> String {
-    let mut out = String::from("---\n");
-    out.push_str(&format!("padz.schema_version: {}\n", SCHEMA_VERSION));
-    out.push_str(&format!("padz.id: \"{}\"\n", meta.id));
-    out.push_str(&format!(
-        "padz.created_at: \"{}\"\n",
-        meta.created_at.to_rfc3339_opts(SecondsFormat::Secs, true)
-    ));
-    out.push_str(&format!(
-        "padz.updated_at: \"{}\"\n",
-        meta.updated_at.to_rfc3339_opts(SecondsFormat::Secs, true)
-    ));
-    out.push_str(&format!("padz.is_pinned: {}\n", meta.is_pinned));
-    match meta.pinned_at {
-        Some(ts) => out.push_str(&format!(
-            "padz.pinned_at: \"{}\"\n",
-            ts.to_rfc3339_opts(SecondsFormat::Secs, true)
-        )),
-        None => out.push_str("padz.pinned_at: null\n"),
-    }
-    out.push_str(&format!(
-        "padz.delete_protected: {}\n",
-        meta.delete_protected
-    ));
-    match meta.parent_id {
-        Some(p) => out.push_str(&format!("padz.parent_id: \"{}\"\n", p)),
-        None => out.push_str("padz.parent_id: null\n"),
-    }
-    out.push_str(&format!(
-        "padz.status: {}\n",
-        todo_status_label(meta.status)
-    ));
-    if meta.tags.is_empty() {
-        out.push_str("padz.tags: []\n");
-    } else {
-        out.push_str("padz.tags:\n");
-        for t in &meta.tags {
-            out.push_str(&format!("  - {}\n", yaml_quote(t)));
-        }
-    }
-    out.push_str(&format!("padz.bucket: {}\n", bucket_label(bucket)));
-    out.push_str("---\n\n");
-    out
+    let mapping = metadata_to_yaml_mapping(meta, bucket);
+    let body = serde_yaml::to_string(&mapping)
+        .expect("serializing fixed-schema metadata to YAML cannot fail");
+    format!("---\n{}---\n\n", body)
+}
+
+fn metadata_to_yaml_mapping(meta: &Metadata, bucket: Bucket) -> serde_yaml::Mapping {
+    use serde_yaml::Value as Y;
+    let mut m = serde_yaml::Mapping::new();
+    let k = |name: &str| Y::String(format!("{}{}", PADZ_PREFIX, name));
+    m.insert(k("schema_version"), Y::Number(SCHEMA_VERSION.into()));
+    m.insert(k("id"), Y::String(meta.id.to_string()));
+    m.insert(
+        k("created_at"),
+        Y::String(meta.created_at.to_rfc3339_opts(SecondsFormat::Secs, true)),
+    );
+    m.insert(
+        k("updated_at"),
+        Y::String(meta.updated_at.to_rfc3339_opts(SecondsFormat::Secs, true)),
+    );
+    m.insert(k("is_pinned"), Y::Bool(meta.is_pinned));
+    m.insert(
+        k("pinned_at"),
+        match meta.pinned_at {
+            Some(ts) => Y::String(ts.to_rfc3339_opts(SecondsFormat::Secs, true)),
+            None => Y::Null,
+        },
+    );
+    m.insert(k("delete_protected"), Y::Bool(meta.delete_protected));
+    m.insert(
+        k("parent_id"),
+        match meta.parent_id {
+            Some(p) => Y::String(p.to_string()),
+            None => Y::Null,
+        },
+    );
+    m.insert(
+        k("status"),
+        Y::String(todo_status_label(meta.status).into()),
+    );
+    m.insert(
+        k("tags"),
+        Y::Sequence(meta.tags.iter().cloned().map(Y::String).collect()),
+    );
+    m.insert(k("bucket"), Y::String(bucket_label(bucket).into()));
+    m
 }
 
 /// Serialize a pad's metadata as lex annotations, followed by a blank line
@@ -181,10 +185,21 @@ pub fn parse_md_frontmatter(raw: &str) -> Option<(Value, String)> {
 
     let body: String = stripped[consumed..].trim_start_matches('\n').to_string();
 
+    // Malformed YAML: treat the whole document as plain content.
+    let yaml_value: serde_yaml::Value = serde_yaml::from_str(&yaml_buf).ok()?;
+    let yaml_map = match yaml_value {
+        serde_yaml::Value::Mapping(m) => m,
+        _ => return None,
+    };
+
     let mut metadata = Map::new();
-    for (raw_key, raw_val) in parse_yaml_frontmatter(&yaml_buf) {
-        if let Some(bare) = raw_key.strip_prefix(PADZ_PREFIX) {
-            metadata.insert(bare.to_string(), raw_val);
+    for (key, value) in yaml_map {
+        let key_str = match key {
+            serde_yaml::Value::String(s) => s,
+            _ => continue,
+        };
+        if let Some(bare) = key_str.strip_prefix(PADZ_PREFIX) {
+            metadata.insert(bare.to_string(), yaml_to_json(value));
         }
     }
     if metadata.is_empty() {
@@ -192,6 +207,44 @@ pub fn parse_md_frontmatter(raw: &str) -> Option<(Value, String)> {
     }
 
     Some((Value::Object(metadata), body))
+}
+
+/// Convert a `serde_yaml::Value` into a `serde_json::Value`.
+///
+/// Non-string map keys are dropped (our schema never uses them); YAML tags are
+/// stripped and the inner value is used.
+fn yaml_to_json(v: serde_yaml::Value) -> Value {
+    match v {
+        serde_yaml::Value::Null => Value::Null,
+        serde_yaml::Value::Bool(b) => Value::Bool(b),
+        serde_yaml::Value::Number(n) => {
+            if let Some(i) = n.as_i64() {
+                Value::Number(i.into())
+            } else if let Some(u) = n.as_u64() {
+                Value::Number(u.into())
+            } else if let Some(f) = n.as_f64() {
+                serde_json::Number::from_f64(f)
+                    .map(Value::Number)
+                    .unwrap_or(Value::Null)
+            } else {
+                Value::Null
+            }
+        }
+        serde_yaml::Value::String(s) => Value::String(s),
+        serde_yaml::Value::Sequence(seq) => {
+            Value::Array(seq.into_iter().map(yaml_to_json).collect())
+        }
+        serde_yaml::Value::Mapping(map) => {
+            let mut out = Map::new();
+            for (k, v) in map {
+                if let serde_yaml::Value::String(key) = k {
+                    out.insert(key, yaml_to_json(v));
+                }
+            }
+            Value::Object(out)
+        }
+        serde_yaml::Value::Tagged(tagged) => yaml_to_json(tagged.value),
+    }
 }
 
 /// Extract metadata + body from a lex file. Recognizes leading
@@ -278,107 +331,6 @@ fn coerce_scalar(key: &str, raw: &str) -> Value {
             }
         }
         _ => Value::String(raw.to_string()),
-    }
-}
-
-/// Hand-rolled YAML frontmatter parser for the subset we emit + tolerate.
-///
-/// Handles:
-/// - `key: value` scalars (unquoted or `"…"`-quoted strings)
-/// - `key: null`, `key: true/false`, `key: 123`
-/// - `key: []` (empty array)
-/// - `key:\n  - item\n  - item` (list of strings)
-///
-/// Returns a flat list of (key, Value). Keys outside our `padz.` namespace
-/// are preserved verbatim — the caller filters them out.
-fn parse_yaml_frontmatter(yaml: &str) -> Vec<(String, Value)> {
-    let mut out: Vec<(String, Value)> = Vec::new();
-    let lines: Vec<&str> = yaml.lines().collect();
-    let mut i = 0;
-    while i < lines.len() {
-        let line = lines[i];
-        let trimmed = line.trim_end();
-        if trimmed.trim().is_empty() || trimmed.trim_start().starts_with('#') {
-            i += 1;
-            continue;
-        }
-        // Only top-level keys (no leading whitespace) are treated as padz metadata
-        if line.starts_with(' ') || line.starts_with('\t') {
-            i += 1;
-            continue;
-        }
-        let Some((key, rest)) = line.split_once(':') else {
-            i += 1;
-            continue;
-        };
-        let key = key.trim().to_string();
-        let rest = rest.trim();
-        if rest.is_empty() {
-            // Possibly a list follows
-            let mut items = Vec::new();
-            let mut j = i + 1;
-            while j < lines.len() {
-                let l = lines[j];
-                let t = l.trim_start();
-                if !(l.starts_with(' ') || l.starts_with('\t')) {
-                    break;
-                }
-                if let Some(item) = t.strip_prefix("- ") {
-                    items.push(Value::String(yaml_unquote(item).to_string()));
-                } else if t.is_empty() {
-                    // blank line — stop
-                    break;
-                } else {
-                    break;
-                }
-                j += 1;
-            }
-            out.push((key, Value::Array(items)));
-            i = j;
-        } else {
-            out.push((key, parse_yaml_scalar(rest)));
-            i += 1;
-        }
-    }
-    out
-}
-
-fn parse_yaml_scalar(raw: &str) -> Value {
-    if raw == "null" || raw == "~" {
-        return Value::Null;
-    }
-    if raw == "true" {
-        return Value::Bool(true);
-    }
-    if raw == "false" {
-        return Value::Bool(false);
-    }
-    if raw == "[]" {
-        return Value::Array(Vec::new());
-    }
-    if let Some(inner) = raw.strip_prefix('"').and_then(|s| s.strip_suffix('"')) {
-        return Value::String(inner.to_string());
-    }
-    if let Ok(n) = raw.parse::<i64>() {
-        return Value::Number(n.into());
-    }
-    Value::String(raw.to_string())
-}
-
-fn yaml_unquote(s: &str) -> &str {
-    s.strip_prefix('"')
-        .and_then(|t| t.strip_suffix('"'))
-        .unwrap_or(s)
-}
-
-/// Quote a tag value only if it contains characters that would break YAML.
-fn yaml_quote(s: &str) -> String {
-    if s.chars()
-        .any(|c| !(c.is_alphanumeric() || c == '-' || c == '_'))
-    {
-        format!("\"{}\"", s.replace('"', "\\\""))
-    } else {
-        s.to_string()
     }
 }
 
