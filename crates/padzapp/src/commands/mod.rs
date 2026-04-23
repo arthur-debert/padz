@@ -99,6 +99,7 @@ pub mod restore;
 pub mod status;
 pub mod tagging;
 pub mod tags;
+pub mod transfer;
 
 pub mod unarchive;
 pub mod update;
