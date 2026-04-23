@@ -1,0 +1,14 @@
+#!/bin/sh
+# Remove the completion scripts installed by postinst. Runs on `apt remove`
+# and upgrade-replace scenarios.
+set -e
+
+case "$1" in
+    remove|upgrade|deconfigure)
+        rm -f /usr/share/bash-completion/completions/padz
+        rm -f /usr/share/zsh/site-functions/_padz
+        rm -f /usr/share/fish/vendor_completions.d/padz.fish
+        ;;
+esac
+
+exit 0

@@ -40,6 +40,11 @@ env:
   HOMEBREW_TAP: arthur-debert/homebrew-tools
   # Formula filename (without `.rb`). Usually equals BIN_NAME.
   HOMEBREW_FORMULA: padz
+  # ─── Debian/Ubuntu packages (optional) ───────────────────────────────
+  # Build .deb packages for the linux targets and attach them to the
+  # GitHub Release. Set to "false" (or delete) to skip. Requires
+  # `[package.metadata.deb]` in the crate's Cargo.toml.
+  ENABLE_DEB: "true"
 
 jobs:
   prepare:
@@ -166,18 +171,22 @@ jobs:
             os: macos-latest
             artifact_suffix: aarch64-apple-darwin
             cross: false
+            deb_arch: ""
           - target: x86_64-apple-darwin
             os: macos-latest
             artifact_suffix: x86_64-apple-darwin
             cross: false
+            deb_arch: ""
           - target: x86_64-unknown-linux-gnu
             os: ubuntu-latest
             artifact_suffix: x86_64-linux-gnu
             cross: false
+            deb_arch: amd64
           - target: aarch64-unknown-linux-gnu
             os: ubuntu-latest
             artifact_suffix: aarch64-linux-gnu
             cross: true
+            deb_arch: arm64
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v5
@@ -229,6 +238,28 @@ jobs:
           name: ${{ env.BIN_NAME }}-${{ matrix.artifact_suffix }}
           path: ${{ env.BIN_NAME }}-${{ matrix.artifact_suffix }}.tar.gz
 
+      # ─── Debian package (linux targets only, gated on ENABLE_DEB) ──────
+      - name: Install cargo-deb
+        if: matrix.deb_arch != '' && env.ENABLE_DEB == 'true'
+        run: cargo install cargo-deb --locked
+
+      - name: Build .deb package
+        if: matrix.deb_arch != '' && env.ENABLE_DEB == 'true'
+        run: |
+          # --no-build reuses the release binary built above. cargo-deb
+          # reads [package.metadata.deb] from Cargo.toml and embeds the
+          # postinst/prerm maintainer scripts from debian/.
+          cargo deb -p "$CRATE_NAME" \
+            --target "${{ matrix.target }}" \
+            --no-build \
+            --no-strip
+
+      - uses: actions/upload-artifact@v5
+        if: matrix.deb_arch != '' && env.ENABLE_DEB == 'true'
+        with:
+          name: ${{ env.BIN_NAME }}-${{ matrix.deb_arch }}-deb
+          path: target/${{ matrix.target }}/debian/*.deb
+
   finalize:
     needs: [prepare, release, build-binaries, publish]
     runs-on: ubuntu-latest
@@ -245,7 +276,12 @@ jobs:
         uses: softprops/action-gh-release@v3
         with:
           tag_name: v${{ needs.prepare.outputs.version }}
-          files: ${{ env.BIN_NAME }}-*.tar.gz
+          # Recursive glob for .deb so this works whether upload-artifact
+          # flattened paths (v4+ default with a pattern ending in *.deb)
+          # or preserved the nested target/<triple>/debian/ structure.
+          files: |
+            ${{ env.BIN_NAME }}-*.tar.gz
+            **/*.deb
           draft: false
 
   homebrew-formula:

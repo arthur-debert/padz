@@ -37,3 +37,39 @@ anyhow = "1.0"
 assert_cmd = "2.0.16"
 predicates = "3.1.2"
 tempfile = "3.10.1"
+
+# cargo-deb configuration. Driven by `cargo deb -p padz` in CI.
+# Completions are generated at install time by the postinst maintainer
+# script (it invokes `padz completion --shell X print`) rather than
+# shipped as static assets, because clap_complete bakes the absolute
+# binary path into the script and we can't know /usr/bin/padz at build
+# time for a cross-compiled artifact.
+[package.metadata.deb]
+maintainer = "Arthur Debert <debert@gmail.com>"
+copyright = "2025-2026, Arthur Debert <debert@gmail.com>"
+license-file = ["../../LICENSE", "0"]
+extended-description = """
+padz is a scratch-pad / note-taking CLI that adapts to its context.
+Notes are scoped to the current project (via .padz/) or globally, with
+automatic discovery, todo tracking, tags, archive/restore, and import/
+export. Designed as a good Unix citizen: predictable output, pipes
+cleanly, and composes with standard tooling.
+"""
+section = "utility"
+priority = "optional"
+depends = "$auto"
+assets = [
+    # cargo-deb rewrites `target/release/` to `target/<triple>/release/`
+    # automatically when `--target` is passed (as CI does), so this path
+    # works for both native and cross-compiled builds.
+    ["target/release/padz", "usr/bin/", "755"],
+    ["../../README.md", "usr/share/doc/padz/README.md", "644"],
+    ["../../CHANGELOG.md", "usr/share/doc/padz/CHANGELOG.md", "644"],
+]
+maintainer-scripts = "debian/"
+
+# CI builds each architecture separately with --target, so cargo-deb
+# picks up the binary from target/<triple>/release/. The workspace
+# rewrite pattern handles the asset path override.
+[package.metadata.deb.variants.amd64]
+[package.metadata.deb.variants.arm64]
