@@ -276,9 +276,12 @@ jobs:
         uses: softprops/action-gh-release@v3
         with:
           tag_name: v${{ needs.prepare.outputs.version }}
+          # Recursive glob for .deb so this works whether upload-artifact
+          # flattened paths (v4+ default with a pattern ending in *.deb)
+          # or preserved the nested target/<triple>/debian/ structure.
           files: |
             ${{ env.BIN_NAME }}-*.tar.gz
-            *.deb
+            **/*.deb
           draft: false
 
   homebrew-formula:

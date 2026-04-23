@@ -76,22 +76,25 @@ resolve_version() {
         echo "$VERSION"
         return
     fi
-    # GitHub's /releases/latest 302-redirects to the newest published (non-draft)
-    # release. Following the redirect without downloading tells us the tag.
-    need_curl=
-    command -v curl >/dev/null 2>&1 || need_curl="1"
-    if [ -n "$need_curl" ]; then
-        # Fallback: parse the API JSON. jq would be cleaner but we avoid it
-        # to keep the installer's dependency set minimal.
-        download "https://api.github.com/repos/${REPO}/releases/latest" /tmp/padz-latest.json
-        tag=$(sed -n 's/.*"tag_name": *"\([^"]*\)".*/\1/p' /tmp/padz-latest.json | head -1)
-        rm -f /tmp/padz-latest.json
-    else
-        tag=$(curl -fsSLI -o /dev/null -w '%{url_effective}' \
-            "https://github.com/${REPO}/releases/latest" \
+    # GitHub's /releases/latest 302-redirects to /releases/tag/<tag>. We
+    # extract the tag from the redirect — no GitHub API calls (avoids
+    # unauthenticated rate limits).
+    url="https://github.com/${REPO}/releases/latest"
+    tag=""
+    if command -v curl >/dev/null 2>&1; then
+        tag=$(curl -fsSLI -o /dev/null -w '%{url_effective}' "$url" \
             | sed 's|.*/tag/||')
+    elif command -v wget >/dev/null 2>&1; then
+        # --max-redirect=0 makes wget print the Location header and exit
+        # non-zero (hence `|| true`); --server-response sends headers to
+        # stderr, which we capture.
+        tag=$(wget --max-redirect=0 --server-response --quiet -O /dev/null "$url" 2>&1 \
+            | awk 'tolower($1) == "location:" { print $2 }' \
+            | sed 's|.*/tag/||' \
+            | tr -d '\r' \
+            | head -1) || true
     fi
-    [ -n "$tag" ] || fatal "could not resolve latest release tag"
+    [ -n "$tag" ] || fatal "could not resolve latest release tag from $url"
     echo "$tag"
 }
 
@@ -124,7 +127,10 @@ main() {
 
     bin_dir="${PREFIX}/bin"
     mkdir -p "$bin_dir"
-    install -m 0755 "$bin_src" "${bin_dir}/${BIN_NAME}"
+    # cp + chmod rather than `install(1)`, which isn't in the base
+    # `need` checks and can be missing on minimal containers.
+    cp "$bin_src" "${bin_dir}/${BIN_NAME}"
+    chmod 0755 "${bin_dir}/${BIN_NAME}"
     info "installed ${bin_dir}/${BIN_NAME}"
 
     # Install shell completions if the binary supports it. padz's CLI is

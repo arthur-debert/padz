@@ -59,6 +59,9 @@ section = "utility"
 priority = "optional"
 depends = "$auto"
 assets = [
+    # cargo-deb rewrites `target/release/` to `target/<triple>/release/`
+    # automatically when `--target` is passed (as CI does), so this path
+    # works for both native and cross-compiled builds.
     ["target/release/padz", "usr/bin/", "755"],
     ["../../README.md", "usr/share/doc/padz/README.md", "644"],
     ["../../CHANGELOG.md", "usr/share/doc/padz/CHANGELOG.md", "644"],
