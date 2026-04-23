@@ -37,7 +37,7 @@ env:
   # Owner/repo of the tap. Leave blank or delete the `homebrew-formula`
   # job to disable brew distribution. Requires a `HOMEBREW_TAP_TOKEN`
   # secret — a PAT with contents:write scope on the tap repo.
-  HOMEBREW_TAP: arthur-debert/homebrew-padz
+  HOMEBREW_TAP: arthur-debert/homebrew-tools
   # Formula filename (without `.rb`). Usually equals BIN_NAME.
   HOMEBREW_FORMULA: padz
 
