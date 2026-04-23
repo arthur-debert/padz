@@ -83,14 +83,16 @@ jobs:
         env:
           VERSION: ${{ needs.prepare.outputs.version }}
         run: |
-          # Bumps every workspace member AND every intra-workspace dep pin
-          # in a single command — no per-project sed needed.
+          # Bumps every workspace member AND every intra-workspace dep pin,
+          # and syncs Cargo.lock — no separate `cargo update` needed (that
+          # could bump unrelated transitive deps within semver).
           cargo set-version --workspace "$VERSION"
-          cargo update -w
           echo "=== Resolved versions ==="
           cargo pkgid --workspace || true
 
       - name: Commit version bump
+        env:
+          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
         run: |
           if git diff --quiet; then
             echo "Workspace already at target version; skipping bump commit."
@@ -100,7 +102,7 @@ jobs:
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git add -u
           git commit -m "chore: bump version to ${{ needs.prepare.outputs.version }}"
-          git push origin HEAD:main
+          git push origin "HEAD:$DEFAULT_BRANCH"
 
       - name: Publish crates to crates.io
         env:
@@ -155,19 +157,19 @@ jobs:
         include:
           - target: aarch64-apple-darwin
             os: macos-latest
-            artifact-suffix: aarch64-apple-darwin
+            artifact_suffix: aarch64-apple-darwin
             cross: false
           - target: x86_64-apple-darwin
             os: macos-latest
-            artifact-suffix: x86_64-apple-darwin
+            artifact_suffix: x86_64-apple-darwin
             cross: false
           - target: x86_64-unknown-linux-gnu
             os: ubuntu-latest
-            artifact-suffix: x86_64-linux-gnu
+            artifact_suffix: x86_64-linux-gnu
             cross: false
           - target: aarch64-unknown-linux-gnu
             os: ubuntu-latest
-            artifact-suffix: aarch64-linux-gnu
+            artifact_suffix: aarch64-linux-gnu
             cross: true
     runs-on: ${{ matrix.os }}
     steps:
@@ -200,20 +202,25 @@ jobs:
 
       - name: Package binary
         run: |
-          ARTIFACT="${BIN_NAME}-${{ matrix.artifact-suffix }}"
+          ARTIFACT="${BIN_NAME}-${{ matrix.artifact_suffix }}"
           mkdir -p "dist/$ARTIFACT"
           cp "target/${{ matrix.target }}/release/$BIN_NAME" "dist/$ARTIFACT/"
-          # Bundle top-level docs if present — generic across cargo projects
-          for f in README.md CHANGELOG.md LICENSE LICENSE.md LICENSE-MIT LICENSE-APACHE; do
-            [ -f "$f" ] && cp "$f" "dist/$ARTIFACT/" || true
+          # Bundle top-level docs if present — generic across cargo projects.
+          # Case-insensitive glob via find so LICENSE.txt / License.md / COPYING
+          # variants all get picked up, without failing when nothing matches.
+          for f in README.md CHANGELOG.md; do
+            [ -f "$f" ] && cp "$f" "dist/$ARTIFACT/"
           done
+          find . -maxdepth 1 -type f \
+            \( -iname 'LICENSE*' -o -iname 'COPYING*' -o -iname 'NOTICE*' \) \
+            -exec cp {} "dist/$ARTIFACT/" \;
           cd dist
           tar -czvf "../${ARTIFACT}.tar.gz" "$ARTIFACT"
 
       - uses: actions/upload-artifact@v5
         with:
-          name: ${{ env.BIN_NAME }}-${{ matrix.artifact-suffix }}
-          path: ${{ env.BIN_NAME }}-${{ matrix.artifact-suffix }}.tar.gz
+          name: ${{ env.BIN_NAME }}-${{ matrix.artifact_suffix }}
+          path: ${{ env.BIN_NAME }}-${{ matrix.artifact_suffix }}.tar.gz
 
   finalize:
     needs: [prepare, release, build-binaries, publish]
