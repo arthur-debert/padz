@@ -6,6 +6,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [1.4.0] - 2026-04-23
+
+## [1.4.0] - 2026-04-23
+
 - **Added**
   - **`padz export --json`** — Full-fidelity archive format. Produces a `.tar.gz` that preserves all metadata (timestamps, pinning, delete protection, status, tags, parent relationships) alongside the raw pad files. Round-trippable: `padz import` auto-detects the archive and restores pads + their referenced tag registry entries into the destination store. Import is defensive per metadata field — unknown or malformed fields become warnings and never block the pad from landing. Parent IDs that aren't present in the archive are orphaned to root (hierarchy is only preserved when the full subtree is exported). Conflicts with `--single-file`.
   - **`padz export --with-metadata`** — Embeds per-pad metadata inline in each exported file, using the format-native dialect: YAML frontmatter with `padz.*` keys for `.md`, top-of-document `:: padz.KEY :: VALUE` annotations for `.lex`. Files use each pad's native extension instead of being normalized to `.txt`. Pads in `.txt` format are exported without metadata (txt has no metadata format) and surfaced in a trailing warning. `padz import` auto-detects the metadata block from the file extension, applies it with the same defensive per-field machinery as `--json`, and strips the metadata from the stored content. Conflicts with `--json` and `--single-file`.
@@ -408,7 +412,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
   - Demo flow verification script
   - Live testing shell
 
-[Unreleased]: https://github.com/arthur-debert/padz/compare/v1.3.0...HEAD
+[Unreleased]: https://github.com/arthur-debert/padz/compare/v1.4.0...HEAD
+[1.4.0]: https://github.com/arthur-debert/padz/compare/v1.3.0...v1.4.0
+[1.4.0]: https://github.com/arthur-debert/padz/compare/v1.3.0...v1.4.0
 [1.3.0]: https://github.com/arthur-debert/padz/compare/v1.2.0...v1.3.0
 [1.3.0]: https://github.com/arthur-debert/padz/compare/v1.2.0...v1.3.0
 [1.2.0]: https://github.com/arthur-debert/padz/compare/v1.1.1...v1.2.0
