@@ -6,6 +6,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+- **Added**
+  - **Debian/Ubuntu packages** — every release now produces `.deb` packages for `amd64` and `arm64` and attaches them to the GitHub Release. Install with `sudo dpkg -i padz_<version>-1_<arch>.deb` (or via `apt install ./padz_<version>-1_<arch>.deb` for dependency resolution). The package's postinst script generates bash/zsh/fish completion scripts from the installed binary into `/usr/share/bash-completion/completions/`, `/usr/share/zsh/site-functions/`, and `/usr/share/fish/vendor_completions.d/`, so completions work system-wide for all users with no extra setup.
+  - **`install.sh` one-liner installer** — `curl -fsSL https://raw.githubusercontent.com/arthur-debert/padz/main/install.sh | sh` detects macOS/Linux + arm/x86, downloads the matching release tarball, installs `padz` into `~/.local/bin/`, and runs `padz completion install` automatically. Honors `VERSION=vX.Y.Z` and `PREFIX=/usr/local` overrides for pinned/system installs.
+
 ## [1.4.1] - 2026-04-23
 
 ## [1.4.1] - 2026-04-23

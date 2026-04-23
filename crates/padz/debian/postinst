@@ -1,0 +1,31 @@
+#!/bin/sh
+# Generate shell completion scripts into system-wide paths after install.
+#
+# We invoke the freshly-installed `padz completion --shell X print` rather
+# than shipping static scripts because clap_complete embeds the absolute
+# binary path into the completion registration — the right path (/usr/bin/padz
+# in this package) is only known at install time.
+set -e
+
+if [ "$1" != "configure" ]; then
+    exit 0
+fi
+
+PADZ=/usr/bin/padz
+[ -x "$PADZ" ] || exit 0
+
+install_completion() {
+    shell="$1"
+    dest="$2"
+    dir=$(dirname "$dest")
+    mkdir -p "$dir"
+    if ! "$PADZ" completion --shell "$shell" print > "$dest" 2>/dev/null; then
+        rm -f "$dest"
+    fi
+}
+
+install_completion bash /usr/share/bash-completion/completions/padz
+install_completion zsh  /usr/share/zsh/site-functions/_padz
+install_completion fish /usr/share/fish/vendor_completions.d/padz.fish
+
+exit 0

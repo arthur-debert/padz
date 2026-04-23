@@ -10,6 +10,22 @@ Sports a smart-looking UI with dark/light mode awareness.
 
 ## Installation
 
+**Homebrew** (macOS, Linux):
+
+```bash
+brew install arthur-debert/tools/padz
+```
+
+**One-line installer** (macOS, Linux — downloads the latest release tarball to `~/.local/bin/`):
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/arthur-debert/padz/main/install.sh | sh
+```
+
+**Debian / Ubuntu**: grab the `.deb` for your architecture from the [latest release](https://github.com/arthur-debert/padz/releases/latest) and install with `sudo apt install ./padz_<version>-1_<arch>.deb`.
+
+**Cargo**:
+
 ```bash
 cargo install padz
 ```
