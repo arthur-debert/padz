@@ -82,12 +82,14 @@ pub mod archive;
 pub mod create;
 pub mod delete;
 pub mod doctor;
-pub mod export;
 pub mod get;
 pub mod helpers;
-pub mod import;
 pub mod init;
+pub mod io;
 pub mod move_pads;
+
+// Preserve pre-split paths: `commands::export`, `commands::import`.
+pub use io::{export, import};
 
 pub mod inline_metadata;
 pub mod metadata_apply;
