@@ -6,6 +6,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [1.5.0] - 2026-04-24
+
+## [1.5.0] - 2026-04-24
+
 - **Added**
   - **Configurable list ordering** — New `ordering` config key selects the sort used for Display Indexes. Default is `created_at` (unchanged: newest-created first). Set `ordering = "updated_at"` (or `padz config set ordering updated_at`) to list most-recently-modified first. Under `updated_at`, a parent's effective sort key is the maximum `updated_at` across its subtree, computed at index time — so editing a deeply nested child surfaces its ancestor to the top instead of leaving it buried, without mutating the ancestor's stored `updated_at` (which is reserved as the file-mtime proxy used by store reconciliation). Sibling sort uses deterministic tie-breakers (timestamp → other timestamp → UUID) so Display Indexes don't jitter across runs when timestamps match. Display Indexes are not comparable across ordering switches — the DI for pad "3" under `created_at` is a different pad than "3" under `updated_at` — which is expected for a shell tool where indexes reflect the current view.
 
@@ -439,7 +443,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
   - Demo flow verification script
   - Live testing shell
 
-[Unreleased]: https://github.com/arthur-debert/padz/compare/v1.4.2...HEAD
+[Unreleased]: https://github.com/arthur-debert/padz/compare/v1.5.0...HEAD
+[1.5.0]: https://github.com/arthur-debert/padz/compare/v1.4.2...v1.5.0
+[1.5.0]: https://github.com/arthur-debert/padz/compare/v1.4.2...v1.5.0
 [1.4.2]: https://github.com/arthur-debert/padz/compare/v1.4.1...v1.4.2
 [1.4.2]: https://github.com/arthur-debert/padz/compare/v1.4.1...v1.4.2
 [1.4.1]: https://github.com/arthur-debert/padz/compare/v1.4.0...v1.4.1
