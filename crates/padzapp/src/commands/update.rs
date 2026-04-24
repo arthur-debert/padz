@@ -43,7 +43,11 @@ pub fn run<S: DataStore>(store: &mut S, scope: Scope, updates: &[PadUpdate]) -> 
         let parent_id = pad.metadata.parent_id;
         store.save_pad(&pad, scope, Bucket::Active)?;
 
-        // Propagate status change to parent
+        // Propagate status change to parent. The `updated_at` field on
+        // ancestors is intentionally NOT bumped here — that field is the
+        // content-mtime proxy used by store reconciliation. Subtree activity
+        // is computed at index time via `effective_updated_at`, so a nested
+        // edit still surfaces the parent under `ordering = updated_at`.
         crate::todos::propagate_status_change(store, scope, parent_id)?;
 
         // Fix: Use display_index directly as it's already formatted for display
@@ -99,7 +103,11 @@ pub fn run_from_content<S: DataStore>(
         let parent_id = pad.metadata.parent_id;
         store.save_pad(&pad, scope, Bucket::Active)?;
 
-        // Propagate status change to parent
+        // Propagate status change to parent. The `updated_at` field on
+        // ancestors is intentionally NOT bumped here — that field is the
+        // content-mtime proxy used by store reconciliation. Subtree activity
+        // is computed at index time via `effective_updated_at`, so a nested
+        // edit still surfaces the parent under `ordering = updated_at`.
         crate::todos::propagate_status_change(store, scope, parent_id)?;
 
         result.add_message(CmdMessage::success(format!(

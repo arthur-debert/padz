@@ -20,7 +20,8 @@
 //! same pad regardless of the current view.
 //!
 //! **Ordering Logic**:
-//! - All pads sorted by `created_at` descending (Newest = 1)
+//! - Active/archived/deleted pads sorted by the configured [`OrderingKey`] descending
+//!   (either `created_at` or `updated_at`; newest = 1)
 //! - Pinned pads get an additional `p1`, `p2`... index (appear in both pinned and regular lists)
 //! - Deleted pads: Separate bucket `d1`, `d2`...
 //!
@@ -44,11 +45,39 @@
 //!
 //! For input resolution (mapping indexes to UUIDs), see the [`crate::api`] module.
 
+use crate::config::OrderingKey;
 use crate::model::Pad;
 use serde::Serialize;
+use std::cell::Cell;
 use std::collections::HashMap;
 use std::str::FromStr;
 use uuid::Uuid;
+
+thread_local! {
+    /// The currently active ordering key for this thread. Set once by the CLI
+    /// entry point (or by tests that need non-default ordering) and read by
+    /// [`current_ordering_key`] whenever an ordering decision is made without
+    /// an explicit argument (e.g. inside [`crate::commands::helpers::indexed_pads`]).
+    ///
+    /// The choice of a thread-local (rather than a global/`OnceLock`) is
+    /// deliberate: the test harness reuses threads across tests, but
+    /// a) every test that cares about ordering sets this explicitly, and
+    /// b) callers that want a guaranteed value pass [`OrderingKey`] directly to
+    ///    [`index_pads`]. This cell only affects the implicit default path.
+    static CURRENT_ORDERING: Cell<OrderingKey> = const { Cell::new(OrderingKey::CreatedAt) };
+}
+
+/// Set the current thread's ordering key. Called once from the CLI entry point
+/// after config load. Tests can call this to exercise non-default orderings.
+pub fn set_ordering_key(key: OrderingKey) {
+    CURRENT_ORDERING.with(|c| c.set(key));
+}
+
+/// Read the current thread's ordering key. Defaults to [`OrderingKey::CreatedAt`]
+/// when no one has called [`set_ordering_key`] on this thread.
+pub fn current_ordering_key() -> OrderingKey {
+    CURRENT_ORDERING.with(|c| c.get())
+}
 
 /// A segment of text in a search match, either plain text or a matched term.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -153,7 +182,14 @@ struct TaggedPad {
 ///
 /// The returned list is ordered: pinned, regular, archived, deleted.
 /// Each entry's `children` vector follows the same ordering recursively.
-pub fn index_pads(active: Vec<Pad>, archived: Vec<Pad>, deleted: Vec<Pad>) -> Vec<DisplayPad> {
+///
+/// `ordering` controls the sort key applied within each bucket and at each nesting level.
+pub fn index_pads(
+    active: Vec<Pad>,
+    archived: Vec<Pad>,
+    deleted: Vec<Pad>,
+    ordering: OrderingKey,
+) -> Vec<DisplayPad> {
     // Tag each pad with its bucket
     let mut all_tagged: Vec<TaggedPad> = Vec::new();
     for pad in active {
@@ -186,7 +222,32 @@ pub fn index_pads(active: Vec<Pad>, archived: Vec<Pad>, deleted: Vec<Pad>) -> Ve
 
     // Process roots (parent_id = None), recursively indexing their children
     let root_pads = parent_map.remove(&None).unwrap_or_default();
-    index_level(root_pads, &parent_map)
+    index_level(root_pads, &parent_map, ordering)
+}
+
+/// Maximum `updated_at` across a pad's subtree, used as the effective sort key
+/// under [`OrderingKey::UpdatedAt`].
+///
+/// This is computed at index time rather than persisted on ancestor pads:
+/// `metadata.updated_at` is reserved as the file-mtime proxy used by store
+/// reconciliation, and writing a bubbled timestamp onto an ancestor at edit
+/// time risks masking external edits that haven't been reconciled yet.
+fn effective_updated_at(
+    id: Uuid,
+    parent_map: &HashMap<Option<Uuid>, Vec<TaggedPad>>,
+) -> chrono::DateTime<chrono::Utc> {
+    let mut max = chrono::DateTime::<chrono::Utc>::MIN_UTC;
+    if let Some(children) = parent_map.get(&Some(id)) {
+        for child in children {
+            let child_self = child.pad.metadata.updated_at;
+            let child_subtree = effective_updated_at(child.pad.metadata.id, parent_map);
+            let m = child_self.max(child_subtree);
+            if m > max {
+                max = m;
+            }
+        }
+    }
+    max
 }
 
 /// Indexes a single level of the tree (siblings with the same parent).
@@ -199,12 +260,36 @@ pub fn index_pads(active: Vec<Pad>, archived: Vec<Pad>, deleted: Vec<Pad>) -> Ve
 ///
 /// Note: Pinned active pads get entries in BOTH the pinned and regular passes (dual indexing).
 /// This is recursive—each pad's children are indexed the same way.
+///
+/// Under [`OrderingKey::UpdatedAt`], a pad's effective sort key is the maximum
+/// `updated_at` across the pad and its descendants — computed lazily here, never
+/// persisted to the pad's stored `updated_at`. That field is reserved as the
+/// content-mtime proxy used by [`crate::store`] reconciliation; mutating it on
+/// ancestors at write time would mask not-yet-synced external edits.
 fn index_level(
     mut pads: Vec<TaggedPad>,
     parent_map: &HashMap<Option<Uuid>, Vec<TaggedPad>>,
+    ordering: OrderingKey,
 ) -> Vec<DisplayPad> {
-    // Sort by created_at descending (newest first) within this level
-    pads.sort_by(|a, b| b.pad.metadata.created_at.cmp(&a.pad.metadata.created_at));
+    // Sort descending (newest first) within this level, keyed per config.
+    // Tie-breakers (in order) keep DI assignment deterministic when timestamps match,
+    // which is common under UpdatedAt because nested edits propagate identical values.
+    pads.sort_by(|a, b| match ordering {
+        OrderingKey::CreatedAt => b
+            .pad
+            .metadata
+            .created_at
+            .cmp(&a.pad.metadata.created_at)
+            .then_with(|| b.pad.metadata.updated_at.cmp(&a.pad.metadata.updated_at))
+            .then_with(|| a.pad.metadata.id.cmp(&b.pad.metadata.id)),
+        OrderingKey::UpdatedAt => effective_updated_at(b.pad.metadata.id, parent_map)
+            .max(b.pad.metadata.updated_at)
+            .cmp(
+                &effective_updated_at(a.pad.metadata.id, parent_map).max(a.pad.metadata.updated_at),
+            )
+            .then_with(|| b.pad.metadata.created_at.cmp(&a.pad.metadata.created_at))
+            .then_with(|| a.pad.metadata.id.cmp(&b.pad.metadata.id)),
+    });
 
     let mut results = Vec::new();
 
@@ -216,7 +301,7 @@ fn index_level(
             .unwrap_or_default();
 
         // Recurse for children
-        let indexed_children = index_level(children, parent_map);
+        let indexed_children = index_level(children, parent_map, ordering);
 
         results.push(DisplayPad {
             pad: tagged.pad,
@@ -359,7 +444,7 @@ mod tests {
 
         let active = vec![p1, p2, p4];
         let deleted = vec![p3];
-        let indexed = index_pads(active, vec![], deleted);
+        let indexed = index_pads(active, vec![], deleted, OrderingKey::CreatedAt);
 
         // With the canonical indexing (newest first), pinned pads appear in BOTH
         // the pinned list AND the regular list.
@@ -407,7 +492,7 @@ mod tests {
         let p2 = make_pad("Note B", true); // pinned
         let p3 = make_pad("Note C", false);
 
-        let indexed = index_pads(vec![p1, p2, p3], vec![], vec![]);
+        let indexed = index_pads(vec![p1, p2, p3], vec![], vec![], OrderingKey::CreatedAt);
 
         // Creation order: Note A, Note B, Note C
         // Reverse chronological: Note C (1), Note B (2), Note A (3)
@@ -619,7 +704,12 @@ mod tests {
         child.metadata.parent_id = Some(root.metadata.id);
         grandchild.metadata.parent_id = Some(child.metadata.id);
 
-        let indexed = index_pads(vec![root, child, grandchild], vec![], vec![]);
+        let indexed = index_pads(
+            vec![root, child, grandchild],
+            vec![],
+            vec![],
+            OrderingKey::CreatedAt,
+        );
 
         // Should have 1 root
         assert_eq!(indexed.len(), 1);
@@ -651,7 +741,7 @@ mod tests {
 
         child.metadata.parent_id = Some(root.metadata.id);
 
-        let indexed = index_pads(vec![root, child], vec![], vec![]);
+        let indexed = index_pads(vec![root, child], vec![], vec![], OrderingKey::CreatedAt);
 
         // Root's children should have 2 entries for the pinned child
         assert_eq!(indexed[0].children.len(), 2);
@@ -685,7 +775,7 @@ mod tests {
         l3.metadata.parent_id = Some(l2.metadata.id);
         l4.metadata.parent_id = Some(l3.metadata.id);
 
-        let indexed = index_pads(vec![l1, l2, l3, l4], vec![], vec![]);
+        let indexed = index_pads(vec![l1, l2, l3, l4], vec![], vec![], OrderingKey::CreatedAt);
 
         // Navigate to L4: indexed[0].children[0].children[0].children[0]
         assert_eq!(indexed[0].pad.metadata.title, "Level 1");
@@ -721,7 +811,7 @@ mod tests {
         let p2 = make_pad("Archived 1", false);
         let p3 = make_pad("Archived 2", false);
 
-        let indexed = index_pads(vec![p1], vec![p2, p3], vec![]);
+        let indexed = index_pads(vec![p1], vec![p2, p3], vec![], OrderingKey::CreatedAt);
 
         let archived_entries: Vec<_> = indexed
             .iter()
@@ -882,7 +972,12 @@ mod tests {
         let archived = make_pad("Archived", false);
         let deleted = make_pad("Deleted", false);
 
-        let indexed = index_pads(vec![active], vec![archived], vec![deleted]);
+        let indexed = index_pads(
+            vec![active],
+            vec![archived],
+            vec![deleted],
+            OrderingKey::CreatedAt,
+        );
 
         assert_eq!(indexed.len(), 3);
 
@@ -895,5 +990,193 @@ mod tests {
         assert!(indexed
             .iter()
             .any(|dp| matches!(dp.index, DisplayIndex::Deleted(_))));
+    }
+
+    // ==================== Ordering key tests ====================
+
+    /// Build a pad with explicit created_at/updated_at for ordering tests.
+    fn pad_with_times(
+        title: &str,
+        created_at: chrono::DateTime<chrono::Utc>,
+        updated_at: chrono::DateTime<chrono::Utc>,
+    ) -> Pad {
+        let mut p = make_pad(title, false);
+        p.metadata.created_at = created_at;
+        p.metadata.updated_at = updated_at;
+        p
+    }
+
+    #[test]
+    fn test_ordering_created_at_uses_creation_time() {
+        use chrono::TimeZone;
+        let t1 = chrono::Utc.with_ymd_and_hms(2024, 1, 1, 0, 0, 0).unwrap();
+        let t2 = chrono::Utc.with_ymd_and_hms(2024, 1, 2, 0, 0, 0).unwrap();
+        let t3 = chrono::Utc.with_ymd_and_hms(2024, 1, 3, 0, 0, 0).unwrap();
+        // A was created first, B second, C third. But A was modified most recently.
+        let a = pad_with_times("A", t1, t3);
+        let b = pad_with_times("B", t2, t2);
+        let c = pad_with_times("C", t3, t1);
+
+        let indexed = index_pads(vec![a, b, c], vec![], vec![], OrderingKey::CreatedAt);
+        let regulars: Vec<&str> = indexed
+            .iter()
+            .filter_map(|dp| match dp.index {
+                DisplayIndex::Regular(_) => Some(dp.pad.metadata.title.as_str()),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(regulars, vec!["C", "B", "A"]);
+    }
+
+    #[test]
+    fn test_ordering_updated_at_uses_modification_time() {
+        use chrono::TimeZone;
+        let t1 = chrono::Utc.with_ymd_and_hms(2024, 1, 1, 0, 0, 0).unwrap();
+        let t2 = chrono::Utc.with_ymd_and_hms(2024, 1, 2, 0, 0, 0).unwrap();
+        let t3 = chrono::Utc.with_ymd_and_hms(2024, 1, 3, 0, 0, 0).unwrap();
+        // Same setup as above: A created first but modified last.
+        let a = pad_with_times("A", t1, t3);
+        let b = pad_with_times("B", t2, t2);
+        let c = pad_with_times("C", t3, t1);
+
+        let indexed = index_pads(vec![a, b, c], vec![], vec![], OrderingKey::UpdatedAt);
+        let regulars: Vec<&str> = indexed
+            .iter()
+            .filter_map(|dp| match dp.index {
+                DisplayIndex::Regular(_) => Some(dp.pad.metadata.title.as_str()),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(regulars, vec!["A", "B", "C"]);
+    }
+
+    #[test]
+    fn test_ordering_updated_at_surfaces_parent_via_descendant_edit() {
+        // Setup: two roots. RootA has an old updated_at but a child that's recent.
+        // RootB has a more recent updated_at than RootA itself, but older than A's child.
+        // Under UpdatedAt ordering, RootA should still lead because its subtree max
+        // (the child's updated_at) wins — without ever mutating RootA's stored updated_at.
+        use chrono::TimeZone;
+        let t_old = chrono::Utc.with_ymd_and_hms(2024, 1, 1, 0, 0, 0).unwrap();
+        let t_mid = chrono::Utc.with_ymd_and_hms(2024, 1, 5, 0, 0, 0).unwrap();
+        let t_new = chrono::Utc.with_ymd_and_hms(2024, 1, 10, 0, 0, 0).unwrap();
+
+        let mut root_a = make_pad("Root A", false);
+        root_a.metadata.created_at = t_old;
+        root_a.metadata.updated_at = t_old;
+
+        let mut child_of_a = make_pad("Child of A", false);
+        child_of_a.metadata.created_at = t_old;
+        child_of_a.metadata.updated_at = t_new; // most recent overall
+        child_of_a.metadata.parent_id = Some(root_a.metadata.id);
+
+        let mut root_b = make_pad("Root B", false);
+        root_b.metadata.created_at = t_mid;
+        root_b.metadata.updated_at = t_mid;
+
+        let indexed = index_pads(
+            vec![root_a.clone(), child_of_a, root_b],
+            vec![],
+            vec![],
+            OrderingKey::UpdatedAt,
+        );
+
+        let regulars: Vec<&str> = indexed
+            .iter()
+            .filter_map(|dp| match dp.index {
+                DisplayIndex::Regular(_) => Some(dp.pad.metadata.title.as_str()),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(
+            regulars,
+            vec!["Root A", "Root B"],
+            "Root A should lead because its subtree max wins, even though its own updated_at is older than Root B's"
+        );
+
+        // And critically: Root A's stored updated_at must not have been mutated.
+        let root_a_in_results = indexed
+            .iter()
+            .find(|dp| dp.pad.metadata.title == "Root A")
+            .unwrap();
+        assert_eq!(
+            root_a_in_results.pad.metadata.updated_at, t_old,
+            "stored updated_at must remain the pad's own content mtime"
+        );
+    }
+
+    #[test]
+    fn test_ordering_tie_break_is_deterministic() {
+        // Two pads with identical timestamps must always sort the same way.
+        // We use UUID-based tie-breaking, so the pad with the lexicographically
+        // smaller UUID wins regardless of input order.
+        use chrono::TimeZone;
+        let t = chrono::Utc.with_ymd_and_hms(2024, 6, 1, 0, 0, 0).unwrap();
+        let id_low = Uuid::parse_str("00000000-0000-0000-0000-000000000001").unwrap();
+        let id_hi = Uuid::parse_str("ffffffff-ffff-ffff-ffff-fffffffffffe").unwrap();
+
+        let mut pad_low = Pad::new("Low".to_string(), "".to_string());
+        pad_low.metadata.id = id_low;
+        pad_low.metadata.created_at = t;
+        pad_low.metadata.updated_at = t;
+
+        let mut pad_hi = Pad::new("Hi".to_string(), "".to_string());
+        pad_hi.metadata.id = id_hi;
+        pad_hi.metadata.created_at = t;
+        pad_hi.metadata.updated_at = t;
+
+        // Try both input orders — output should be stable.
+        for order in [
+            vec![pad_low.clone(), pad_hi.clone()],
+            vec![pad_hi.clone(), pad_low.clone()],
+        ] {
+            let indexed = index_pads(order, vec![], vec![], OrderingKey::CreatedAt);
+            let titles: Vec<&str> = indexed
+                .iter()
+                .filter_map(|dp| match dp.index {
+                    DisplayIndex::Regular(_) => Some(dp.pad.metadata.title.as_str()),
+                    _ => None,
+                })
+                .collect();
+            assert_eq!(
+                titles,
+                vec!["Low", "Hi"],
+                "tie-break should be deterministic"
+            );
+        }
+    }
+
+    #[test]
+    fn test_ordering_applies_recursively_to_children() {
+        use chrono::TimeZone;
+        let t1 = chrono::Utc.with_ymd_and_hms(2024, 1, 1, 0, 0, 0).unwrap();
+        let t2 = chrono::Utc.with_ymd_and_hms(2024, 1, 2, 0, 0, 0).unwrap();
+        let t3 = chrono::Utc.with_ymd_and_hms(2024, 1, 3, 0, 0, 0).unwrap();
+
+        let parent = pad_with_times("Parent", t1, t1);
+        let mut c_oldest_update = pad_with_times("Child A", t3, t1);
+        let mut c_middle_update = pad_with_times("Child B", t2, t2);
+        let mut c_newest_update = pad_with_times("Child C", t1, t3);
+        c_oldest_update.metadata.parent_id = Some(parent.metadata.id);
+        c_middle_update.metadata.parent_id = Some(parent.metadata.id);
+        c_newest_update.metadata.parent_id = Some(parent.metadata.id);
+
+        let indexed = index_pads(
+            vec![parent, c_oldest_update, c_middle_update, c_newest_update],
+            vec![],
+            vec![],
+            OrderingKey::UpdatedAt,
+        );
+
+        let children: Vec<&str> = indexed[0]
+            .children
+            .iter()
+            .filter_map(|dp| match dp.index {
+                DisplayIndex::Regular(_) => Some(dp.pad.metadata.title.as_str()),
+                _ => None,
+            })
+            .collect();
+        // Child C has newest updated_at, then B, then A.
+        assert_eq!(children, vec!["Child C", "Child B", "Child A"]);
     }
 }

@@ -1,5 +1,5 @@
 use crate::error::{PadzError, Result};
-use crate::index::{index_pads, DisplayIndex, DisplayPad};
+use crate::index::{current_ordering_key, index_pads, DisplayIndex, DisplayPad};
 use crate::model::Scope;
 use crate::store::Bucket;
 use crate::store::DataStore;
@@ -10,7 +10,12 @@ pub fn indexed_pads<S: DataStore>(store: &S, scope: Scope) -> Result<Vec<Display
     let archived_pads = store.list_pads(scope, Bucket::Archived)?;
     let deleted_pads = store.list_pads(scope, Bucket::Deleted)?;
 
-    Ok(index_pads(active_pads, archived_pads, deleted_pads))
+    Ok(index_pads(
+        active_pads,
+        archived_pads,
+        deleted_pads,
+        current_ordering_key(),
+    ))
 }
 
 use crate::index::PadSelector;
