@@ -125,6 +125,36 @@ pub fn propagate_status_change<S: DataStore>(
     Ok(())
 }
 
+/// Bubbles `updated_at` upward from a child pad so the parent chain reflects
+/// the most recent modification.
+///
+/// Used when a pad's content is edited so that, under `ordering = updated_at`,
+/// a nested edit surfaces the ancestor to the top of the list instead of
+/// leaving it buried. Unlike [`propagate_status_change`] this does not read
+/// children; it simply stamps `chrono::Utc::now()` onto each ancestor and
+/// walks up. Stops at the root, at a missing parent, or at a deleted parent.
+pub fn propagate_modification<S: DataStore>(
+    store: &mut S,
+    scope: Scope,
+    child_parent_id: Option<Uuid>,
+) -> Result<()> {
+    let mut current_parent_id = child_parent_id;
+    let now = chrono::Utc::now();
+
+    while let Some(parent_id) = current_parent_id {
+        let mut parent_pad = match store.get_pad(&parent_id, scope, Bucket::Active) {
+            Ok(p) => p,
+            Err(_) => break,
+        };
+
+        parent_pad.metadata.updated_at = now;
+        store.save_pad(&parent_pad, scope, Bucket::Active)?;
+        current_parent_id = parent_pad.metadata.parent_id;
+    }
+
+    Ok(())
+}
+
 /// Calculates the status of a parent based on its children.
 fn calculate_status(children: &[&crate::model::Pad]) -> TodoStatus {
     let all_done = children
@@ -296,6 +326,70 @@ mod tests {
             .get_pad(&parent_id, Scope::Project, Bucket::Active)
             .unwrap();
         assert_eq!(updated_parent.metadata.status, TodoStatus::Done);
+    }
+
+    #[test]
+    fn test_propagate_modification_bubbles_timestamp() {
+        use chrono::TimeZone;
+
+        let mut store = BucketedStore::new(
+            MemBackend::new(),
+            MemBackend::new(),
+            MemBackend::new(),
+            MemBackend::new(),
+        );
+        let ancient = chrono::Utc.with_ymd_and_hms(2000, 1, 1, 0, 0, 0).unwrap();
+        let mut grandparent = make_pad("GP", TodoStatus::Planned);
+        let mut parent = make_pad("Parent", TodoStatus::Planned);
+        let mut child = make_pad("Child", TodoStatus::Planned);
+        grandparent.metadata.updated_at = ancient;
+        parent.metadata.updated_at = ancient;
+        child.metadata.updated_at = ancient;
+
+        let gp_id = grandparent.metadata.id;
+        let p_id = parent.metadata.id;
+        parent.metadata.parent_id = Some(gp_id);
+        child.metadata.parent_id = Some(p_id);
+
+        store
+            .save_pad(&grandparent, Scope::Project, Bucket::Active)
+            .unwrap();
+        store
+            .save_pad(&parent, Scope::Project, Bucket::Active)
+            .unwrap();
+        store
+            .save_pad(&child, Scope::Project, Bucket::Active)
+            .unwrap();
+
+        propagate_modification(&mut store, Scope::Project, Some(p_id)).unwrap();
+
+        let updated_parent = store
+            .get_pad(&p_id, Scope::Project, Bucket::Active)
+            .unwrap();
+        let updated_gp = store
+            .get_pad(&gp_id, Scope::Project, Bucket::Active)
+            .unwrap();
+        assert!(
+            updated_parent.metadata.updated_at > ancient,
+            "parent updated_at should have bubbled forward"
+        );
+        assert!(
+            updated_gp.metadata.updated_at > ancient,
+            "grandparent updated_at should have bubbled forward"
+        );
+    }
+
+    #[test]
+    fn test_propagate_modification_stops_at_missing_parent() {
+        let mut store = BucketedStore::new(
+            MemBackend::new(),
+            MemBackend::new(),
+            MemBackend::new(),
+            MemBackend::new(),
+        );
+        // parent_id points to a nonexistent uuid — must not panic or loop.
+        let result = propagate_modification(&mut store, Scope::Project, Some(Uuid::new_v4()));
+        assert!(result.is_ok());
     }
 
     #[test]

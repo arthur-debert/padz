@@ -363,6 +363,8 @@ pub fn initialize(
         .strict(false)
         .load()
         .unwrap_or_default();
+    // Publish ordering preference to this thread so indexed_pads picks it up.
+    crate::index::set_ordering_key(config.ordering);
     let format_ext = config.format_ext();
 
     // Migrate legacy flat layout to bucketed layout (if needed)

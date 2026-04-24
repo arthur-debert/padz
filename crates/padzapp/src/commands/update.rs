@@ -45,6 +45,9 @@ pub fn run<S: DataStore>(store: &mut S, scope: Scope, updates: &[PadUpdate]) -> 
 
         // Propagate status change to parent
         crate::todos::propagate_status_change(store, scope, parent_id)?;
+        // Bubble the modification timestamp up so ancestors surface when
+        // listings sort by `updated_at`.
+        crate::todos::propagate_modification(store, scope, parent_id)?;
 
         // Fix: Use display_index directly as it's already formatted for display
         result.add_message(CmdMessage::success(format!(
@@ -101,6 +104,9 @@ pub fn run_from_content<S: DataStore>(
 
         // Propagate status change to parent
         crate::todos::propagate_status_change(store, scope, parent_id)?;
+        // Bubble the modification timestamp up so ancestors surface when
+        // listings sort by `updated_at`.
+        crate::todos::propagate_modification(store, scope, parent_id)?;
 
         result.add_message(CmdMessage::success(format!(
             "Updated ({}): {}",

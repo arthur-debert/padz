@@ -6,6 +6,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+- **Added**
+  - **Configurable list ordering** — New `ordering` config key selects the sort used for Display Indexes. Default is `created_at` (unchanged: newest-created first). Set `ordering = "updated_at"` (or `padz config set ordering updated_at`) to list most-recently-modified first. A nested edit now bubbles `updated_at` up the parent chain, so editing a deeply nested child surfaces its ancestor to the top under `updated_at` ordering instead of leaving it buried. Display Indexes are not comparable across ordering switches — the DI for pad "3" under `created_at` is a different pad than "3" under `updated_at` — which is expected for a shell tool where indexes reflect the current view.
+
 ## [1.4.2] - 2026-04-23
 
 ## [1.4.2] - 2026-04-23

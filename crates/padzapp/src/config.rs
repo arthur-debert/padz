@@ -18,6 +18,7 @@
 //! | `format` | `txt` | Format for new pad files (e.g., `md`, `txt`, `markdown`, `text`) |
 //! | `import_extensions` | `["md", "txt", "text", "lex"]` | Extensions for `padz import` |
 //! | `mode` | `notes` | UI mode: `notes` (clean) or `todos` (status icons, quick-create) |
+//! | `ordering` | `created_at` | Sort key for listings: `created_at` or `updated_at` |
 //!
 //! ## Extension Convention
 //!
@@ -65,6 +66,31 @@ impl std::fmt::Display for PadzMode {
     }
 }
 
+/// Sort key used when assigning Display Indexes to pads.
+///
+/// - **CreatedAt**: Newest-created first. Stable — a pad's index only changes when pads
+///   are added, removed, or reordered by pinning.
+/// - **UpdatedAt**: Most-recently-modified first. A pad bubbles to the top when its content
+///   changes or when one of its descendants changes (see `propagate_modification`).
+///
+/// Display Indexes are not comparable across different ordering keys.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum OrderingKey {
+    #[default]
+    CreatedAt,
+    UpdatedAt,
+}
+
+impl std::fmt::Display for OrderingKey {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            OrderingKey::CreatedAt => write!(f, "created_at"),
+            OrderingKey::UpdatedAt => write!(f, "updated_at"),
+        }
+    }
+}
+
 fn default_import_ext() -> Vec<String> {
     vec![
         "md".to_string(),
@@ -105,6 +131,11 @@ pub struct PadzConfig {
     #[config(default = "notes")]
     #[serde(default)]
     pub mode: PadzMode,
+
+    /// Sort key for list views: "created_at" (default) or "updated_at".
+    #[config(default = "created_at")]
+    #[serde(default)]
+    pub ordering: OrderingKey,
 }
 
 impl Default for PadzConfig {
@@ -113,6 +144,7 @@ impl Default for PadzConfig {
             format: "txt".to_string(),
             import_extensions: None,
             mode: PadzMode::default(),
+            ordering: OrderingKey::default(),
         }
     }
 }
@@ -287,5 +319,51 @@ mod tests {
     fn test_mode_display() {
         assert_eq!(PadzMode::Notes.to_string(), "notes");
         assert_eq!(PadzMode::Todos.to_string(), "todos");
+    }
+
+    #[test]
+    fn test_default_ordering_is_created_at() {
+        let config = PadzConfig::default();
+        assert_eq!(config.ordering, OrderingKey::CreatedAt);
+    }
+
+    #[test]
+    fn test_ordering_deserialize_created_at() {
+        let toml_str = "format = \"txt\"\nordering = \"created_at\"";
+        let config: PadzConfig = toml::from_str(toml_str).unwrap();
+        assert_eq!(config.ordering, OrderingKey::CreatedAt);
+    }
+
+    #[test]
+    fn test_ordering_deserialize_updated_at() {
+        let toml_str = "format = \"txt\"\nordering = \"updated_at\"";
+        let config: PadzConfig = toml::from_str(toml_str).unwrap();
+        assert_eq!(config.ordering, OrderingKey::UpdatedAt);
+    }
+
+    #[test]
+    fn test_ordering_defaults_when_absent() {
+        let toml_str = r#"format = "txt""#;
+        let config: PadzConfig = toml::from_str(toml_str).unwrap();
+        assert_eq!(config.ordering, OrderingKey::CreatedAt);
+    }
+
+    #[test]
+    fn test_ordering_serialize_roundtrip() {
+        let config = PadzConfig {
+            ordering: OrderingKey::UpdatedAt,
+            ..Default::default()
+        };
+        let toml_str = toml::to_string(&config).unwrap();
+        assert!(toml_str.contains(r#"ordering = "updated_at""#));
+
+        let parsed: PadzConfig = toml::from_str(&toml_str).unwrap();
+        assert_eq!(parsed.ordering, OrderingKey::UpdatedAt);
+    }
+
+    #[test]
+    fn test_ordering_display() {
+        assert_eq!(OrderingKey::CreatedAt.to_string(), "created_at");
+        assert_eq!(OrderingKey::UpdatedAt.to_string(), "updated_at");
     }
 }
