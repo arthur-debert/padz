@@ -16,7 +16,7 @@ use std::fs::File;
 use std::io::Write;
 use uuid::Uuid;
 
-use super::helpers::{collect_nested_pads, indexed_pads, pads_by_selectors, NestedPad};
+use crate::commands::helpers::{collect_nested_pads, indexed_pads, pads_by_selectors, NestedPad};
 
 /// Format for single-file export, determined by file extension.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
