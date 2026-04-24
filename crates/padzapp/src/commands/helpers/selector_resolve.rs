@@ -1,24 +1,11 @@
 use crate::error::{PadzError, Result};
-use crate::index::{current_ordering_key, index_pads, DisplayIndex, DisplayPad};
+use crate::index::{DisplayIndex, DisplayPad, PadSelector};
 use crate::model::Scope;
-use crate::store::Bucket;
 use crate::store::DataStore;
 use uuid::Uuid;
 
-pub fn indexed_pads<S: DataStore>(store: &S, scope: Scope) -> Result<Vec<DisplayPad>> {
-    let active_pads = store.list_pads(scope, Bucket::Active)?;
-    let archived_pads = store.list_pads(scope, Bucket::Archived)?;
-    let deleted_pads = store.list_pads(scope, Bucket::Deleted)?;
-
-    Ok(index_pads(
-        active_pads,
-        archived_pads,
-        deleted_pads,
-        current_ordering_key(),
-    ))
-}
-
-use crate::index::PadSelector;
+use super::fmt_path;
+use super::indexing::indexed_pads;
 
 pub fn resolve_selectors<S: DataStore>(
     store: &S,
@@ -28,7 +15,6 @@ pub fn resolve_selectors<S: DataStore>(
 ) -> Result<Vec<(Vec<DisplayIndex>, Uuid)>> {
     let root_pads = indexed_pads(store, scope)?;
 
-    // Linearize the tree for range resolution and search
     let linearized = linearize_tree(&root_pads);
 
     let mut results = Vec::new();
@@ -37,11 +23,7 @@ pub fn resolve_selectors<S: DataStore>(
         match selector {
             PadSelector::Path(path) => {
                 if let Some((_, pad)) = find_in_linearized(&linearized, path) {
-                    if check_delete_protection && pad.pad.metadata.delete_protected {
-                        return Err(PadzError::Api(
-                            "Pinned pads are delete protected, unpin then delete it".to_string(),
-                        ));
-                    }
+                    check_protection(pad, check_delete_protection)?;
                     results.push((path.clone(), pad.pad.metadata.id));
                 } else {
                     let s: Vec<String> = path.iter().map(|idx| idx.to_string()).collect();
@@ -73,30 +55,19 @@ pub fn resolve_selectors<S: DataStore>(
                     )));
                 }
 
-                // Collect all items in range inclusive
                 for (path, pad) in linearized.iter().take(end_idx + 1).skip(start_idx) {
-                    if check_delete_protection && pad.pad.metadata.delete_protected {
-                        return Err(PadzError::Api(
-                            "Pinned pads are delete protected, unpin then delete it".to_string(),
-                        ));
-                    }
+                    check_protection(pad, check_delete_protection)?;
                     results.push((path.clone(), pad.pad.metadata.id));
                 }
             }
             PadSelector::Uuid(uuid) => {
-                // Search the entire linearized tree for a pad matching this UUID
                 let found = linearized
                     .iter()
                     .find(|(_, dp)| dp.pad.metadata.id == *uuid);
 
                 match found {
                     Some((path, dp)) => {
-                        if check_delete_protection && dp.pad.metadata.delete_protected {
-                            return Err(PadzError::Api(
-                                "Pinned pads are delete protected, unpin then delete it"
-                                    .to_string(),
-                            ));
-                        }
+                        check_protection(dp, check_delete_protection)?;
                         results.push((path.clone(), dp.pad.metadata.id));
                     }
                     None => {
@@ -126,12 +97,7 @@ pub fn resolve_selectors<S: DataStore>(
                     }
                     1 => {
                         let (path, dp) = matches[0];
-                        if check_delete_protection && dp.pad.metadata.delete_protected {
-                            return Err(PadzError::Api(
-                                "Pinned pads are delete protected, unpin then delete it"
-                                    .to_string(),
-                            ));
-                        }
+                        check_protection(dp, check_delete_protection)?;
                         results.push((path.clone(), dp.pad.metadata.id));
                     }
                     n => {
@@ -153,9 +119,7 @@ pub fn resolve_selectors<S: DataStore>(
                     0 => return Err(PadzError::Api(format!("No pad found matching \"{}\"", term))),
                     1 => {
                         let (path, dp) = matches[0];
-                        if check_delete_protection && dp.pad.metadata.delete_protected {
-                             return Err(PadzError::Api("Pinned pads are delete protected, unpin then delete it".to_string()));
-                        }
+                        check_protection(dp, check_delete_protection)?;
                         results.push((path.clone(), dp.pad.metadata.id));
                     },
                     n => return Err(PadzError::Api(format!(
@@ -168,6 +132,15 @@ pub fn resolve_selectors<S: DataStore>(
     }
 
     Ok(results)
+}
+
+fn check_protection(dp: &DisplayPad, enabled: bool) -> Result<()> {
+    if enabled && dp.pad.metadata.delete_protected {
+        return Err(PadzError::Api(
+            "Pinned pads are delete protected, unpin then delete it".to_string(),
+        ));
+    }
+    Ok(())
 }
 
 fn linearize_tree(roots: &[DisplayPad]) -> Vec<(Vec<DisplayIndex>, &DisplayPad)> {
@@ -200,181 +173,17 @@ fn find_in_linearized<'a>(
     linearized.iter().find(|(p, _)| p == path)
 }
 
-pub fn fmt_path(path: &[DisplayIndex]) -> String {
-    let s: Vec<String> = path.iter().map(|idx| idx.to_string()).collect();
-    s.join(".")
-}
-
-/// Determines the storage bucket for a pad based on its display index.
-pub fn bucket_for_index(index: &DisplayIndex) -> Bucket {
-    match index {
-        DisplayIndex::Pinned(_) | DisplayIndex::Regular(_) => Bucket::Active,
-        DisplayIndex::Archived(_) => Bucket::Archived,
-        DisplayIndex::Deleted(_) => Bucket::Deleted,
-    }
-}
-
-/// Resolves selectors and returns a flat list of DisplayPads.
-///
-/// **Important**: This returns a *flattened* view—each pad has `children: Vec::new()`.
-/// The `index` field contains only the *local* index (last path segment), not the full path.
-/// Use this for operations that act on individual pads (delete, pin, etc.).
-///
-/// For hierarchical data, use `indexed_pads()` instead.
-pub fn pads_by_selectors<S: DataStore>(
-    store: &S,
-    scope: Scope,
-    selectors: &[PadSelector],
-    check_delete_protection: bool,
-) -> Result<Vec<DisplayPad>> {
-    let resolved = resolve_selectors(store, scope, selectors, check_delete_protection)?;
-    let mut pads = Vec::with_capacity(resolved.len());
-    for (path, id) in resolved {
-        let local_index = path.last().cloned().unwrap_or(DisplayIndex::Regular(0));
-        let bucket = bucket_for_index(&local_index);
-        let pad = store.get_pad(&id, scope, bucket)?;
-
-        pads.push(DisplayPad {
-            pad,
-            index: local_index,
-            matches: None,
-            children: Vec::new(),
-        });
-    }
-    Ok(pads)
-}
-
-/// A pad with its nesting depth, produced by tree-walking.
-#[derive(Debug, Clone)]
-pub struct NestedPad {
-    pub pad: DisplayPad,
-    pub depth: usize,
-}
-
-/// Given a list of resolved (flat) DisplayPads, re-resolve them with their full
-/// subtrees from the indexed tree. Returns a flat sequence of (pad, depth) pairs
-/// in tree-traversal order.
-///
-/// Each selected pad is at depth 0, its children at depth 1, etc.
-/// Only active (non-deleted) children are included.
-pub fn collect_nested_pads<S: DataStore>(
-    store: &S,
-    scope: Scope,
-    root_pads: &[DisplayPad],
-) -> Result<Vec<NestedPad>> {
-    let indexed = indexed_pads(store, scope)?;
-    let mut result = Vec::new();
-
-    for dp in root_pads {
-        // Find this pad in the full indexed tree to get its children
-        if let Some(tree_node) = find_node_by_id(&indexed, dp.pad.metadata.id) {
-            flatten_tree(tree_node, 0, &mut result);
-        } else {
-            // Pad not found in tree (edge case) - include it flat
-            result.push(NestedPad {
-                pad: dp.clone(),
-                depth: 0,
-            });
-        }
-    }
-
-    Ok(result)
-}
-
-fn flatten_tree(dp: &DisplayPad, depth: usize, result: &mut Vec<NestedPad>) {
-    result.push(NestedPad {
-        pad: DisplayPad {
-            pad: dp.pad.clone(),
-            index: dp.index.clone(),
-            matches: dp.matches.clone(),
-            children: Vec::new(), // flatten
-        },
-        depth,
-    });
-    for child in &dp.children {
-        // Skip deleted children in nested output
-        if !matches!(child.index, DisplayIndex::Deleted(_)) {
-            flatten_tree(child, depth + 1, result);
-        }
-    }
-}
-
-pub fn get_descendant_ids<S: DataStore>(
-    store: &S,
-    scope: Scope,
-    target_ids: &[Uuid],
-) -> Result<Vec<Uuid>> {
-    let roots = indexed_pads(store, scope)?;
-    let mut seen = std::collections::HashSet::new();
-    let mut descendants = Vec::new();
-
-    for target in target_ids {
-        if let Some(node) = find_node_by_id(&roots, *target) {
-            collect_subtree_ids(node, &mut descendants, &mut seen);
-        }
-    }
-    Ok(descendants)
-}
-
-fn find_node_by_id(pads: &[DisplayPad], id: Uuid) -> Option<&DisplayPad> {
-    for dp in pads {
-        if dp.pad.metadata.id == id {
-            return Some(dp);
-        }
-        if let Some(found) = find_node_by_id(&dp.children, id) {
-            return Some(found);
-        }
-    }
-    None
-}
-
-fn collect_subtree_ids(
-    dp: &DisplayPad,
-    ids: &mut Vec<Uuid>,
-    seen: &mut std::collections::HashSet<Uuid>,
-) {
-    for child in &dp.children {
-        if seen.insert(child.pad.metadata.id) {
-            ids.push(child.pad.metadata.id);
-        }
-        collect_subtree_ids(child, ids, seen);
-    }
-}
-
-/// Finds a pad in the tree by UUID, optionally filtering by index type.
-///
-/// The `index_filter` predicate determines which index types are acceptable.
-/// Common patterns:
-/// - `|_| true` - find any pad with matching UUID
-/// - `|idx| matches!(idx, DisplayIndex::Regular(_))` - find restored pad
-/// - `|idx| matches!(idx, DisplayIndex::Pinned(_))` - find pinned pad
-pub fn find_pad_by_uuid<F>(pads: &[DisplayPad], uuid: Uuid, index_filter: F) -> Option<&DisplayPad>
-where
-    F: Fn(&DisplayIndex) -> bool + Copy,
-{
-    for dp in pads {
-        if dp.pad.metadata.id == uuid && index_filter(&dp.index) {
-            return Some(dp);
-        }
-        if let Some(found) = find_pad_by_uuid(&dp.children, uuid, index_filter) {
-            return Some(found);
-        }
-    }
-    None
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::commands::create;
     use crate::index::DisplayIndex;
-    use crate::model::Scope;
     use crate::store::bucketed::BucketedStore;
     use crate::store::mem_backend::MemBackend;
+    use crate::store::Bucket;
 
     #[test]
     fn test_range_selection_within_siblings() {
-        // Create parent with 3 children, test range 1.1-1.3
         let mut store = BucketedStore::new(
             MemBackend::new(),
             MemBackend::new(),
@@ -408,7 +217,6 @@ mod tests {
         )
         .unwrap();
 
-        // Select range 1.1-1.3 (all children)
         let result = resolve_selectors(
             &store,
             Scope::Project,
@@ -420,13 +228,11 @@ mod tests {
         )
         .unwrap();
 
-        // Should get 3 children (newest first: C=1.1, B=1.2, A=1.3)
         assert_eq!(result.len(), 3);
     }
 
     #[test]
     fn test_range_selection_cross_parent() {
-        // Create 2 parents with children, test range 1.1-2.1
         let mut store = BucketedStore::new(
             MemBackend::new(),
             MemBackend::new(),
@@ -434,7 +240,6 @@ mod tests {
             MemBackend::new(),
         );
 
-        // Parent 1 with child
         create::run(
             &mut store,
             Scope::Project,
@@ -452,7 +257,6 @@ mod tests {
         )
         .unwrap();
 
-        // Parent 2 with child
         create::run(
             &mut store,
             Scope::Project,
@@ -470,12 +274,6 @@ mod tests {
         )
         .unwrap();
 
-        // Note: After creation, order is (newest first):
-        // 1: Parent 2, 1.1: Child 2
-        // 2: Parent 1, 2.1: Child 1
-
-        // Select range 1.1-2.1 should linearize to: 1, 1.1, 2, 2.1
-        // and select from 1.1 to 2.1: [1.1, 2, 2.1]
         let result = resolve_selectors(
             &store,
             Scope::Project,
@@ -487,7 +285,6 @@ mod tests {
         )
         .unwrap();
 
-        // Should include: Child 2 (1.1), Parent 1 (2), Child 1 (2.1)
         assert_eq!(result.len(), 3);
     }
 
@@ -500,7 +297,6 @@ mod tests {
             MemBackend::new(),
         );
 
-        // Create: Root1 -> Child1, Root2
         create::run(&mut store, Scope::Project, "Root 1".into(), "".into(), None).unwrap();
         create::run(
             &mut store,
@@ -512,9 +308,6 @@ mod tests {
         .unwrap();
         create::run(&mut store, Scope::Project, "Root 2".into(), "".into(), None).unwrap();
 
-        // Order (newest first): Root 2 (1), Root 1 (2) with Child 1 (2.1)
-        // Linear order: 1, 2, 2.1
-        // Range 1-2 selects from index 1 to 2, NOT including 2.1 (comes after 2 in linear order)
         let result = resolve_selectors(
             &store,
             Scope::Project,
@@ -526,7 +319,6 @@ mod tests {
         )
         .unwrap();
 
-        // Should get Root 2 (1) and Root 1 (2) only, NOT Child 1 (2.1)
         assert_eq!(result.len(), 2);
     }
 
@@ -539,7 +331,6 @@ mod tests {
             MemBackend::new(),
         );
 
-        // Create: Root1 -> Child1, Root2, Root3
         create::run(&mut store, Scope::Project, "Root 1".into(), "".into(), None).unwrap();
         create::run(
             &mut store,
@@ -552,9 +343,6 @@ mod tests {
         create::run(&mut store, Scope::Project, "Root 2".into(), "".into(), None).unwrap();
         create::run(&mut store, Scope::Project, "Root 3".into(), "".into(), None).unwrap();
 
-        // Order (newest first): Root 3 (1), Root 2 (2), Root 1 (3) with Child 1 (3.1)
-        // Linear order: 1, 2, 3, 3.1
-        // Range 1-3.1 selects all
         let result = resolve_selectors(
             &store,
             Scope::Project,
@@ -566,7 +354,6 @@ mod tests {
         )
         .unwrap();
 
-        // Should get all 4: Root 3, Root 2, Root 1, Child 1
         assert_eq!(result.len(), 4);
     }
 
@@ -579,7 +366,6 @@ mod tests {
             MemBackend::new(),
         );
 
-        // Create parent with pinned child
         create::run(&mut store, Scope::Project, "Parent".into(), "".into(), None).unwrap();
         create::run(
             &mut store,
@@ -590,7 +376,6 @@ mod tests {
         )
         .unwrap();
 
-        // Pin the child
         crate::commands::pinning::pin(
             &mut store,
             Scope::Project,
@@ -601,7 +386,6 @@ mod tests {
         )
         .unwrap();
 
-        // Should be addressable as 1.p1
         let result = resolve_selectors(
             &store,
             Scope::Project,
@@ -614,7 +398,6 @@ mod tests {
         .unwrap();
 
         assert_eq!(result.len(), 1);
-        // Verify it's the child
         let pad = store
             .get_pad(&result[0].1, Scope::Project, Bucket::Active)
             .unwrap();
@@ -688,7 +471,7 @@ mod tests {
         assert!(result.is_err());
         let err = result.unwrap_err();
         assert!(err.to_string().contains("multiple"));
-        assert!(err.to_string().contains("3")); // matched 3 pads
+        assert!(err.to_string().contains("3"));
     }
 
     #[test]
@@ -743,7 +526,6 @@ mod tests {
         )
         .unwrap();
 
-        // Search for content that's in body, not title - should NOT match
         let result = resolve_selectors(
             &store,
             Scope::Project,
@@ -754,7 +536,6 @@ mod tests {
         assert!(result.is_err());
         assert!(result.unwrap_err().to_string().contains("No pad found"));
 
-        // Search for title should work
         let result = resolve_selectors(
             &store,
             Scope::Project,
@@ -819,7 +600,6 @@ mod tests {
         )
         .unwrap();
 
-        // Manually set delete_protected without pinning (to avoid dual-index)
         let pads = store.list_pads(Scope::Project, Bucket::Active).unwrap();
         let mut pad = pads[0].clone();
         pad.metadata.delete_protected = true;
@@ -827,12 +607,11 @@ mod tests {
             .save_pad(&pad, Scope::Project, Bucket::Active)
             .unwrap();
 
-        // Try to resolve with delete protection check enabled
         let result = resolve_selectors(
             &store,
             Scope::Project,
             &[PadSelector::Title("ProtectedPad".to_string())],
-            true, // check_delete_protection = true
+            true,
         );
 
         assert!(result.is_err());
@@ -857,7 +636,6 @@ mod tests {
         )
         .unwrap();
 
-        // Manually set delete_protected without pinning (to avoid dual-index)
         let pads = store.list_pads(Scope::Project, Bucket::Active).unwrap();
         let mut pad = pads[0].clone();
         pad.metadata.delete_protected = true;
@@ -865,12 +643,11 @@ mod tests {
             .save_pad(&pad, Scope::Project, Bucket::Active)
             .unwrap();
 
-        // Resolve with delete protection check disabled
         let result = resolve_selectors(
             &store,
             Scope::Project,
             &[PadSelector::Title("ProtectedPad".to_string())],
-            false, // check_delete_protection = false
+            false,
         )
         .unwrap();
 
@@ -936,7 +713,6 @@ mod tests {
             create::run(&mut store, Scope::Project, "Pad A".into(), "".into(), None).unwrap();
         let pad_uuid = result.affected_pads[0].pad.metadata.id;
 
-        // Set delete protection
         let pads = store.list_pads(Scope::Project, Bucket::Active).unwrap();
         let mut pad = pads[0].clone();
         pad.metadata.delete_protected = true;
@@ -944,12 +720,8 @@ mod tests {
             .save_pad(&pad, Scope::Project, Bucket::Active)
             .unwrap();
 
-        let result = resolve_selectors(
-            &store,
-            Scope::Project,
-            &[PadSelector::Uuid(pad_uuid)],
-            true, // check_delete_protection
-        );
+        let result =
+            resolve_selectors(&store, Scope::Project, &[PadSelector::Uuid(pad_uuid)], true);
 
         assert!(result.is_err());
         let err = result.unwrap_err();
@@ -965,12 +737,10 @@ mod tests {
             MemBackend::new(),
         );
 
-        // Create pads: newest first, so order is 1, 2, 3
         create::run(&mut store, Scope::Project, "Pad A".into(), "".into(), None).unwrap();
         create::run(&mut store, Scope::Project, "Pad B".into(), "".into(), None).unwrap();
         create::run(&mut store, Scope::Project, "Pad C".into(), "".into(), None).unwrap();
 
-        // Try to select range 3-1 (reversed order)
         let result = resolve_selectors(
             &store,
             Scope::Project,
@@ -997,7 +767,6 @@ mod tests {
 
         create::run(&mut store, Scope::Project, "Pad A".into(), "".into(), None).unwrap();
 
-        // Try to select range starting from nonexistent index
         let result = resolve_selectors(
             &store,
             Scope::Project,
@@ -1025,7 +794,6 @@ mod tests {
 
         create::run(&mut store, Scope::Project, "Pad A".into(), "".into(), None).unwrap();
 
-        // Try to select range ending at nonexistent index
         let result = resolve_selectors(
             &store,
             Scope::Project,
@@ -1055,7 +823,6 @@ mod tests {
         create::run(&mut store, Scope::Project, "Pad B".into(), "".into(), None).unwrap();
         create::run(&mut store, Scope::Project, "Pad C".into(), "".into(), None).unwrap();
 
-        // Protect the middle pad (index 2)
         let pads = store.list_pads(Scope::Project, Bucket::Active).unwrap();
         let mut pad_b = pads
             .iter()
@@ -1067,7 +834,6 @@ mod tests {
             .save_pad(&pad_b, Scope::Project, Bucket::Active)
             .unwrap();
 
-        // Try to select range 1-3 with delete protection check
         let result = resolve_selectors(
             &store,
             Scope::Project,
@@ -1075,7 +841,7 @@ mod tests {
                 vec![DisplayIndex::Regular(1)],
                 vec![DisplayIndex::Regular(3)],
             )],
-            true, // check_delete_protection = true
+            true,
         );
 
         assert!(result.is_err());
@@ -1117,7 +883,6 @@ mod tests {
 
         create::run(&mut store, Scope::Project, "Pad A".into(), "".into(), None).unwrap();
 
-        // Protect the pad
         let pads = store.list_pads(Scope::Project, Bucket::Active).unwrap();
         let mut pad = pads[0].clone();
         pad.metadata.delete_protected = true;
@@ -1129,230 +894,13 @@ mod tests {
             &store,
             Scope::Project,
             &[PadSelector::Path(vec![DisplayIndex::Regular(1)])],
-            true, // check_delete_protection = true
+            true,
         );
 
         assert!(result.is_err());
         let err = result.unwrap_err();
         assert!(err.to_string().contains("delete protected"));
     }
-
-    // -------------------------------------------------------------------------
-    // collect_nested_pads tests
-    // -------------------------------------------------------------------------
-
-    #[test]
-    fn collect_nested_returns_parent_then_children_with_depths() {
-        let mut store = BucketedStore::new(
-            MemBackend::new(),
-            MemBackend::new(),
-            MemBackend::new(),
-            MemBackend::new(),
-        );
-        create::run(&mut store, Scope::Project, "Parent".into(), "".into(), None).unwrap();
-        create::run(
-            &mut store,
-            Scope::Project,
-            "Child A".into(),
-            "".into(),
-            Some(PadSelector::Path(vec![DisplayIndex::Regular(1)])),
-        )
-        .unwrap();
-        create::run(
-            &mut store,
-            Scope::Project,
-            "Child B".into(),
-            "".into(),
-            Some(PadSelector::Path(vec![DisplayIndex::Regular(1)])),
-        )
-        .unwrap();
-
-        // Resolve the parent as a flat pad (how view.rs calls it)
-        let flat = pads_by_selectors(
-            &store,
-            Scope::Project,
-            &[PadSelector::Path(vec![DisplayIndex::Regular(1)])],
-            false,
-        )
-        .unwrap();
-        assert_eq!(flat.len(), 1);
-
-        let nested = collect_nested_pads(&store, Scope::Project, &flat).unwrap();
-
-        assert_eq!(nested.len(), 3);
-        assert_eq!(nested[0].pad.pad.metadata.title, "Parent");
-        assert_eq!(nested[0].depth, 0);
-        // Children newest first: B then A
-        assert_eq!(nested[1].depth, 1);
-        assert_eq!(nested[2].depth, 1);
-    }
-
-    #[test]
-    fn collect_nested_deep_tree_tracks_depth() {
-        let mut store = BucketedStore::new(
-            MemBackend::new(),
-            MemBackend::new(),
-            MemBackend::new(),
-            MemBackend::new(),
-        );
-        create::run(&mut store, Scope::Project, "Root".into(), "".into(), None).unwrap();
-        create::run(
-            &mut store,
-            Scope::Project,
-            "Level 1".into(),
-            "".into(),
-            Some(PadSelector::Path(vec![DisplayIndex::Regular(1)])),
-        )
-        .unwrap();
-        create::run(
-            &mut store,
-            Scope::Project,
-            "Level 2".into(),
-            "".into(),
-            Some(PadSelector::Path(vec![
-                DisplayIndex::Regular(1),
-                DisplayIndex::Regular(1),
-            ])),
-        )
-        .unwrap();
-
-        let flat = pads_by_selectors(
-            &store,
-            Scope::Project,
-            &[PadSelector::Path(vec![DisplayIndex::Regular(1)])],
-            false,
-        )
-        .unwrap();
-        let nested = collect_nested_pads(&store, Scope::Project, &flat).unwrap();
-
-        let depths: Vec<usize> = nested.iter().map(|np| np.depth).collect();
-        assert_eq!(depths, vec![0, 1, 2]);
-    }
-
-    #[test]
-    fn collect_nested_skips_deleted_children() {
-        let mut store = BucketedStore::new(
-            MemBackend::new(),
-            MemBackend::new(),
-            MemBackend::new(),
-            MemBackend::new(),
-        );
-        create::run(&mut store, Scope::Project, "Parent".into(), "".into(), None).unwrap();
-        create::run(
-            &mut store,
-            Scope::Project,
-            "Keep".into(),
-            "".into(),
-            Some(PadSelector::Path(vec![DisplayIndex::Regular(1)])),
-        )
-        .unwrap();
-        create::run(
-            &mut store,
-            Scope::Project,
-            "Delete Me".into(),
-            "".into(),
-            Some(PadSelector::Path(vec![DisplayIndex::Regular(1)])),
-        )
-        .unwrap();
-        // Delete the newest child (index 1.1)
-        crate::commands::delete::run(
-            &mut store,
-            Scope::Project,
-            &[PadSelector::Path(vec![
-                DisplayIndex::Regular(1),
-                DisplayIndex::Regular(1),
-            ])],
-        )
-        .unwrap();
-
-        let flat = pads_by_selectors(
-            &store,
-            Scope::Project,
-            &[PadSelector::Path(vec![DisplayIndex::Regular(1)])],
-            false,
-        )
-        .unwrap();
-        let nested = collect_nested_pads(&store, Scope::Project, &flat).unwrap();
-
-        assert_eq!(nested.len(), 2);
-        assert_eq!(nested[0].pad.pad.metadata.title, "Parent");
-        assert_eq!(nested[1].pad.pad.metadata.title, "Keep");
-    }
-
-    #[test]
-    fn collect_nested_leaf_pad_returns_single() {
-        let mut store = BucketedStore::new(
-            MemBackend::new(),
-            MemBackend::new(),
-            MemBackend::new(),
-            MemBackend::new(),
-        );
-        create::run(
-            &mut store,
-            Scope::Project,
-            "Leaf".into(),
-            "body".into(),
-            None,
-        )
-        .unwrap();
-
-        let flat = pads_by_selectors(
-            &store,
-            Scope::Project,
-            &[PadSelector::Path(vec![DisplayIndex::Regular(1)])],
-            false,
-        )
-        .unwrap();
-        let nested = collect_nested_pads(&store, Scope::Project, &flat).unwrap();
-
-        assert_eq!(nested.len(), 1);
-        assert_eq!(nested[0].depth, 0);
-        assert_eq!(nested[0].pad.pad.metadata.title, "Leaf");
-    }
-
-    #[test]
-    fn collect_nested_multiple_roots_each_expand() {
-        let mut store = BucketedStore::new(
-            MemBackend::new(),
-            MemBackend::new(),
-            MemBackend::new(),
-            MemBackend::new(),
-        );
-        create::run(&mut store, Scope::Project, "Root A".into(), "".into(), None).unwrap();
-        create::run(&mut store, Scope::Project, "Root B".into(), "".into(), None).unwrap();
-        // Root B is 1, Root A is 2
-        create::run(
-            &mut store,
-            Scope::Project,
-            "Child of A".into(),
-            "".into(),
-            Some(PadSelector::Path(vec![DisplayIndex::Regular(2)])),
-        )
-        .unwrap();
-
-        let flat = pads_by_selectors(
-            &store,
-            Scope::Project,
-            &[
-                PadSelector::Path(vec![DisplayIndex::Regular(1)]),
-                PadSelector::Path(vec![DisplayIndex::Regular(2)]),
-            ],
-            false,
-        )
-        .unwrap();
-        let nested = collect_nested_pads(&store, Scope::Project, &flat).unwrap();
-
-        // Root B (no children) + Root A + Child of A
-        assert_eq!(nested.len(), 3);
-        assert_eq!(nested[0].pad.pad.metadata.title, "Root B");
-        assert_eq!(nested[0].depth, 0);
-        assert_eq!(nested[1].pad.pad.metadata.title, "Root A");
-        assert_eq!(nested[1].depth, 0);
-        assert_eq!(nested[2].pad.pad.metadata.title, "Child of A");
-        assert_eq!(nested[2].depth, 1);
-    }
-
-    // ==================== Short UUID resolution tests ====================
 
     #[test]
     fn test_short_uuid_resolves_to_pad() {
@@ -1366,7 +914,6 @@ mod tests {
             create::run(&mut store, Scope::Project, "Pad A".into(), "".into(), None).unwrap();
         let pad_uuid = result.affected_pads[0].pad.metadata.id;
 
-        // Use full hex (no hyphens) as a short UUID — should match
         let hex = pad_uuid.to_string().replace('-', "");
         let short = &hex[..8];
 
@@ -1416,7 +963,6 @@ mod tests {
             create::run(&mut store, Scope::Project, "Pad A".into(), "".into(), None).unwrap();
         let pad_uuid = result.affected_pads[0].pad.metadata.id;
 
-        // Set delete protection
         let pads = store.list_pads(Scope::Project, Bucket::Active).unwrap();
         let mut pad = pads[0].clone();
         pad.metadata.delete_protected = true;
