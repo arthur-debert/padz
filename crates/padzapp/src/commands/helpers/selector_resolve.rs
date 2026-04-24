@@ -720,12 +720,8 @@ mod tests {
             .save_pad(&pad, Scope::Project, Bucket::Active)
             .unwrap();
 
-        let result = resolve_selectors(
-            &store,
-            Scope::Project,
-            &[PadSelector::Uuid(pad_uuid)],
-            true,
-        );
+        let result =
+            resolve_selectors(&store, Scope::Project, &[PadSelector::Uuid(pad_uuid)], true);
 
         assert!(result.is_err());
         let err = result.unwrap_err();
