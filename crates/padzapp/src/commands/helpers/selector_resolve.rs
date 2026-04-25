@@ -594,11 +594,14 @@ mod tests {
 
         assert!(result.is_err());
         let err = result.unwrap_err().to_string();
-        assert!(err.contains("multiple pads"));
+        // Strip ANSI styling so substring assertions are stable regardless of
+        // whether `console` decided to emit colors in this environment.
+        let plain = console::strip_ansi_codes(&err).to_string();
+        assert!(plain.contains("multiple pads"));
         // Under the listing threshold, matches are enumerated by title.
-        assert!(err.contains("Meeting Monday"));
-        assert!(err.contains("Meeting Tuesday"));
-        assert!(err.contains("Meeting Wednesday"));
+        assert!(plain.contains("Meeting Monday"));
+        assert!(plain.contains("Meeting Tuesday"));
+        assert!(plain.contains("Meeting Wednesday"));
     }
 
     #[test]

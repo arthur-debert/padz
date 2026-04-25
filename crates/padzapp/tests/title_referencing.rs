@@ -4,6 +4,14 @@ use padzapp::model::Scope;
 use padzapp::store::bucketed::BucketedStore;
 use padzapp::store::mem_backend::MemBackend;
 
+/// Strip ANSI styling so substring assertions are stable across TTY/non-TTY
+/// test environments — the ambiguity error highlights the matched substring
+/// inside each title, so a literal `contains("Groceries")` check would fail
+/// when colors are enabled.
+fn strip_ansi(s: &str) -> String {
+    console::strip_ansi_codes(s).to_string()
+}
+
 fn setup() -> PadzApi<BucketedStore<MemBackend>> {
     let store = BucketedStore::new(
         MemBackend::new(),
@@ -107,7 +115,7 @@ fn test_referencing_ambiguous() {
     // "Gro" matches "Groceries" and "Grocery List"
     let res = api.view_pads(Scope::Project, &["Gro"], NestingMode::Flat);
     assert!(res.is_err());
-    let err = res.err().unwrap().to_string();
+    let err = strip_ansi(&res.err().unwrap().to_string());
     assert!(err.contains("matches multiple pads"));
     // The error should list the matching pads so the user can pick one.
     assert!(err.contains("Groceries"));
