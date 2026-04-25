@@ -1288,6 +1288,7 @@ dependencies = [
  "chrono",
  "clapfig",
  "confique",
+ "console",
  "directories",
  "flate2",
  "once_cell",

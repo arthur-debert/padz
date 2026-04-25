@@ -153,19 +153,25 @@ pub fn resolve_selectors<S: DataStore>(
                         let listing: String = matches
                             .iter()
                             .map(|(path, dp)| {
-                                format!("    {}. {}", fmt_path(path), dp.pad.metadata.title)
+                                format!(
+                                    "    {}. {}",
+                                    style_index(&fmt_path(path)),
+                                    style_title_with_match(&dp.pad.metadata.title, &term_lower)
+                                )
                             })
                             .collect::<Vec<_>>()
                             .join("\n");
                         return Err(PadzError::Api(format!(
-                            "Term \"{}\" matches multiple pads. Use one, or be more specific:\n{}",
-                            term, listing
+                            "Term {} matches multiple pads. Use one, or be more specific:\n{}",
+                            style_match(term),
+                            listing
                         )));
                     }
                     n => {
                         return Err(PadzError::Api(format!(
-                            "Term \"{}\" matches {} pads. Please be more specific.",
-                            term, n
+                            "Term {} matches {} pads. Please be more specific.",
+                            style_match(term),
+                            n
                         )));
                     }
                 }
@@ -174,6 +180,46 @@ pub fn resolve_selectors<S: DataStore>(
     }
 
     Ok(results)
+}
+
+/// Format a display index in the same accent color the list/search renderer
+/// uses for `list-index` (gold/yellow). When stderr is not a TTY or the
+/// terminal can't take color, `console::style` collapses to plain text on its
+/// own — no extra `IsTerminal` checks needed here.
+fn style_index(s: &str) -> String {
+    console::style(s).yellow().to_string()
+}
+
+/// Format the search term with the same yellow-background highlight the list/
+/// search renderer uses for `match` hits (yellow bg, black fg). Wraps the
+/// styled term in quotes so the message reads `Term "foo" matches ...`.
+fn style_match(term: &str) -> String {
+    format!("\"{}\"", console::style(term).black().on_yellow())
+}
+
+/// Render `title` plain, except for the substring matching `term_lower` (case-
+/// insensitive), which gets the same yellow-background highlight as search hits.
+fn style_title_with_match(title: &str, term_lower: &str) -> String {
+    if term_lower.is_empty() {
+        return title.to_string();
+    }
+    let title_lower = title.to_lowercase();
+    let mut out = String::with_capacity(title.len() + 16);
+    let mut cursor = 0usize;
+    while let Some(rel) = title_lower[cursor..].find(term_lower) {
+        let start = cursor + rel;
+        let end = start + term_lower.len();
+        out.push_str(&title[cursor..start]);
+        out.push_str(
+            &console::style(&title[start..end])
+                .black()
+                .on_yellow()
+                .to_string(),
+        );
+        cursor = end;
+    }
+    out.push_str(&title[cursor..]);
+    out
 }
 
 /// Is this pad in the bucket we're filtering to?
