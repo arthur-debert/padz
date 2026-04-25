@@ -5,7 +5,7 @@
 //! - `remove_tags`: Remove specific tags from pads
 
 use crate::attributes::AttrValue;
-use crate::commands::helpers::{indexed_pads, resolve_selectors};
+use crate::commands::helpers::{indexed_pads, resolve_selectors, TitleBucket};
 use crate::commands::{CmdMessage, CmdResult};
 use crate::error::{PadzError, Result};
 use crate::index::{DisplayIndex, DisplayPad, PadSelector};
@@ -42,7 +42,7 @@ pub fn add_tags<S: DataStore>(
         store.save_tags(scope, &registry)?;
     }
 
-    let resolved = resolve_selectors(store, scope, selectors, false)?;
+    let resolved = resolve_selectors(store, scope, selectors, false, TitleBucket::Active)?;
     let mut result = CmdResult::default();
     let mut modified_count = 0;
 
@@ -121,7 +121,7 @@ pub fn remove_tags<S: DataStore>(
         return Err(PadzError::Api("No tags specified".to_string()));
     }
 
-    let resolved = resolve_selectors(store, scope, selectors, false)?;
+    let resolved = resolve_selectors(store, scope, selectors, false, TitleBucket::Active)?;
     let mut result = CmdResult::default();
     let mut modified_count = 0;
 

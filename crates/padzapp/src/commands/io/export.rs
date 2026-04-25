@@ -16,7 +16,9 @@ use std::fs::File;
 use std::io::Write;
 use uuid::Uuid;
 
-use crate::commands::helpers::{collect_nested_pads, indexed_pads, pads_by_selectors, NestedPad};
+use crate::commands::helpers::{
+    collect_nested_pads, indexed_pads, pads_by_selectors, NestedPad, TitleBucket,
+};
 
 /// Format for single-file export, determined by file extension.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -112,7 +114,7 @@ fn resolve_pads<S: DataStore>(
             .filter(|dp| !matches!(dp.index, DisplayIndex::Deleted(_)))
             .collect())
     } else {
-        pads_by_selectors(store, scope, selectors, false)
+        pads_by_selectors(store, scope, selectors, false, TitleBucket::Any)
     }
 }
 

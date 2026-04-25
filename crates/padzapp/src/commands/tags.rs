@@ -38,10 +38,10 @@ pub fn list_pad_tags<S: DataStore>(
     scope: Scope,
     selectors: &[crate::index::PadSelector],
 ) -> Result<CmdResult> {
-    use crate::commands::helpers::resolve_selectors;
+    use crate::commands::helpers::{resolve_selectors, TitleBucket};
     use std::collections::BTreeSet;
 
-    let resolved = resolve_selectors(store, scope, selectors, false)?;
+    let resolved = resolve_selectors(store, scope, selectors, false, TitleBucket::Active)?;
     let mut all_tags = BTreeSet::new();
 
     for (_display_index, uuid) in resolved {

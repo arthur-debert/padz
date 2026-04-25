@@ -15,7 +15,13 @@ pub fn run<S: DataStore>(
 
     if let Some(selector) = parent_selector {
         // Resolve parent
-        let resolved = super::helpers::resolve_selectors(store, scope, &[selector], false)?;
+        let resolved = super::helpers::resolve_selectors(
+            store,
+            scope,
+            &[selector],
+            false,
+            super::helpers::TitleBucket::Active,
+        )?;
 
         match resolved.len() {
             0 => {

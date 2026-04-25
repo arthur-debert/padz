@@ -41,7 +41,7 @@ use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use uuid::Uuid;
 
-use super::helpers::{indexed_pads, resolve_selectors};
+use super::helpers::{indexed_pads, resolve_selectors, TitleBucket};
 
 /// Whether the source keeps or loses the pads after a transfer.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -176,7 +176,7 @@ pub fn run<Src: DataStore, Dst: DataStore>(
     let resolved = if selectors.is_empty() {
         default_non_deleted_ids(source, source_scope)?
     } else {
-        resolve_selectors(source, source_scope, selectors, false)?
+        resolve_selectors(source, source_scope, selectors, false, TitleBucket::Any)?
     };
     if resolved.is_empty() {
         result.add_message(CmdMessage::info("No pads to transfer."));

@@ -6,7 +6,7 @@ use crate::store::Bucket;
 use crate::store::DataStore;
 use uuid::Uuid;
 
-use super::helpers::{indexed_pads, pads_by_selectors};
+use super::helpers::{indexed_pads, pads_by_selectors, TitleBucket};
 
 /// Permanently removes pads from the store.
 ///
@@ -39,7 +39,7 @@ pub fn run<S: DataStore>(
             })
             .collect()
     } else {
-        pads_by_selectors(store, scope, selectors, true)?
+        pads_by_selectors(store, scope, selectors, true, TitleBucket::Deleted)?
     };
 
     if pads_to_purge.is_empty() {

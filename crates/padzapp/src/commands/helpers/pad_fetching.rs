@@ -4,7 +4,7 @@ use crate::model::Scope;
 use crate::store::DataStore;
 
 use super::indexing::bucket_for_index;
-use super::selector_resolve::resolve_selectors;
+use super::selector_resolve::{resolve_selectors, TitleBucket};
 
 /// Resolves selectors and returns a flat list of DisplayPads.
 ///
@@ -18,8 +18,15 @@ pub fn pads_by_selectors<S: DataStore>(
     scope: Scope,
     selectors: &[PadSelector],
     check_delete_protection: bool,
+    title_bucket: TitleBucket,
 ) -> Result<Vec<DisplayPad>> {
-    let resolved = resolve_selectors(store, scope, selectors, check_delete_protection)?;
+    let resolved = resolve_selectors(
+        store,
+        scope,
+        selectors,
+        check_delete_protection,
+        title_bucket,
+    )?;
     let mut pads = Vec::with_capacity(resolved.len());
     for (path, id) in resolved {
         let local_index = path.last().cloned().unwrap_or(DisplayIndex::Regular(0));

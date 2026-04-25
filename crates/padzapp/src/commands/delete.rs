@@ -5,14 +5,14 @@ use crate::model::{Scope, TodoStatus};
 use crate::store::{Bucket, DataStore};
 use uuid::Uuid;
 
-use super::helpers::{indexed_pads, resolve_selectors};
+use super::helpers::{indexed_pads, resolve_selectors, TitleBucket};
 
 pub fn run<S: DataStore>(
     store: &mut S,
     scope: Scope,
     selectors: &[PadSelector],
 ) -> Result<CmdResult> {
-    let resolved = resolve_selectors(store, scope, selectors, true)?;
+    let resolved = resolve_selectors(store, scope, selectors, true, TitleBucket::Active)?;
     let mut result = CmdResult::default();
 
     let mut deleted_uuids: Vec<Uuid> = Vec::new();

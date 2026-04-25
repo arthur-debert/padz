@@ -11,7 +11,7 @@ use crate::model::{Scope, TodoStatus};
 use crate::store::{Bucket, DataStore};
 use uuid::Uuid;
 
-use super::helpers::{indexed_pads, resolve_selectors};
+use super::helpers::{indexed_pads, resolve_selectors, TitleBucket};
 
 /// Marks pads as Done.
 pub fn complete<S: DataStore>(
@@ -37,7 +37,7 @@ fn set_status<S: DataStore>(
     selectors: &[PadSelector],
     new_status: TodoStatus,
 ) -> Result<CmdResult> {
-    let resolved = resolve_selectors(store, scope, selectors, false)?;
+    let resolved = resolve_selectors(store, scope, selectors, false, TitleBucket::Active)?;
     let mut result = CmdResult::default();
 
     let mut affected_uuids: Vec<Uuid> = Vec::new();
