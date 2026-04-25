@@ -6,14 +6,14 @@ use crate::store::Bucket;
 use crate::store::DataStore;
 use uuid::Uuid;
 
-use super::helpers::{indexed_pads, resolve_selectors};
+use super::helpers::{indexed_pads, resolve_selectors, TitleBucket};
 
 pub fn run<S: DataStore>(
     store: &mut S,
     scope: Scope,
     selectors: &[PadSelector],
 ) -> Result<CmdResult> {
-    let resolved = resolve_selectors(store, scope, selectors, false)?;
+    let resolved = resolve_selectors(store, scope, selectors, false, TitleBucket::Deleted)?;
     let mut result = CmdResult::default();
 
     let mut restored_uuids: Vec<Uuid> = Vec::new();

@@ -5,7 +5,7 @@ use crate::model::{parse_pad_content, Scope};
 use crate::store::{Bucket, DataStore};
 use chrono::Utc;
 
-use super::helpers::resolve_selectors;
+use super::helpers::{resolve_selectors, TitleBucket};
 
 pub fn run<S: DataStore>(store: &mut S, scope: Scope, updates: &[PadUpdate]) -> Result<CmdResult> {
     if updates.is_empty() {
@@ -22,7 +22,7 @@ pub fn run<S: DataStore>(store: &mut S, scope: Scope, updates: &[PadUpdate]) -> 
             }
         })
         .collect();
-    let resolved = resolve_selectors(store, scope, &selectors, false)?;
+    let resolved = resolve_selectors(store, scope, &selectors, false, TitleBucket::Active)?;
     let mut result = CmdResult::default();
 
     for ((display_index, uuid), update) in resolved.into_iter().zip(updates.iter()) {
@@ -88,7 +88,7 @@ pub fn run_from_content<S: DataStore>(
         .ok_or_else(|| PadzError::Api("Piped content is empty or invalid".to_string()))?;
 
     // Resolve selectors to UUIDs
-    let resolved = resolve_selectors(store, scope, selectors, false)?;
+    let resolved = resolve_selectors(store, scope, selectors, false, TitleBucket::Active)?;
 
     let mut result = CmdResult::default();
 

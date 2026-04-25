@@ -62,7 +62,7 @@ fn flatten_tree(dp: &DisplayPad, depth: usize, result: &mut Vec<NestedPad>) {
 mod tests {
     use super::*;
     use crate::commands::create;
-    use crate::commands::helpers::pads_by_selectors;
+    use crate::commands::helpers::{pads_by_selectors, TitleBucket};
     use crate::index::{DisplayIndex, PadSelector};
     use crate::store::bucketed::BucketedStore;
     use crate::store::mem_backend::MemBackend;
@@ -98,6 +98,7 @@ mod tests {
             Scope::Project,
             &[PadSelector::Path(vec![DisplayIndex::Regular(1)])],
             false,
+            TitleBucket::Active,
         )
         .unwrap();
         assert_eq!(flat.len(), 1);
@@ -145,6 +146,7 @@ mod tests {
             Scope::Project,
             &[PadSelector::Path(vec![DisplayIndex::Regular(1)])],
             false,
+            TitleBucket::Active,
         )
         .unwrap();
         let nested = collect_nested_pads(&store, Scope::Project, &flat).unwrap();
@@ -193,6 +195,7 @@ mod tests {
             Scope::Project,
             &[PadSelector::Path(vec![DisplayIndex::Regular(1)])],
             false,
+            TitleBucket::Active,
         )
         .unwrap();
         let nested = collect_nested_pads(&store, Scope::Project, &flat).unwrap();
@@ -224,6 +227,7 @@ mod tests {
             Scope::Project,
             &[PadSelector::Path(vec![DisplayIndex::Regular(1)])],
             false,
+            TitleBucket::Active,
         )
         .unwrap();
         let nested = collect_nested_pads(&store, Scope::Project, &flat).unwrap();
@@ -260,6 +264,7 @@ mod tests {
                 PadSelector::Path(vec![DisplayIndex::Regular(2)]),
             ],
             false,
+            TitleBucket::Active,
         )
         .unwrap();
         let nested = collect_nested_pads(&store, Scope::Project, &flat).unwrap();

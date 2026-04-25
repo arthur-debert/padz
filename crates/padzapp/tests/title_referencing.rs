@@ -108,8 +108,10 @@ fn test_referencing_ambiguous() {
     let res = api.view_pads(Scope::Project, &["Gro"], NestingMode::Flat);
     assert!(res.is_err());
     let err = res.err().unwrap().to_string();
-    assert!(err.contains("matches multiple paths"));
-    assert!(err.contains("matched 2 pads"));
+    assert!(err.contains("matches multiple pads"));
+    // The error should list the matching pads so the user can pick one.
+    assert!(err.contains("Groceries"));
+    assert!(err.contains("Grocery List"));
 }
 
 #[test]
@@ -131,4 +133,40 @@ fn test_referencing_mixed_no_match() {
     let api = setup();
     let res = api.view_pads(Scope::Project, &["1", "Grocery"], NestingMode::Flat);
     assert!(res.is_err());
+}
+
+#[test]
+fn test_referencing_does_not_match_deleted_titles() {
+    let store = BucketedStore::new(
+        MemBackend::new(),
+        MemBackend::new(),
+        MemBackend::new(),
+        MemBackend::new(),
+    );
+    let paths = PadzPaths {
+        project: Some(std::path::PathBuf::from(".padz")),
+        global: std::path::PathBuf::from(".padz"),
+    };
+    let mut api = PadzApi::new(store, paths);
+
+    // One active pad, then create a second pad with the same term and delete it.
+    // Before the fix, a title search would match both (ambiguous). After the fix,
+    // only the active one matches and `view_pads` resolves uniquely.
+    api.create_pad(Scope::Project, "Shared Term Active".into(), "".into(), None)
+        .unwrap();
+    api.create_pad(
+        Scope::Project,
+        "Shared Term Trashed".into(),
+        "".into(),
+        None,
+    )
+    .unwrap();
+    // "Shared Term Trashed" was created second, so it's index 1.
+    api.delete_pads(Scope::Project, &["1"]).unwrap();
+
+    let res = api
+        .view_pads(Scope::Project, &["Shared"], NestingMode::Flat)
+        .unwrap();
+    assert_eq!(res.listed_pads.len(), 1);
+    assert_eq!(res.listed_pads[0].pad.metadata.title, "Shared Term Active");
 }

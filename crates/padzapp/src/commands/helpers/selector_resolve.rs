@@ -7,11 +7,32 @@ use uuid::Uuid;
 use super::fmt_path;
 use super::indexing::indexed_pads;
 
+/// Bucket scope for `PadSelector::Title` matching.
+///
+/// Other selector variants (Path, Range, Uuid, ShortUuid) carry their bucket
+/// information intrinsically and are unaffected by this filter.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TitleBucket {
+    /// Only match pads in the active bucket (Regular + Pinned roots).
+    Active,
+    /// Only match pads in the archived bucket.
+    Archived,
+    /// Only match pads in the deleted bucket.
+    Deleted,
+    /// Match across all buckets.
+    Any,
+}
+
+/// Maximum number of ambiguous matches to list inline in the error message.
+/// Above this, we fall back to just reporting the count.
+const AMBIGUITY_LIST_THRESHOLD: usize = 5;
+
 pub fn resolve_selectors<S: DataStore>(
     store: &S,
     scope: Scope,
     selectors: &[PadSelector],
     check_delete_protection: bool,
+    title_bucket: TitleBucket,
 ) -> Result<Vec<(Vec<DisplayIndex>, Uuid)>> {
     let root_pads = indexed_pads(store, scope)?;
 
@@ -112,26 +133,76 @@ pub fn resolve_selectors<S: DataStore>(
                 let term_lower = term.to_lowercase();
                 let matches: Vec<&(Vec<DisplayIndex>, &DisplayPad)> = linearized
                     .iter()
+                    .filter(|(path, _)| path_in_bucket(path, title_bucket))
                     .filter(|(_, dp)| dp.pad.metadata.title.to_lowercase().contains(&term_lower))
                     .collect();
 
                 match matches.len() {
-                    0 => return Err(PadzError::Api(format!("No pad found matching \"{}\"", term))),
+                    0 => {
+                        return Err(PadzError::Api(format!(
+                            "No pad found matching \"{}\"",
+                            term
+                        )))
+                    }
                     1 => {
                         let (path, dp) = matches[0];
                         check_protection(dp, check_delete_protection)?;
                         results.push((path.clone(), dp.pad.metadata.id));
-                    },
-                    n => return Err(PadzError::Api(format!(
-                        "Term \"{}\" matches multiple paths, add more to make it unique(matched {} pads). Please be more specific.",
-                        term, n
-                    ))),
+                    }
+                    n if n <= AMBIGUITY_LIST_THRESHOLD => {
+                        let listing: String = matches
+                            .iter()
+                            .map(|(path, dp)| {
+                                format!("    {}. {}", fmt_path(path), dp.pad.metadata.title)
+                            })
+                            .collect::<Vec<_>>()
+                            .join("\n");
+                        return Err(PadzError::Api(format!(
+                            "Term \"{}\" matches multiple pads. Use one, or be more specific:\n{}",
+                            term, listing
+                        )));
+                    }
+                    n => {
+                        return Err(PadzError::Api(format!(
+                            "Term \"{}\" matches {} pads. Please be more specific.",
+                            term, n
+                        )));
+                    }
                 }
             }
         }
     }
 
     Ok(results)
+}
+
+/// Is this pad in the bucket we're filtering to?
+///
+/// A pad's bucket is determined by its *own* local index (the last segment
+/// of its path), matching `bucket_for_index`. This correctly handles nested
+/// cases like a deleted child under an active parent (path `7.d3`), which
+/// should count as deleted, not active.
+///
+/// If *any* ancestor segment is Archived or Deleted, treat the pad as living
+/// in that ancestor's bucket too — an active child of an archived parent is
+/// not reachable as "active" for selection purposes.
+fn path_in_bucket(path: &[DisplayIndex], bucket: TitleBucket) -> bool {
+    if bucket == TitleBucket::Any {
+        return true;
+    }
+    if path.is_empty() {
+        return false;
+    }
+    // A path lives in Deleted if any segment is Deleted; similarly for Archived.
+    // Otherwise it's Active (all segments are Regular/Pinned).
+    let has_deleted = path.iter().any(|i| matches!(i, DisplayIndex::Deleted(_)));
+    let has_archived = path.iter().any(|i| matches!(i, DisplayIndex::Archived(_)));
+    match bucket {
+        TitleBucket::Deleted => has_deleted,
+        TitleBucket::Archived => has_archived && !has_deleted,
+        TitleBucket::Active => !has_deleted && !has_archived,
+        TitleBucket::Any => true,
+    }
 }
 
 fn check_protection(dp: &DisplayPad, enabled: bool) -> Result<()> {
@@ -225,6 +296,7 @@ mod tests {
                 vec![DisplayIndex::Regular(1), DisplayIndex::Regular(3)],
             )],
             false,
+            TitleBucket::Any,
         )
         .unwrap();
 
@@ -282,6 +354,7 @@ mod tests {
                 vec![DisplayIndex::Regular(2), DisplayIndex::Regular(1)],
             )],
             false,
+            TitleBucket::Any,
         )
         .unwrap();
 
@@ -316,6 +389,7 @@ mod tests {
                 vec![DisplayIndex::Regular(2)],
             )],
             false,
+            TitleBucket::Any,
         )
         .unwrap();
 
@@ -351,6 +425,7 @@ mod tests {
                 vec![DisplayIndex::Regular(3), DisplayIndex::Regular(1)],
             )],
             false,
+            TitleBucket::Any,
         )
         .unwrap();
 
@@ -394,6 +469,7 @@ mod tests {
                 DisplayIndex::Pinned(1),
             ])],
             false,
+            TitleBucket::Any,
         )
         .unwrap();
 
@@ -420,6 +496,7 @@ mod tests {
             Scope::Project,
             &[PadSelector::Title("Gamma".to_string())],
             false,
+            TitleBucket::Any,
         );
 
         assert!(result.is_err());
@@ -466,12 +543,16 @@ mod tests {
             Scope::Project,
             &[PadSelector::Title("Meeting".to_string())],
             false,
+            TitleBucket::Any,
         );
 
         assert!(result.is_err());
-        let err = result.unwrap_err();
-        assert!(err.to_string().contains("multiple"));
-        assert!(err.to_string().contains("3"));
+        let err = result.unwrap_err().to_string();
+        assert!(err.contains("multiple pads"));
+        // Under the listing threshold, matches are enumerated by title.
+        assert!(err.contains("Meeting Monday"));
+        assert!(err.contains("Meeting Tuesday"));
+        assert!(err.contains("Meeting Wednesday"));
     }
 
     #[test]
@@ -491,6 +572,7 @@ mod tests {
             Scope::Project,
             &[PadSelector::Title("Beta".to_string())],
             false,
+            TitleBucket::Any,
         )
         .unwrap();
 
@@ -531,6 +613,7 @@ mod tests {
             Scope::Project,
             &[PadSelector::Title("apples".to_string())],
             false,
+            TitleBucket::Any,
         );
 
         assert!(result.is_err());
@@ -541,6 +624,7 @@ mod tests {
             Scope::Project,
             &[PadSelector::Title("Shopping".to_string())],
             false,
+            TitleBucket::Any,
         )
         .unwrap();
 
@@ -573,6 +657,7 @@ mod tests {
             Scope::Project,
             &[PadSelector::Title("uppercase".to_string())],
             false,
+            TitleBucket::Any,
         )
         .unwrap();
 
@@ -612,6 +697,7 @@ mod tests {
             Scope::Project,
             &[PadSelector::Title("ProtectedPad".to_string())],
             true,
+            TitleBucket::Any,
         );
 
         assert!(result.is_err());
@@ -648,6 +734,7 @@ mod tests {
             Scope::Project,
             &[PadSelector::Title("ProtectedPad".to_string())],
             false,
+            TitleBucket::Any,
         )
         .unwrap();
 
@@ -671,6 +758,7 @@ mod tests {
             Scope::Project,
             &[PadSelector::Uuid(pad_uuid)],
             false,
+            TitleBucket::Any,
         )
         .unwrap();
 
@@ -694,6 +782,7 @@ mod tests {
             Scope::Project,
             &[PadSelector::Uuid(fake_uuid)],
             false,
+            TitleBucket::Any,
         );
 
         assert!(result.is_err());
@@ -720,8 +809,13 @@ mod tests {
             .save_pad(&pad, Scope::Project, Bucket::Active)
             .unwrap();
 
-        let result =
-            resolve_selectors(&store, Scope::Project, &[PadSelector::Uuid(pad_uuid)], true);
+        let result = resolve_selectors(
+            &store,
+            Scope::Project,
+            &[PadSelector::Uuid(pad_uuid)],
+            true,
+            TitleBucket::Any,
+        );
 
         assert!(result.is_err());
         let err = result.unwrap_err();
@@ -749,6 +843,7 @@ mod tests {
                 vec![DisplayIndex::Regular(1)],
             )],
             false,
+            TitleBucket::Any,
         );
 
         assert!(result.is_err());
@@ -775,6 +870,7 @@ mod tests {
                 vec![DisplayIndex::Regular(1)],
             )],
             false,
+            TitleBucket::Any,
         );
 
         assert!(result.is_err());
@@ -802,6 +898,7 @@ mod tests {
                 vec![DisplayIndex::Regular(99)],
             )],
             false,
+            TitleBucket::Any,
         );
 
         assert!(result.is_err());
@@ -842,6 +939,7 @@ mod tests {
                 vec![DisplayIndex::Regular(3)],
             )],
             true,
+            TitleBucket::Any,
         );
 
         assert!(result.is_err());
@@ -865,6 +963,7 @@ mod tests {
             Scope::Project,
             &[PadSelector::Path(vec![DisplayIndex::Regular(99)])],
             false,
+            TitleBucket::Any,
         );
 
         assert!(result.is_err());
@@ -895,6 +994,7 @@ mod tests {
             Scope::Project,
             &[PadSelector::Path(vec![DisplayIndex::Regular(1)])],
             true,
+            TitleBucket::Any,
         );
 
         assert!(result.is_err());
@@ -922,6 +1022,7 @@ mod tests {
             Scope::Project,
             &[PadSelector::ShortUuid(short.to_string())],
             false,
+            TitleBucket::Any,
         )
         .unwrap();
 
@@ -944,6 +1045,7 @@ mod tests {
             Scope::Project,
             &[PadSelector::ShortUuid("00000000".to_string())],
             false,
+            TitleBucket::Any,
         );
 
         assert!(result.is_err());
@@ -978,10 +1080,268 @@ mod tests {
             Scope::Project,
             &[PadSelector::ShortUuid(short.to_string())],
             true,
+            TitleBucket::Any,
         );
 
         assert!(result.is_err());
         let err = result.unwrap_err();
         assert!(err.to_string().contains("delete protected"));
+    }
+
+    // --- TitleBucket scoping -------------------------------------------------
+
+    #[test]
+    fn test_title_bucket_active_ignores_deleted_matches() {
+        let mut store = BucketedStore::new(
+            MemBackend::new(),
+            MemBackend::new(),
+            MemBackend::new(),
+            MemBackend::new(),
+        );
+        // Active pad (only one with "for" in the title that should count)
+        create::run(
+            &mut store,
+            Scope::Project,
+            "Task for Padz".into(),
+            "".into(),
+            None,
+        )
+        .unwrap();
+        // A second active pad whose title does NOT match — used as a target to delete.
+        create::run(
+            &mut store,
+            Scope::Project,
+            "Feature Flag for Ids".into(),
+            "".into(),
+            None,
+        )
+        .unwrap();
+        // Send the second one to deleted.
+        crate::commands::delete::run(
+            &mut store,
+            Scope::Project,
+            &[PadSelector::Path(vec![DisplayIndex::Regular(1)])],
+        )
+        .unwrap();
+
+        // With Active scope, only the one active match should resolve.
+        let result = resolve_selectors(
+            &store,
+            Scope::Project,
+            &[PadSelector::Title("for".to_string())],
+            false,
+            TitleBucket::Active,
+        )
+        .unwrap();
+        assert_eq!(result.len(), 1);
+        let pad = store
+            .get_pad(&result[0].1, Scope::Project, Bucket::Active)
+            .unwrap();
+        assert_eq!(pad.metadata.title, "Task for Padz");
+
+        // With Any scope, both the active and deleted titles match — ambiguous.
+        let any_result = resolve_selectors(
+            &store,
+            Scope::Project,
+            &[PadSelector::Title("for".to_string())],
+            false,
+            TitleBucket::Any,
+        );
+        assert!(any_result.is_err());
+    }
+
+    #[test]
+    fn test_title_bucket_deleted_matches_only_deleted() {
+        let mut store = BucketedStore::new(
+            MemBackend::new(),
+            MemBackend::new(),
+            MemBackend::new(),
+            MemBackend::new(),
+        );
+        create::run(
+            &mut store,
+            Scope::Project,
+            "Active Note".into(),
+            "".into(),
+            None,
+        )
+        .unwrap();
+        create::run(
+            &mut store,
+            Scope::Project,
+            "Trash Note".into(),
+            "".into(),
+            None,
+        )
+        .unwrap();
+        // The first-created pad is now at index 2 (newest first); delete the
+        // "Trash Note" which is at index 1.
+        crate::commands::delete::run(
+            &mut store,
+            Scope::Project,
+            &[PadSelector::Path(vec![DisplayIndex::Regular(1)])],
+        )
+        .unwrap();
+
+        let result = resolve_selectors(
+            &store,
+            Scope::Project,
+            &[PadSelector::Title("Note".to_string())],
+            false,
+            TitleBucket::Deleted,
+        )
+        .unwrap();
+        assert_eq!(result.len(), 1);
+        let pad = store
+            .get_pad(&result[0].1, Scope::Project, Bucket::Deleted)
+            .unwrap();
+        assert_eq!(pad.metadata.title, "Trash Note");
+    }
+
+    #[test]
+    fn test_title_bucket_archived_matches_only_archived() {
+        let mut store = BucketedStore::new(
+            MemBackend::new(),
+            MemBackend::new(),
+            MemBackend::new(),
+            MemBackend::new(),
+        );
+        create::run(
+            &mut store,
+            Scope::Project,
+            "Active Shared".into(),
+            "".into(),
+            None,
+        )
+        .unwrap();
+        create::run(
+            &mut store,
+            Scope::Project,
+            "Archive Shared".into(),
+            "".into(),
+            None,
+        )
+        .unwrap();
+        // Archive "Archive Shared" (index 1 after creation).
+        crate::commands::archive::run(
+            &mut store,
+            Scope::Project,
+            &[PadSelector::Path(vec![DisplayIndex::Regular(1)])],
+        )
+        .unwrap();
+
+        let result = resolve_selectors(
+            &store,
+            Scope::Project,
+            &[PadSelector::Title("Shared".to_string())],
+            false,
+            TitleBucket::Archived,
+        )
+        .unwrap();
+        assert_eq!(result.len(), 1);
+        let pad = store
+            .get_pad(&result[0].1, Scope::Project, Bucket::Archived)
+            .unwrap();
+        assert_eq!(pad.metadata.title, "Archive Shared");
+    }
+
+    #[test]
+    fn test_title_bucket_active_excludes_deleted_child_under_active_parent() {
+        // Regression for the real-world case where a deleted child under an active
+        // parent (path like `7.d3`) was counted as an active match because only
+        // the root segment was inspected.
+        let mut store = BucketedStore::new(
+            MemBackend::new(),
+            MemBackend::new(),
+            MemBackend::new(),
+            MemBackend::new(),
+        );
+        // Active parent.
+        create::run(
+            &mut store,
+            Scope::Project,
+            "Parent Folder".into(),
+            "".into(),
+            None,
+        )
+        .unwrap();
+        // Two children under the active parent.
+        create::run(
+            &mut store,
+            Scope::Project,
+            "Keep Note".into(),
+            "".into(),
+            Some(PadSelector::Path(vec![DisplayIndex::Regular(1)])),
+        )
+        .unwrap();
+        create::run(
+            &mut store,
+            Scope::Project,
+            "Trash Note".into(),
+            "".into(),
+            Some(PadSelector::Path(vec![DisplayIndex::Regular(1)])),
+        )
+        .unwrap();
+        // Delete the second child. Its path becomes `1.d1` (deleted child under
+        // an active parent).
+        crate::commands::delete::run(
+            &mut store,
+            Scope::Project,
+            &[PadSelector::Path(vec![
+                DisplayIndex::Regular(1),
+                DisplayIndex::Regular(1),
+            ])],
+        )
+        .unwrap();
+
+        // Active-scoped title match for "Note" should only return the surviving
+        // "Keep Note" — the deleted "Trash Note" must be excluded.
+        let result = resolve_selectors(
+            &store,
+            Scope::Project,
+            &[PadSelector::Title("Note".to_string())],
+            false,
+            TitleBucket::Active,
+        )
+        .unwrap();
+        assert_eq!(result.len(), 1);
+        let pad = store
+            .get_pad(&result[0].1, Scope::Project, Bucket::Active)
+            .unwrap();
+        assert_eq!(pad.metadata.title, "Keep Note");
+    }
+
+    #[test]
+    fn test_title_ambiguity_over_threshold_reports_count_only() {
+        let mut store = BucketedStore::new(
+            MemBackend::new(),
+            MemBackend::new(),
+            MemBackend::new(),
+            MemBackend::new(),
+        );
+        // Create more than AMBIGUITY_LIST_THRESHOLD (=5) matches.
+        for i in 1..=6 {
+            create::run(
+                &mut store,
+                Scope::Project,
+                format!("Meeting {}", i),
+                "".into(),
+                None,
+            )
+            .unwrap();
+        }
+
+        let result = resolve_selectors(
+            &store,
+            Scope::Project,
+            &[PadSelector::Title("Meeting".to_string())],
+            false,
+            TitleBucket::Active,
+        );
+        assert!(result.is_err());
+        let err = result.unwrap_err().to_string();
+        // Over the threshold we fall back to a count-only error, without enumerating titles.
+        assert!(err.contains("6 pads"));
+        assert!(!err.contains("Meeting 1"));
     }
 }

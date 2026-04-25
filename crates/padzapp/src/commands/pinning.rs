@@ -6,7 +6,7 @@ use crate::model::Scope;
 use crate::store::{Bucket, DataStore};
 use uuid::Uuid;
 
-use super::helpers::{indexed_pads, resolve_selectors};
+use super::helpers::{indexed_pads, resolve_selectors, TitleBucket};
 
 pub fn pin<S: DataStore>(
     store: &mut S,
@@ -30,7 +30,7 @@ fn pin_state<S: DataStore>(
     selectors: &[PadSelector],
     is_pinned: bool,
 ) -> Result<CmdResult> {
-    let resolved = resolve_selectors(store, scope, selectors, false)?;
+    let resolved = resolve_selectors(store, scope, selectors, false, TitleBucket::Active)?;
     let mut result = CmdResult::default();
 
     // Collect UUIDs and perform pin/unpin

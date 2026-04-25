@@ -4,10 +4,10 @@ use crate::index::PadSelector;
 use crate::model::Scope;
 use crate::store::DataStore;
 
-use super::helpers::resolve_selectors;
+use super::helpers::{resolve_selectors, TitleBucket};
 
 pub fn run<S: DataStore>(store: &S, scope: Scope, selectors: &[PadSelector]) -> Result<CmdResult> {
-    let resolved = resolve_selectors(store, scope, selectors, false)?;
+    let resolved = resolve_selectors(store, scope, selectors, false, TitleBucket::Active)?;
     let mut result = CmdResult::default();
 
     for (_, uuid) in resolved {

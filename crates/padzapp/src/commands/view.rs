@@ -4,7 +4,7 @@ use crate::index::PadSelector;
 use crate::model::Scope;
 use crate::store::{Bucket, DataStore};
 
-use super::helpers::{collect_nested_pads, pads_by_selectors, NestedPad};
+use super::helpers::{collect_nested_pads, pads_by_selectors, NestedPad, TitleBucket};
 
 pub fn run<S: DataStore>(
     store: &S,
@@ -12,7 +12,7 @@ pub fn run<S: DataStore>(
     selectors: &[PadSelector],
     nesting: NestingMode,
 ) -> Result<CmdResult> {
-    let pads = pads_by_selectors(store, scope, selectors, false)?;
+    let pads = pads_by_selectors(store, scope, selectors, false, TitleBucket::Active)?;
 
     let nested = match nesting {
         NestingMode::Flat => pads

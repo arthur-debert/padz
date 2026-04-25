@@ -6,6 +6,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+- **Fixed**
+  - **Natural-language pad matching now respects bucket scope.** When you reference a pad by title (e.g. `padz open for`), the title search used to sweep across active *and* archived *and* deleted pads, so a term that appears in no visible title could still return multiple matches (and block the command) because of hits inside the deleted bucket. Matching is now scoped to the bucket each command operates on: `open`/`view`/`edit`/`delete`/`archive`/`pin`/`move`/`tag`/… only consider active pads, `restore`/`purge` only consider deleted pads, and `unarchive` only considers archived pads. Nested cases are handled correctly too — a deleted child under an active parent (path `7.d3`) is no longer counted as an active match.
+  - **Better ambiguity errors.** When a title matches more than one pad but five or fewer, the error now lists each matching pad's display index and title so you can retype a more specific term or just use the index directly. Above five matches the error falls back to reporting the count.
+
 ## [1.5.0] - 2026-04-24
 
 ## [1.5.0] - 2026-04-24

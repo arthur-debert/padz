@@ -6,7 +6,7 @@ use crate::store::{Bucket, DataStore};
 use chrono::Utc;
 use uuid::Uuid;
 
-use super::helpers::{fmt_path, resolve_selectors};
+use super::helpers::{fmt_path, resolve_selectors, TitleBucket};
 
 pub fn run<S: DataStore>(
     store: &mut S,
@@ -15,7 +15,7 @@ pub fn run<S: DataStore>(
     destination_selector: Option<&PadSelector>,
 ) -> Result<CmdResult> {
     // 1. Resolve source pads
-    let resolved_sources = resolve_selectors(store, scope, selectors, false)?;
+    let resolved_sources = resolve_selectors(store, scope, selectors, false, TitleBucket::Active)?;
 
     if resolved_sources.is_empty() {
         return Ok(CmdResult::default());
@@ -23,8 +23,13 @@ pub fn run<S: DataStore>(
 
     // 2. Resolve destination (if any)
     let destination_data = if let Some(dest_sel) = destination_selector {
-        let resolved_dests =
-            resolve_selectors(store, scope, std::slice::from_ref(dest_sel), false)?;
+        let resolved_dests = resolve_selectors(
+            store,
+            scope,
+            std::slice::from_ref(dest_sel),
+            false,
+            TitleBucket::Active,
+        )?;
         if resolved_dests.is_empty() {
             return Err(PadzError::Api(format!(
                 "Destination not found: {:?}",
