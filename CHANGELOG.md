@@ -8,6 +8,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 - **Changed**
   - **Releases now run end-to-end in CI via `scripts/release`.** Triggering a release with `scripts/release <version|major|minor|patch>` queues a `workflow_dispatch` run that performs the version bump, `## [Unreleased]` roll, commit, tag, GitHub Release, multi-platform build (mac arm64+x86_64, linux x86_64+arm64), `.deb` attach, crates.io publish, and Homebrew formula push — all in CI. Replaces the previous local `cargo release` + tag-push trigger model. The local `release.toml` remains for ad-hoc dry-runs but is no longer the supported release path.
+  - **macOS binaries are now Developer ID signed and Apple-notarized.** Earlier `brew install padz` on macOS triggered a Gatekeeper "unidentified developer" warning on first run because release binaries were adhoc/linker-signed only. The release workflow now imports the Developer ID Application certificate into a temporary keychain, signs each macOS binary with `codesign --options runtime` (hardened runtime + secure timestamp), and submits to Apple's notarization service via App Store Connect API key — all in CI. Both `aarch64-apple-darwin` (Apple Silicon) and `x86_64-apple-darwin` (Intel) binaries are now properly signed.
 
 ## [1.7.0] - 2026-04-25
 
