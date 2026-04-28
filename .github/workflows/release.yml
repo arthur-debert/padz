@@ -348,17 +348,38 @@ jobs:
         run: ls -la
 
       - name: Attach binaries and publish release
-        uses: softprops/action-gh-release@v3
-        with:
-          tag_name: v${{ needs.prepare-release.outputs.version }}
-          # Recursive glob for .deb so this works whether upload-artifact
-          # flattened paths (v4+ default with a pattern ending in *.deb)
-          # or preserved the nested target/<triple>/debian/ structure.
-          files: |
-            ${{ env.BIN_NAME }}-*.tar.gz
-            **/*.deb
-          draft: false
-          prerelease: ${{ needs.prepare-release.outputs.prerelease == 'true' }}
+        # Use `gh` CLI directly rather than softprops/action-gh-release@v3.
+        # The action attempts a "create-or-update" flow on every call which,
+        # when invoked here against the existing draft from create-release,
+        # races into creating a duplicate release with the same tag and
+        # then fails to flip the original to non-draft (GitHub rejects the
+        # PATCH with `tag_name already_exists` because the duplicate also
+        # claims the tag). Direct gh CLI is deterministic and idempotent.
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: v${{ needs.prepare-release.outputs.version }}
+        run: |
+          set -euo pipefail
+          # Upload tarballs (flattened by upload-artifact) and .debs
+          # (which may be at root or under target/<triple>/debian/
+          # depending on artifact pattern — the find handles both).
+          upload_files=()
+          for tgz in "${BIN_NAME}-"*.tar.gz; do
+            [ -f "$tgz" ] && upload_files+=("$tgz")
+          done
+          while IFS= read -r deb; do
+            upload_files+=("$deb")
+          done < <(find . -type f -name '*.deb')
+          if [ ${#upload_files[@]} -eq 0 ]; then
+            echo "::error::No tarballs or .debs found to upload"
+            exit 1
+          fi
+          echo "Uploading ${#upload_files[@]} asset(s) to release $TAG:"
+          printf '  %s\n' "${upload_files[@]}"
+          gh release upload "$TAG" "${upload_files[@]}" --clobber
+
+          # Flip the release from draft to published.
+          gh release edit "$TAG" --draft=false
 
   homebrew-formula:
     # Generates a Homebrew formula from .github/homebrew-formula.rb.tmpl
