@@ -355,9 +355,12 @@ jobs:
         # then fails to flip the original to non-draft (GitHub rejects the
         # PATCH with `tag_name already_exists` because the duplicate also
         # claims the tag). Direct gh CLI is deterministic and idempotent.
+        # `--repo` is required because this job has no checkout step and
+        # gh otherwise can't infer the repo from a git context.
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAG: v${{ needs.prepare-release.outputs.version }}
+          REPO: ${{ github.repository }}
         run: |
           set -euo pipefail
           # Upload tarballs (flattened by upload-artifact) and .debs
@@ -376,10 +379,10 @@ jobs:
           fi
           echo "Uploading ${#upload_files[@]} asset(s) to release $TAG:"
           printf '  %s\n' "${upload_files[@]}"
-          gh release upload "$TAG" "${upload_files[@]}" --clobber
+          gh release upload "$TAG" "${upload_files[@]}" --clobber --repo "$REPO"
 
           # Flip the release from draft to published.
-          gh release edit "$TAG" --draft=false
+          gh release edit "$TAG" --draft=false --repo "$REPO"
 
   homebrew-formula:
     # Generates a Homebrew formula from .github/homebrew-formula.rb.tmpl
