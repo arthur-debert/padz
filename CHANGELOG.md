@@ -6,6 +6,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+- **Changed**
+  - **Releases now run end-to-end in CI via `scripts/release`.** Triggering a release with `scripts/release <version|major|minor|patch>` queues a `workflow_dispatch` run that performs the version bump, `## [Unreleased]` roll, commit, tag, GitHub Release, multi-platform build (mac arm64+x86_64, linux x86_64+arm64), `.deb` attach, crates.io publish, and Homebrew formula push — all in CI. Replaces the previous local `cargo release` + tag-push trigger model. The local `release.toml` remains for ad-hoc dry-runs but is no longer the supported release path.
+
 ## [1.7.0] - 2026-04-25
 
 ## [1.7.0] - 2026-04-25
