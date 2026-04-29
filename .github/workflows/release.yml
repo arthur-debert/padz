@@ -400,7 +400,7 @@ jobs:
           cd dist
           tar -czvf "../${ARTIFACT}.tar.gz" "$ARTIFACT"
 
-      - uses: actions/upload-artifact@v5
+      - uses: actions/upload-artifact@v7
         with:
           name: ${{ env.BIN_NAME }}-${{ matrix.artifact_suffix }}
           path: ${{ env.BIN_NAME }}-${{ matrix.artifact_suffix }}.tar.gz
@@ -421,7 +421,7 @@ jobs:
             --no-build \
             --no-strip
 
-      - uses: actions/upload-artifact@v5
+      - uses: actions/upload-artifact@v7
         if: matrix.deb_arch != '' && env.ENABLE_DEB == 'true'
         with:
           name: ${{ env.BIN_NAME }}-${{ matrix.deb_arch }}-deb
