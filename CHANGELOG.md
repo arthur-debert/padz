@@ -6,6 +6,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+- **Fixed**
+  - **`padz init --link` now rejects linking a project to itself.** Running `padz init --link .` (or pointing `--link` at the current project's own root) inside an already-initialized store would write `.padz/link` containing the project's own path, creating a self-loop. Subsequent `padz` invocations then failed with `Link target '…/.padz' is itself a link. Chained links are not supported.`, because the chain-detection check tripped on the very link file that had just been written. The link command now compares the canonicalized local and target `.padz/` paths up front and refuses with `Cannot link '…' to itself.` before writing anything.
+
 ## [1.8.0] - 2026-04-28
 
 - **Changed**
