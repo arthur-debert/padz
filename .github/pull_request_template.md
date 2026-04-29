@@ -4,8 +4,8 @@
 
 ## Checklist
 
-- [ ] `CHANGELOG_UNRELEASED.md` updated (or chore/docs-only)
-- [ ] `scripts/check` passes locally (or `cargo fmt --check && cargo clippy && cargo test`)
+- [ ] Changelog `Unreleased` section updated (or chore/docs-only)
+- [ ] `scripts/check` passes locally (or `cargo fmt --check && cargo clippy -- -D warnings && cargo test`)
 - [ ] Tests added or updated for behavior changes
 
 ## Notes for reviewers
