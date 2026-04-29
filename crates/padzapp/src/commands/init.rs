@@ -54,6 +54,16 @@ pub fn link(local_padz: &Path, target: &Path) -> Result<CmdResult> {
         target.join(".padz")
     };
 
+    // Reject linking a project to itself
+    if let Ok(local_canonical) = local_padz.canonicalize() {
+        if local_canonical == target_padz {
+            return Err(PadzError::Store(format!(
+                "Cannot link '{}' to itself.",
+                target_padz.display()
+            )));
+        }
+    }
+
     // Validate target has been initialized
     if !target_padz.join("active").exists() {
         return Err(PadzError::Store(format!(
@@ -174,6 +184,25 @@ mod tests {
             .unwrap_err()
             .to_string()
             .contains("not been initialized"));
+    }
+
+    #[test]
+    fn test_link_rejects_self() {
+        let temp = TempDir::new().unwrap();
+
+        // Project initialized with its own .padz/
+        let project = temp.path().join("project-a");
+        let project_padz = project.join(".padz");
+        init_padz_dir(&project_padz);
+
+        // Linking the project to itself (e.g., `padz init --link .`) must fail
+        // before any link file is written, otherwise it creates a self-loop
+        // that later trips the chain-detection check on every invocation.
+        let result = link(&project_padz, &project);
+
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("itself"));
+        assert!(!project_padz.join("link").exists());
     }
 
     #[test]
