@@ -430,15 +430,16 @@ checksum = "a1d728cc89cf3aee9ff92b05e62b19ee65a02b5702cff7d5a377e32c6ae29d8d"
 
 [[package]]
 name = "clapfig"
-version = "0.9.2"
+version = "0.17.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "494de2baa82679797a71471207275cdd98ccb8ae64be9031a3006fb6981f0858"
+checksum = "10db2a4a2699f79b6479a91417baf343582a8a895f7e68df1c70300848261a35"
 dependencies = [
  "clap",
  "confique",
  "directories",
  "serde",
  "serde_ignored",
+ "serde_json",
  "thiserror 2.0.17",
  "toml 0.8.23",
  "toml_edit 0.22.27",
