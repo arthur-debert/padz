@@ -6,6 +6,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [1.8.2] - 2026-05-01
+
+
 ### Changed
 
 - **Release pipeline migrated to canonical reusable workflow at
@@ -18,7 +21,6 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - **Intel-mac dropped from release artifacts** (`x86_64-apple-darwin`).
   Per canonical: arm64-only macOS. Existing v1.8.1 and earlier remain
   available for Intel users via direct GH release download.
-
 ## [1.8.1] - 2026-04-29
 
 - **Fixed**
