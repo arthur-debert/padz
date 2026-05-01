@@ -6,6 +6,19 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+### Changed
+
+- **Release pipeline migrated to canonical reusable workflow at
+  `arthur-debert/release/.github/workflows/rust-cli.yml@v1`.** padz's
+  `.github/workflows/release.yml` is now a thin caller (~25 lines
+  instead of 600+). Bug fixes and improvements propagate via a single
+  bump of the action's `@v1` ref instead of hand-edits across 6
+  rust-CLIs. dodot v2.0.0 was the first consumer of the new pipeline;
+  padz is the second.
+- **Intel-mac dropped from release artifacts** (`x86_64-apple-darwin`).
+  Per canonical: arm64-only macOS. Existing v1.8.1 and earlier remain
+  available for Intel users via direct GH release download.
+
 ## [1.8.1] - 2026-04-29
 
 - **Fixed**
