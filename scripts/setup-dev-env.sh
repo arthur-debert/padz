@@ -15,18 +15,18 @@ set -euo pipefail
 
 log() { printf '[setup-dev-env] %s\n' "$*"; }
 
+SUDO=""
+if [[ $EUID -ne 0 ]]; then
+    SUDO="sudo"
+fi
+
 ensure_uuidgen() {
     if command -v uuidgen >/dev/null 2>&1; then
         return 0
     fi
     log "installing uuid-runtime (provides uuidgen, needed by live-tests/lib/backdoors.bash)"
-    if [[ $EUID -eq 0 ]]; then
-        apt-get update -qq
-        apt-get install -y --no-install-recommends uuid-runtime
-    else
-        sudo apt-get update -qq
-        sudo apt-get install -y --no-install-recommends uuid-runtime
-    fi
+    DEBIAN_FRONTEND=noninteractive $SUDO apt-get update -qq
+    DEBIAN_FRONTEND=noninteractive $SUDO apt-get install -y --no-install-recommends uuid-runtime
 }
 
 ensure_uuidgen
