@@ -41,4 +41,8 @@ jobs:
           file-install: false
 
       - name: Run live integration tests
-        run: live-tests/run-tests
+        # Route through the canonical bin/check-e2e runner (synced from
+        # arthur-debert/release `bats` Component). Discovery picks
+        # live-tests/run-tests automatically — see
+        # docs/per-component/bats.md in the release/ repo.
+        run: bin/check-e2e
