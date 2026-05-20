@@ -2,7 +2,7 @@
 synced_from: arthur-debert/release
 ref: take-iii
 sha: c36c73a104d2b00db52de3770eeccc5237132a41
-synced_at: 2026-05-20T18:22:22Z
+synced_at: 2026-05-20T18:29:05Z
 stack: rust
 components:
   - shell-quality
