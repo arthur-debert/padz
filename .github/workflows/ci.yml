@@ -1,30 +1,44 @@
 name: CI
 
-# Thin caller for the canonical reusable Rust CI workflow at
-# arthur-debert/release. Replaces the previously hand-rolled
-# rust-toolchain + cargo cache + cargo test + bats install +
-# live-tests/run-tests sequence.
-#
-# See docs/per-stack/rust-ci.md in arthur-debert/release for the
-# full input reference. dodot is the reference adopter.
-#
-# `binary-name: padz` causes the check job to build and upload
-# `padz-linux`; `bats: true` adds an e2e job that downloads it,
-# installs bats-core, and runs `bin/check-e2e` with PADZ_BIN
-# pointing at the workspace-relative binary path — matching what
-# live-tests/run-tests and the live-tests/*.bats suites expect.
-
 on:
   push:
-    branches: ['**']
+    branches:
+      - '**'
   pull_request:
 
 permissions:
   contents: read
 
 jobs:
-  ci:
-    uses: arthur-debert/release/.github/workflows/rust-ci.yml@v1
-    with:
-      binary-name: padz
-      bats: true
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Set up Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache cargo registry
+        uses: actions/cache@v5
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: ${{ runner.os }}-cargo-
+
+      - name: Run tests
+        run: cargo test --all --locked
+
+      - name: Install bats
+        uses: bats-core/bats-action@4.0.0
+        with:
+          support-install: false
+          assert-install: false
+          detik-install: false
+          file-install: false
+
+      - name: Run live integration tests
+        run: live-tests/run-tests

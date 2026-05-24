@@ -11,6 +11,3 @@ tarpaulin-report.json
 Export_*.md
 Export_*.txt
 local
-
-# Cross-repo SessionStart hook lives here; only the canonical settings.json is tracked
-!.claude/settings.json
