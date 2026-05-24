@@ -41,5 +41,11 @@ allow-branch = ["main"]
 # cuts unreleased fragments into CHANGELOG/<version>.md and regenerates
 # CHANGELOG.md. cargo-release's built-in replacement engine is disabled
 # so it does not re-promote the already-rendered file.
-pre-release-hook = ["bin/changelog", "new-version", "{{version}}"]
+#
+# `sh -c "cd $(git rev-parse --show-toplevel) && ..."` because cargo-release
+# runs hooks from each crate directory (`crates/padz/`, `crates/padzapp/`).
+# bin/changelog operates on the sibling `CHANGELOG/` dir at repo root, so
+# we cd there first. `consolidate-commits = true` means the hook only fires
+# once per release (not per crate).
+pre-release-hook = ["sh", "-c", "cd \"$(git rev-parse --show-toplevel)\" && bin/changelog new-version {{version}}"]
 pre-release-replacements = []
