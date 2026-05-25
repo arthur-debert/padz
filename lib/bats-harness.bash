@@ -1,0 +1,1 @@
+/Users/adebert/h/release/templates/components/bats/lib/bats-harness.bash
