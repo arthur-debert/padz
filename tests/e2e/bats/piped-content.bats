@@ -18,11 +18,10 @@
 # 4. Don't match on full output strings - too brittle
 # =============================================================================
 
-load '../lib/helpers.bash'
-load '../lib/assertions.bash'
 
 # Setup: Create fresh isolated environment for each test
 setup() {
+    load helpers/setup
     TEST_TEMP_DIR=$(mktemp -d)
     export PADZ_GLOBAL_DATA="${TEST_TEMP_DIR}/global-data"
     mkdir -p "${PADZ_GLOBAL_DATA}"

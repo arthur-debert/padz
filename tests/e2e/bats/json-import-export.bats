@@ -8,10 +8,9 @@
 # same logical set of pads.
 # =============================================================================
 
-load '../lib/helpers.bash'
-load '../lib/assertions.bash'
 
 setup() {
+    load helpers/setup
     # A fresh temp dir per test so imports land in a clean store.
     TEST_IMPORT_DIR="$(mktemp -d)"
     mkdir -p "${TEST_IMPORT_DIR}/.padz"

@@ -9,10 +9,9 @@
 #   - Metadata preservation across store boundaries
 # =============================================================================
 
-load '../lib/helpers.bash'
-load '../lib/assertions.bash'
 
 setup() {
+    load helpers/setup
     SRC_DIR="$(mktemp -d)"
     DST_DIR="$(mktemp -d)"
     mkdir -p "${SRC_DIR}/.padz" "${DST_DIR}/.padz"

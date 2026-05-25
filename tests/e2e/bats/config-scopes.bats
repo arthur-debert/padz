@@ -10,14 +10,13 @@
 #   - Validation still works via clapfig
 # =============================================================================
 
-load '../lib/helpers.bash'
-load '../lib/assertions.bash'
 
 # -----------------------------------------------------------------------------
 # SETUP / TEARDOWN
 # -----------------------------------------------------------------------------
 
 setup() {
+    load helpers/setup
     cd "${PROJECT_A}"
     # Clean any leftover config files from previous tests
     rm -f "${PROJECT_A}/.padz/padz.toml"

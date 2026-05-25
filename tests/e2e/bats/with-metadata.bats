@@ -8,10 +8,9 @@
 # metadata back into the store.
 # =============================================================================
 
-load '../lib/helpers.bash'
-load '../lib/assertions.bash'
 
 setup() {
+    load helpers/setup
     TEST_IMPORT_DIR="$(mktemp -d)"
     mkdir -p "${TEST_IMPORT_DIR}/.padz"
     EXPORT_DIR="$(mktemp -d)"
