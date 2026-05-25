@@ -6,10 +6,9 @@
 # Creates fresh pads to avoid depending on fixture index positions.
 # =============================================================================
 
-load '../lib/helpers.bash'
-load '../lib/assertions.bash'
 
 setup() {
+    load helpers/setup
     # Create a fresh set of nested pads in global scope for each test
     "${PADZ_BIN}" -g create --no-editor "Nested Test Parent"
     PARENT_INDEX=$(find_pad_by_title "Nested Test Parent" global)

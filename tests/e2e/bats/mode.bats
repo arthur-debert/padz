@@ -1,4 +1,6 @@
 #!/usr/bin/env bats
+
+setup() { load helpers/setup; }
 # =============================================================================
 # MODE TOGGLE TESTS (notes vs todos)
 # =============================================================================
@@ -11,8 +13,6 @@
 # Each test sets mode explicitly to avoid depending on fixture state.
 # =============================================================================
 
-load '../lib/helpers.bash'
-load '../lib/assertions.bash'
 
 # -----------------------------------------------------------------------------
 # CONFIG: mode round-trip

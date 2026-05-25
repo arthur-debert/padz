@@ -17,12 +17,10 @@
 # 3. Use assertions for clear failure messages
 # =============================================================================
 
-load '../lib/helpers.bash'
-load '../lib/assertions.bash'
-load '../lib/backdoors.bash'
 
 # Setup: Create fresh isolated environment for each test
 setup() {
+    load helpers/setup
     TEST_TEMP_DIR=$(mktemp -d)
     export PADZ_GLOBAL_DATA="${TEST_TEMP_DIR}/global-data"
     mkdir -p "${PADZ_GLOBAL_DATA}"
