@@ -159,7 +159,7 @@ backdoor_list_content_files() {
     local f base
     for f in "${bucket_dir}"/pad-*.txt; do
         [[ -e "$f" ]] || continue
-        base=$(basename "$f")
+        base="${f##*/}"
         base="${base#pad-}"
         base="${base%.txt}"
         printf '%s\n' "$base"
