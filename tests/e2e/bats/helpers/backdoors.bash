@@ -156,7 +156,14 @@ backdoor_list_content_files() {
     local bucket="${2:-active}"
     local bucket_dir
     bucket_dir=$(_get_bucket_dir "${scope}" "${bucket}")
-    ls "${bucket_dir}"/pad-*.txt 2>/dev/null | xargs -n1 basename | sed 's/^pad-//; s/\.txt$//' || true
+    local f base
+    for f in "${bucket_dir}"/pad-*.txt; do
+        [[ -e "$f" ]] || continue
+        base=$(basename "$f")
+        base="${base#pad-}"
+        base="${base%.txt}"
+        printf '%s\n' "$base"
+    done
 }
 
 # Check if content file exists for UUID

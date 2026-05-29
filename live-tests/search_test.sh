@@ -1,3 +1,5 @@
+#!/usr/bin/env zsh
+# shellcheck shell=bash
 printf "Meeting Notes\n\nDiscussed the roadmap for Q4. Important topics included search UI.\n" > meeting.md
 printf "Todo List\n\n1. Buy milk\n2. Fix search bug\n3. Review PR\n" > todo.md
 printf "Rust Tips\n\nUse Vec::with_capacity for optimization.\nIterators are lazy.\n" > rust.md

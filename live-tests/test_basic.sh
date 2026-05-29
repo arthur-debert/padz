@@ -1,3 +1,5 @@
+#!/usr/bin/env zsh
+# shellcheck shell=bash
 # Basic Padz Verification
 
 # Create a pad

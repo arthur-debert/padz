@@ -83,6 +83,7 @@ eval "$(padz completions zsh)"
 ```
 
 Completions include:
+
 - All commands and their aliases (`view`/`v`, `edit`/`e`, etc.)
 - Command options (`--global`, `--deleted`, `--peek`, etc.)
 - Pad indexes (`1`, `2`, `p1`, `d1`, etc.)
