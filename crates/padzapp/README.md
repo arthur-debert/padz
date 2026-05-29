@@ -12,6 +12,7 @@ This crate provides the UI-agnostic business logic for padz. It includes:
 ## Architecture
 
 Everything in this crate is UI-agnostic:
+
 - Functions take normal Rust arguments and return normal Rust types
 - No stdout/stderr writes
 - No `std::process::exit` calls

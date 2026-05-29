@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# shellcheck disable=SC2154  # $status/$output injected by bats run
 # =============================================================================
 # PADZ TEST ASSERTIONS
 # =============================================================================
@@ -139,7 +140,7 @@ assert_pad_has_tag() {
     local scope="${3:-}"
     local tags
     tags=$(get_pad_tags "${index}" "${scope}")
-    if [[ ! " ${tags} " =~ " ${tag} " ]]; then
+    if [[ " ${tags} " != *" ${tag} "* ]]; then
         echo "FAIL: Expected pad ${index} to have tag '${tag}', but tags are: ${tags}" >&2
         return 1
     fi

@@ -1,3 +1,5 @@
+#!/usr/bin/env zsh
+# shellcheck shell=bash
 # Demo Flow: Create, Pin, Delete, List
 
 echo "--- Creating 3 pads ---"
@@ -5,16 +7,16 @@ padz n --no-editor "First Note" "Content of first note"
 padz n --no-editor "Second Note" "Content of second note"
 padz n --no-editor "Third Note" "Content of third note"
 
-echo "\n--- Listing all pads (Creation Order) ---"
+printf '\n--- Listing all pads (Creation Order) ---\n'
 padz ls
 
-echo "\n--- Pinning the Third Note (Index 3) ---"
+printf '\n--- Pinning the Third Note (Index 3) ---\n'
 padz p 3
 
-echo "\n--- Listing pads (Pinned should be first) ---"
+printf '\n--- Listing pads (Pinned should be first) ---\n'
 padz ls
 
-echo "\n--- Deleting the First Note (Index 1) ---"
+printf '\n--- Deleting the First Note (Index 1) ---\n'
 # Note: After pinning 3, the list order might be: p1(Third), 1(First), 2(Second).
 # We need to be careful about indexes.
 # The user uses DISPLAY indexes.
@@ -23,41 +25,41 @@ echo "\n--- Deleting the First Note (Index 1) ---"
 # So I delete 1.
 padz rm 1
 
-echo "\n--- Listing pads (First note gone, Third pinned, Second remains) ---"
+printf '\n--- Listing pads (First note gone, Third pinned, Second remains) ---\n'
 padz ls
 
-echo "\n--- Listing ALL pads (including deleted) ---"
+printf '\n--- Listing ALL pads (including deleted) ---\n'
 padz ls --deleted
 
-echo "\n--- Purging the deleted note ---"
+printf '\n--- Purging the deleted note ---\n'
 echo "Y" | padz purge
 
-echo "\n--- Listing deleted pads (Should be empty) ---"
+printf '\n--- Listing deleted pads (Should be empty) ---\n'
 padz ls --deleted
 
-echo "\n--- Creating a file for Import test ---"
-echo "Imported Title\nImported Content" > import_test.txt
+printf '\n--- Creating a file for Import test ---\n'
+printf 'Imported Title\nImported Content\n' > import_test.txt
 
-echo "\n--- Importing the file ---"
+printf '\n--- Importing the file ---\n'
 padz import import_test.txt
 
-echo "\n--- Listing pads (Should include Imported Title) ---"
+printf '\n--- Listing pads (Should include Imported Title) ---\n'
 padz ls
 
-echo "\n--- Exporting pads ---"
+printf '\n--- Exporting pads ---\n'
 padz export
 
-echo "\n--- Verifying Export ---"
+printf '\n--- Verifying Export ---\n'
 ls -lh padz-*.tar.gz
 # Verify archive content contains the imported pad (filename matches sanitized title)
 tar -tzf padz-*.tar.gz | grep "Imported Title"
 
-echo "\n--- Doctor Test: Creating inconsistency ---"
+printf '\n--- Doctor Test: Creating inconsistency ---\n'
 # Create consistency by writing a file manually that isn't in DB
-echo "Orphan Pad\nOrphan Content" > .padz/pad-aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee.txt
+printf 'Orphan Pad\nOrphan Content\n' > .padz/pad-aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee.txt
 
-echo "\n--- Running Doctor ---"
+printf '\n--- Running Doctor ---\n'
 padz doctor
 
-echo "\n--- Listing pads (Should include Orphan Pad) ---"
+printf '\n--- Listing pads (Should include Orphan Pad) ---\n'
 padz ls

@@ -1,4 +1,4 @@
-[] PADZ - Command-Line Note Taking
+# PADZ - Command-Line Note Taking
 
 PADZ is a fast, context-aware command-line note-taking tool designed for developers who want quick pad notes without leaving their terminal.
 
@@ -21,6 +21,7 @@ PADZ helps you quickly create, manage, and find pad notes (called "pad") directl
 ### pad
 
 A "pad" is a single note with:
+
 - A **title**: Short description of the note
 - **Content**: The actual note content
 - **Metadata**: Creation time, update time, project association
@@ -53,6 +54,7 @@ PADZ uses two separate discovery algorithms:
 ### Indexing
 
 pad are indexed by their display order (1, 2, 3, ...). The index changes as you create, delete, or pin notes:
+
 - **Pinned notes** appear first with prefix `p1`, `p2`, etc.
 - **Regular notes** follow, numbered sequentially
 - **Deleted notes** (when shown) appear with prefix `d1`, `d2`, etc.
@@ -107,10 +109,12 @@ Aliases: `new`, `n`, `c`
 Create a new pad. If no content is piped, opens `$EDITOR`.
 
 **Flags:**
+
 - `-g, --global`: Create in global scope
 - `-t, --title`: Specify title explicitly
 
 **Examples:**
+
 ```bash
 padz create                              # Opens editor, prompts for title
 padz create "Shopping list"              # Opens editor with title set
@@ -121,6 +125,7 @@ padz create --global "Global note"       # Create in global scope
 ```
 
 **Shortcuts:**
+
 - Just `padz "Some text"` creates a new pad
 - Anything that isn't a recognized command is treated as a create
 
@@ -133,6 +138,7 @@ Aliases: `ls`
 List all pad in current scope.
 
 **Flags:**
+
 - `-g, --global`: Show only global pad
 - `-s, --search <term>`: Search for pad containing term
 - `--deleted`: Show only soft-deleted pad
@@ -140,7 +146,8 @@ List all pad in current scope.
 - `--all`: Show all pad (active, archived, and deleted) grouped with section headers
 
 **Output Format:**
-```
+
+```text
 p1  📌 10 minutes ago  Important note (pinned)
 p2  📌 1 hour ago      Another pinned note
 1   2 hours ago       Regular note
@@ -149,6 +156,7 @@ p2  📌 1 hour ago      Another pinned note
 
 **Search Ranking:**
 When using `-s` or `--search`, results are ranked by:
+
 1. Exact title matches
 2. Partial title matches
 3. Content matches
@@ -156,6 +164,7 @@ When using `-s` or `--search`, results are ranked by:
 5. Original creation order
 
 **Examples:**
+
 ```bash
 padz list                    # List project pad
 padz ls                      # Same (alias)
@@ -174,10 +183,12 @@ Aliases: `v`
 View the content of a pad in your terminal.
 
 **Flags:**
+
 - `-g, --global`: Operate on global pad
 - `--pager`: Use system pager (like `less`)
 
 **Examples:**
+
 ```bash
 padz view 1      # View pad #1
 padz v 1         # Same (alias)
@@ -193,10 +204,12 @@ padz view d1     # View deleted pad #1 (if using --deleted flag)
 Show first and last few lines of a pad.
 
 **Flags:**
+
 - `-g, --global`: Operate on global pad
 - `-n, --lines <int>`: Number of lines from start/end (default: 3)
 
 **Examples:**
+
 ```bash
 padz peek 1       # Show first/last 3 lines
 padz peek 1 -n 5  # Show first/last 5 lines
@@ -211,10 +224,12 @@ Aliases: `o`, `e`
 Open a pad in `$EDITOR`.
 
 **Flags:**
+
 - `-g, --global`: Operate on global pad
 - `--lazy`: Launch editor and exit immediately (non-blocking)
 
 **Examples:**
+
 ```bash
 padz open 1       # Edit pad #1
 padz o 1          # Same (alias)
@@ -232,9 +247,11 @@ Aliases: `rm`, `d`, `del`
 Soft-delete a pad. It can be restored later.
 
 **Flags:**
+
 - `-g, --global`: Operate on global pad
 
 **Examples:**
+
 ```bash
 padz delete 1     # Soft-delete pad #1
 padz rm 1         # Same (alias)
@@ -242,6 +259,7 @@ padz d 1          # Same (alias)
 ```
 
 **Note:** Soft-deleted pad are:
+
 - Hidden from normal listings
 - Visible with `padz ls --deleted` or `padz ls --all`
 - Auto-cleaned after 7 days by default
@@ -257,12 +275,14 @@ Aliases: `undelete`, `recover`
 Restore soft-deleted pad back to active state.
 
 **Flags:**
+
 - `-g, --global`: Restore from global scope
 - `-p, --project <name>`: Restore from specific project
 - `-a, --all`: Restore from all projects
 - `--newer-than <duration>`: Only restore items deleted less than duration ago (e.g., `1h`, `30m`)
 
 **Examples:**
+
 ```bash
 padz restore d1                # Restore specific deleted pad
 padz restore d1 d2 d3          # Restore multiple pad
@@ -277,12 +297,14 @@ Aliases: `purge`
 Permanently delete soft-deleted pad from disk.
 
 **Flags:**
+
 - `-g, --global`: Flush from global scope
 - `-p, --project <name>`: Flush from specific project
 - `-a, --all`: Flush from all projects
 - `--older-than <duration>`: Only flush items deleted more than duration ago (e.g., `7d`, `24h`)
 
 **Examples:**
+
 ```bash
 padz flush                      # Flush all deleted pad (current scope)
 padz flush d1                   # Flush specific pad
@@ -301,12 +323,14 @@ padz flush --all                # Flush from all projects
 Search through pad titles and content using regular expressions.
 
 **Flags:**
+
 - `-g, --global`: Search only global pad
 - `--deleted`: Search only soft-deleted pad
 - `--archived`: Search only archived pad
 - `--all`: Search across all pad (active, archived, and deleted) grouped with section headers
 
 **Examples:**
+
 ```bash
 padz search "my term"           # Search for "my term"
 padz search my term             # Same (spaces automatically joined)
@@ -328,14 +352,17 @@ Aliases: `p`
 Pin one or more pad to the top of the list.
 
 **Flags:**
+
 - `-g, --global`: Operate on global pad
 
 **Limits:**
+
 - Maximum 5 pad can be pinned at once
 - Pinned pad appear with `p1`, `p2`, `p3`, `p4`, `p5` prefixes
 - Pinned pad always appear first in listings
 
 **Examples:**
+
 ```bash
 padz pin 1         # Pin pad #1
 padz pin 1 3 5     # Pin multiple pad
@@ -349,9 +376,11 @@ Aliases: `u`
 Unpin pad.
 
 **Flags:**
+
 - `-g, --global`: Operate on global pad
 
 **Examples:**
+
 ```bash
 padz unpin p1      # Unpin pinned pad #1
 padz unpin p1 p2   # Unpin multiple pinned pad
@@ -367,9 +396,11 @@ Aliases: `clean`
 Cleanup pad older than specified number of days.
 
 **Flags:**
+
 - `-d, --days <int>`: Delete pad older than this many days (default: 30)
 
 **Examples:**
+
 ```bash
 padz cleanup           # Delete pad older than 30 days
 padz cleanup -d 90     # Delete pad older than 90 days
@@ -383,6 +414,7 @@ padz clean -d 7        # Delete pad older than 7 days
 Delete all pad in the current scope.
 
 **Examples:**
+
 ```bash
 padz nuke              # Delete all pad in current project (with confirmation)
 padz nuke --global     # Delete all global pad (with confirmation)
@@ -399,9 +431,11 @@ Aliases: `cp`
 Copy pad content to system clipboard.
 
 **Flags:**
+
 - `-g, --global`: Operate on global pad
 
 **Examples:**
+
 ```bash
 padz copy 1        # Copy pad #1 to clipboard
 padz cp 1          # Same (alias)
@@ -413,9 +447,11 @@ padz copy p1       # Copy pinned pad #1
 Get the full filesystem path to a pad file.
 
 **Flags:**
+
 - `-g, --global`: Operate on global pad
 
 **Examples:**
+
 ```bash
 padz path 1        # Get path to pad #1
 padz path p1       # Get path to pinned pad #1
@@ -430,14 +466,17 @@ cat $(padz path 1) | grep TODO
 Export pad to files in a directory.
 
 **Flags:**
+
 - `-g, --global`: Export global pad
 - `--format <string>`: Export format - `txt` or `markdown` (default: `txt`)
 
 **Output:**
+
 - Creates directory: `padz-export-YYYY-MM-DD-HH-mm/`
 - Filename format: `<index>-<title>.<extension>`
 
 **Examples:**
+
 ```bash
 padz export                     # Export all pad as .txt
 padz export --format markdown   # Export all as .md
@@ -455,6 +494,7 @@ These flags work with all commands:
 - `-v, -vv, -vvv`: Increase verbosity for debugging
 
 **Examples:**
+
 ```bash
 padz list --format json      # Output as JSON
 padz list --format plain     # Plain text output (no colors)
@@ -466,14 +506,16 @@ padz list -vv                # Debug output
 
 ### Data Storage
 
-The data storage is a directory. 
+The data storage is a directory.
 In it, we have each pad in a file,named pad-{UUID}.(txt | md)
 and a data.json file that lists all files and their metadata (uuid, title , created, deletion pinning, etc)
 
 this is the .padz directory. It's either in project's directory or uses the xdg data path for the global (user wide ) scope
+
 ### Auto-Cleanup
 
 PADZ automatically cleans up soft-deleted pad:
+
 - Runs in the background on most commands
 - Permanently deletes pad that have been soft-deleted for > 7 days
 - Non-blocking (won't slow down your commands)
@@ -487,6 +529,7 @@ Commands that modify pad (create, delete, pin, etc.) automatically show the upda
 - `--silent`: Don't show list after command
 
 **Example:**
+
 ```bash
 padz create "Note" --silent   # Create but don't list
 padz delete 1 --verbose       # Delete and show updated list (default)
@@ -497,28 +540,33 @@ padz delete 1 --verbose       # Delete and show updated list (default)
 PADZ has smart command resolution for convenience:
 
 1. **No arguments**: Runs `list`
+
    ```bash
    padz          # Same as: padz list
    ```
 
 2. **Single integer**: Runs `view` (or `open`, configurable)
+
    ```bash
    padz 1        # Same as: padz view 1
    ```
 
 3. **Starts with flag**: Assumed to be for `list`
+
    ```bash
    padz -g       # Same as: padz list -g
    padz -s "foo" # Same as: padz list -s "foo"
    ```
 
 4. **Known command**: Runs that command
+
    ```bash
    padz create
    padz search
    ```
 
 5. **Unknown text**: Assumed to be `create` with title
+
    ```bash
    padz "My note"    # Same as: padz create "My note"
    ```
@@ -528,21 +576,19 @@ This means you rarely need to type `create` or `list` explicitly.
 The key thing about this, called naked mode (no sub command specified) is how to integrate with the cli library.
 we want to avoid haveing to parse as much as possible.
 
-so the right way to do is; 
-execute the command as it. if it has no subcommand , the library will generate an error. 
+so the right way to do is;
+execute the command as it. if it has no subcommand , the library will generate an error.
 intercep the error. if it's a no command given error, now you will figure out what needs to be done.
 use the parsed data from the cli to figure out if you have no args (list), an int(view) and so on.
 
 one you do, inject the right string into the user generated input, then re ran the injected command through the cli library.
-
-
-
 
 ## Output Format
 
 ### Terminal Format (default)
 
 Colorful, human-readable output with:
+
 - Relative timestamps ("10 minutes ago", "3 days ago")
 - Pin indicators (📌 for pinned items)
 - Syntax highlighting for content
@@ -551,10 +597,12 @@ Colorful, human-readable output with:
 ### Plain Format
 
 Plain text without colors or special formatting. Useful for:
+
 - Piping to other commands
 - Logging
 - Scripts
 (detected automatically)
+
 ```bash
 padz list --format plain
 ```
@@ -562,6 +610,7 @@ padz list --format plain
 ### JSON Format
 
 Machine-readable JSON output. Each pad is a JSON object with fields:
+
 - `id`: UUID
 - `project`: Project name
 - `title`: pad title
@@ -584,12 +633,14 @@ padz list --format json | jq '.[0].title'
 PADZ maintains detailed logs for debugging:
 
 **Console Logging:**
+
 - Controlled by `-v` flags
 - `-v`: Info level
 - `-vv`: Debug level
 - `-vvv`: Trace level
 
 **File Logging:**
+
 - Always enabled, logs everything
 - JSON format for structured parsing
 - Location:
@@ -598,6 +649,7 @@ PADZ maintains detailed logs for debugging:
   - **Windows**: `%LOCALAPPDATA%\padz\padz.log`
 
 **Finding the log file:**
+
 ```bash
 padz ls -vv
 # Look for: "Logger initialized with dual output log_file=..."
@@ -608,9 +660,11 @@ padz ls -vv
 ### Quick Capture
 
 Create a pad with content in one line:
+
 ```bash
 echo "TODO: Fix the auth bug" | padz "Auth Bug"
 ```
+
 ### Testing Environment
 
 PADZ includes a testing environment for safe experimentation:
@@ -629,6 +683,7 @@ exit
 ```
 
 The test environment provides:
+
 - Isolated HOME directory
 - Separate XDG directories
 - Fresh padz data store
@@ -638,11 +693,13 @@ The test environment provides:
 ### Index confusion?
 
 Remember that indexes are display-only and change:
+
 - Pinning changes indexes
 - Deleting changes indexes
 - Creating new pad changes indexes
 
 If you need stable references, use:
+
 ```bash
 padz list --format json | jq -r '.[].id'   # Get UUIDs
 ```
@@ -655,7 +712,6 @@ padz list --format json | jq -r '.[].id'   # Get UUIDs
 - **No Encryption**: pad are stored as plain text
 - **Pin Limit**: Maximum 5 pinned pad
 
-
 ## Understanding Indexes
 
 PADZ uses **Display Indexes** (e.g., `1`, `p1`, `d1`) to make commands easy to type. It's much faster to type `padz copy 3` than `padz copy 550e8400-e29b-41d4-a716-446655440000`. However, it is crucial to understand how these indexes are calculated to avoid mistakes.
@@ -666,6 +722,7 @@ A naive approach would be to number items based on the *current view*. If you se
 
 **The Danger:**
 Imagine you have these notes in your main list:
+
 1. `Buy Milk`
 2. `Fix critical bug`
 3. `Call Mom`
@@ -678,17 +735,19 @@ But if `padz` is stateless (which it is), `padz delete 1` would delete the *actu
 To solve this, PADZ indexes are **stable across views**. The index you see in a search result is the same index the item holds in the full, unfiltered list.
 
 **How it works:**
+
 1. PADZ loads **all** active notes for the current scope (the "Default View").
 2. It assigns indexes (`1`, `2`, `3`...) based on this full list.
 3. When you run a search, it filters the list but **preserves the original indexes**.
 
 **Example:**
-*   **Full List:**
-    *   `1`: Buy Milk
-    *   `2`: Fix critical bug
-    *   `3`: Call Mom
-*   **Search "critical":**
-    *   Result: `2`: Fix critical bug (It retains index #2)
+
+- **Full List:**
+  - `1`: Buy Milk
+  - `2`: Fix critical bug
+  - `3`: Call Mom
+- **Search "critical":**
+  - Result: `2`: Fix critical bug (It retains index #2)
 
 This ensures that `padz delete 2` always acts on "Fix critical bug", regardless of whether you are looking at the full list or a search result.
 
@@ -696,12 +755,12 @@ This ensures that `padz delete 2` always acts on "Fix critical bug", regardless 
 
 Indexes are divided into three stable "buckets":
 
-1.  **Pinned (`p1`, `p2`...)**:
-    *   Pinned items are always processed first.
-    *   They have their own independent numbering sequence.
-2.  **Regular (`1`, `2`...)**:
-    *   The standard list of active notes.
-    *   Numbered sequentially based on creation time (or configured sort order).
-3.  **Deleted (`d1`, `d2`...)**:
-    *   Soft-deleted items, only visible when using flags like `--deleted` or `--all`.
-    *   They form a separate list with its own sequence, ensuring they don't shift the indexes of active notes.
+1. **Pinned (`p1`, `p2`...)**:
+    - Pinned items are always processed first.
+    - They have their own independent numbering sequence.
+2. **Regular (`1`, `2`...)**:
+    - The standard list of active notes.
+    - Numbered sequentially based on creation time (or configured sort order).
+3. **Deleted (`d1`, `d2`...)**:
+    - Soft-deleted items, only visible when using flags like `--deleted` or `--all`.
+    - They form a separate list with its own sequence, ensuring they don't shift the indexes of active notes.

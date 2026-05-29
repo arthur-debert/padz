@@ -52,12 +52,11 @@
 # Run padz with optional scope
 # Usage: _padz [scope] <args...>
 _padz() {
-    local scope=""
-    local args=()
+    local flag=()
 
     # Check if first arg is a scope indicator
     if [[ "$1" == "global" ]]; then
-        scope="-g"
+        flag=(-g)
         shift
     elif [[ "$1" == "project" ]]; then
         # Ensure we're in project directory
@@ -65,28 +64,28 @@ _padz() {
         shift
     fi
 
-    "${PADZ_BIN}" ${scope} "$@"
+    "${PADZ_BIN}" "${flag[@]}" "$@"
 }
 
 # Get JSON output for all pads
 # Usage: list_pads [scope]
 list_pads() {
     local scope="${1:-}"
-    _padz ${scope} list --output json 2>/dev/null
+    _padz ${scope:+"$scope"} list --output json 2>/dev/null
 }
 
 # Get JSON output for deleted pads
 # Usage: list_deleted_pads [scope]
 list_deleted_pads() {
     local scope="${1:-}"
-    _padz ${scope} list --deleted --output json 2>/dev/null
+    _padz ${scope:+"$scope"} list --deleted --output json 2>/dev/null
 }
 
 # Get JSON output for archived pads
 # Usage: list_archived_pads [scope]
 list_archived_pads() {
     local scope="${1:-}"
-    _padz ${scope} list --archived --output json 2>/dev/null
+    _padz ${scope:+"$scope"} list --archived --output json 2>/dev/null
 }
 
 # Search pads and return JSON
@@ -94,7 +93,7 @@ list_archived_pads() {
 search_pads() {
     local term="$1"
     local scope="${2:-}"
-    _padz ${scope} search "${term}" --output json 2>/dev/null
+    _padz ${scope:+"$scope"} search "${term}" --output json 2>/dev/null
 }
 
 # Count active pads

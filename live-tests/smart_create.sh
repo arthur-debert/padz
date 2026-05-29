@@ -1,4 +1,5 @@
-#!/bin/bash
+#!/usr/bin/env zsh
+# shellcheck shell=bash
 set -e
 
 echo "--- Starting Smart Create Tests ---"
@@ -28,7 +29,8 @@ echo '#!/bin/sh' > ./bin/fake-editor
 chmod +x ./bin/fake-editor
 
 # Add to PATH and set EDITOR
-export PATH="$(pwd)/bin:$PATH"
+PATH="$(pwd)/bin:$PATH"
+export PATH
 export EDITOR="fake-editor"
 
 echo "Running padz create (from clipboard)..."

@@ -1,3 +1,4 @@
+#!/usr/bin/env bash
 # =============================================================================
 # Base Fixture - Creates a diverse set of pads for testing
 # =============================================================================
@@ -61,7 +62,7 @@ padz -g list --deleted
 # -----------------------------------------------------------------------------
 # Create from inside project-a (git repo = project scope)
 
-cd projects/project-a
+cd projects/project-a || exit
 padz init
 
 # Simple project pads
@@ -99,7 +100,7 @@ echo "=== Project Pads (including deleted) ==="
 padz list --deleted
 
 # Return to workspace
-cd ../..
+cd ../.. || exit
 
 echo ""
 echo "=== Fixture Complete ==="
