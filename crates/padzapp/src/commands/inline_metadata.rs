@@ -446,4 +446,430 @@ mod tests {
         let (parsed, _) = parse_lex_metadata(raw).unwrap();
         assert_eq!(parsed["tags"], Value::Array(vec![]));
     }
+
+    // ---------------------------------------------------------------
+    // Bucket label coverage — only `Active` was exercised before.
+    // ---------------------------------------------------------------
+
+    #[test]
+    fn serialize_md_frontmatter_writes_archived_bucket_label() {
+        let block = serialize_md_frontmatter(&sample_meta(), Bucket::Archived);
+        assert!(
+            block.contains("padz.bucket: Archived"),
+            "block did not include archived bucket label: {}",
+            block
+        );
+    }
+
+    #[test]
+    fn serialize_md_frontmatter_writes_deleted_bucket_label() {
+        let block = serialize_md_frontmatter(&sample_meta(), Bucket::Deleted);
+        assert!(
+            block.contains("padz.bucket: Deleted"),
+            "block did not include deleted bucket label: {}",
+            block
+        );
+    }
+
+    #[test]
+    fn serialize_lex_metadata_writes_archived_bucket_label() {
+        let block = serialize_lex_metadata(&sample_meta(), Bucket::Archived);
+        assert!(block.contains(":: padz.bucket :: Archived\n"));
+    }
+
+    #[test]
+    fn serialize_lex_metadata_writes_deleted_bucket_label() {
+        let block = serialize_lex_metadata(&sample_meta(), Bucket::Deleted);
+        assert!(block.contains(":: padz.bucket :: Deleted\n"));
+    }
+
+    // ---------------------------------------------------------------
+    // TodoStatus variants — only Done was tested.
+    // ---------------------------------------------------------------
+
+    #[test]
+    fn md_frontmatter_roundtrips_all_status_variants() {
+        for (status, label) in [
+            (TodoStatus::Planned, "Planned"),
+            (TodoStatus::InProgress, "InProgress"),
+            (TodoStatus::Done, "Done"),
+        ] {
+            let mut meta = sample_meta();
+            meta.status = status;
+            let block = serialize_md_frontmatter(&meta, Bucket::Active);
+            let full = format!("{}Body\n", block);
+            let (parsed, _) = parse_md_frontmatter(&full)
+                .unwrap_or_else(|| panic!("frontmatter for {} did not parse", label));
+            assert_eq!(parsed["status"], Value::String(label.into()));
+        }
+    }
+
+    #[test]
+    fn lex_metadata_roundtrips_all_status_variants() {
+        for (status, label) in [
+            (TodoStatus::Planned, "Planned"),
+            (TodoStatus::InProgress, "InProgress"),
+            (TodoStatus::Done, "Done"),
+        ] {
+            let mut meta = sample_meta();
+            meta.status = status;
+            let block = serialize_lex_metadata(&meta, Bucket::Active);
+            let full = format!("{}Body\n", block);
+            let (parsed, _) = parse_lex_metadata(&full)
+                .unwrap_or_else(|| panic!("lex metadata for {} did not parse", label));
+            assert_eq!(parsed["status"], Value::String(label.into()));
+        }
+    }
+
+    // ---------------------------------------------------------------
+    // Null handling for optional fields.
+    // ---------------------------------------------------------------
+
+    #[test]
+    fn md_frontmatter_serializes_and_parses_null_pinned_at_and_parent_id() {
+        let mut meta = sample_meta();
+        meta.is_pinned = false;
+        meta.pinned_at = None;
+        meta.parent_id = None;
+        let block = serialize_md_frontmatter(&meta, Bucket::Active);
+        assert!(block.contains("padz.pinned_at: null"));
+        assert!(block.contains("padz.parent_id: null"));
+
+        let (parsed, _) = parse_md_frontmatter(&format!("{}Body\n", block)).unwrap();
+        assert_eq!(parsed["pinned_at"], Value::Null);
+        assert_eq!(parsed["parent_id"], Value::Null);
+    }
+
+    #[test]
+    fn lex_metadata_serializes_literal_null_for_pinned_at_and_parent_id() {
+        let mut meta = sample_meta();
+        meta.is_pinned = false;
+        meta.pinned_at = None;
+        meta.parent_id = None;
+        let block = serialize_lex_metadata(&meta, Bucket::Active);
+        assert!(block.contains(":: padz.pinned_at :: null"));
+        assert!(block.contains(":: padz.parent_id :: null"));
+
+        let (parsed, _) = parse_lex_metadata(&format!("{}Body\n", block)).unwrap();
+        assert_eq!(parsed["pinned_at"], Value::Null);
+        assert_eq!(parsed["parent_id"], Value::Null);
+    }
+
+    // ---------------------------------------------------------------
+    // parent_id Some(...) roundtrip.
+    // ---------------------------------------------------------------
+
+    #[test]
+    fn md_frontmatter_roundtrips_parent_id_value() {
+        let mut meta = sample_meta();
+        let parent = Uuid::parse_str("99999999-aaaa-bbbb-cccc-dddddddddddd").unwrap();
+        meta.parent_id = Some(parent);
+        let block = serialize_md_frontmatter(&meta, Bucket::Active);
+        let (parsed, _) = parse_md_frontmatter(&format!("{}Body\n", block)).unwrap();
+        assert_eq!(parsed["parent_id"], Value::String(parent.to_string()));
+    }
+
+    #[test]
+    fn lex_metadata_roundtrips_parent_id_value() {
+        let mut meta = sample_meta();
+        let parent = Uuid::parse_str("99999999-aaaa-bbbb-cccc-dddddddddddd").unwrap();
+        meta.parent_id = Some(parent);
+        let block = serialize_lex_metadata(&meta, Bucket::Active);
+        let (parsed, _) = parse_lex_metadata(&format!("{}Body\n", block)).unwrap();
+        assert_eq!(parsed["parent_id"], Value::String(parent.to_string()));
+    }
+
+    // ---------------------------------------------------------------
+    // BOM handling — the code strips a leading U+FEFF before parsing.
+    // ---------------------------------------------------------------
+
+    #[test]
+    fn parse_md_frontmatter_strips_leading_bom() {
+        let raw = "\u{feff}---\npadz.id: abc\n---\n\nBody\n";
+        let (parsed, body) = parse_md_frontmatter(raw).expect("BOM should be transparent");
+        assert_eq!(parsed["id"], Value::String("abc".into()));
+        assert_eq!(body, "Body\n");
+    }
+
+    #[test]
+    fn parse_lex_metadata_strips_leading_bom() {
+        let raw = "\u{feff}:: padz.id :: abc\n\nBody\n";
+        let (parsed, body) = parse_lex_metadata(raw).expect("BOM should be transparent");
+        assert_eq!(parsed["id"], Value::String("abc".into()));
+        assert_eq!(body, "Body\n");
+    }
+
+    // ---------------------------------------------------------------
+    // Shape of the emitted serialization blocks.
+    // ---------------------------------------------------------------
+
+    #[test]
+    fn serialize_md_frontmatter_ends_with_fence_and_blank_separator() {
+        // Per the docstring, the returned block is ready to prepend:
+        // "---\n...\n---\n\n"
+        let block = serialize_md_frontmatter(&sample_meta(), Bucket::Active);
+        assert!(block.starts_with("---\n"));
+        assert!(block.ends_with("---\n\n"));
+    }
+
+    #[test]
+    fn serialize_lex_metadata_ends_with_blank_separator_line() {
+        // The serializer pushes a final '\n' so the body that follows starts
+        // on a fresh blank line.
+        let block = serialize_lex_metadata(&sample_meta(), Bucket::Active);
+        assert!(block.ends_with("\n\n"));
+    }
+
+    // ---------------------------------------------------------------
+    // md frontmatter — fence + structural edge cases.
+    // ---------------------------------------------------------------
+
+    #[test]
+    fn parse_md_frontmatter_first_line_with_extra_chars_is_not_a_fence() {
+        // "---x" must not be treated as the opening fence.
+        let raw = "---x\npadz.id: abc\n---\n\nBody";
+        assert!(parse_md_frontmatter(raw).is_none());
+    }
+
+    #[test]
+    fn parse_md_frontmatter_tolerates_trailing_whitespace_on_opening_fence() {
+        // The fence is matched after trim(); "---   " is still valid.
+        let raw = "---   \npadz.id: abc\n---\n\nBody";
+        let (parsed, _) = parse_md_frontmatter(raw).expect("fence with trailing whitespace");
+        assert_eq!(parsed["id"], Value::String("abc".into()));
+    }
+
+    #[test]
+    fn parse_md_frontmatter_malformed_yaml_returns_none() {
+        // Unterminated quoted string is unambiguously malformed YAML.
+        let raw = "---\npadz.id: \"unterminated\n---\n\nBody";
+        assert!(parse_md_frontmatter(raw).is_none());
+    }
+
+    #[test]
+    fn parse_md_frontmatter_non_mapping_yaml_returns_none() {
+        // Bare scalar is valid YAML but not a Mapping → cannot carry padz keys.
+        let raw = "---\njust-a-scalar\n---\n\nBody";
+        assert!(parse_md_frontmatter(raw).is_none());
+    }
+
+    #[test]
+    fn parse_md_frontmatter_with_only_non_padz_keys_returns_none() {
+        // Without any padz-prefixed key the metadata bag stays empty → None.
+        let raw = "---\nauthor: Alice\nproject: padz\n---\n\nBody";
+        assert!(parse_md_frontmatter(raw).is_none());
+    }
+
+    #[test]
+    fn parse_md_frontmatter_drops_non_string_yaml_map_keys() {
+        // A top-level integer key is silently dropped — only string-keyed,
+        // padz-prefixed entries make it into the metadata bag.
+        let raw = "---\n1: ignored\npadz.id: abc\n---\n\nBody";
+        let (parsed, _) = parse_md_frontmatter(raw).unwrap();
+        assert!(parsed.get("ignored").is_none());
+        assert!(parsed.get("1").is_none());
+        assert_eq!(parsed["id"], Value::String("abc".into()));
+    }
+
+    #[test]
+    fn parse_md_frontmatter_empty_body_supported() {
+        let raw = "---\npadz.id: abc\n---\n";
+        let (parsed, body) = parse_md_frontmatter(raw).unwrap();
+        assert_eq!(parsed["id"], Value::String("abc".into()));
+        assert!(body.is_empty(), "expected empty body, got {:?}", body);
+    }
+
+    #[test]
+    fn parse_md_frontmatter_preserves_internal_blank_lines_in_body() {
+        let raw = "---\npadz.id: abc\n---\n\nLine1\n\nLine2\n";
+        let (_, body) = parse_md_frontmatter(raw).unwrap();
+        assert_eq!(body, "Line1\n\nLine2\n");
+    }
+
+    // ---------------------------------------------------------------
+    // md frontmatter — yaml_to_json conversion through the public path.
+    // ---------------------------------------------------------------
+
+    #[test]
+    fn parse_md_frontmatter_yaml_numeric_value_becomes_json_number() {
+        let raw = "---\npadz.schema_version: 7\n---\n\nBody";
+        let (parsed, _) = parse_md_frontmatter(raw).unwrap();
+        assert_eq!(parsed["schema_version"], Value::Number(7u64.into()));
+    }
+
+    #[test]
+    fn parse_md_frontmatter_yaml_negative_int_becomes_signed_json_number() {
+        let raw = "---\npadz.schema_version: -3\n---\n\nBody";
+        let (parsed, _) = parse_md_frontmatter(raw).unwrap();
+        assert_eq!(
+            parsed["schema_version"],
+            Value::Number(serde_json::Number::from(-3i64))
+        );
+    }
+
+    #[test]
+    fn parse_md_frontmatter_yaml_bool_value_preserved() {
+        let raw = "---\npadz.is_pinned: true\n---\n\nBody";
+        let (parsed, _) = parse_md_frontmatter(raw).unwrap();
+        assert_eq!(parsed["is_pinned"], Value::Bool(true));
+    }
+
+    #[test]
+    fn parse_md_frontmatter_yaml_null_value_preserved() {
+        let raw = "---\npadz.pinned_at: null\n---\n\nBody";
+        let (parsed, _) = parse_md_frontmatter(raw).unwrap();
+        assert_eq!(parsed["pinned_at"], Value::Null);
+    }
+
+    #[test]
+    fn parse_md_frontmatter_yaml_sequence_becomes_json_array() {
+        let raw = "---\npadz.tags:\n  - work\n  - rust\n---\n\nBody";
+        let (parsed, _) = parse_md_frontmatter(raw).unwrap();
+        assert_eq!(
+            parsed["tags"],
+            Value::Array(vec![
+                Value::String("work".into()),
+                Value::String("rust".into()),
+            ])
+        );
+    }
+
+    #[test]
+    fn parse_md_frontmatter_yaml_empty_sequence_becomes_empty_json_array() {
+        let raw = "---\npadz.tags: []\n---\n\nBody";
+        let (parsed, _) = parse_md_frontmatter(raw).unwrap();
+        assert_eq!(parsed["tags"], Value::Array(vec![]));
+    }
+
+    // ---------------------------------------------------------------
+    // lex parser — annotation / coercion edge cases.
+    // ---------------------------------------------------------------
+
+    #[test]
+    fn parse_lex_metadata_stops_at_first_non_annotation_line() {
+        // Plain-text line interrupts the annotation block. Anything after it
+        // belongs to the body, even if it looks like another annotation.
+        let raw = ":: padz.id :: abc\nplain text line\n:: padz.status :: Done\n";
+        let (parsed, body) = parse_lex_metadata(raw).unwrap();
+        assert_eq!(parsed["id"], Value::String("abc".into()));
+        assert!(
+            parsed.get("status").is_none(),
+            "annotation after a plain line should not be parsed as metadata"
+        );
+        assert!(body.starts_with("plain text line"));
+    }
+
+    #[test]
+    fn parse_lex_metadata_empty_pinned_at_value_coerces_to_null() {
+        let raw = ":: padz.id :: abc\n:: padz.pinned_at :: \n\nBody";
+        let (parsed, _) = parse_lex_metadata(raw).unwrap();
+        assert_eq!(parsed["pinned_at"], Value::Null);
+    }
+
+    #[test]
+    fn parse_lex_metadata_coerces_known_bool_keys() {
+        let raw = ":: padz.id :: abc\n:: padz.is_pinned :: true\n:: padz.delete_protected :: false\n\nBody";
+        let (parsed, _) = parse_lex_metadata(raw).unwrap();
+        assert_eq!(parsed["is_pinned"], Value::Bool(true));
+        assert_eq!(parsed["delete_protected"], Value::Bool(false));
+    }
+
+    #[test]
+    fn parse_lex_metadata_unknown_bool_value_falls_back_to_string() {
+        // Anything outside {"true", "false"} for a bool-typed key is kept as
+        // a string so metadata_apply can decide what to do with it.
+        let raw = ":: padz.id :: abc\n:: padz.is_pinned :: maybe\n\nBody";
+        let (parsed, _) = parse_lex_metadata(raw).unwrap();
+        assert_eq!(parsed["is_pinned"], Value::String("maybe".into()));
+    }
+
+    #[test]
+    fn parse_lex_metadata_non_numeric_schema_version_falls_back_to_string() {
+        let raw = ":: padz.id :: abc\n:: padz.schema_version :: abc\n\nBody";
+        let (parsed, _) = parse_lex_metadata(raw).unwrap();
+        assert_eq!(parsed["schema_version"], Value::String("abc".into()));
+    }
+
+    #[test]
+    fn parse_lex_metadata_tags_trim_whitespace_around_each_entry() {
+        let raw = ":: padz.id :: abc\n:: padz.tags :: work , rust , golang\n\nBody";
+        let (parsed, _) = parse_lex_metadata(raw).unwrap();
+        assert_eq!(
+            parsed["tags"],
+            Value::Array(vec![
+                Value::String("work".into()),
+                Value::String("rust".into()),
+                Value::String("golang".into()),
+            ])
+        );
+    }
+
+    #[test]
+    fn parse_lex_metadata_tags_drop_empty_segments_from_double_commas() {
+        let raw = ":: padz.id :: abc\n:: padz.tags :: work,,rust,,\n\nBody";
+        let (parsed, _) = parse_lex_metadata(raw).unwrap();
+        assert_eq!(
+            parsed["tags"],
+            Value::Array(vec![
+                Value::String("work".into()),
+                Value::String("rust".into()),
+            ])
+        );
+    }
+
+    #[test]
+    fn parse_lex_metadata_with_no_padz_prefix_on_first_line_returns_none() {
+        // The opening sentinel must be `:: padz.` — even if later lines would
+        // qualify, the parser bails out immediately.
+        let raw = ":: author :: alice\n:: padz.id :: abc\n";
+        assert!(parse_lex_metadata(raw).is_none());
+    }
+
+    #[test]
+    fn parse_lex_metadata_unknown_padz_key_kept_as_string() {
+        // Forward compatibility: unknown padz.* keys are kept verbatim as
+        // strings so downstream layers can inspect / warn on them.
+        let raw = ":: padz.id :: abc\n:: padz.future_field :: hello\n\nBody";
+        let (parsed, _) = parse_lex_metadata(raw).unwrap();
+        assert_eq!(parsed["future_field"], Value::String("hello".into()));
+    }
+
+    #[test]
+    fn parse_lex_annotation_shorthand_strips_trailing_colons_from_value() {
+        // Block-style annotation shorthand uses trailing `::`. The parser
+        // strips them so the captured value is clean.
+        let raw = ":: padz.id :: abc ::\n\nBody";
+        let (parsed, _) = parse_lex_metadata(raw).unwrap();
+        assert_eq!(parsed["id"], Value::String("abc".into()));
+    }
+
+    #[test]
+    fn parse_lex_metadata_empty_body_supported() {
+        let raw = ":: padz.id :: abc\n";
+        let (parsed, body) = parse_lex_metadata(raw).unwrap();
+        assert_eq!(parsed["id"], Value::String("abc".into()));
+        assert!(body.is_empty(), "expected empty body, got {:?}", body);
+    }
+
+    // ---------------------------------------------------------------
+    // Roundtrips of edge-case metadata shapes.
+    // ---------------------------------------------------------------
+
+    #[test]
+    fn md_frontmatter_roundtrips_empty_tags() {
+        let mut meta = sample_meta();
+        meta.tags = vec![];
+        let block = serialize_md_frontmatter(&meta, Bucket::Active);
+        let (parsed, _) = parse_md_frontmatter(&format!("{}Body\n", block)).unwrap();
+        assert_eq!(parsed["tags"], Value::Array(vec![]));
+    }
+
+    #[test]
+    fn lex_metadata_roundtrips_empty_tags() {
+        let mut meta = sample_meta();
+        meta.tags = vec![];
+        let block = serialize_lex_metadata(&meta, Bucket::Active);
+        let (parsed, _) = parse_lex_metadata(&format!("{}Body\n", block)).unwrap();
+        assert_eq!(parsed["tags"], Value::Array(vec![]));
+    }
 }
