@@ -770,6 +770,10 @@ mod tests {
     fn test_run_explicit_selector_resolves_against_source() {
         let mut src = store();
         create::run(&mut src, Scope::Project, "First".into(), "".into(), None).unwrap();
+        // Small delay so the two pads get distinct created_at timestamps —
+        // without this the canonical index can fall back to UUID tie-break
+        // and "newest = 1" becomes flaky.
+        std::thread::sleep(std::time::Duration::from_millis(10));
         create::run(&mut src, Scope::Project, "Second".into(), "".into(), None).unwrap();
 
         let mut dst = store();
