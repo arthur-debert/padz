@@ -116,8 +116,34 @@ impl<S: DataStore> PadzApi<S> {
 
 #[cfg(test)]
 mod tests {
-    use crate::api::test_support::make_api;
+    use super::*;
+    use crate::api::test_support::{make_api, make_store, TestStore};
+    use crate::api::{PadzApi, PadzPaths};
+    use crate::commands::transfer::TransferMode;
     use crate::model::Scope;
+    use crate::store::{Bucket, DataStore};
+    use std::path::PathBuf;
+
+    /// Initialize a `.padz/<bucket>` layout at `dir` so it looks like an
+    /// initialized store on disk — what `open_target_store` requires.
+    fn init_layout(dir: &std::path::Path) {
+        std::fs::create_dir_all(dir.join("active")).unwrap();
+        std::fs::create_dir_all(dir.join("archived")).unwrap();
+        std::fs::create_dir_all(dir.join("deleted")).unwrap();
+    }
+
+    /// Build an API with `paths.project` pointing at the supplied dir.
+    /// The store remains in-memory; the path is only consulted for the
+    /// same-store-rejection check.
+    fn make_api_at(project_dir: PathBuf) -> PadzApi<TestStore> {
+        PadzApi::new(
+            make_store(),
+            PadzPaths {
+                project: Some(project_dir),
+                global: PathBuf::from("/tmp/global"),
+            },
+        )
+    }
 
     #[test]
     fn test_api_import_pads() {
@@ -134,5 +160,177 @@ mod tests {
             .messages
             .iter()
             .any(|m| m.content.contains("Total imported: 1")));
+    }
+
+    // ------------------------------------------------------------------------
+    // transfer_pads_to
+    // ------------------------------------------------------------------------
+
+    #[test]
+    fn test_transfer_pads_to_clones_into_destination() {
+        let mut api = make_api();
+        // Source: create two pads in-memory.
+        api.create_pad(Scope::Project, "A".into(), "alpha".into(), None)
+            .unwrap();
+        api.create_pad(Scope::Project, "B".into(), "beta".into(), None)
+            .unwrap();
+
+        // Destination on disk.
+        let temp = tempfile::tempdir().unwrap();
+        let dest_padz = temp.path().join(".padz");
+        init_layout(&dest_padz);
+
+        let empty: &[&str] = &[];
+        let result = api
+            .transfer_pads_to(Scope::Project, empty, &dest_padz, TransferMode::Clone)
+            .unwrap();
+
+        assert!(
+            result
+                .messages
+                .iter()
+                .any(|m| m.content.contains("Cloned 2 pad(s)")),
+            "expected Cloned message; got {:?}",
+            result.messages
+        );
+
+        // Source must still hold both pads after a clone.
+        let still_there = api
+            .get_pads(Scope::Project, Default::default(), &[] as &[String])
+            .unwrap();
+        assert_eq!(still_there.listed_pads.len(), 2);
+    }
+
+    #[test]
+    fn test_transfer_pads_to_rejects_same_store() {
+        // The api's "project" path equals the destination path → reject.
+        let temp = tempfile::tempdir().unwrap();
+        let project = temp.path().to_path_buf();
+        let project_padz = project.join(".padz");
+        init_layout(&project_padz);
+
+        let mut api = make_api_at(project_padz.clone());
+        api.create_pad(Scope::Project, "A".into(), "".into(), None)
+            .unwrap();
+
+        let empty: &[&str] = &[];
+        let err = api
+            .transfer_pads_to(Scope::Project, empty, &project_padz, TransferMode::Clone)
+            .unwrap_err();
+        let msg = err.to_string();
+        assert!(
+            msg.contains("current store") && msg.contains("--to"),
+            "expected same-store rejection mentioning --to; got: {msg}"
+        );
+    }
+
+    #[test]
+    fn test_transfer_pads_to_missing_dest_errors() {
+        let mut api = make_api();
+        api.create_pad(Scope::Project, "A".into(), "".into(), None)
+            .unwrap();
+        let temp = tempfile::tempdir().unwrap();
+        let missing = temp.path().join("nope");
+        let empty: &[&str] = &[];
+        let err = api
+            .transfer_pads_to(Scope::Project, empty, &missing, TransferMode::Clone)
+            .unwrap_err();
+        // resolve_target_dir fails to canonicalize a missing path.
+        assert!(err.to_string().to_lowercase().contains("target"));
+    }
+
+    // ------------------------------------------------------------------------
+    // transfer_pads_from
+    // ------------------------------------------------------------------------
+
+    #[test]
+    fn test_transfer_pads_from_pulls_into_current_store() {
+        // Source: a real on-disk store with one pad.
+        let temp = tempfile::tempdir().unwrap();
+        let src_padz = temp.path().join(".padz");
+        init_layout(&src_padz);
+        let mut src_store = commands::transfer::open_target_store(&src_padz).unwrap();
+        commands::create::run(
+            &mut src_store,
+            Scope::Project,
+            "FromDisk".into(),
+            "content".into(),
+            None,
+        )
+        .unwrap();
+
+        // API points at a different in-memory store.
+        let mut api = make_api();
+        let empty: &[&str] = &[];
+        let result = api
+            .transfer_pads_from(Scope::Project, empty, &src_padz, TransferMode::Clone)
+            .unwrap();
+
+        assert!(
+            result
+                .messages
+                .iter()
+                .any(|m| m.content.contains("Cloned 1 pad(s)")),
+            "expected Cloned message; got {:?}",
+            result.messages
+        );
+
+        let landed = api
+            .get_pads(Scope::Project, Default::default(), &[] as &[String])
+            .unwrap();
+        assert_eq!(landed.listed_pads.len(), 1);
+        assert_eq!(landed.listed_pads[0].pad.metadata.title, "FromDisk");
+    }
+
+    #[test]
+    fn test_transfer_pads_from_migrate_empties_source_on_disk() {
+        // The on-disk source loses its pad after a migrate pulls it.
+        let temp = tempfile::tempdir().unwrap();
+        let src_padz = temp.path().join(".padz");
+        init_layout(&src_padz);
+        {
+            let mut src_store = commands::transfer::open_target_store(&src_padz).unwrap();
+            commands::create::run(
+                &mut src_store,
+                Scope::Project,
+                "Moveme".into(),
+                "".into(),
+                None,
+            )
+            .unwrap();
+        }
+
+        let mut api = make_api();
+        let empty: &[&str] = &[];
+        api.transfer_pads_from(Scope::Project, empty, &src_padz, TransferMode::Migrate)
+            .unwrap();
+
+        // Re-open and assert empty.
+        let src_store = commands::transfer::open_target_store(&src_padz).unwrap();
+        let remaining = src_store.list_pads(Scope::Project, Bucket::Active).unwrap();
+        assert!(
+            remaining.is_empty(),
+            "migrate from a disk store should leave it empty; got {:?}",
+            remaining
+        );
+    }
+
+    #[test]
+    fn test_transfer_pads_from_rejects_same_store() {
+        let temp = tempfile::tempdir().unwrap();
+        let project = temp.path().to_path_buf();
+        let project_padz = project.join(".padz");
+        init_layout(&project_padz);
+
+        let mut api = make_api_at(project_padz.clone());
+        let empty: &[&str] = &[];
+        let err = api
+            .transfer_pads_from(Scope::Project, empty, &project_padz, TransferMode::Clone)
+            .unwrap_err();
+        let msg = err.to_string();
+        assert!(
+            msg.contains("current store") && msg.contains("--from"),
+            "expected same-store rejection mentioning --from; got: {msg}"
+        );
     }
 }
