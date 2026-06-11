@@ -1082,8 +1082,11 @@ mod tests {
 
     #[test]
     fn test_resolve_target_dir_missing_path_errors() {
-        let err = resolve_target_dir(std::path::Path::new("/definitely/does/not/exist/anywhere"))
-            .unwrap_err();
+        // Build a guaranteed-missing path under a tempdir so the test is
+        // deterministic regardless of what exists on the host filesystem.
+        let temp = tempfile::tempdir().unwrap();
+        let missing = temp.path().join("does-not-exist");
+        let err = resolve_target_dir(&missing).unwrap_err();
         // Either "Target path '…': No such file" or "No padz store found" —
         // both signal the same user-visible failure to locate a store.
         let msg = err.to_string();

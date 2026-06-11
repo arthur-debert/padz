@@ -121,7 +121,7 @@ mod tests {
     use crate::api::{PadzApi, PadzPaths};
     use crate::commands::transfer::TransferMode;
     use crate::model::Scope;
-    use crate::store::{Bucket, DataStore};
+    use crate::store::Bucket;
     use std::path::PathBuf;
 
     /// Initialize a `.padz/<bucket>` layout at `dir` so it looks like an
