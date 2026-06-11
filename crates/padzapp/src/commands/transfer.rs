@@ -430,7 +430,7 @@ fn merge_tag_registry<Src: DataStore, Dst: DataStore>(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::commands::create;
+    use crate::commands::{create, MessageLevel};
     use crate::index::{DisplayIndex, PadSelector};
     use crate::store::bucketed::BucketedStore;
     use crate::store::mem_backend::MemBackend;
@@ -586,5 +586,567 @@ mod tests {
             1,
             "destination should have the pad"
         );
+    }
+
+    // ------------------------------------------------------------------------
+    // Pipeline tests — `run` end-to-end with two in-memory stores.
+    // ------------------------------------------------------------------------
+
+    /// Helper: initialize a `.padz/` layout (`active`, `archived`, `deleted`)
+    /// inside `dir` so it looks like an initialized store on disk.
+    fn init_layout(dir: &std::path::Path) {
+        std::fs::create_dir_all(dir.join("active")).unwrap();
+        std::fs::create_dir_all(dir.join("archived")).unwrap();
+        std::fs::create_dir_all(dir.join("deleted")).unwrap();
+    }
+
+    #[test]
+    fn test_transfer_mode_verb() {
+        // Direct check on the only entry point that uses verb().
+        assert_eq!(TransferMode::Clone.verb(), "Cloned");
+        assert_eq!(TransferMode::Migrate.verb(), "Migrated");
+    }
+
+    #[test]
+    fn test_run_no_pads_returns_info_message() {
+        // Empty source + explicit selectors that can't resolve to anything.
+        let mut src = store();
+        let mut dst = store();
+        // An empty source with empty selectors triggers the "no pads" branch
+        // through `default_non_deleted_ids` (which returns an empty Vec).
+        let summary = std::path::PathBuf::from("/tmp/nowhere");
+        let result = run(
+            &mut src,
+            Scope::Project,
+            &mut dst,
+            Scope::Project,
+            &[],
+            &summary,
+            TransferMode::Clone,
+        )
+        .unwrap();
+
+        assert!(
+            result
+                .messages
+                .iter()
+                .any(|m| m.content.contains("No pads to transfer")),
+            "expected info message about no pads; got {:?}",
+            result.messages
+        );
+    }
+
+    #[test]
+    fn test_run_clone_copies_pads_and_keeps_source() {
+        let mut src = store();
+        create::run(&mut src, Scope::Project, "Alpha".into(), "A".into(), None).unwrap();
+        create::run(&mut src, Scope::Project, "Beta".into(), "B".into(), None).unwrap();
+
+        let mut dst = store();
+        let summary = std::path::PathBuf::from("/tmp/dest");
+        let result = run(
+            &mut src,
+            Scope::Project,
+            &mut dst,
+            Scope::Project,
+            &[],
+            &summary,
+            TransferMode::Clone,
+        )
+        .unwrap();
+
+        let success_message = result
+            .messages
+            .iter()
+            .find(|m| matches!(m.level, MessageLevel::Success))
+            .expect("clone should emit a success message");
+        assert!(success_message.content.contains("Cloned 2 pad(s)"));
+        assert!(success_message.content.contains("/tmp/dest"));
+
+        // Both pads on destination, both still on source.
+        assert_eq!(
+            dst.list_pads(Scope::Project, Bucket::Active).unwrap().len(),
+            2
+        );
+        assert_eq!(
+            src.list_pads(Scope::Project, Bucket::Active).unwrap().len(),
+            2
+        );
+    }
+
+    #[test]
+    fn test_run_migrate_deletes_source_after_copy() {
+        let mut src = store();
+        create::run(&mut src, Scope::Project, "Solo".into(), "".into(), None).unwrap();
+
+        let mut dst = store();
+        let summary = std::path::PathBuf::from("/tmp/dest");
+        let result = run(
+            &mut src,
+            Scope::Project,
+            &mut dst,
+            Scope::Project,
+            &[],
+            &summary,
+            TransferMode::Migrate,
+        )
+        .unwrap();
+
+        assert!(
+            result
+                .messages
+                .iter()
+                .any(|m| m.content.contains("Migrated 1 pad(s)")),
+            "expected Migrated success message; got {:?}",
+            result.messages
+        );
+
+        // Migrate clears the source.
+        assert!(src
+            .list_pads(Scope::Project, Bucket::Active)
+            .unwrap()
+            .is_empty());
+        assert_eq!(
+            dst.list_pads(Scope::Project, Bucket::Active).unwrap().len(),
+            1
+        );
+    }
+
+    #[test]
+    fn test_run_default_selection_skips_deleted() {
+        // Active + archived go; deleted stays. Mirrors `padz export`'s default
+        // set so the two commands are consistent.
+        let mut src = store();
+        create::run(&mut src, Scope::Project, "Live".into(), "".into(), None).unwrap();
+        create::run(&mut src, Scope::Project, "Archived".into(), "".into(), None).unwrap();
+        create::run(&mut src, Scope::Project, "Trashed".into(), "".into(), None).unwrap();
+
+        let pads = src.list_pads(Scope::Project, Bucket::Active).unwrap();
+        let archived = pads
+            .iter()
+            .find(|p| p.metadata.title == "Archived")
+            .unwrap();
+        let trashed = pads.iter().find(|p| p.metadata.title == "Trashed").unwrap();
+        src.move_pad(
+            &archived.metadata.id,
+            Scope::Project,
+            Bucket::Active,
+            Bucket::Archived,
+        )
+        .unwrap();
+        src.move_pad(
+            &trashed.metadata.id,
+            Scope::Project,
+            Bucket::Active,
+            Bucket::Deleted,
+        )
+        .unwrap();
+
+        let mut dst = store();
+        let summary = std::path::PathBuf::from("/tmp/dest");
+        run(
+            &mut src,
+            Scope::Project,
+            &mut dst,
+            Scope::Project,
+            &[],
+            &summary,
+            TransferMode::Clone,
+        )
+        .unwrap();
+
+        let active = dst.list_pads(Scope::Project, Bucket::Active).unwrap();
+        let archived_dst = dst.list_pads(Scope::Project, Bucket::Archived).unwrap();
+        let deleted_dst = dst.list_pads(Scope::Project, Bucket::Deleted).unwrap();
+        assert_eq!(active.len(), 1, "active pad should land on dest");
+        assert_eq!(archived_dst.len(), 1, "archived pad should land on dest");
+        assert!(
+            deleted_dst.is_empty(),
+            "deleted pad should NOT be transferred"
+        );
+    }
+
+    #[test]
+    fn test_run_explicit_selector_resolves_against_source() {
+        let mut src = store();
+        create::run(&mut src, Scope::Project, "First".into(), "".into(), None).unwrap();
+        // Small delay so the two pads get distinct created_at timestamps —
+        // without this the canonical index can fall back to UUID tie-break
+        // and "newest = 1" becomes flaky.
+        std::thread::sleep(std::time::Duration::from_millis(10));
+        create::run(&mut src, Scope::Project, "Second".into(), "".into(), None).unwrap();
+
+        let mut dst = store();
+        let summary = std::path::PathBuf::from("/tmp/dest");
+        // The newest pad gets index 1 (which is "Second"). Asking for "1"
+        // should clone exactly one pad: the most recently created.
+        let selectors = vec![PadSelector::Path(vec![DisplayIndex::Regular(1)])];
+        let result = run(
+            &mut src,
+            Scope::Project,
+            &mut dst,
+            Scope::Project,
+            &selectors,
+            &summary,
+            TransferMode::Clone,
+        )
+        .unwrap();
+
+        assert!(result
+            .messages
+            .iter()
+            .any(|m| m.content.contains("Cloned 1 pad(s)")));
+        let dst_pads = dst.list_pads(Scope::Project, Bucket::Active).unwrap();
+        assert_eq!(dst_pads.len(), 1);
+        assert_eq!(dst_pads[0].metadata.title, "Second");
+    }
+
+    #[test]
+    fn test_run_merges_referenced_tags_into_destination() {
+        use crate::tags::TagEntry;
+
+        let mut src = store();
+        create::run(&mut src, Scope::Project, "Tagged".into(), "".into(), None).unwrap();
+
+        // Stamp a tag on the pad and register it in the source registry.
+        let pads = src.list_pads(Scope::Project, Bucket::Active).unwrap();
+        let mut pad = pads.into_iter().next().unwrap();
+        pad.metadata.tags = vec!["work".into()];
+        src.save_pad(&pad, Scope::Project, Bucket::Active).unwrap();
+        src.save_tags(
+            Scope::Project,
+            &[TagEntry::new("work".into()), TagEntry::new("unused".into())],
+        )
+        .unwrap();
+
+        let mut dst = store();
+        let summary = std::path::PathBuf::from("/tmp/dest");
+        run(
+            &mut src,
+            Scope::Project,
+            &mut dst,
+            Scope::Project,
+            &[],
+            &summary,
+            TransferMode::Clone,
+        )
+        .unwrap();
+
+        // Only the referenced tag should be merged — `unused` stays behind so we
+        // don't pollute the destination's registry with tags the moved pads
+        // don't actually use.
+        let dst_tags = dst.load_tags(Scope::Project).unwrap();
+        let names: std::collections::HashSet<String> =
+            dst_tags.iter().map(|t| t.name.clone()).collect();
+        assert!(names.contains("work"), "referenced tag should be merged");
+        assert!(
+            !names.contains("unused"),
+            "unreferenced tags must not leak across stores"
+        );
+    }
+
+    #[test]
+    fn test_run_reports_per_pad_failure_on_dest_write_error() {
+        // The destination is rigged to fail all writes. The pipeline must
+        // still complete, surface a per-pad warning, and end with "No pads
+        // were ... " — not crash, not silently succeed.
+        let mut src = store();
+        create::run(&mut src, Scope::Project, "Alpha".into(), "".into(), None).unwrap();
+
+        // BucketedStore<MemBackend> with all four backends rigged to fail
+        // writes. Use a fresh handle so the simulate flag is set before any
+        // writes are attempted.
+        let dst_active = MemBackend::new();
+        dst_active.set_simulate_write_error(true);
+        let dst_archived = MemBackend::new();
+        dst_archived.set_simulate_write_error(true);
+        let dst_deleted = MemBackend::new();
+        dst_deleted.set_simulate_write_error(true);
+        let dst_tags = MemBackend::new();
+        dst_tags.set_simulate_write_error(true);
+        let mut dst = BucketedStore::new(dst_active, dst_archived, dst_deleted, dst_tags);
+
+        let summary = std::path::PathBuf::from("/tmp/dest");
+        let result = run(
+            &mut src,
+            Scope::Project,
+            &mut dst,
+            Scope::Project,
+            &[],
+            &summary,
+            TransferMode::Clone,
+        )
+        .unwrap();
+
+        // Per-pad warning naming the failed action.
+        assert!(
+            result.messages.iter().any(|m| {
+                matches!(m.level, MessageLevel::Warning)
+                    && m.content.contains("Failed to clone pad")
+            }),
+            "expected per-pad clone failure warning; got {:?}",
+            result.messages
+        );
+
+        // And the trailing "no pads were cloned" message.
+        assert!(
+            result
+                .messages
+                .iter()
+                .any(|m| m.content.contains("No pads were cloned")),
+            "expected 'No pads were cloned' trailer; got {:?}",
+            result.messages
+        );
+    }
+
+    #[test]
+    fn test_run_does_not_overwrite_existing_destination_tag() {
+        use crate::tags::TagEntry;
+
+        let mut src = store();
+        create::run(&mut src, Scope::Project, "Tagged".into(), "".into(), None).unwrap();
+        let mut pad = src
+            .list_pads(Scope::Project, Bucket::Active)
+            .unwrap()
+            .into_iter()
+            .next()
+            .unwrap();
+        pad.metadata.tags = vec!["work".into()];
+        src.save_pad(&pad, Scope::Project, Bucket::Active).unwrap();
+        let src_tag = TagEntry::new("work".into());
+        src.save_tags(Scope::Project, std::slice::from_ref(&src_tag))
+            .unwrap();
+
+        // Dest already has a "work" tag with a different created_at. The
+        // merge must not clobber it.
+        let mut dst = store();
+        let mut dst_tag = TagEntry::new("work".into());
+        dst_tag.created_at = src_tag.created_at - chrono::Duration::days(7);
+        dst.save_tags(Scope::Project, &[dst_tag.clone()]).unwrap();
+
+        let summary = std::path::PathBuf::from("/tmp/dest");
+        run(
+            &mut src,
+            Scope::Project,
+            &mut dst,
+            Scope::Project,
+            &[],
+            &summary,
+            TransferMode::Clone,
+        )
+        .unwrap();
+
+        let dst_tags = dst.load_tags(Scope::Project).unwrap();
+        assert_eq!(dst_tags.len(), 1);
+        assert_eq!(
+            dst_tags[0].created_at, dst_tag.created_at,
+            "existing destination tag must not be overwritten by merge"
+        );
+    }
+
+    // ------------------------------------------------------------------------
+    // Pure helpers
+    // ------------------------------------------------------------------------
+
+    #[test]
+    fn test_collect_all_ids_spans_all_buckets() {
+        let mut src = store();
+        create::run(&mut src, Scope::Project, "A".into(), "".into(), None).unwrap();
+        create::run(&mut src, Scope::Project, "B".into(), "".into(), None).unwrap();
+        create::run(&mut src, Scope::Project, "C".into(), "".into(), None).unwrap();
+
+        // Push one pad into archived and one into deleted.
+        let pads = src.list_pads(Scope::Project, Bucket::Active).unwrap();
+        let to_archive = pads
+            .iter()
+            .find(|p| p.metadata.title == "B")
+            .unwrap()
+            .metadata
+            .id;
+        let to_delete = pads
+            .iter()
+            .find(|p| p.metadata.title == "C")
+            .unwrap()
+            .metadata
+            .id;
+        src.move_pad(
+            &to_archive,
+            Scope::Project,
+            Bucket::Active,
+            Bucket::Archived,
+        )
+        .unwrap();
+        src.move_pad(&to_delete, Scope::Project, Bucket::Active, Bucket::Deleted)
+            .unwrap();
+
+        let mut warnings = Vec::new();
+        let ids = collect_all_ids(&src, Scope::Project, &mut warnings);
+        assert!(warnings.is_empty(), "no errors expected on in-memory store");
+        assert_eq!(ids.len(), 3, "collect_all_ids should span all buckets");
+        assert!(ids.contains(&to_archive));
+        assert!(ids.contains(&to_delete));
+    }
+
+    #[test]
+    fn test_default_non_deleted_ids_excludes_deleted_bucket() {
+        let mut src = store();
+        create::run(&mut src, Scope::Project, "Keep".into(), "".into(), None).unwrap();
+        create::run(&mut src, Scope::Project, "Trash".into(), "".into(), None).unwrap();
+
+        let trash = src
+            .list_pads(Scope::Project, Bucket::Active)
+            .unwrap()
+            .into_iter()
+            .find(|p| p.metadata.title == "Trash")
+            .unwrap()
+            .metadata
+            .id;
+        src.move_pad(&trash, Scope::Project, Bucket::Active, Bucket::Deleted)
+            .unwrap();
+
+        let resolved = default_non_deleted_ids(&src, Scope::Project).unwrap();
+        let ids: HashSet<Uuid> = resolved.iter().map(|(_, u)| *u).collect();
+        assert_eq!(ids.len(), 1, "deleted pad must not be in default set");
+        assert!(!ids.contains(&trash));
+    }
+
+    #[test]
+    fn test_read_source_pad_any_bucket_finds_archived() {
+        let mut src = store();
+        create::run(&mut src, Scope::Project, "Archived".into(), "".into(), None).unwrap();
+        let id = src
+            .list_pads(Scope::Project, Bucket::Active)
+            .unwrap()
+            .into_iter()
+            .next()
+            .unwrap()
+            .metadata
+            .id;
+        src.move_pad(&id, Scope::Project, Bucket::Active, Bucket::Archived)
+            .unwrap();
+
+        let (pad, bucket) = read_source_pad_any_bucket(&src, Scope::Project, id).unwrap();
+        assert_eq!(pad.metadata.id, id);
+        assert_eq!(bucket, Bucket::Archived);
+    }
+
+    #[test]
+    fn test_read_source_pad_any_bucket_missing_uuid_errors() {
+        let src = store();
+        let missing = Uuid::new_v4();
+        let err = read_source_pad_any_bucket(&src, Scope::Project, missing).unwrap_err();
+        assert!(err.to_string().contains("not found in any bucket"));
+    }
+
+    #[test]
+    fn test_merge_tag_registry_no_referenced_tags_is_noop() {
+        let src = store();
+        let mut dst = store();
+        let empty: HashSet<String> = HashSet::new();
+        merge_tag_registry(&src, Scope::Project, &mut dst, Scope::Project, &empty).unwrap();
+        assert!(dst.load_tags(Scope::Project).unwrap().is_empty());
+    }
+
+    // ------------------------------------------------------------------------
+    // Path resolution: `resolve_target_dir` + `open_target_store`
+    // ------------------------------------------------------------------------
+
+    #[test]
+    fn test_resolve_target_dir_accepts_padz_dir_directly() {
+        let temp = tempfile::tempdir().unwrap();
+        let padz_dir = temp.path().join(".padz");
+        init_layout(&padz_dir);
+
+        let resolved = resolve_target_dir(&padz_dir).unwrap();
+        assert_eq!(resolved, padz_dir.canonicalize().unwrap());
+    }
+
+    #[test]
+    fn test_resolve_target_dir_accepts_parent_of_padz_dir() {
+        let temp = tempfile::tempdir().unwrap();
+        let project = temp.path().join("project");
+        std::fs::create_dir_all(&project).unwrap();
+        init_layout(&project.join(".padz"));
+
+        let resolved = resolve_target_dir(&project).unwrap();
+        assert_eq!(resolved, project.join(".padz").canonicalize().unwrap());
+    }
+
+    #[test]
+    fn test_resolve_target_dir_walks_up_for_padz_dir() {
+        let temp = tempfile::tempdir().unwrap();
+        let project = temp.path().join("proj");
+        let nested = project.join("a").join("b");
+        std::fs::create_dir_all(&nested).unwrap();
+        init_layout(&project.join(".padz"));
+
+        let resolved = resolve_target_dir(&nested).unwrap();
+        assert_eq!(resolved, project.join(".padz").canonicalize().unwrap());
+    }
+
+    #[test]
+    fn test_resolve_target_dir_missing_path_errors() {
+        // Build a guaranteed-missing path under a tempdir so the test is
+        // deterministic regardless of what exists on the host filesystem.
+        let temp = tempfile::tempdir().unwrap();
+        let missing = temp.path().join("does-not-exist");
+        let err = resolve_target_dir(&missing).unwrap_err();
+        // Either "Target path '…': No such file" or "No padz store found" —
+        // both signal the same user-visible failure to locate a store.
+        let msg = err.to_string();
+        assert!(
+            msg.contains("Target path") || msg.contains("No padz store"),
+            "unexpected error: {msg}"
+        );
+    }
+
+    /// `FileStore` does not implement `Debug`, so we can't use `unwrap_err()`
+    /// directly. Extract the error or panic with a descriptive message.
+    fn expect_err<T>(r: Result<T>) -> PadzError {
+        match r {
+            Err(e) => e,
+            Ok(_) => panic!("expected Err, got Ok"),
+        }
+    }
+
+    #[test]
+    fn test_open_target_store_missing_dir_errors() {
+        let temp = tempfile::tempdir().unwrap();
+        let missing = temp.path().join("nope");
+        let err = expect_err(open_target_store(&missing));
+        assert!(err.to_string().contains("does not exist"));
+    }
+
+    #[test]
+    fn test_open_target_store_not_a_directory_errors() {
+        let temp = tempfile::tempdir().unwrap();
+        let file_path = temp.path().join("not-a-dir");
+        std::fs::write(&file_path, b"hello").unwrap();
+        let err = expect_err(open_target_store(&file_path));
+        assert!(err.to_string().contains("is not a directory"));
+    }
+
+    #[test]
+    fn test_open_target_store_missing_active_errors() {
+        let temp = tempfile::tempdir().unwrap();
+        let padz_dir = temp.path().join(".padz");
+        std::fs::create_dir_all(&padz_dir).unwrap();
+        // Note: no active/ subdir.
+        let err = expect_err(open_target_store(&padz_dir));
+        let msg = err.to_string();
+        assert!(
+            msg.contains("not an initialized padz store") || msg.contains("padz init"),
+            "unexpected error: {msg}"
+        );
+    }
+
+    #[test]
+    fn test_open_target_store_succeeds_with_initialized_dir() {
+        let temp = tempfile::tempdir().unwrap();
+        let padz_dir = temp.path().join(".padz");
+        init_layout(&padz_dir);
+        let store = open_target_store(&padz_dir).unwrap();
+        // Default format ext when no padz.toml is present.
+        assert_eq!(store.format_ext(), ".txt");
     }
 }
