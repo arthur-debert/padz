@@ -188,6 +188,15 @@ mod tests {
     use crate::store::bucketed::BucketedStore;
     use crate::store::mem_backend::MemBackend;
 
+    fn fresh_store() -> BucketedStore<MemBackend> {
+        BucketedStore::new(
+            MemBackend::new(),
+            MemBackend::new(),
+            MemBackend::new(),
+            MemBackend::new(),
+        )
+    }
+
     #[test]
     fn test_id_selector_single_pad() {
         let mut store = BucketedStore::new(
@@ -368,5 +377,337 @@ mod tests {
 
         assert_eq!(res.listed_pads.len(), 1);
         assert!(matches!(res.listed_pads[0].index, DisplayIndex::Regular(3)));
+    }
+
+    // ------- UUID selector tests -------
+
+    #[test]
+    fn test_uuid_selector_matches_pad() {
+        let mut store = fresh_store();
+        create::run(&mut store, Scope::Project, "Alpha".into(), "".into(), None).unwrap();
+        create::run(&mut store, Scope::Project, "Bravo".into(), "".into(), None).unwrap();
+
+        // Discover the UUID via an unfiltered listing
+        let all = run(&store, Scope::Project, PadFilter::default(), &[]).unwrap();
+        let bravo = all
+            .listed_pads
+            .iter()
+            .find(|dp| dp.pad.metadata.title == "Bravo")
+            .expect("Bravo should be listed");
+        let bravo_uuid = bravo.pad.metadata.id;
+
+        let res = run(
+            &store,
+            Scope::Project,
+            PadFilter::default(),
+            &[PadSelector::Uuid(bravo_uuid)],
+        )
+        .unwrap();
+
+        assert_eq!(res.listed_pads.len(), 1);
+        assert_eq!(res.listed_pads[0].pad.metadata.title, "Bravo");
+    }
+
+    #[test]
+    fn test_uuid_selector_not_found_errors() {
+        let mut store = fresh_store();
+        create::run(&mut store, Scope::Project, "Solo".into(), "".into(), None).unwrap();
+
+        let bogus = uuid::Uuid::nil();
+        let res = run(
+            &store,
+            Scope::Project,
+            PadFilter::default(),
+            &[PadSelector::Uuid(bogus)],
+        );
+
+        let err = res.unwrap_err().to_string();
+        assert!(err.contains("No pad found with UUID"), "got: {err}");
+    }
+
+    // ------- ShortUuid selector tests -------
+
+    #[test]
+    fn test_short_uuid_selector_matches_pad() {
+        let mut store = fresh_store();
+        create::run(&mut store, Scope::Project, "First".into(), "".into(), None).unwrap();
+
+        let all = run(&store, Scope::Project, PadFilter::default(), &[]).unwrap();
+        let dp = &all.listed_pads[0];
+        // First 8 hex digits of the UUID make a very-unlikely-to-collide prefix.
+        let short: String = dp.pad.metadata.id.to_string().replace('-', "")[..8].to_string();
+
+        let res = run(
+            &store,
+            Scope::Project,
+            PadFilter::default(),
+            &[PadSelector::ShortUuid(short)],
+        )
+        .unwrap();
+
+        assert_eq!(res.listed_pads.len(), 1);
+        assert_eq!(res.listed_pads[0].pad.metadata.title, "First");
+    }
+
+    #[test]
+    fn test_short_uuid_selector_no_match_errors() {
+        let mut store = fresh_store();
+        create::run(&mut store, Scope::Project, "Only".into(), "".into(), None).unwrap();
+
+        let res = run(
+            &store,
+            Scope::Project,
+            PadFilter::default(),
+            // "zzzzzz" can never appear in a hex UUID.
+            &[PadSelector::ShortUuid("zzzzzz".to_string())],
+        );
+
+        let err = res.unwrap_err().to_string();
+        assert!(err.contains("No pad found with UUID prefix"), "got: {err}");
+    }
+
+    #[test]
+    fn test_short_uuid_selector_ambiguous_errors() {
+        // Using an empty prefix forces ALL pads to match — the ambiguous branch.
+        let mut store = fresh_store();
+        create::run(&mut store, Scope::Project, "One".into(), "".into(), None).unwrap();
+        create::run(&mut store, Scope::Project, "Two".into(), "".into(), None).unwrap();
+
+        let res = run(
+            &store,
+            Scope::Project,
+            PadFilter::default(),
+            &[PadSelector::ShortUuid(String::new())],
+        );
+
+        let err = res.unwrap_err().to_string();
+        assert!(
+            err.contains("matches") && err.contains("Use more characters"),
+            "got: {err}"
+        );
+    }
+
+    // ------- Title selector tests -------
+
+    #[test]
+    fn test_title_selector_case_insensitive_substring() {
+        let mut store = fresh_store();
+        create::run(
+            &mut store,
+            Scope::Project,
+            "Quick Brown Fox".into(),
+            "".into(),
+            None,
+        )
+        .unwrap();
+        create::run(
+            &mut store,
+            Scope::Project,
+            "Sleeping Cat".into(),
+            "".into(),
+            None,
+        )
+        .unwrap();
+
+        let res = run(
+            &store,
+            Scope::Project,
+            PadFilter::default(),
+            &[PadSelector::Title("BROWN".into())],
+        )
+        .unwrap();
+
+        assert_eq!(res.listed_pads.len(), 1);
+        assert_eq!(res.listed_pads[0].pad.metadata.title, "Quick Brown Fox");
+    }
+
+    #[test]
+    fn test_title_selector_matches_multiple() {
+        let mut store = fresh_store();
+        create::run(
+            &mut store,
+            Scope::Project,
+            "todo: groceries".into(),
+            "".into(),
+            None,
+        )
+        .unwrap();
+        create::run(
+            &mut store,
+            Scope::Project,
+            "todo: laundry".into(),
+            "".into(),
+            None,
+        )
+        .unwrap();
+        create::run(
+            &mut store,
+            Scope::Project,
+            "unrelated".into(),
+            "".into(),
+            None,
+        )
+        .unwrap();
+
+        let res = run(
+            &store,
+            Scope::Project,
+            PadFilter::default(),
+            &[PadSelector::Title("todo:".into())],
+        )
+        .unwrap();
+
+        assert_eq!(res.listed_pads.len(), 2);
+    }
+
+    #[test]
+    fn test_title_selector_no_match_errors() {
+        let mut store = fresh_store();
+        create::run(&mut store, Scope::Project, "Hello".into(), "".into(), None).unwrap();
+
+        let res = run(
+            &store,
+            Scope::Project,
+            PadFilter::default(),
+            &[PadSelector::Title("nonexistent".into())],
+        );
+
+        let err = res.unwrap_err().to_string();
+        assert!(err.contains("No pad found matching"), "got: {err}");
+    }
+
+    // ------- Range edge cases -------
+
+    #[test]
+    fn test_range_inverted_start_after_end_errors() {
+        let mut store = fresh_store();
+        create::run(&mut store, Scope::Project, "A".into(), "".into(), None).unwrap();
+        create::run(&mut store, Scope::Project, "B".into(), "".into(), None).unwrap();
+        create::run(&mut store, Scope::Project, "C".into(), "".into(), None).unwrap();
+
+        // Index 1 is the newest ("C"), index 3 is the oldest ("A").
+        // Start=1, end=3 is valid; flip it to trigger the inverted error.
+        let res = run(
+            &store,
+            Scope::Project,
+            PadFilter::default(),
+            &[PadSelector::Range(
+                vec![DisplayIndex::Regular(3)],
+                vec![DisplayIndex::Regular(1)],
+            )],
+        );
+
+        let err = res.unwrap_err().to_string();
+        assert!(
+            err.contains("Invalid range") && err.contains("start appears after end"),
+            "got: {err}"
+        );
+    }
+
+    #[test]
+    fn test_range_start_not_found_errors() {
+        let mut store = fresh_store();
+        create::run(&mut store, Scope::Project, "A".into(), "".into(), None).unwrap();
+        create::run(&mut store, Scope::Project, "B".into(), "".into(), None).unwrap();
+
+        let res = run(
+            &store,
+            Scope::Project,
+            PadFilter::default(),
+            &[PadSelector::Range(
+                vec![DisplayIndex::Regular(99)],
+                vec![DisplayIndex::Regular(1)],
+            )],
+        );
+
+        let err = res.unwrap_err().to_string();
+        assert!(
+            err.contains("Range start") && err.contains("not found"),
+            "got: {err}"
+        );
+    }
+
+    #[test]
+    fn test_range_end_not_found_errors() {
+        let mut store = fresh_store();
+        create::run(&mut store, Scope::Project, "A".into(), "".into(), None).unwrap();
+        create::run(&mut store, Scope::Project, "B".into(), "".into(), None).unwrap();
+
+        let res = run(
+            &store,
+            Scope::Project,
+            PadFilter::default(),
+            &[PadSelector::Range(
+                vec![DisplayIndex::Regular(1)],
+                vec![DisplayIndex::Regular(99)],
+            )],
+        );
+
+        let err = res.unwrap_err().to_string();
+        assert!(
+            err.contains("Range end") && err.contains("not found"),
+            "got: {err}"
+        );
+    }
+
+    // ------- Deduplication -------
+
+    #[test]
+    fn test_overlapping_selectors_dedupe() {
+        // Selecting the same pad via two different selectors must yield it once.
+        let mut store = fresh_store();
+        create::run(
+            &mut store,
+            Scope::Project,
+            "Unique-Title".into(),
+            "".into(),
+            None,
+        )
+        .unwrap();
+        create::run(&mut store, Scope::Project, "Other".into(), "".into(), None).unwrap();
+
+        let res = run(
+            &store,
+            Scope::Project,
+            PadFilter::default(),
+            &[
+                // Index 2 is "Unique-Title" (newest is index 1).
+                PadSelector::Path(vec![DisplayIndex::Regular(2)]),
+                PadSelector::Title("Unique".into()),
+            ],
+        )
+        .unwrap();
+
+        assert_eq!(res.listed_pads.len(), 1);
+        assert_eq!(res.listed_pads[0].pad.metadata.title, "Unique-Title");
+    }
+
+    #[test]
+    fn test_overlapping_ranges_dedupe() {
+        let mut store = fresh_store();
+        create::run(&mut store, Scope::Project, "First".into(), "".into(), None).unwrap();
+        create::run(&mut store, Scope::Project, "Second".into(), "".into(), None).unwrap();
+        create::run(&mut store, Scope::Project, "Third".into(), "".into(), None).unwrap();
+        create::run(&mut store, Scope::Project, "Fourth".into(), "".into(), None).unwrap();
+
+        let res = run(
+            &store,
+            Scope::Project,
+            PadFilter::default(),
+            &[
+                PadSelector::Range(
+                    vec![DisplayIndex::Regular(1)],
+                    vec![DisplayIndex::Regular(3)],
+                ),
+                PadSelector::Range(
+                    vec![DisplayIndex::Regular(2)],
+                    vec![DisplayIndex::Regular(4)],
+                ),
+            ],
+        )
+        .unwrap();
+
+        // Union of [1..=3] and [2..=4] is [1..=4]; no pad appears twice.
+        assert_eq!(res.listed_pads.len(), 4);
     }
 }

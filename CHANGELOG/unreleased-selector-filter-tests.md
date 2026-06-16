@@ -1,0 +1,1 @@
+- Expand selector_filter unit tests to cover UUID/short-UUID/title selectors, range edge cases, and dedup
