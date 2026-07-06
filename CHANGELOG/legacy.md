@@ -31,10 +31,6 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [1.7.0] - 2026-04-25
 
-## [1.7.0] - 2026-04-25
-
-## [1.6.0] - 2026-04-25
-
 ## [1.6.0] - 2026-04-25
 
 - **Fixed**
@@ -43,20 +39,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [1.5.0] - 2026-04-24
 
-## [1.5.0] - 2026-04-24
-
 - **Added**
   - **Configurable list ordering** — New `ordering` config key selects the sort used for Display Indexes. Default is `created_at` (unchanged: newest-created first). Set `ordering = "updated_at"` (or `padz config set ordering updated_at`) to list most-recently-modified first. Under `updated_at`, a parent's effective sort key is the maximum `updated_at` across its subtree, computed at index time — so editing a deeply nested child surfaces its ancestor to the top instead of leaving it buried, without mutating the ancestor's stored `updated_at` (which is reserved as the file-mtime proxy used by store reconciliation). Sibling sort uses deterministic tie-breakers (timestamp → other timestamp → UUID) so Display Indexes don't jitter across runs when timestamps match. Display Indexes are not comparable across ordering switches — the DI for pad "3" under `created_at` is a different pad than "3" under `updated_at` — which is expected for a shell tool where indexes reflect the current view.
-
-## [1.4.2] - 2026-04-23
 
 ## [1.4.2] - 2026-04-23
 
 - **Added**
   - **Debian/Ubuntu packages** — every release now produces `.deb` packages for `amd64` and `arm64` and attaches them to the GitHub Release. Install with `sudo dpkg -i padz_<version>-1_<arch>.deb` (or via `apt install ./padz_<version>-1_<arch>.deb` for dependency resolution). The package's postinst script generates bash/zsh/fish completion scripts from the installed binary into `/usr/share/bash-completion/completions/`, `/usr/share/zsh/site-functions/`, and `/usr/share/fish/vendor_completions.d/`, so completions work system-wide for all users with no extra setup.
   - **`install.sh` one-liner installer** — `curl -fsSL https://raw.githubusercontent.com/arthur-debert/padz/main/install.sh | sh` detects macOS/Linux + arm/x86, downloads the matching release tarball, installs `padz` into `~/.local/bin/`, and runs `padz completion install` automatically. Honors `VERSION=vX.Y.Z` and `PREFIX=/usr/local` overrides for pinned/system installs.
-
-## [1.4.1] - 2026-04-23
 
 ## [1.4.1] - 2026-04-23
 
@@ -74,8 +64,6 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [1.4.0] - 2026-04-23
 
-## [1.4.0] - 2026-04-23
-
 - **Added**
   - **`padz export --json`** — Full-fidelity archive format. Produces a `.tar.gz` that preserves all metadata (timestamps, pinning, delete protection, status, tags, parent relationships) alongside the raw pad files. Round-trippable: `padz import` auto-detects the archive and restores pads + their referenced tag registry entries into the destination store. Import is defensive per metadata field — unknown or malformed fields become warnings and never block the pad from landing. Parent IDs that aren't present in the archive are orphaned to root (hierarchy is only preserved when the full subtree is exported). Conflicts with `--single-file`.
   - **`padz export --with-metadata`** — Embeds per-pad metadata inline in each exported file, using the format-native dialect: YAML frontmatter with `padz.*` keys for `.md`, top-of-document `:: padz.KEY :: VALUE` annotations for `.lex`. Files use each pad's native extension instead of being normalized to `.txt`. Pads in `.txt` format are exported without metadata (txt has no metadata format) and surfaced in a trailing warning. `padz import` auto-detects the metadata block from the file extension, applies it with the same defensive per-field machinery as `--json`, and strips the metadata from the stored content. Conflicts with `--json` and `--single-file`.
@@ -86,12 +74,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [1.3.0] - 2026-04-22
 
-## [1.3.0] - 2026-04-22
-
 - **Changed**
   - **Scope discovery split into read and write modes** — Previously, a directory was only treated as a project root if it contained both `.git` and `.padz`. That silently broke `.padz` directories in non-git parents: `padz init` succeeded but every subsequent command still used global because the detection step missed the new `.padz`. Discovery is now two independent algorithms. **Reads** (list, view, search, …) walk up looking for `.padz` alone — `.git` is irrelevant. **Writes** (create, import) use the same read discovery first; if no `.padz` is found upward, they walk up looking for `.git` and auto-create `.padz` at the git root so new pads land inside their enclosing project instead of silently going global. `padz init` continues to create `.padz` at cwd unconditionally — it is user intent and is never blocked.
-
-## [1.2.0] - 2026-04-16
 
 ## [1.2.0] - 2026-04-16
 
@@ -101,20 +85,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [1.1.1] - 2026-04-14
 
-## [1.1.1] - 2026-04-14
-
 - **Fixed**
   - **`delete --completed` crashes when parent and child are both Done** — `get_descendant_ids` re-indexes all buckets, so when a Done child is processed before its Done parent (HashMap iteration order is non-deterministic), the child moves to Deleted first. The parent then finds the child as a descendant and tries to re-move it from Active, failing with `Pad not found`. Fixed by filtering already-processed IDs from the move list.
-
-## [1.1.0] - 2026-04-14
 
 ## [1.1.0] - 2026-04-14
 
 - **Added**
   - **`--all` flag for `list` and `search`** — Shows all three shards (active, archived, deleted) in a single view, grouped with section headers. Each shard keeps its own index namespace (`1`, `ar1`, `d1`).
   - **`--deleted` and `--archived` flags on `search`** — Search can now target specific shards, matching `list` parity. Previously `search` was hardcoded to active pads only.
-
-## [1.0.2] - 2026-04-14
 
 ## [1.0.2] - 2026-04-14
 
@@ -128,14 +106,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [1.0.0] - 2026-04-06
 
-## [1.0.0] - 2026-04-06
-
 - **Fixed**
   - **`edit`/`open` now support title matching** — `padz open On Ids` and `padz edit My Note` now work, matching the behavior of `view`, `copy`, and all other commands. Previously, `split_indexes_and_content` classified non-index args as inline content, leaving no index selector and erroring with "No pad index provided". When no args parse as indexes, they are now treated as a title search term.
   - **`padz init` now uses cwd instead of upward discovery** — Previously, `padz init` used the same `find_project_root()` upward-walk as other commands, which could silently resolve to a parent directory's store instead of creating one in the current directory. Init is a creation operation ("create a store here"), so it now always uses `cwd/.padz` directly. All other commands continue using upward discovery to find existing stores.
   - **Fall back to global scope when no project store is found** — Running `padz` outside any project (no `.padz` found by upward walk) now transparently uses the global store instead of pointing at a nonexistent `cwd/.padz` and showing "No pads yet". The `-g` flag is no longer required outside project directories.
-
-## [0.28.0] - 2026-04-03
 
 ## [0.28.0] - 2026-04-03
 
@@ -148,10 +122,6 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [0.27.1] - 2026-03-28
 
-## [0.27.1] - 2026-03-28
-
-## [0.27.0] - 2026-03-28
-
 ## [0.27.0] - 2026-03-28
 
 - **Changed**
@@ -159,12 +129,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [0.26.0] - 2026-03-27
 
-## [0.26.0] - 2026-03-27
-
 - **Added**
   - **`padz copy` command** — Copy one or more pads to the clipboard without printing to stdout. Supports multiple IDs and `--peek` flag, just like `view`. Alias: `cp`.
-
-## [0.25.2] - 2026-03-15
 
 ## [0.25.2] - 2026-03-15
 
@@ -176,12 +142,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [0.25.1] - 2026-03-09
 
-## [0.25.1] - 2026-03-09
-
 - **Fixed**
   - **Double title in `view` output** — `padz view` was rendering the title twice because `pad.content` (which includes the title) was passed directly to the template that also renders the title separately. Now extracts just the body before passing to the template.
-
-## [0.25.0] - 2026-03-02
 
 ## [0.25.0] - 2026-03-02
 
@@ -191,13 +153,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [0.24.0] - 2026-03-01
 
-## [0.24.0] - 2026-03-01
-
 - **Fixed**
   - **Empty create no longer fills in "Untitled"** — `padz create` with no title now starts with a blank document. Quitting the editor without typing correctly aborts instead of creating a junk "Untitled" pad. Applies to quick-create, piped stdin, and interactive editor paths.
   - **Clipboard no longer duplicates the title** — `view`, `open`, and `create` (interactive editor) commands were copying title + full content (which already includes the title) to the clipboard. Now correctly extracts title and body before formatting.
-
-## [0.23.0] - 2026-03-01
 
 ## [0.23.0] - 2026-03-01
 
@@ -208,10 +166,6 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [0.22.0] - 2026-02-28
 
-## [0.22.0] - 2026-02-28
-
-## [0.21.0] - 2026-02-28
-
 ## [0.21.0] - 2026-02-28
 
 - **Added**
@@ -219,12 +173,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [0.20.0] - 2026-02-17
 
-## [0.20.0] - 2026-02-17
-
 - **Added**
   - **`padz init --link <PATH>`** — Persistent data directory linking. Allows multiple directories to share the same padz data store without passing `--data` on every invocation. Creates a `.padz/link` file that redirects to the target project's data. Supports `--unlink` to remove the link. Validates target is initialized and rejects chained links.
-
-## [0.19.2] - 2026-02-16
 
 ## [0.19.2] - 2026-02-16
 
@@ -235,13 +185,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [0.16.0] - 2026-01-30
 
-## [0.16.0] - 2026-01-30
-
 ## [0.15.1] - 2026-01-30
-
-## [0.15.1] - 2026-01-30
-
-## [0.15.0] - 2026-01-30
 
 ## [0.15.0] - 2026-01-30
 
@@ -263,19 +207,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [0.12.1] - 2026-01-15
 
-## [0.12.1] - 2026-01-15
-
 - **Added**
   - **Unified release workflow** - GitHub Actions workflow with dual triggers (workflow_dispatch or tag push), cross-platform binary builds (macOS ARM, Linux x64/ARM), automatic GitHub Releases with changelog-based release notes, and idempotent crates.io publishing
 
 ## [0.12.0] - 2026-01-15
 
-## [0.12.0] - 2026-01-15
-
 - **Added**
   - **Data path override** - `--data <PATH>` option to explicitly specify the data directory, useful for git worktrees or working from temp directories. Automatically appends `.padz` if the path doesn't end with it.
-
-## [0.10.2] - 2026-01-12
 
 ## [0.10.2] - 2026-01-12
 
