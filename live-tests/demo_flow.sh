@@ -38,7 +38,7 @@ printf '\n--- Listing deleted pads (Should be empty) ---\n'
 padz ls --deleted
 
 printf '\n--- Creating a file for Import test ---\n'
-printf 'Imported Title\nImported Content\n' > import_test.txt
+printf 'Imported Title\nImported Content\n' >import_test.txt
 
 printf '\n--- Importing the file ---\n'
 padz import import_test.txt
@@ -56,7 +56,7 @@ tar -tzf padz-*.tar.gz | grep "Imported Title"
 
 printf '\n--- Doctor Test: Creating inconsistency ---\n'
 # Create consistency by writing a file manually that isn't in DB
-printf 'Orphan Pad\nOrphan Content\n' > .padz/pad-aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee.txt
+printf 'Orphan Pad\nOrphan Content\n' >.padz/pad-aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee.txt
 
 printf '\n--- Running Doctor ---\n'
 padz doctor

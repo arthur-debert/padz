@@ -5,7 +5,6 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [1.8.2] - 2026-05-01
 
-
 ### Changed
 
 - **Release pipeline migrated to canonical reusable workflow at
@@ -18,6 +17,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - **Intel-mac dropped from release artifacts** (`x86_64-apple-darwin`).
   Per canonical: arm64-only macOS. Existing v1.8.1 and earlier remain
   available for Intel users via direct GH release download.
+
 ## [1.8.1] - 2026-04-29
 
 - **Fixed**
@@ -478,66 +478,35 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
   - Demo flow verification script
   - Live testing shell
 
-[Unreleased]: https://github.com/arthur-debert/padz/compare/v1.7.0...HEAD
-[1.7.0]: https://github.com/arthur-debert/padz/compare/v1.6.0...v1.7.0
 [1.7.0]: https://github.com/arthur-debert/padz/compare/v1.6.0...v1.7.0
 [1.6.0]: https://github.com/arthur-debert/padz/compare/v1.5.0...v1.6.0
-[1.6.0]: https://github.com/arthur-debert/padz/compare/v1.5.0...v1.6.0
-[1.5.0]: https://github.com/arthur-debert/padz/compare/v1.4.2...v1.5.0
 [1.5.0]: https://github.com/arthur-debert/padz/compare/v1.4.2...v1.5.0
 [1.4.2]: https://github.com/arthur-debert/padz/compare/v1.4.1...v1.4.2
-[1.4.2]: https://github.com/arthur-debert/padz/compare/v1.4.1...v1.4.2
-[1.4.1]: https://github.com/arthur-debert/padz/compare/v1.4.0...v1.4.1
 [1.4.1]: https://github.com/arthur-debert/padz/compare/v1.4.0...v1.4.1
 [1.4.0]: https://github.com/arthur-debert/padz/compare/v1.3.0...v1.4.0
-[1.4.0]: https://github.com/arthur-debert/padz/compare/v1.3.0...v1.4.0
-[1.3.0]: https://github.com/arthur-debert/padz/compare/v1.2.0...v1.3.0
 [1.3.0]: https://github.com/arthur-debert/padz/compare/v1.2.0...v1.3.0
 [1.2.0]: https://github.com/arthur-debert/padz/compare/v1.1.1...v1.2.0
-[1.2.0]: https://github.com/arthur-debert/padz/compare/v1.1.1...v1.2.0
-[1.1.1]: https://github.com/arthur-debert/padz/compare/v1.1.0...v1.1.1
 [1.1.1]: https://github.com/arthur-debert/padz/compare/v1.1.0...v1.1.1
 [1.1.0]: https://github.com/arthur-debert/padz/compare/v1.0.2...v1.1.0
-[1.1.0]: https://github.com/arthur-debert/padz/compare/v1.0.2...v1.1.0
-[1.0.2]: https://github.com/arthur-debert/padz/compare/v1.0.1...v1.0.2
 [1.0.2]: https://github.com/arthur-debert/padz/compare/v1.0.1...v1.0.2
 [1.0.0]: https://github.com/arthur-debert/padz/compare/v1.0.0-rc.1...v1.0.0
-[1.0.0]: https://github.com/arthur-debert/padz/compare/v1.0.0-rc.1...v1.0.0
-[0.28.0]: https://github.com/arthur-debert/padz/compare/v0.27.1...v0.28.0
 [0.28.0]: https://github.com/arthur-debert/padz/compare/v0.27.1...v0.28.0
 [0.27.1]: https://github.com/arthur-debert/padz/compare/v0.27.0...v0.27.1
-[0.27.1]: https://github.com/arthur-debert/padz/compare/v0.27.0...v0.27.1
-[0.27.0]: https://github.com/arthur-debert/padz/compare/v0.26.0...v0.27.0
 [0.27.0]: https://github.com/arthur-debert/padz/compare/v0.26.0...v0.27.0
 [0.26.0]: https://github.com/arthur-debert/padz/compare/v0.25.2...v0.26.0
-[0.26.0]: https://github.com/arthur-debert/padz/compare/v0.25.2...v0.26.0
-[0.25.2]: https://github.com/arthur-debert/padz/compare/v0.25.1...v0.25.2
 [0.25.2]: https://github.com/arthur-debert/padz/compare/v0.25.1...v0.25.2
 [0.25.1]: https://github.com/arthur-debert/padz/compare/v0.25.0...v0.25.1
-[0.25.1]: https://github.com/arthur-debert/padz/compare/v0.25.0...v0.25.1
-[0.25.0]: https://github.com/arthur-debert/padz/compare/v0.24.0...v0.25.0
 [0.25.0]: https://github.com/arthur-debert/padz/compare/v0.24.0...v0.25.0
 [0.24.0]: https://github.com/arthur-debert/padz/compare/v0.23.0...v0.24.0
-[0.24.0]: https://github.com/arthur-debert/padz/compare/v0.23.0...v0.24.0
-[0.23.0]: https://github.com/arthur-debert/padz/compare/v0.22.0...v0.23.0
 [0.23.0]: https://github.com/arthur-debert/padz/compare/v0.22.0...v0.23.0
 [0.22.0]: https://github.com/arthur-debert/padz/compare/v0.21.0...v0.22.0
-[0.22.0]: https://github.com/arthur-debert/padz/compare/v0.21.0...v0.22.0
-[0.21.0]: https://github.com/arthur-debert/padz/compare/v0.20.0...v0.21.0
 [0.21.0]: https://github.com/arthur-debert/padz/compare/v0.20.0...v0.21.0
 [0.20.0]: https://github.com/arthur-debert/padz/compare/v0.19.2...v0.20.0
-[0.20.0]: https://github.com/arthur-debert/padz/compare/v0.19.2...v0.20.0
-[0.19.2]: https://github.com/arthur-debert/padz/compare/v0.19.1...v0.19.2
 [0.19.2]: https://github.com/arthur-debert/padz/compare/v0.19.1...v0.19.2
 [0.16.0]: https://github.com/arthur-debert/padz/compare/v0.15.1...v0.16.0
-[0.16.0]: https://github.com/arthur-debert/padz/compare/v0.15.1...v0.16.0
-[0.15.1]: https://github.com/arthur-debert/padz/compare/v0.15.0...v0.15.1
 [0.15.1]: https://github.com/arthur-debert/padz/compare/v0.15.0...v0.15.1
 [0.15.0]: https://github.com/arthur-debert/padz/compare/v0.14.0...v0.15.0
-[0.15.0]: https://github.com/arthur-debert/padz/compare/v0.14.0...v0.15.0
 [0.12.1]: https://github.com/arthur-debert/padz/compare/v0.12.0...v0.12.1
-[0.12.1]: https://github.com/arthur-debert/padz/compare/v0.12.0...v0.12.1
-[0.12.0]: https://github.com/arthur-debert/padz/compare/v0.11.0...v0.12.0
 [0.12.0]: https://github.com/arthur-debert/padz/compare/v0.11.0...v0.12.0
 [0.10.2]: https://github.com/arthur-debert/padz/compare/v0.10.1...v0.10.2
 [0.10.1]: https://github.com/arthur-debert/padz/compare/v0.10.0...v0.10.1

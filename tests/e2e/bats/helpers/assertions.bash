@@ -50,155 +50,155 @@
 # =============================================================================
 
 # Source helpers if not already loaded
-[[ -z "${PADZ_BIN:-}" ]] || true  # Ensure we have the env
+[[ -z "${PADZ_BIN:-}" ]] || true # Ensure we have the env
 
 # Assert a pad with given title exists
 # Usage: assert_pad_exists <title> [scope]
 assert_pad_exists() {
-    local title="$1"
-    local scope="${2:-}"
-    if ! pad_exists "${title}" "${scope}"; then
-        echo "FAIL: Expected pad '${title}' to exist in ${scope:-current} scope" >&2
-        echo "Available pads:" >&2
-        list_pads "${scope}" | jq -r '.pads[].pad.metadata.title' >&2
-        return 1
-    fi
+	local title="$1"
+	local scope="${2:-}"
+	if ! pad_exists "${title}" "${scope}"; then
+		echo "FAIL: Expected pad '${title}' to exist in ${scope:-current} scope" >&2
+		echo "Available pads:" >&2
+		list_pads "${scope}" | jq -r '.pads[].pad.metadata.title' >&2
+		return 1
+	fi
 }
 
 # Assert a pad with given title does NOT exist
 # Usage: assert_pad_not_exists <title> [scope]
 assert_pad_not_exists() {
-    local title="$1"
-    local scope="${2:-}"
-    if pad_exists "${title}" "${scope}"; then
-        echo "FAIL: Expected pad '${title}' to NOT exist in ${scope:-current} scope" >&2
-        return 1
-    fi
+	local title="$1"
+	local scope="${2:-}"
+	if pad_exists "${title}" "${scope}"; then
+		echo "FAIL: Expected pad '${title}' to NOT exist in ${scope:-current} scope" >&2
+		return 1
+	fi
 }
 
 # Assert pad has specific status
 # Usage: assert_pad_status <index> <expected_status> [scope]
 assert_pad_status() {
-    local index="$1"
-    local expected="$2"
-    local scope="${3:-}"
-    local actual
-    actual=$(get_pad_status "${index}" "${scope}")
-    if [[ "${actual}" != "${expected}" ]]; then
-        echo "FAIL: Pad ${index} status: expected '${expected}', got '${actual}'" >&2
-        return 1
-    fi
+	local index="$1"
+	local expected="$2"
+	local scope="${3:-}"
+	local actual
+	actual=$(get_pad_status "${index}" "${scope}")
+	if [[ "${actual}" != "${expected}" ]]; then
+		echo "FAIL: Pad ${index} status: expected '${expected}', got '${actual}'" >&2
+		return 1
+	fi
 }
 
 # Assert pad is completed (status = Done)
 # Usage: assert_pad_completed <index> [scope]
 assert_pad_completed() {
-    local index="$1"
-    local scope="${2:-}"
-    assert_pad_status "${index}" "Done" "${scope}"
+	local index="$1"
+	local scope="${2:-}"
+	assert_pad_status "${index}" "Done" "${scope}"
 }
 
 # Assert pad is planned (status = Planned)
 # Usage: assert_pad_planned <index> [scope]
 assert_pad_planned() {
-    local index="$1"
-    local scope="${2:-}"
-    assert_pad_status "${index}" "Planned" "${scope}"
+	local index="$1"
+	local scope="${2:-}"
+	assert_pad_status "${index}" "Planned" "${scope}"
 }
 
 # Assert pad is pinned
 # Usage: assert_pad_pinned <index> [scope]
 assert_pad_pinned() {
-    local index="$1"
-    local scope="${2:-}"
-    local pinned
-    pinned=$(get_pad_is_pinned "${index}" "${scope}")
-    if [[ "${pinned}" != "true" ]]; then
-        echo "FAIL: Expected pad ${index} to be pinned, but is_pinned=${pinned}" >&2
-        return 1
-    fi
+	local index="$1"
+	local scope="${2:-}"
+	local pinned
+	pinned=$(get_pad_is_pinned "${index}" "${scope}")
+	if [[ "${pinned}" != "true" ]]; then
+		echo "FAIL: Expected pad ${index} to be pinned, but is_pinned=${pinned}" >&2
+		return 1
+	fi
 }
 
 # Assert pad is NOT pinned
 # Usage: assert_pad_not_pinned <index> [scope]
 assert_pad_not_pinned() {
-    local index="$1"
-    local scope="${2:-}"
-    local pinned
-    pinned=$(get_pad_is_pinned "${index}" "${scope}")
-    if [[ "${pinned}" != "false" ]]; then
-        echo "FAIL: Expected pad ${index} to NOT be pinned, but is_pinned=${pinned}" >&2
-        return 1
-    fi
+	local index="$1"
+	local scope="${2:-}"
+	local pinned
+	pinned=$(get_pad_is_pinned "${index}" "${scope}")
+	if [[ "${pinned}" != "false" ]]; then
+		echo "FAIL: Expected pad ${index} to NOT be pinned, but is_pinned=${pinned}" >&2
+		return 1
+	fi
 }
 
 # Assert pad has a specific tag
 # Usage: assert_pad_has_tag <index> <tag> [scope]
 assert_pad_has_tag() {
-    local index="$1"
-    local tag="$2"
-    local scope="${3:-}"
-    local tags
-    tags=$(get_pad_tags "${index}" "${scope}")
-    if [[ " ${tags} " != *" ${tag} "* ]]; then
-        echo "FAIL: Expected pad ${index} to have tag '${tag}', but tags are: ${tags}" >&2
-        return 1
-    fi
+	local index="$1"
+	local tag="$2"
+	local scope="${3:-}"
+	local tags
+	tags=$(get_pad_tags "${index}" "${scope}")
+	if [[ " ${tags} " != *" ${tag} "* ]]; then
+		echo "FAIL: Expected pad ${index} to have tag '${tag}', but tags are: ${tags}" >&2
+		return 1
+	fi
 }
 
 # Assert pad has all specified tags
 # Usage: assert_pad_has_tags <index> <scope> <tag1> [tag2...]
 assert_pad_has_tags() {
-    local index="$1"
-    local scope="$2"
-    shift 2
-    local tag
-    for tag in "$@"; do
-        assert_pad_has_tag "${index}" "${tag}" "${scope}"
-    done
+	local index="$1"
+	local scope="$2"
+	shift 2
+	local tag
+	for tag in "$@"; do
+		assert_pad_has_tag "${index}" "${tag}" "${scope}"
+	done
 }
 
 # Assert pad count matches expected
 # Usage: assert_pad_count <expected_count> [scope]
 assert_pad_count() {
-    local expected="$1"
-    local scope="${2:-}"
-    local actual
-    actual=$(count_pads "${scope}")
-    if [[ "${actual}" -ne "${expected}" ]]; then
-        echo "FAIL: Expected ${expected} pads, got ${actual}" >&2
-        return 1
-    fi
+	local expected="$1"
+	local scope="${2:-}"
+	local actual
+	actual=$(count_pads "${scope}")
+	if [[ "${actual}" -ne "${expected}" ]]; then
+		echo "FAIL: Expected ${expected} pads, got ${actual}" >&2
+		return 1
+	fi
 }
 
 # Assert command succeeds
 # Usage: assert_success
 # (Use after 'run' command in bats)
 assert_success() {
-    if [[ "${status}" -ne 0 ]]; then
-        echo "FAIL: Command failed with status ${status}" >&2
-        echo "Output: ${output}" >&2
-        return 1
-    fi
+	if [[ "${status}" -ne 0 ]]; then
+		echo "FAIL: Command failed with status ${status}" >&2
+		echo "Output: ${output}" >&2
+		return 1
+	fi
 }
 
 # Assert command fails
 # Usage: assert_failure
 assert_failure() {
-    if [[ "${status}" -eq 0 ]]; then
-        echo "FAIL: Expected command to fail, but it succeeded" >&2
-        echo "Output: ${output}" >&2
-        return 1
-    fi
+	if [[ "${status}" -eq 0 ]]; then
+		echo "FAIL: Expected command to fail, but it succeeded" >&2
+		echo "Output: ${output}" >&2
+		return 1
+	fi
 }
 
 # Assert output contains string
 # Usage: assert_output_contains <substring>
 assert_output_contains() {
-    local substring="$1"
-    if [[ "${output}" != *"${substring}"* ]]; then
-        echo "FAIL: Expected output to contain '${substring}'" >&2
-        echo "Actual output: ${output}" >&2
-        return 1
-    fi
+	local substring="$1"
+	if [[ "${output}" != *"${substring}"* ]]; then
+		echo "FAIL: Expected output to contain '${substring}'" >&2
+		echo "Actual output: ${output}" >&2
+		return 1
+	fi
 }

@@ -18,14 +18,14 @@ echo "2. Testing Clipboard..."
 mkdir -p ./bin
 
 # Create mock pbpaste using checking single line writes
-echo '#!/bin/sh' > ./bin/pbpaste
-echo 'echo "Clipboard Title"' >> ./bin/pbpaste
-echo 'echo ""' >> ./bin/pbpaste
-echo 'echo "Clipboard Body"' >> ./bin/pbpaste
+echo '#!/bin/sh' >./bin/pbpaste
+echo 'echo "Clipboard Title"' >>./bin/pbpaste
+echo 'echo ""' >>./bin/pbpaste
+echo 'echo "Clipboard Body"' >>./bin/pbpaste
 chmod +x ./bin/pbpaste
 
 # Create fake editor to avoid blocking
-echo '#!/bin/sh' > ./bin/fake-editor
+echo '#!/bin/sh' >./bin/fake-editor
 chmod +x ./bin/fake-editor
 
 # Add to PATH and set EDITOR

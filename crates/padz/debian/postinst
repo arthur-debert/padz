@@ -8,24 +8,24 @@
 set -e
 
 if [ "$1" != "configure" ]; then
-    exit 0
+	exit 0
 fi
 
 PADZ=/usr/bin/padz
 [ -x "$PADZ" ] || exit 0
 
 install_completion() {
-    shell="$1"
-    dest="$2"
-    dir=$(dirname "$dest")
-    mkdir -p "$dir"
-    if ! "$PADZ" completion --shell "$shell" print > "$dest" 2>/dev/null; then
-        rm -f "$dest"
-    fi
+	shell="$1"
+	dest="$2"
+	dir=$(dirname "$dest")
+	mkdir -p "$dir"
+	if ! "$PADZ" completion --shell "$shell" print >"$dest" 2>/dev/null; then
+		rm -f "$dest"
+	fi
 }
 
 install_completion bash /usr/share/bash-completion/completions/padz
-install_completion zsh  /usr/share/zsh/site-functions/_padz
+install_completion zsh /usr/share/zsh/site-functions/_padz
 install_completion fish /usr/share/fish/vendor_completions.d/padz.fish
 
 exit 0

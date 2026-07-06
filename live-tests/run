@@ -68,77 +68,80 @@ GRAY='\033[38;5;245m'
 NC='\033[0m'
 
 usage() {
-    echo "Usage: ./run [options] [script_file]"
-    echo
-    echo "Create an isolated sandbox for end-to-end padz testing."
-    echo
-    echo "Options:"
-    echo "  -i, --interactive    Start interactive shell after script execution"
-    echo "  -h, --help           Show this help message"
-    echo
-    echo "Examples:"
-    echo "  live-tests/run                        # Interactive exploration"
-    echo "  live-tests/run base-fixture.sh        # Set up fixture data"
-    echo "  live-tests/run base-fixture.sh -i     # Fixture + interactive"
+	echo "Usage: ./run [options] [script_file]"
+	echo
+	echo "Create an isolated sandbox for end-to-end padz testing."
+	echo
+	echo "Options:"
+	echo "  -i, --interactive    Start interactive shell after script execution"
+	echo "  -h, --help           Show this help message"
+	echo
+	echo "Examples:"
+	echo "  live-tests/run                        # Interactive exploration"
+	echo "  live-tests/run base-fixture.sh        # Set up fixture data"
+	echo "  live-tests/run base-fixture.sh -i     # Fixture + interactive"
 }
 
 # Parse arguments
 SCRIPT_FILE=""
 INTERACTIVE=false
 while [[ $# -gt 0 ]]; do
-    case $1 in
-    -h | --help)
-        usage
-        exit 0
-        ;;
-    -i | --interactive)
-        INTERACTIVE=true
-        shift
-        ;;
-    *)
-        if [[ -z "${SCRIPT_FILE}" ]]; then
-            SCRIPT_FILE="${1}"
-        else
-            echo -e "${RED}Error: Too many arguments${NC}" >&2
-            usage
-            exit 1
-        fi
-        shift
-        ;;
-    esac
+	case $1 in
+	-h | --help)
+		usage
+		exit 0
+		;;
+	-i | --interactive)
+		INTERACTIVE=true
+		shift
+		;;
+	*)
+		if [[ -z "${SCRIPT_FILE}" ]]; then
+			SCRIPT_FILE="${1}"
+		else
+			echo -e "${RED}Error: Too many arguments${NC}" >&2
+			usage
+			exit 1
+		fi
+		shift
+		;;
+	esac
 done
 
 # Resolve script file path
 if [[ -n "${SCRIPT_FILE}" ]]; then
-    if [[ ! -f "${SCRIPT_FILE}" ]]; then
-        if [[ -f "${SCRIPT_DIR}/${SCRIPT_FILE}" ]]; then
-            SCRIPT_FILE="${SCRIPT_DIR}/${SCRIPT_FILE}"
-        else
-            echo -e "${RED}Error: Script '${SCRIPT_FILE}' not found${NC}" >&2
-            exit 1
-        fi
-    fi
-    SCRIPT_FILE="$(cd "$(dirname "${SCRIPT_FILE}")" && pwd)/$(basename "${SCRIPT_FILE}")"
-    [[ ! -x "${SCRIPT_FILE}" ]] && chmod +x "${SCRIPT_FILE}"
+	if [[ ! -f "${SCRIPT_FILE}" ]]; then
+		if [[ -f "${SCRIPT_DIR}/${SCRIPT_FILE}" ]]; then
+			SCRIPT_FILE="${SCRIPT_DIR}/${SCRIPT_FILE}"
+		else
+			echo -e "${RED}Error: Script '${SCRIPT_FILE}' not found${NC}" >&2
+			exit 1
+		fi
+	fi
+	SCRIPT_FILE="$(cd "$(dirname "${SCRIPT_FILE}")" && pwd)/$(basename "${SCRIPT_FILE}")"
+	[[ ! -x "${SCRIPT_FILE}" ]] && chmod +x "${SCRIPT_FILE}"
 fi
 
 # Build fresh binary
 PADZ_BIN="${PROJECT_ROOT}/target/debug/padz"
 echo -e "${GRAY}Building padz...${NC}"
 if ! (cd "${PROJECT_ROOT}" && cargo build --bin padz 2>&1 | grep -E "Compiling|Finished|error" || true); then
-    echo -e "${RED}Build failed${NC}" >&2
-    exit 1
+	echo -e "${RED}Build failed${NC}" >&2
+	exit 1
 fi
-[[ ! -x "${PADZ_BIN}" ]] && { echo -e "${RED}Binary not found${NC}" >&2; exit 1; }
+[[ ! -x "${PADZ_BIN}" ]] && {
+	echo -e "${RED}Binary not found${NC}" >&2
+	exit 1
+}
 
 # Create workspace in OS temp directory
 WORKSPACE="$(mktemp -d)"
 echo -e "${GRAY}Workspace: ${WORKSPACE}${NC}"
 
 cleanup() {
-    echo -e "\n${YELLOW}Cleaning up...${NC}"
-    rm -rf "${WORKSPACE}"
-    echo -e "${GREEN}Done${NC}"
+	echo -e "\n${YELLOW}Cleaning up...${NC}"
+	rm -rf "${WORKSPACE}"
+	echo -e "${GREEN}Done${NC}"
 }
 trap cleanup EXIT INT TERM
 
@@ -163,34 +166,34 @@ cd "${WORKSPACE}"
 
 # Function to run script via wrapper
 run_script() {
-    local script="$1"
-    echo -e "${GRAY}Running: $(basename "${script}")${NC}\n"
+	local script="$1"
+	echo -e "${GRAY}Running: $(basename "${script}")${NC}\n"
 
-    # Create wrapper with substitutions
-    sed -e "s|__WORKSPACE__|${WORKSPACE}|g" \
-        -e "s|__PADZ_BIN__|${PADZ_BIN}|g" \
-        "${SCRIPT_DIR}/.wrapper" > "${WORKSPACE}/.wrapper.zsh"
-    chmod +x "${WORKSPACE}/.wrapper.zsh"
+	# Create wrapper with substitutions
+	sed -e "s|__WORKSPACE__|${WORKSPACE}|g" \
+		-e "s|__PADZ_BIN__|${PADZ_BIN}|g" \
+		"${SCRIPT_DIR}/.wrapper" >"${WORKSPACE}/.wrapper.zsh"
+	chmod +x "${WORKSPACE}/.wrapper.zsh"
 
-    zsh --no-globalrcs --no-rcs "${WORKSPACE}/.wrapper.zsh" "${script}"
+	zsh --no-globalrcs --no-rcs "${WORKSPACE}/.wrapper.zsh" "${script}"
 }
 
 # Function to start interactive shell
 start_interactive() {
-    echo -e "\n${YELLOW}$(cat "${SCRIPT_DIR}/.welcome")${NC}\n"
+	echo -e "\n${YELLOW}$(cat "${SCRIPT_DIR}/.welcome")${NC}\n"
 
-    # Prepare zshrc
-    sed -e "s|__WORKSPACE__|${WORKSPACE}|g" \
-        -e "s|__PADZ_BIN__|${PADZ_BIN}|g" \
-        "${SCRIPT_DIR}/.zshrc" > "${WORKSPACE}/.zshrc"
+	# Prepare zshrc
+	sed -e "s|__WORKSPACE__|${WORKSPACE}|g" \
+		-e "s|__PADZ_BIN__|${PADZ_BIN}|g" \
+		"${SCRIPT_DIR}/.zshrc" >"${WORKSPACE}/.zshrc"
 
-    ZDOTDIR="${WORKSPACE}" zsh -i
+	ZDOTDIR="${WORKSPACE}" zsh -i
 }
 
 # Execute
 if [[ -n "${SCRIPT_FILE}" ]]; then
-    run_script "${SCRIPT_FILE}"
-    [[ "${INTERACTIVE}" == "true" ]] && start_interactive
+	run_script "${SCRIPT_FILE}"
+	[[ "${INTERACTIVE}" == "true" ]] && start_interactive
 else
-    start_interactive
+	start_interactive
 fi

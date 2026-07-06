@@ -47,152 +47,152 @@
 # Get the scope root directory
 # Usage: _get_scope_root [scope]
 _get_scope_root() {
-    local scope="${1:-}"
-    if [[ "${scope}" == "global" ]]; then
-        echo "${PADZ_GLOBAL_DATA}"
-    else
-        # Project scope - data is in .padz under project root
-        echo "${PROJECT_A}/.padz"
-    fi
+	local scope="${1:-}"
+	if [[ "${scope}" == "global" ]]; then
+		echo "${PADZ_GLOBAL_DATA}"
+	else
+		# Project scope - data is in .padz under project root
+		echo "${PROJECT_A}/.padz"
+	fi
 }
 
 # Get the bucket directory for a scope
 # Usage: _get_bucket_dir [scope] [bucket]
 # bucket: active (default), archived, deleted
 _get_bucket_dir() {
-    local scope="${1:-}"
-    local bucket="${2:-active}"
-    local root
-    root=$(_get_scope_root "${scope}")
-    echo "${root}/${bucket}"
+	local scope="${1:-}"
+	local bucket="${2:-active}"
+	local root
+	root=$(_get_scope_root "${scope}")
+	echo "${root}/${bucket}"
 }
 
 # Get path to content file for a pad
 # Note: Files are named pad-{uuid}.txt
 # Usage: backdoor_get_content_path <uuid> [scope] [bucket]
 backdoor_get_content_path() {
-    local uuid="$1"
-    local scope="${2:-}"
-    local bucket="${3:-active}"
-    local bucket_dir
-    bucket_dir=$(_get_bucket_dir "${scope}" "${bucket}")
-    echo "${bucket_dir}/pad-${uuid}.txt"
+	local uuid="$1"
+	local scope="${2:-}"
+	local bucket="${3:-active}"
+	local bucket_dir
+	bucket_dir=$(_get_bucket_dir "${scope}" "${bucket}")
+	echo "${bucket_dir}/pad-${uuid}.txt"
 }
 
 # Get path to data.json for a bucket
 # Usage: backdoor_get_index_path [scope] [bucket]
 backdoor_get_index_path() {
-    local scope="${1:-}"
-    local bucket="${2:-active}"
-    local bucket_dir
-    bucket_dir=$(_get_bucket_dir "${scope}" "${bucket}")
-    echo "${bucket_dir}/data.json"
+	local scope="${1:-}"
+	local bucket="${2:-active}"
+	local bucket_dir
+	bucket_dir=$(_get_bucket_dir "${scope}" "${bucket}")
+	echo "${bucket_dir}/data.json"
 }
 
 # Remove content file only (creates zombie metadata)
 # Usage: backdoor_remove_content <uuid> [scope] [bucket]
 backdoor_remove_content() {
-    local uuid="$1"
-    local scope="${2:-}"
-    local bucket="${3:-active}"
-    local content_path
-    content_path=$(backdoor_get_content_path "${uuid}" "${scope}" "${bucket}")
-    rm -f "${content_path}"
+	local uuid="$1"
+	local scope="${2:-}"
+	local bucket="${3:-active}"
+	local content_path
+	content_path=$(backdoor_get_content_path "${uuid}" "${scope}" "${bucket}")
+	rm -f "${content_path}"
 }
 
 # Remove metadata entry only (creates orphan file)
 # Note: data.json is HashMap<Uuid, Metadata>, so we delete by key
 # Usage: backdoor_remove_metadata <uuid> [scope] [bucket]
 backdoor_remove_metadata() {
-    local uuid="$1"
-    local scope="${2:-}"
-    local bucket="${3:-active}"
-    local index_path
-    index_path=$(backdoor_get_index_path "${scope}" "${bucket}")
+	local uuid="$1"
+	local scope="${2:-}"
+	local bucket="${3:-active}"
+	local index_path
+	index_path=$(backdoor_get_index_path "${scope}" "${bucket}")
 
-    if [[ -f "${index_path}" ]]; then
-        local temp_file="${index_path}.tmp"
-        # data.json is {uuid: metadata, ...} so delete by key
-        jq --arg id "${uuid}" 'del(.[$id])' "${index_path}" > "${temp_file}"
-        mv "${temp_file}" "${index_path}"
-    fi
+	if [[ -f "${index_path}" ]]; then
+		local temp_file="${index_path}.tmp"
+		# data.json is {uuid: metadata, ...} so delete by key
+		jq --arg id "${uuid}" 'del(.[$id])' "${index_path}" >"${temp_file}"
+		mv "${temp_file}" "${index_path}"
+	fi
 }
 
 # Write invalid JSON to index (for corruption testing)
 # Usage: backdoor_corrupt_index [scope] [bucket]
 backdoor_corrupt_index() {
-    local scope="${1:-}"
-    local bucket="${2:-active}"
-    local index_path
-    index_path=$(backdoor_get_index_path "${scope}" "${bucket}")
-    echo "{ invalid json here" > "${index_path}"
+	local scope="${1:-}"
+	local bucket="${2:-active}"
+	local index_path
+	index_path=$(backdoor_get_index_path "${scope}" "${bucket}")
+	echo "{ invalid json here" >"${index_path}"
 }
 
 # Create an orphan content file (no metadata)
 # Usage: backdoor_create_orphan <title> [scope] [bucket]
 # Returns: the UUID of the created orphan
 backdoor_create_orphan() {
-    local title="$1"
-    local scope="${2:-}"
-    local bucket="${3:-active}"
-    local bucket_dir
-    bucket_dir=$(_get_bucket_dir "${scope}" "${bucket}")
+	local title="$1"
+	local scope="${2:-}"
+	local bucket="${3:-active}"
+	local bucket_dir
+	bucket_dir=$(_get_bucket_dir "${scope}" "${bucket}")
 
-    # Generate a UUID (lowercase)
-    local uuid
-    uuid=$(uuidgen | tr '[:upper:]' '[:lower:]')
+	# Generate a UUID (lowercase)
+	local uuid
+	uuid=$(uuidgen | tr '[:upper:]' '[:lower:]')
 
-    # Create content file with correct naming convention
-    mkdir -p "${bucket_dir}"
-    echo -e "${title}\n\nOrphan content body" > "${bucket_dir}/pad-${uuid}.txt"
+	# Create content file with correct naming convention
+	mkdir -p "${bucket_dir}"
+	echo -e "${title}\n\nOrphan content body" >"${bucket_dir}/pad-${uuid}.txt"
 
-    echo "${uuid}"
+	echo "${uuid}"
 }
 
 # List all content files in a bucket directory
 # Usage: backdoor_list_content_files [scope] [bucket]
 backdoor_list_content_files() {
-    local scope="${1:-}"
-    local bucket="${2:-active}"
-    local bucket_dir
-    bucket_dir=$(_get_bucket_dir "${scope}" "${bucket}")
-    local f base
-    for f in "${bucket_dir}"/pad-*.txt; do
-        [[ -e "$f" ]] || continue
-        base="${f##*/}"
-        base="${base#pad-}"
-        base="${base%.txt}"
-        printf '%s\n' "$base"
-    done
+	local scope="${1:-}"
+	local bucket="${2:-active}"
+	local bucket_dir
+	bucket_dir=$(_get_bucket_dir "${scope}" "${bucket}")
+	local f base
+	for f in "${bucket_dir}"/pad-*.txt; do
+		[[ -e "$f" ]] || continue
+		base="${f##*/}"
+		base="${base#pad-}"
+		base="${base%.txt}"
+		printf '%s\n' "$base"
+	done
 }
 
 # Check if content file exists for UUID
 # Usage: backdoor_content_exists <uuid> [scope] [bucket]
 backdoor_content_exists() {
-    local uuid="$1"
-    local scope="${2:-}"
-    local bucket="${3:-active}"
-    local content_path
-    content_path=$(backdoor_get_content_path "${uuid}" "${scope}" "${bucket}")
-    [[ -f "${content_path}" ]]
+	local uuid="$1"
+	local scope="${2:-}"
+	local bucket="${3:-active}"
+	local content_path
+	content_path=$(backdoor_get_content_path "${uuid}" "${scope}" "${bucket}")
+	[[ -f "${content_path}" ]]
 }
 
 # Check if metadata exists for UUID
 # Note: data.json is {uuid: metadata, ...}
 # Usage: backdoor_metadata_exists <uuid> [scope] [bucket]
 backdoor_metadata_exists() {
-    local uuid="$1"
-    local scope="${2:-}"
-    local bucket="${3:-active}"
-    local index_path
-    index_path=$(backdoor_get_index_path "${scope}" "${bucket}")
+	local uuid="$1"
+	local scope="${2:-}"
+	local bucket="${3:-active}"
+	local index_path
+	index_path=$(backdoor_get_index_path "${scope}" "${bucket}")
 
-    if [[ ! -f "${index_path}" ]]; then
-        return 1
-    fi
+	if [[ ! -f "${index_path}" ]]; then
+		return 1
+	fi
 
-    # Check if key exists in the object
-    local has_key
-    has_key=$(jq --arg id "${uuid}" 'has($id)' "${index_path}")
-    [[ "${has_key}" == "true" ]]
+	# Check if key exists in the object
+	local has_key
+	has_key=$(jq --arg id "${uuid}" 'has($id)' "${index_path}")
+	[[ "${has_key}" == "true" ]]
 }

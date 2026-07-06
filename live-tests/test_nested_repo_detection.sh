@@ -35,9 +35,10 @@ padz ls
 
 PAD_COUNT=$(padz ls 2>/dev/null | grep -c "Parent Pad" || echo 0)
 if [[ "$PAD_COUNT" -eq "1" ]]; then
-    echo "SUCCESS: Child repo sees parent's pad"
+	echo "SUCCESS: Child repo sees parent's pad"
 else
-    echo "FAILURE: Child repo cannot see parent's pad (count=$PAD_COUNT)"; exit 1
+	echo "FAILURE: Child repo cannot see parent's pad (count=$PAD_COUNT)"
+	exit 1
 fi
 
 echo ""
@@ -47,24 +48,27 @@ padz ls
 
 PAD_COUNT=$(padz ls 2>/dev/null | grep -c "Pad" || echo 0)
 if [[ "$PAD_COUNT" -eq "2" ]]; then
-    echo "SUCCESS: Pads created from child go to parent's .padz"
+	echo "SUCCESS: Pads created from child go to parent's .padz"
 else
-    echo "FAILURE: Expected 2 pads, got $PAD_COUNT"; exit 1
+	echo "FAILURE: Expected 2 pads, got $PAD_COUNT"
+	exit 1
 fi
 
 echo ""
 echo "Step 5: Verify pads are stored in parent's .padz, not child"
 if [[ ! -d ".padz" ]]; then
-    echo "SUCCESS: No .padz in child repo"
+	echo "SUCCESS: No .padz in child repo"
 else
-    echo "FAILURE: .padz directory was created in child repo"; exit 1
+	echo "FAILURE: .padz directory was created in child repo"
+	exit 1
 fi
 
 cd ..
 if [[ -d ".padz" ]]; then
-    echo "SUCCESS: .padz exists in parent repo"
+	echo "SUCCESS: .padz exists in parent repo"
 else
-    echo "FAILURE: .padz not found in parent repo"; exit 1
+	echo "FAILURE: .padz not found in parent repo"
+	exit 1
 fi
 
 echo ""
@@ -77,9 +81,10 @@ echo "Created grandchild-repo with .git"
 padz n --no-editor "Grandchild Pad"
 PAD_COUNT=$(padz ls 2>/dev/null | grep -c "Pad" || echo 0)
 if [[ "$PAD_COUNT" -eq "3" ]]; then
-    echo "SUCCESS: Deeply nested repos also use ancestor's .padz"
+	echo "SUCCESS: Deeply nested repos also use ancestor's .padz"
 else
-    echo "FAILURE: Expected 3 pads from grandchild, got $PAD_COUNT"; exit 1
+	echo "FAILURE: Expected 3 pads from grandchild, got $PAD_COUNT"
+	exit 1
 fi
 
 cd ../..
@@ -96,9 +101,10 @@ INDEPENDENT_COUNT=$(padz ls 2>/dev/null | grep -c "Independent Pad" || echo 0)
 TOTAL_COUNT=$(padz ls 2>/dev/null | grep -c "Pad" || echo 0)
 
 if [[ "$INDEPENDENT_COUNT" -eq "1" && "$TOTAL_COUNT" -eq "1" ]]; then
-    echo "SUCCESS: Child with own .padz is independent"
+	echo "SUCCESS: Child with own .padz is independent"
 else
-    echo "FAILURE: Expected only 1 independent pad, got total=$TOTAL_COUNT independent=$INDEPENDENT_COUNT"; exit 1
+	echo "FAILURE: Expected only 1 independent pad, got total=$TOTAL_COUNT independent=$INDEPENDENT_COUNT"
+	exit 1
 fi
 
 cd ..
