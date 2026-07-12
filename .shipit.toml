@@ -100,7 +100,7 @@ bundle = { composition = "deb" }
 endpoints = ["gh-release"]
 
 [shipit]
-version = "760af791aa44bf6b7e9313c1d84b1863ecdc28d9"
+version = "9e23a2e10b8986cee81f5141162b11fc7db5d608"
 
 [managed]
 "skills/coordinating/SKILL.md" = "sha256:065a793b117dcfbb1e97fea0a80b405c69995850af9a350061dbcc1f4ea4976a"
@@ -129,6 +129,7 @@ claude-start = "sha256:29686623ac9b3a23b31930eb1306ed268e517e79ae28a52dc16906d40
 "pixi.toml#shipit-lint-deps" = "sha256:fa3ecaa2b6b3950fa4c26b26598d47ffa388e385191f03ac4986eb0f33bcae2e"
 "pixi.toml#shipit-environments" = "sha256:c54b53e3bb55cd59aaabf9daea85c81cffe3cbae8978e41cbef5db0f16b3838b"
 "pixi.toml#shipit-rust-lint-toolchain" = "sha256:e5105bbd8feb8a1d5bde16dd427028303d1f0b3b4c43d7b85689de95c1200285"
+"pixi.toml#shipit-rust-release-deps" = "sha256:c1533b94f3b6d678dbc9349ee45316b9b551ee5ebd144773be307119d3a0c9b4"
 ".claude/agents/explorer.md" = "sha256:9b32730d6a744d7ff2b5201b7a9f09ea9081f98d315e5534d975e9178e6afc08"
 ".claude/agents/implementer.md" = "sha256:56709647c70f122758616754f37f40de3f76d57dc93797f0ec8956939ea1b658"
 ".claude/agents/reviewer.md" = "sha256:f4060c763e1590cd6136cc810a30e137f5c76ae0629bdd45a6e9ce2d1a0de062"
