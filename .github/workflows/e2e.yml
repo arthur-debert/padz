@@ -1,0 +1,51 @@
+name: E2E
+
+# Companion e2e workflow (ADP02-WS05, #176) — the disposition the cutover
+# issue asked for, modeled on lex-fmt/lexed#169: the bats e2e suite STAYS a
+# caller of release's reusable rust-ci.yml block rather than becoming a
+# declared shipit lane. The packaged run needs what the wf-checks block
+# deliberately doesn't carry (doctrine tracked as shipit#778): the release
+# binary built and handed off as an artifact, bats-core + helper libs
+# installed via the bats-core/bats-action marketplace action, and the
+# release-core `bin/check-e2e` runner (an untracked mirror the arm-gate
+# composite installs on the runner). This file is the slimmed remainder of
+# the legacy ci.yml, whose quality-check half now lives in checks.yml (the
+# wf-checks lanes).
+#
+# The job id stays `ci` ON PURPOSE: the ruleset-required context is
+# `ci / e2e`, and keeping the caller job id keeps that context stable across
+# the cutover — no window where a required check is unreportable. The block's
+# internal `check` job (`ci / check`, bin/check) still runs as the e2e job's
+# prerequisite — the reusable workflow hard-wires `e2e: needs: check`, and
+# the e2e job downloads the padz binary that job builds. Its overlap with the
+# wf-checks lanes is an acknowledged prerequisite cost; its verdict is NO
+# LONGER ruleset-required (the wf-checks lanes carry the required quality
+# verdict).
+#
+# `binary-name: padz` causes the check job to build and upload `padz-linux`;
+# `bats: true` adds the e2e job that downloads it, installs bats-core, and
+# runs `bin/check-e2e` with PADZ_BIN pointing at the workspace-relative
+# binary path — matching what the tests/e2e/bats suites expect. See
+# docs/per-stack/rust-ci.md in arthur-debert/release for the full input
+# reference.
+
+on:
+  push:
+    branches: ['**']
+  pull_request:
+
+# Superseded-run hygiene, same shape as checks.yml (shipit#645): per-event,
+# per-ref/PR group; a new push cancels the superseded in-flight run.
+concurrency:
+  group: e2e-${{ github.event_name }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  ci:
+    uses: arthur-debert/release/.github/workflows/rust-ci.yml@v3
+    with:
+      binary-name: padz
+      bats: true
