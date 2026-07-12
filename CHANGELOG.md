@@ -4,6 +4,8 @@
 
 ## Unreleased
 
+## 1.9.0 - 2026-07-12
+
 - remove dead-orphan homebrew render pair
 - Expand inline-metadata unit-test coverage
 - Migrate changelog handling to the fragment-directory model
