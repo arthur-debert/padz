@@ -66,6 +66,39 @@ local = true
 [toolchains]
 "." = "rust"
 
+# [artifacts] — padz's declared Artifact set for the shipit release pipeline
+# (ADP02-WS06, the first real-consumer release cutover; modeled on
+# lex-fmt/lex@shipit-rc's TOL02 map). The legacy surface it replaces is
+# release.yml → rust-cli.yml@v3 (`crates: padzapp,padz`, `bin-name: padz`,
+# defaults: darwin arm64 + linux gnu x86_64/aarch64, brew, apt).
+#   - [artifacts.padz] is the binary-tarball artifact (the brew formula
+#     subject): archive composition over the same three native-runner
+#     platforms the legacy matrix built, distributed to gh-release + crates
+#     (padzapp then padz — shipit derives the workspace topo order itself)
+#     + brew (the tap is shipit's portfolio constant,
+#     arthur-debert/homebrew-tools — same as legacy).
+#   - [artifacts.padz-deb] is the legacy `apt: true` leg: cargo-deb against
+#     the pre-built release binary (the same `cargo deb -p padz --no-build
+#     --no-strip` contract as legacy build-deb), linux platforms only,
+#     gh-release only (legacy attached the .debs to the GH release; there is
+#     no apt repository endpoint).
+# No `sign = true` anywhere (owner decision, 2026-07-12): shipit's mac
+# signer covers the coupled .app/.dmg unit, not raw binaries — the raw
+# binary codesign+notarize leg the legacy darwin lane ran is owned by
+# arthur-debert/shipit#779 and the first real release ships unsigned darwin
+# tarballs, recorded.
+[artifacts.padz]
+build = [{ toolchain = "rust", package = "padz" }]
+platforms = ["darwin-arm64", "linux-x86_64", "linux-arm64"]
+bundle = { composition = "archive" }
+endpoints = ["gh-release", "crates", "brew"]
+
+[artifacts.padz-deb]
+build = [{ toolchain = "rust", package = "padz" }]
+platforms = ["linux-x86_64", "linux-arm64"]
+bundle = { composition = "deb" }
+endpoints = ["gh-release"]
+
 [shipit]
 version = "e0862f81072d35b4da4827cbba7e17c4e89a1d7f"
 

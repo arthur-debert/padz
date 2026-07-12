@@ -1,0 +1,87 @@
+name: shipit-release
+
+# ADP02-WS06 cutover caller: drives padz through shipit's COMPOSED release
+# pipeline (ADR-0040) — one `uses:` line against the remote wf-release.yml
+# at @v1, the standard-consumer shape (ADR-0010/0053: shipit is public,
+# floating `@v1` is the proven distribution path — never SHA-pinned or
+# vendored). Routing ONLY: the release plan (matrix, live stages,
+# post-RC-guard endpoints, required secrets) is preflight's, computed inside
+# the blocks; nothing is re-derived here.
+#
+# Runs ALONGSIDE the untouched legacy release.yml caller — the cutover canon
+# keeps legacy callers operational until the WS07 proof gate retires them.
+#
+# Secrets — exactly the plan-required set for a real padz release:
+#   RELEASE_TOKEN        prepare's tag+branch push through the ruleset
+#   HOMEBREW_TAP_TOKEN   the brew endpoint's tap push (stable releases only)
+#   CARGO_REGISTRY_TOKEN the crates endpoint — mapped HERE from the repo's
+#                        legacy-named CRATES_IO_KEY secret (NOT renamed:
+#                        legacy release.yml consumes it via
+#                        `secrets: inherit` until WS07 retires it)
+# gh-release rides the workflow's own GITHUB_TOKEN; a -release-rc version
+# drops crates/brew from the plan centrally (the RC guard lives in the
+# publish verb, never here).
+#
+# Per-stage dispatch (owner requirement, 2026-07-12): `stage` selects the
+# full chain (default) or ONE independently re-runnable stage block.
+# Only `prepare` is offered beside `full`: wf-prepare.yml@v1 is
+# self-sufficient from a version input (and idempotent — a re-dispatch
+# re-emits the same tag, ADR-0009). `build` and `publish` stage values are
+# DELIBERATELY absent — a shipit finding (PRD story 49), not an omission:
+# wf-build.yml@v1 requires prepare's plan outputs (`tag`/`matrix`/`stages`,
+# all `required: true`) and wf-publish.yml@v1 additionally downloads the
+# same-run `bundle-*`/`release-notes` artifacts (actions/download-artifact
+# with no run-id reaches only the current run), so neither block can run
+# from a bare version in a fresh dispatch. The fix lands in shipit, never
+# worked around here (re-wiring prepare→build consumer-side is the
+# consumer-owned wiring ADR-0040 rejected). Until then, re-running a failed
+# build/publish is the full-chain re-dispatch, which ADR-0009 makes
+# convergent: prepare resumes onto the same tag, publish clobbers.
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: >-
+          Version to release: a bare semver (e.g. 1.9.0 or
+          1.9.0-release-rc) or a bump word (major|minor|patch)
+        required: true
+        type: string
+      stage:
+        description: >-
+          What to dispatch: the full composed chain (default) or one
+          independently re-runnable stage block. See the header comment
+          for why build/publish are not offered.
+        required: false
+        type: choice
+        default: full
+        options:
+          - full
+          - prepare
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    if: inputs.stage == 'full'
+    uses: arthur-debert/shipit/.github/workflows/wf-release.yml@v1
+    with:
+      version: ${{ inputs.version }}
+    secrets:
+      RELEASE_TOKEN: ${{ secrets.RELEASE_TOKEN }}
+      HOMEBREW_TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+      CARGO_REGISTRY_TOKEN: ${{ secrets.CRATES_IO_KEY }}
+
+  prepare:
+    if: inputs.stage == 'prepare'
+    uses: arthur-debert/shipit/.github/workflows/wf-prepare.yml@v1
+    with:
+      version: ${{ inputs.version }}
+    # Preflight runs inside the block and hard-fails naming any missing
+    # plan-required secret, so the stage dispatch forwards the same set the
+    # full chain does.
+    secrets:
+      RELEASE_TOKEN: ${{ secrets.RELEASE_TOKEN }}
+      HOMEBREW_TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+      CARGO_REGISTRY_TOKEN: ${{ secrets.CRATES_IO_KEY }}
