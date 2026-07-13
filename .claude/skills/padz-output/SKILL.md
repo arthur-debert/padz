@@ -11,7 +11,7 @@ description: |
 
 ## Architecture Overview
 
-Padz uses a three-layer system for CLI output, much like web appl, wher the api returns a data object, and 
+Padz uses a three-layer system for CLI output, much like web appl, wher the api returns a data object, and
 the rendering system (using outstanding create) uses file based templates (minijinja) + styles to render:
 
 1. **Templates** (Minijinja `.jinja` files) - Define structure and layout

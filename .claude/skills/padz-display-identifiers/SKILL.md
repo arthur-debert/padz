@@ -35,7 +35,7 @@ $ padz search Dad
 ### Index Types
 
 | Type | Format | Assignment |
-|------|--------|------------|
+| ------ | -------- | ------------ |
 | Regular | `1`, `2`, `3` | All non-deleted pads, newest first |
 | Pinned | `p1`, `p2` | Pinned non-deleted pads only |
 | Deleted | `d1`, `d2` | Soft-deleted pads |
@@ -56,7 +56,7 @@ p1. Important Note    # Also accessible as "2"
 
 Child pads use dot notation. Each level maintains its own index namespace:
 
-```
+```text
 1          # Root pad
 1.1        # First child of pad 1
 1.1.1      # First grandchild
@@ -80,6 +80,7 @@ padz delete 1.1-1.3    # Delete children 1-3 of pad 1
 Location: `crates/padzapp/src/index.rs` — function `index_pads`
 
 Three-pass algorithm:
+
 1. Sort all pads by `created_at` descending
 2. First pass: Assign `pN` to pinned non-deleted pads
 3. Second pass: Assign `N` to ALL non-deleted pads (including pinned)
