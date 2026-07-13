@@ -6,11 +6,11 @@ All styles defined in `crates/padz/src/styles/default.yaml`.
 
 | Style Name           | Light Mode       | Dark Mode        | Modifiers |
 | -------------------- | ---------------- | ---------------- | --------- |
-| **Core**             |
+| **Core**             |                  |                  |           |
 | `title`              | Black            | White            | bold      |
 | `time`               | #737373          | #B4B4B4          | italic    |
 | `hint`               | #ADADAD          | #6E6E6E          | -         |
-| **List**             |
+| **List**             |                  |                  |           |
 | `list-index`         | #C48C00          | #FFD60A          | -         |
 | `list-title`         | Black            | White            | -         |
 | `pinned`             | #C48C00          | #FFD60A          | bold      |
@@ -18,21 +18,21 @@ All styles defined in `crates/padz/src/styles/default.yaml`.
 | `deleted-index`      | #BA212D          | #FF8A80          | -         |
 | `deleted-title`      | #737373          | #B4B4B4          | -         |
 | `status-icon`        | #737373          | #B4B4B4          | -         |
-| **Search**           |
+| **Search**           |                  |                  |           |
 | `highlight`          | Black on #FFEB3B | Black on #E5B900 | -         |
 | `match`              | Black on #FFEB3B | Black on #E5B900 | -         |
-| **Messages**         |
+| **Messages**         |                  |                  |           |
 | `error`              | #BA212D          | #FF8A80          | bold      |
 | `warning`            | #C48C00          | #FFD60A          | bold      |
 | `success`            | #008000          | #90EE90          | -         |
 | `info`               | #737373          | #B4B4B4          | -         |
-| **Help**             |
+| **Help**             |                  |                  |           |
 | `help-header`        | Black            | White            | bold      |
 | `help-section`       | #C48C00          | #FFD60A          | bold      |
 | `help-command`       | #008000          | #90EE90          | -         |
 | `help-desc`          | #737373          | #B4B4B4          | -         |
 | `help-usage`         | Cyan             | Cyan             | -         |
-| **Template Content** |
+| **Template Content** |                  |                  |           |
 | `help-text`          | #ADADAD          | #6E6E6E          | -         |
 | `section-header`     | #737373          | #B4B4B4          | -         |
 | `empty-message`      | #737373          | #B4B4B4          | -         |

@@ -99,7 +99,7 @@ padz import path/to/archive.tar.gz       # restores pads + metadata
 Single config toggle: `mode = "notes"` (default) or `mode = "todos"` in `.padz/padz.toml` or via `padz config set mode todos`.
 
 | | notes (default) | todos |
-|---|---|---|
+| --- | --- | --- |
 | `create` default | opens `$EDITOR` | `--no-editor` implicit |
 | Status icons in list | hidden | shown |
 | `complete` behavior | marks Done **and deletes** | marks Done, pad stays |
@@ -169,7 +169,7 @@ padz import /path/to/padz-<timestamp>.tar.gz
 ## Selector syntax at a glance
 
 | Form | Meaning | Example |
-|---|---|---|
+| --- | --- | --- |
 | `N` | Regular DI | `3` |
 | `pN` | Pinned DI | `p1` |
 | `dN` | Deleted DI | `d2` |

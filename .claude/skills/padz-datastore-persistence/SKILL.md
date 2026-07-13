@@ -13,7 +13,7 @@ description: Explains the padz hybrid store architecture—files are truth, JSON
 
 ## Hybrid Store Architecture
 
-```
+```text
 .padz/
 ├── data.json           # Metadata cache (rebuildable)
 ├── config.json         # Scope configuration
@@ -23,7 +23,7 @@ description: Explains the padz hybrid store architecture—files are truth, JSON
 ### What's Stored Where
 
 | Location | Data | Recoverable? |
-|----------|------|--------------|
+| ---------- | ------ | -------------- |
 | `pad-*.txt` | Title + Content | **Source of truth** |
 | `data.json` | id, title, created_at, updated_at | Rebuildable from files |
 | `data.json` | is_pinned, is_deleted, delete_protected | Lost if cache deleted |
@@ -33,33 +33,37 @@ description: Explains the padz hybrid store architecture—files are truth, JSON
 The `sync` process runs automatically before `list_pads`. It handles four scenarios:
 
 ### 1. Orphan Adoption
+
 **File exists, no DB entry** → Parse file, add to index
 
-```
+```text
 Cause: User manually created file, or DB corruption
 Fix: Extract title from content, create Metadata entry
 ```
 
 ### 2. Zombie Cleanup
+
 **DB entry exists, no file** → Remove from index
 
-```
+```text
 Cause: User manually deleted file, or interrupted delete operation
 Fix: Remove stale Metadata entry
 ```
 
 ### 3. Staleness Check
+
 **File mtime > DB updated_at** → Re-parse content
 
-```
+```text
 Cause: External edit (vim, another tool)
 Fix: Update cached title from file content
 ```
 
 ### 4. Garbage Collection
+
 **Empty/whitespace-only file** → Delete file and DB entry
 
-```
+```text
 Cause: User emptied file, aborted edit
 Fix: Clean up useless files
 ```
@@ -67,6 +71,7 @@ Fix: Clean up useless files
 ## Write Order: Prefer Orphans over Zombies
 
 When saving:
+
 1. Write content file **first** (atomic)
 2. Update index **second**
 
@@ -77,7 +82,7 @@ vs. if reversed → Zombie (broken pointer to missing file)
 
 The architecture separates I/O from business logic:
 
-```
+```text
 ┌──────────────────────────────────────┐
 │     PadStore<B: StorageBackend>      │
 │  - sync/reconcile logic              │
@@ -167,7 +172,7 @@ backend.save_index(Scope::Project, &index).unwrap();
 ## Key Locations
 
 | Component | File |
-|-----------|------|
+| ----------- | ------ |
 | DataStore trait | `crates/padzapp/src/store/mod.rs` |
 | StorageBackend trait | `crates/padzapp/src/store/backend.rs` |
 | PadStore (business logic) | `crates/padzapp/src/store/pad_store.rs` |

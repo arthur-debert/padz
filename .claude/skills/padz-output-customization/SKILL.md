@@ -14,7 +14,7 @@ Both are embedded at compile time via outstanding's macros.
 
 ## Architecture Overview
 
-```
+```text
 ┌─────────────────────────────────────────────────────────────┐
 │                     render.rs                                │
 │  create_renderer() → Renderer with theme + templates         │
@@ -32,7 +32,9 @@ Both are embedded at compile time via outstanding's macros.
 Styles use a **three-layer architecture**:
 
 ### Layer 1: Visual (prefix `_`)
+
 Concrete colors - the raw building blocks:
+
 ```yaml
 _primary:
   light: { fg: black }
@@ -44,7 +46,9 @@ _gold:
 ```
 
 ### Layer 2: Presentation (prefix `_`)
+
 Semantic aliases for visual consistency:
+
 ```yaml
 _secondary: _gray
 _accent: _gold
@@ -52,7 +56,9 @@ _danger: _red
 ```
 
 ### Layer 3: Semantic
+
 Template-facing names - what templates actually use:
+
 ```yaml
 title:
   bold: true
@@ -64,6 +70,7 @@ error: { bold: true, ... }
 ```
 
 ### Style Properties
+
 ```yaml
 style-name:
   fg: cyan              # Named color
@@ -77,6 +84,7 @@ style-name:
 ```
 
 ### Adding a New Style
+
 1. Define visual color in Layer 1 (if needed)
 2. Add presentation alias in Layer 2 (if cross-cutting)
 3. Define semantic name in Layer 3
@@ -87,8 +95,9 @@ style-name:
 Templates use **Jinja2 syntax** (minijinja). Located in `src/cli/templates/`.
 
 ### Template Files
+
 | File | Purpose |
-|------|---------|
+| ------ | --------- |
 | `list.jinja` | Main list view (`padz list`) |
 | `full_pad.jinja` | Detailed pad view (`padz view`) |
 | `text_list.jinja` | Plain text list output |
@@ -99,6 +108,7 @@ Templates use **Jinja2 syntax** (minijinja). Located in `src/cli/templates/`.
 | `_match_lines.jinja` | Partial: search match lines |
 
 ### Template Syntax
+
 ```jinja
 {# Apply style to text #}
 {{ pad.title | style("list-title") }}
@@ -119,12 +129,14 @@ Templates use **Jinja2 syntax** (minijinja). Located in `src/cli/templates/`.
 ```
 
 ### Key Filters
+
 - `style("name")` - Apply named style
 - `col(width)` - Fixed column width
 - `col(width, align="right")` - Right-aligned column
 - `truncate(length)` - Truncate with ellipsis
 
 ### Creating a New Template
+
 1. Create `src/cli/templates/mytemplate.jinja`
 2. Access via `TEMPLATES.get_content("mytemplate")`
 3. Add to renderer in `render.rs`
@@ -132,6 +144,7 @@ Templates use **Jinja2 syntax** (minijinja). Located in `src/cli/templates/`.
 ## Debugging Output
 
 Use `--output=term-debug` to see style tags:
+
 ```bash
 padz list --output=term-debug
 # Output: [pinned]⚲[/pinned] [list-index]p1.[/list-index]...
@@ -144,7 +157,7 @@ See [references/current-stylesheet.yaml](references/current-stylesheet.yaml) for
 ## Code Locations
 
 | Component | File |
-|-----------|------|
+| ----------- | ------ |
 | Stylesheet | `crates/padz/src/styles/default.yaml` |
 | Templates | `crates/padz/src/cli/templates/` |
 | Style loading | `crates/padz/src/cli/styles.rs` |
@@ -154,9 +167,11 @@ See [references/current-stylesheet.yaml](references/current-stylesheet.yaml) for
 ## Common Tasks
 
 ### Change a color
+
 Edit `src/styles/default.yaml`, find the style name, modify `fg`/`bg`/`bold`.
 
 ### Add bold to existing style
+
 ```yaml
 existing-style:
   bold: true
@@ -164,8 +179,10 @@ existing-style:
 ```
 
 ### Change list layout
+
 Edit `src/cli/templates/list.jinja` and `_pad_line.jinja`.
 
 ### Add new output field
+
 1. Ensure data is in the render context (check `render.rs`)
 2. Add to template: `{{ new_field | style("appropriate-style") }}`
