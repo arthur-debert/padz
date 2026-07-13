@@ -13,7 +13,8 @@ name: Checks
 # The bats e2e suite lives on in the companion e2e.yml (release-binary build
 # + artifact handoff, bats-core + helper libs, and the release-core
 # bin/check-e2e runner — surface the wf-checks block deliberately doesn't
-# carry). Release workflows (release.yml) stay on the legacy release path.
+# carry). Releases run on the shipit-release.yml caller (ADP02-WS08; the
+# legacy release.yml caller is retired).
 
 on:
   push:
