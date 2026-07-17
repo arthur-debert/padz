@@ -144,8 +144,17 @@ pub fn build_command() -> clap::Command {
 
 /// Parses command-line arguments using standout's App.
 /// This handles help display (including topics) and errors automatically.
-/// It also adds the --output flag for output mode control (auto, term, text, term-debug).
+/// It also adds the `--output` flag, which standout defines over the full mode set:
+/// `auto`, `term`, `text`, `term-debug`, `json`, `yaml`, `xml`, and `csv`.
 /// Returns the parsed CLI and the output mode extracted from the matches.
+///
+/// The mode is extracted by standout's own [`App::extract_output_mode`] rather than by
+/// a local match. Standout owns the `--output` value set: a hand-written parser here is
+/// a copy that silently rots when standout adds a mode. It did — the local copy knew
+/// only `json`, so `--output yaml|xml|csv` parsed as valid clap values and then fell
+/// through to `Auto`, quietly rendering the human template (ANSI, glyphs, width
+/// truncation) to callers who had asked for machine-readable data. Delegating keeps the
+/// mode set defined in exactly one place.
 pub fn parse_cli() -> (Cli, OutputMode) {
     // Intercept top-level help to show grouped output
     if should_show_custom_help() {
@@ -155,18 +164,7 @@ pub fn parse_cli() -> (Cli, OutputMode) {
 
     let app: App = app_with_topics();
     let matches = app.parse_with(Cli::command());
-
-    // Extract output mode from the matches (standout adds this as _output_mode)
-    let output_mode = match matches
-        .get_one::<String>("_output_mode")
-        .map(|s| s.as_str())
-    {
-        Some("term") => OutputMode::Term,
-        Some("text") => OutputMode::Text,
-        Some("term-debug") => OutputMode::TermDebug,
-        Some("json") => OutputMode::Json,
-        _ => OutputMode::Auto,
-    };
+    let output_mode = app.extract_output_mode(&matches);
 
     let cli = Cli::from_arg_matches(&matches).expect("Failed to parse CLI arguments");
     (cli, output_mode)
