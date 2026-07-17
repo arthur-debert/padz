@@ -62,6 +62,44 @@ fn pads(json: &str) -> Vec<(String, String)> {
         .collect()
 }
 
+/// Every object key, and every string value, in a parsed structured document —
+/// at any nesting depth.
+///
+/// The distinction the two halves draw is the whole point. A `contains` check on
+/// raw output cannot tell a *key* named `indent` from a pad whose *title* merely
+/// says "indent": the first is a render-time field leaking into a structured
+/// mode, the second is ordinary user data, and they mean opposite things. Parsing
+/// separates them, so a leak assertion can name exactly which one it forbids.
+///
+/// Takes `serde_json::Value` rather than a per-format type so one walker serves
+/// every structured mode: YAML deserializes into this same shape, so a caller
+/// parses with its own format's real parser and asks the questions here.
+#[derive(Default)]
+struct Shape {
+    keys: std::collections::BTreeSet<String>,
+    strings: Vec<String>,
+}
+
+fn shape_of(v: &serde_json::Value) -> Shape {
+    fn walk(v: &serde_json::Value, shape: &mut Shape) {
+        match v {
+            serde_json::Value::Object(fields) => {
+                for (key, child) in fields {
+                    shape.keys.insert(key.clone());
+                    walk(child, shape);
+                }
+            }
+            serde_json::Value::Array(items) => items.iter().for_each(|item| walk(item, shape)),
+            serde_json::Value::String(text) => shape.strings.push(text.clone()),
+            _ => {}
+        }
+    }
+
+    let mut shape = Shape::default();
+    walk(v, &mut shape);
+    shape
+}
+
 /// The message strings a JSON result carries.
 fn messages(json: &str) -> Vec<String> {
     let v: serde_json::Value = serde_json::from_str(json).unwrap();
@@ -774,10 +812,26 @@ fn xml_output_parses_and_carries_the_title() {
 
     let mut reader = quick_xml::Reader::from_str(result.stdout());
     let mut depth = 0usize;
+    let mut in_title = false;
+    let mut titles: Vec<String> = Vec::new();
     loop {
         match reader.read_event() {
-            Ok(quick_xml::events::Event::Start(_)) => depth += 1,
-            Ok(quick_xml::events::Event::End(_)) => depth -= 1,
+            Ok(quick_xml::events::Event::Start(e)) => {
+                depth += 1;
+                in_title = e.name().as_ref() == b"title";
+            }
+            // Read the title through the parser's own unescaping: only the parser
+            // can say whether `<title>` was markup or an escaped literal, which is
+            // the distinction this test exists to make.
+            Ok(quick_xml::events::Event::Text(e)) if in_title => titles.push(
+                e.unescape()
+                    .unwrap_or_else(|err| panic!("undecodable title text: {err}"))
+                    .into_owned(),
+            ),
+            Ok(quick_xml::events::Event::End(_)) => {
+                depth -= 1;
+                in_title = false;
+            }
             Ok(quick_xml::events::Event::Eof) => break,
             Ok(_) => {}
             Err(e) => panic!("not well-formed XML: {e}\n{}", result.stdout()),
@@ -785,8 +839,8 @@ fn xml_output_parses_and_carries_the_title() {
     }
     assert_eq!(depth, 0, "XML tags must balance");
     assert!(
-        result.stdout().contains("<title>xml pad</title>"),
-        "the title must be a real element, not text: {}",
+        titles.iter().any(|t| t == "xml pad"),
+        "the title must be a real <title> element, not text: {}",
         result.stdout()
     );
 }
@@ -867,9 +921,16 @@ fn structured_output_is_invariant_across_terminal_width() {
 #[test]
 #[serial]
 fn structured_output_excludes_template_only_view_fields() {
+    const TEMPLATE_ONLY: [&str; 5] = ["line_width", "title_width", "indent", "time_ago", "cols"];
+    // The title deliberately spells the forbidden fields. Only a *key* named
+    // `indent` is a leak; a pad that merely talks about indentation is data the
+    // result must carry verbatim. Seeding both into one document is what keeps
+    // this test honest — it fails against a `contains` check on raw stdout.
+    const TITLE: &str = "notes on indent, time_ago and cols";
+
     let fx = Fixture::new();
     let state = fx.app_state();
-    fx.seed_pad(&state, "a pad", "");
+    fx.seed_pad(&state, TITLE, "");
     drop(state);
 
     let (app, cmd) = fx.read_app();
@@ -880,15 +941,26 @@ fn structured_output_excludes_template_only_view_fields() {
     );
 
     let out = result.stdout();
+    let parsed: serde_json::Value =
+        serde_json::from_str(out).unwrap_or_else(|e| panic!("not JSON: {e}\n{out}"));
+    let shape = shape_of(&parsed);
+
     // These are derived at render time by the view builders. Their presence here
     // would mean a context provider ran for a structured mode — the exact leak
     // the result/view split exists to prevent.
-    for leaked in ["line_width", "title_width", "indent", "time_ago", "cols"] {
+    for leaked in TEMPLATE_ONLY {
         assert!(
-            !out.contains(leaked),
-            "structured output leaked the template-only field {leaked:?}: {out}"
+            !shape.keys.contains(leaked),
+            "structured output leaked the template-only field {leaked:?} as a key: {out}"
         );
     }
+
+    // The other half of the contract: the parse must not have bought its pass by
+    // dropping the pad. Without this, deleting the title would satisfy the loop.
+    assert!(
+        shape.strings.iter().any(|s| s == TITLE),
+        "the title must survive verbatim as a value: {out}"
+    );
 }
 
 #[test]
@@ -923,10 +995,19 @@ fn an_empty_result_stays_valid_in_every_structured_mode() {
             parsed["pads"].as_array().is_some_and(|a| a.is_empty()),
             "{mode}: an empty listing must serialize an empty pads array: {parsed:?}"
         );
+        // Valid JSON is not enough: a structured mode could still serialize the
+        // human hint as a field. Ask the parsed document, not the raw text —
+        // scraping stdout here would answer a different question than the one
+        // this assertion is asking.
+        let shape = shape_of(&parsed);
+        let leaked: Vec<&String> = shape
+            .strings
+            .iter()
+            .filter(|s| s.contains("No pads yet"))
+            .collect();
         assert!(
-            !result.stdout().contains("No pads yet"),
-            "{mode}: the human empty-state hint must not leak into structured output: {}",
-            result.stdout()
+            leaked.is_empty(),
+            "{mode}: the human empty-state hint must not leak into structured output: {leaked:?}"
         );
     }
 }
