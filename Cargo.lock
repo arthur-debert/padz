@@ -1279,6 +1279,7 @@ dependencies = [
  "console 0.15.11",
  "dark-light",
  "directories",
+ "minijinja",
  "once_cell",
  "padzapp",
  "predicates",

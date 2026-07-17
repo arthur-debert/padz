@@ -599,7 +599,7 @@ pub enum Commands {
 
     /// Print the file path to one or more pads
     #[command(display_order = 17)]
-    #[dispatch(pure)]
+    #[dispatch(pure, template = "path")]
     Path {
         /// Indexes of the pads (e.g. 1 p1 d1)
         #[arg(required = true, num_args = 1.., add = all_pads_completer())]
@@ -608,7 +608,7 @@ pub enum Commands {
 
     /// Print the UUID of one or more pads
     #[command(display_order = 17)]
-    #[dispatch(pure)]
+    #[dispatch(pure, template = "uuid")]
     Uuid {
         /// Indexes of the pads (e.g. 1 p1 d1)
         #[arg(required = true, num_args = 1.., add = all_pads_completer())]

@@ -63,7 +63,7 @@
 use crate::error::{PadzError, Result};
 use crate::index::DisplayPad;
 use crate::model::Scope;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 
 /// Controls how nested (parent/child) pads are rendered.
@@ -126,7 +126,7 @@ impl PadzPaths {
     }
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum MessageLevel {
     Info,
@@ -135,7 +135,7 @@ pub enum MessageLevel {
     Error,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CmdMessage {
     pub level: MessageLevel,
     pub content: String,

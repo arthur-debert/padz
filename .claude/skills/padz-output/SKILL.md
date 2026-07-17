@@ -44,12 +44,36 @@ padz list --output=json       # Machine-readable JSON
 
 Templates use Minijinja syntax. Located in `crates/padz/src/cli/templates/`.
 
+### Where template data comes from
+
+Handlers return one typed, mode-independent result (`crates/padz/src/cli/result.rs`).
+Standout serializes it once, then either emits it directly (`--output json`) or renders
+a template with it. Templates therefore see the handler's result at the top level.
+
+Terminal-only fields — column widths, status glyphs, `time_ago`, the pin marker — are
+**not** in the handler result. They are derived at render time by the view builders in
+`crates/padz/src/cli/render.rs`, registered as standout context providers
+(`context_fn`) in `crates/padz/src/cli/commands.rs`. Standout resolves providers only
+on the template path, which is what keeps structured output free of them.
+
+Two templates read a provider rather than the raw result:
+
+| Template | Reads | Provider |
+| -------- | ----- | -------- |
+| `list.jinja` | `list_view` | `render::list_view_provider` |
+| `modification_result.jinja` | `modification_view` | `render::modification_view_provider` |
+
+Every other template reads the handler result directly.
+
 ### Main Templates
 
-- `list.jinja` - Pad list with columns, indentation, status icons
+- `list.jinja` - Pad list with columns, indentation, status icons (via `list_view`)
+- `modification_result.jinja` - Pads changed by a command (via `modification_view`)
+- `view.jinja` - `padz view`: title + body per pad
 - `full_pad.jinja` - Complete pad view (title + content)
 - `text_list.jinja` - Simple line-by-line output
 - `messages.jinja` - Command feedback (success/error/info)
+- `path.jinja` / `uuid.jinja` - One pad path / uuid per line
 
 ### Partial Templates (reusable)
 
@@ -62,8 +86,9 @@ Templates use Minijinja syntax. Located in `crates/padz/src/cli/templates/`.
 
 ```jinja
 {#- Whitespace-trimming comment -#}
-{% for pad in pads %}
-  {{- pad.title | col(width) | style("list-title") | nl -}}
+{%- set view = list_view -%}
+{% for pad in view.pads %}
+  {{- pad.title | col(pad.title_width) | style("list-title") | nl -}}
 {% endfor %}
 ```
 

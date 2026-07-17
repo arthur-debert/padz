@@ -98,10 +98,14 @@ Templates use **Jinja2 syntax** (minijinja). Located in `src/cli/templates/`.
 
 | File | Purpose |
 | ------ | --------- |
-| `list.jinja` | Main list view (`padz list`) |
-| `full_pad.jinja` | Detailed pad view (`padz view`) |
+| `list.jinja` | Main list view (`padz list`), via the `list_view` provider |
+| `modification_result.jinja` | Pads changed by a command, via the `modification_view` provider |
+| `view.jinja` | `padz view` output |
+| `full_pad.jinja` | Detailed pad view (title + content) |
 | `text_list.jinja` | Plain text list output |
 | `messages.jinja` | Success/error messages |
+| `path.jinja` | One pad file path per line |
+| `uuid.jinja` | One pad uuid per line |
 | `_pad_line.jinja` | Partial: single pad row |
 | `_deleted_help.jinja` | Partial: deleted section help |
 | `_peek_content.jinja` | Partial: content preview |
@@ -119,8 +123,9 @@ Templates use **Jinja2 syntax** (minijinja). Located in `src/cli/templates/`.
 {# Conditionals #}
 {% if pad.is_pinned %}{{ "⚲" | style("pinned") }}{% endif %}
 
-{# Loops #}
-{% for pad in pads %}
+{# Loops. list.jinja reads its rows from the render-time `list_view` provider,
+   not from the handler result directly — see the padz-output skill. #}
+{% for pad in list_view.pads %}
   {% include "_pad_line.jinja" %}
 {% endfor %}
 

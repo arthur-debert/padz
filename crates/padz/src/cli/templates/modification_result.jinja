@@ -1,17 +1,18 @@
-{#- Unified rendering for modification commands -#}
-{#- Expects: start_message, pads (list of PadLineData), trailing_messages, peek (bool), col_* -#}
+{#- Unified rendering for modification commands. `modification_view` is derived at -#}
+{#- render time from the handler's ModificationResult; see cli::render. -#}
+{%- set view = modification_view -%}
 
 {#- Start message -#}
-{%- if start_message -%}
-[info]{{ start_message }}[/info]{{ "" | nl }}
+{%- if view.start_message -%}
+[info]{{ view.start_message }}[/info]{{ "" | nl }}
 {%- endif -%}
 
 {#- Affected pads list -#}
-{%- for pad in pads -%}
+{%- for pad in view.pads -%}
 {%- include "_pad_line.jinja" -%}
 {%- endfor -%}
 
 {#- Trailing messages (info, warnings, errors) -#}
-{%- for msg in trailing_messages -%}
+{%- for msg in view.trailing_messages -%}
 {{ msg.content | style_as(msg.style) }}{{ "" | nl }}
 {%- endfor -%}
