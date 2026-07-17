@@ -1,0 +1,22 @@
+{#- Layout and glyph constants — the single place either is named. -#}
+{#- Imported, not included: `{% import "_layout.jinja" as L %}` then `L.COLS`. -#}
+
+{#- Column widths for a pad line. `status` is the width when status icons are on;
+    the caller zeroes it when they are off, because an unused column still costs
+    its width. `time` is 5 because that is what unicode-width makes of "34s ⏲"
+    (the ⏲ measures 1 there but draws 2 — `render::line_width` pays that back). -#}
+{%- set COLS = {"left_pin": 2, "status": 2, "index": 4, "time": 5} -%}
+
+{#- Spaces per level of nesting. -#}
+{%- set INDENT = 2 -%}
+
+{#- Widest a tag run may get before the title starts losing room. -#}
+{%- set TAGS_MAX = 30 -%}
+
+{#- Glyphs. -#}
+{%- set PIN = "⚲" -%}
+{%- set CLOCK = "⏲" -%}
+{%- set STATUS_GLYPH = {"Planned": "⚪︎", "InProgress": "☉︎︎", "Done": "⚫︎"} -%}
+
+{#- Section headings, keyed by the SectionKind a row carries. -#}
+{%- set SECTION_TITLE = {"Archived": "Archived Pads", "Deleted": "Deleted Pads"} -%}

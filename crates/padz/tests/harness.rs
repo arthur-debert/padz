@@ -664,6 +664,157 @@ fn text_output_carries_no_ansi_escapes() {
 }
 
 // =============================================================================
+// Presentation policy that lives in the templates
+//
+// Wording, pluralization, glyphs, section labels and index formatting are decided
+// in `templates/`, not in Rust — so `render`'s unit tests cannot reach them and
+// these are the tests that hold them. They drive the real template through the
+// real app, which is the only place that policy exists as behaviour.
+// =============================================================================
+
+/// The count and the noun have to agree, and the noun is chosen in the template.
+///
+/// The two cases use separate fixtures on purpose: a pinned pad is
+/// delete-protected, so reusing one store would make the plural case fail for a
+/// reason that has nothing to do with wording.
+#[test]
+#[serial]
+fn a_modification_pluralizes_its_noun_to_match_the_count() {
+    let fx = Fixture::new();
+    let state = fx.app_state();
+    fx.seed_pad(&state, "only one", "");
+    drop(state);
+    let (app, cmd) = fx.read_app();
+    TestHarness::new()
+        .no_color()
+        .terminal_width(80)
+        .text_output()
+        .run(&app, cmd, fx.argv(&["pin", "1"]))
+        .assert_stdout_contains("Pinned 1 pad...");
+
+    let fx = Fixture::new();
+    let state = fx.app_state();
+    fx.seed_pad(&state, "first", "");
+    fx.seed_pad(&state, "second", "");
+    drop(state);
+    let (app, cmd) = fx.read_app();
+    TestHarness::new()
+        .no_color()
+        .terminal_width(80)
+        .text_output()
+        .run(&app, cmd, fx.argv(&["delete", "1", "2"]))
+        .assert_stdout_contains("Deleted 2 pads...");
+}
+
+/// `--all` labels each lifecycle block. The labels are template strings, and the
+/// break is driven by the section every row carries.
+#[test]
+#[serial]
+fn the_all_listing_labels_its_lifecycle_sections() {
+    let fx = Fixture::new();
+    let state = fx.app_state();
+    fx.seed_pad(&state, "live pad", "");
+    fx.seed_pad(&state, "gone pad", "");
+    drop(state);
+
+    let (app, cmd) = fx.read_app();
+    TestHarness::new()
+        .no_color()
+        .terminal_width(80)
+        .text_output()
+        .run(&app, cmd, fx.argv(&["delete", "1"]))
+        .assert_success();
+
+    let (app, cmd) = fx.read_app();
+    let out = TestHarness::new()
+        .no_color()
+        .terminal_width(80)
+        .text_output()
+        .run(&app, cmd, fx.argv(&["list", "--all"]));
+
+    out.assert_success();
+    out.assert_stdout_contains("Deleted Pads");
+    assert!(
+        out.stdout().find("live pad") < out.stdout().find("Deleted Pads"),
+        "the deleted block and its label come after the live pads: {}",
+        out.stdout()
+    );
+}
+
+/// A pinned root is listed twice — once in the pinned block, once in its own —
+/// and each index format is built in the template from a typed DisplayIndex.
+#[test]
+#[serial]
+fn a_pinned_pad_is_indexed_p1_in_the_pinned_block_and_numbered_below() {
+    let fx = Fixture::new();
+    let state = fx.app_state();
+    fx.seed_pad(&state, "pinned pad", "");
+    drop(state);
+
+    let (app, cmd) = fx.read_app();
+    TestHarness::new()
+        .no_color()
+        .terminal_width(80)
+        .text_output()
+        .run(&app, cmd, fx.argv(&["pin", "1"]))
+        .assert_success();
+
+    let (app, cmd) = fx.read_app();
+    let out = TestHarness::new()
+        .no_color()
+        .terminal_width(80)
+        .text_output()
+        .run(&app, cmd, fx.argv(&["list"]));
+
+    out.assert_success();
+    assert!(
+        out.stdout().contains("p1."),
+        "pinned block: {}",
+        out.stdout()
+    );
+    assert!(
+        out.stdout().contains(" 1."),
+        "regular block: {}",
+        out.stdout()
+    );
+}
+
+/// Status glyphs are a template lookup keyed by the serialized TodoStatus, and
+/// they appear only when the listing asked for them.
+#[test]
+#[serial]
+fn status_glyphs_appear_only_when_the_listing_asks_for_them() {
+    let fx = Fixture::new();
+    let state = fx.app_state();
+    fx.seed_pad(&state, "a task", "");
+    drop(state);
+
+    let (app, cmd) = fx.read_app();
+    let off = TestHarness::new().no_color().terminal_width(80).run(
+        &app,
+        cmd,
+        fx.argv(&["list", "--output", "term-debug"]),
+    );
+    assert!(
+        !off.stdout().contains("[status-icon]"),
+        "notes mode draws no status column: {}",
+        off.stdout()
+    );
+
+    let (app, cmd) = fx.read_app();
+    let on = TestHarness::new().no_color().terminal_width(80).run(
+        &app,
+        cmd,
+        fx.argv(&["list", "--show-status", "--output", "term-debug"]),
+    );
+    assert!(
+        on.stdout().contains("[status-icon]"),
+        "--show-status draws the status column: {}",
+        on.stdout()
+    );
+}
+
+// =============================================================================
 // Styles — asserted semantically via term-debug, never by scraping ANSI
 // =============================================================================
 
