@@ -632,7 +632,7 @@ mod dispatch_result_tests {
     /// the printed line from reading `Error: ... Error: boom`.
     #[test]
     fn error_variant_strips_standout_prefix() {
-        let err = handle_dispatch_result(RunResult::Error("Error: boom".to_string()))
+        let err = handle_dispatch_result(RunResult::Error("Error: boom".into()))
             .expect_err("Error variant must fail");
 
         let rendered = err.to_string();

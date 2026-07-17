@@ -34,6 +34,7 @@
 
 mod support;
 
+use standout::cli::{ExitStatus, OutputKind, RunErrorKind, SuccessKind};
 use standout_test::{serial, TestHarness};
 use support::Fixture;
 use unicode_width::UnicodeWidthStr;
@@ -135,6 +136,8 @@ fn list_dispatches_and_renders_every_pad() {
             .run(&app, cmd, fx.argv(&["list"]));
 
     result.assert_success();
+    result.assert_exit_status(ExitStatus::SUCCESS);
+    assert_eq!(result.success_kind(), Some(SuccessKind::Command));
     result.assert_stdout_contains("first pad");
     result.assert_stdout_contains("second pad");
 }
@@ -150,12 +153,11 @@ fn an_unknown_command_does_not_dispatch() {
             .no_color()
             .run(&app, cmd, fx.argv(&["definitely-not-a-command"]));
 
-    // Clap rejects it before dispatch; the run must not quietly succeed.
-    assert!(
-        !result.is_handled() || result.is_error(),
-        "an unknown command must not render as a normal result: {:?}",
-        result.stdout()
-    );
+    // Clap rejects it before dispatch. Standout 7.7 keeps both the shell status
+    // and the failure's origin typed, so this cannot regress to a runtime error.
+    result.assert_error();
+    result.assert_exit_status(ExitStatus::USAGE_ERROR);
+    result.assert_error_kind(RunErrorKind::ClapUsage);
 }
 
 #[test]
@@ -443,19 +445,10 @@ fn edit_with_an_empty_pipe_errors_and_leaves_the_pad_alone() {
     );
 
     // Unlike create's warning, an empty pipe is a hard error for edit.
-    assert!(
-        result.is_error(),
-        "an empty pipe must fail the edit, got: {:?}",
-        result.stdout()
-    );
-    assert!(
-        result
-            .error()
-            .unwrap_or_default()
-            .contains("Aborted: empty content"),
-        "got: {:?}",
-        result.error()
-    );
+    result.assert_error();
+    result.assert_exit_status(ExitStatus::FAILURE);
+    result.assert_error_kind(RunErrorKind::Handler);
+    result.assert_error_contains("Aborted: empty content");
     drop(result);
 
     let (app, cmd) = fx.read_app();
@@ -598,6 +591,8 @@ fn an_empty_store_renders_the_create_hint() {
         .run(&app, cmd, fx.argv(&["list"]));
 
     result.assert_success();
+    result.assert_exit_status(ExitStatus::SUCCESS);
+    assert_eq!(result.success_kind(), Some(SuccessKind::Command));
     result.assert_stdout_contains("No pads yet, create one with `padz create`");
 }
 
@@ -1269,6 +1264,8 @@ fn output_file_path_writes_the_result_to_the_file_and_stays_silent() {
     );
 
     result.assert_success();
+    result.assert_exit_status(ExitStatus::SUCCESS);
+    assert_eq!(result.success_kind(), Some(SuccessKind::Command));
     assert_eq!(
         result.stdout(),
         "",
@@ -1312,6 +1309,36 @@ fn output_file_path_writes_text_without_ansi_escapes() {
         "a file is not a terminal; the written output must be escape-free: {written:?}"
     );
     assert!(written.contains("written pad"));
+}
+
+#[test]
+#[serial]
+fn output_file_path_reports_a_typed_final_write_failure() {
+    let fx = Fixture::new();
+    let state = fx.app_state();
+    fx.seed_pad(&state, "unwritten pad", "");
+    drop(state);
+
+    // A directory is a deterministic invalid file target on every supported
+    // platform, without depending on permission bits or the test user's uid.
+    let target = fx.root();
+    let (app, cmd) = fx.read_app();
+    let result = TestHarness::new().no_color().run(
+        &app,
+        cmd,
+        fx.argv(&[
+            "list",
+            "--output",
+            "json",
+            "--output-file-path",
+            target.to_str().unwrap(),
+        ]),
+    );
+
+    result.assert_error();
+    result.assert_exit_status(ExitStatus::FAILURE);
+    result.assert_error_kind(RunErrorKind::FinalWrite(OutputKind::Text));
+    result.assert_error_contains("Error writing output");
 }
 
 // =============================================================================
