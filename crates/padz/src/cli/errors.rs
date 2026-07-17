@@ -84,28 +84,67 @@ fn style_match(term: &str) -> String {
     format!("\"{}\"", console::style(term).black().on_yellow())
 }
 
+/// If `title[start..]` begins with `term_lower` compared case-insensitively,
+/// return the byte offset in `title` just past the match.
+///
+/// Every offset this returns is a real char boundary *in the original title*,
+/// which is the point: `title.to_lowercase()` is not offset-compatible with
+/// `title`. Lowercasing can change byte length (`İ` U+0130, 2 bytes, lowercases
+/// to `i` + U+0307, 3 bytes), so an offset found in the lowercased copy can
+/// land mid-char in the original and panic the slice. Matching walks the
+/// original's chars and compares their lowercase expansion instead, so no
+/// offset ever crosses between the two strings.
+///
+/// A char whose expansion only partially satisfies the remaining term (`İ`
+/// against the term `i`) is not a match: reporting one would mean styling half
+/// a char, which is not a slice we can take.
+fn match_end(title: &str, start: usize, term_lower: &str) -> Option<usize> {
+    let mut expected = term_lower.chars().peekable();
+    for (offset, ch) in title[start..].char_indices() {
+        if expected.peek().is_none() {
+            return Some(start + offset);
+        }
+        for lowered in ch.to_lowercase() {
+            match expected.next() {
+                Some(want) if want == lowered => {}
+                _ => return None,
+            }
+        }
+    }
+    // The term ran out exactly at the end of the title.
+    expected.peek().is_none().then_some(title.len())
+}
+
 /// Render `title` plain, except for the substring matching `term_lower` (case-
 /// insensitive), which gets the same yellow-background highlight as search hits.
 fn style_title_with_match(title: &str, term_lower: &str) -> String {
     if term_lower.is_empty() {
         return title.to_string();
     }
-    let title_lower = title.to_lowercase();
     let mut out = String::with_capacity(title.len() + 16);
+    // `plain_from` trails `cursor`: the run of unstyled text not yet flushed.
+    let mut plain_from = 0usize;
     let mut cursor = 0usize;
-    while let Some(rel) = title_lower[cursor..].find(term_lower) {
-        let start = cursor + rel;
-        let end = start + term_lower.len();
-        out.push_str(&title[cursor..start]);
-        out.push_str(
-            &console::style(&title[start..end])
-                .black()
-                .on_yellow()
-                .to_string(),
-        );
-        cursor = end;
+    while cursor < title.len() {
+        match match_end(title, cursor, term_lower) {
+            Some(end) if end > cursor => {
+                out.push_str(&title[plain_from..cursor]);
+                out.push_str(
+                    &console::style(&title[cursor..end])
+                        .black()
+                        .on_yellow()
+                        .to_string(),
+                );
+                cursor = end;
+                plain_from = end;
+            }
+            _ => {
+                // Advance one whole char, never one byte.
+                cursor += title[cursor..].chars().next().map_or(1, |ch| ch.len_utf8());
+            }
+        }
     }
-    out.push_str(&title[cursor..]);
+    out.push_str(&title[plain_from..]);
     out
 }
 
@@ -164,6 +203,90 @@ mod tests {
     #[test]
     fn empty_term_returns_title_unstyled() {
         assert_eq!(style_title_with_match("Meeting", ""), "Meeting");
+    }
+
+    /// `match_end` is the offset logic the styling rides on. Asserting it
+    /// directly keeps these cases independent of whether `console` decides to
+    /// emit color in this environment.
+    #[test]
+    fn match_end_reports_offsets_into_the_original_title() {
+        // Case-insensitive match at 0, ending past the ASCII term.
+        assert_eq!(match_end("Meeting Monday", 0, "meeting"), Some(7));
+        // No match at this offset.
+        assert_eq!(match_end("Meeting Monday", 1, "meeting"), None);
+        // Match starting after a multi-byte char: "Café " is 6 bytes.
+        assert_eq!(match_end("Café Meeting", 6, "meeting"), Some(13));
+        // The match itself is multi-byte: "Café" is 5 bytes.
+        assert_eq!(match_end("Café Meeting", 0, "café"), Some(5));
+        // Term longer than the remaining title.
+        assert_eq!(match_end("Meet", 0, "meeting"), None);
+        // Match runs to the exact end of the title.
+        assert_eq!(match_end("The Meeting", 4, "meeting"), Some(11));
+        // `İ` lowercases to 2 chars; the term `i` only covers the first, so
+        // this is not a match rather than a half-char slice.
+        assert_eq!(match_end("İstanbul", 0, "i"), None);
+    }
+
+    /// Every match in the title is highlighted, not just the first — and the
+    /// text between and around them survives.
+    #[test]
+    fn every_occurrence_is_highlighted() {
+        let styled = style_title_with_match("meeting about the meeting", "meeting");
+        assert_eq!(
+            console::strip_ansi_codes(&styled),
+            "meeting about the meeting"
+        );
+    }
+
+    /// Multi-byte titles must round-trip whether or not they match. Slicing on
+    /// offsets taken from a lowercased copy used to panic here.
+    #[test]
+    fn unicode_titles_round_trip() {
+        for (title, term) in [
+            ("Café Meeting", "meeting"),  // match after multi-byte text
+            ("Café Meeting", "café"),     // the match itself is multi-byte
+            ("日本語のノート", "ノート"), // no ASCII at all
+            ("Ünïcödé", "z"),             // no match, all multi-byte
+            ("naïve café", "CAFÉ"),       // uppercase multi-byte term
+        ] {
+            let styled = style_title_with_match(title, &term.to_lowercase());
+            assert_eq!(
+                console::strip_ansi_codes(&styled),
+                title,
+                "title {title:?} with term {term:?} must survive intact"
+            );
+        }
+    }
+
+    /// The regression the offset bug hid behind: `İ` (U+0130) is 2 bytes and
+    /// lowercases to 3 (`i` + U+0307), so offsets from the lowercased copy fall
+    /// mid-char in the original. Must not panic, and must not corrupt the title.
+    #[test]
+    fn length_changing_lowercase_does_not_panic() {
+        for title in ["İstanbul", "İİİ", "aİb", "İ"] {
+            for term in ["i", "istanbul", "a", "İ"] {
+                let styled = style_title_with_match(title, &term.to_lowercase());
+                assert_eq!(
+                    console::strip_ansi_codes(&styled),
+                    title,
+                    "title {title:?} with term {term:?} must survive intact"
+                );
+            }
+        }
+    }
+
+    /// A term longer than the title, and a match running to the exact end,
+    /// exercise the two boundary paths in `match_end`.
+    #[test]
+    fn match_at_title_boundaries() {
+        // Term longer than the remaining title → no match, title intact.
+        assert_eq!(style_title_with_match("Meet", "meeting"), "Meet");
+        // Match ends exactly at the end of the title.
+        let styled = style_title_with_match("The Meeting", "meeting");
+        assert_eq!(console::strip_ansi_codes(&styled), "The Meeting");
+        // Whole title is the match.
+        let styled = style_title_with_match("Meeting", "meeting");
+        assert_eq!(console::strip_ansi_codes(&styled), "Meeting");
     }
 
     /// `render` styles the variant it knows and passes everything else

@@ -156,6 +156,13 @@ pub fn find_git_root(cwd: &Path, home_dir: Option<&Path>) -> Option<PathBuf> {
 /// Shared upward-walk helper. Returns the first ancestor (including `cwd`
 /// itself) for which `matches` returns true. Stops at `home_dir` (exclusive)
 /// or the filesystem root.
+///
+/// "Exclusive" means `home_dir` is never itself a candidate: the boundary is
+/// tested *before* `matches`, so a `.padz`/`.git` sitting directly in `$HOME`
+/// cannot capture the walk. That ordering is the whole rule — a home with a
+/// dotfiles repo (`~/.git`) is common, and matching it would silently make
+/// every directory under `$HOME` that lacks its own store resolve to `$HOME`,
+/// turning the home directory into one enormous accidental project.
 fn walk_up_matching<F>(cwd: &Path, home_dir: Option<&Path>, matches: F) -> Option<PathBuf>
 where
     F: Fn(&Path) -> bool,
@@ -163,14 +170,14 @@ where
     let mut current = cwd.to_path_buf();
 
     loop {
-        if matches(&current) {
-            return Some(current);
-        }
-
         if let Some(home) = home_dir {
             if current == home {
                 return None;
             }
+        }
+
+        if matches(&current) {
+            return Some(current);
         }
 
         match current.parent() {
@@ -1163,25 +1170,48 @@ mod tests {
         );
     }
 
-    /// Global scope goes exactly where `PadzEnv` says, with no environment
-    /// consulted. Guards the boundary: if someone reintroduces a
-    /// `$PADZ_GLOBAL_DATA` read inside the library, the env var set here would
-    /// win over the explicit value and this fails.
+    /// Global scope goes exactly where `PadzEnv` says: two different `PadzEnv`
+    /// values resolve to two different global roots, so the path demonstrably
+    /// tracks the argument rather than any ambient default.
+    ///
+    /// This deliberately does *not* set a decoy `$PADZ_GLOBAL_DATA` to prove
+    /// the library ignores it. `std::env::set_var` is process-global and races
+    /// any concurrent reader; `test_env()` above calls `std::env::temp_dir()`,
+    /// which reads the environment, so under the parallel runner the decoy
+    /// raced a live reader. That is a `setenv`/`getenv` data race at the C
+    /// level, and a test-local mutex cannot fix it, because the readers it
+    /// races never take the lock.
+    ///
+    /// The boundary that decoy was guarding is instead enforced structurally,
+    /// and more tightly than a runtime assertion could: this crate contains no
+    /// `env::var` call at all (the mandated scan in the PR checks exactly
+    /// this), and it no longer depends on `directories`, so the compiler — not
+    /// a test — rejects reintroducing OS-directory discovery here. Reading the
+    /// environment is `padz::cli::env`'s job; the e2e suite covers that side by
+    /// passing `PADZ_GLOBAL_DATA` per-child via `Command::env`, which is sound.
     #[test]
     fn test_global_data_dir_comes_from_env_argument_only() {
         let temp = TempDir::new().unwrap();
-        let explicit = temp.path().join("explicit-global");
-        let env = PadzEnv {
-            global_data_dir: explicit.clone(),
-            home_dir: None,
+
+        let resolve_global = |dir_name: &str| {
+            let explicit = temp.path().join(dir_name);
+            let env = PadzEnv {
+                global_data_dir: explicit.clone(),
+                home_dir: None,
+            };
+            let ctx = initialize(&env, temp.path(), true, None, false).unwrap();
+            assert_eq!(ctx.scope, crate::model::Scope::Global);
+            (explicit, ctx.api.paths().global.clone())
         };
 
-        std::env::set_var("PADZ_GLOBAL_DATA", temp.path().join("decoy"));
-        let ctx = initialize(&env, temp.path(), true, None, false).unwrap();
-        std::env::remove_var("PADZ_GLOBAL_DATA");
+        let (first_explicit, first_global) = resolve_global("explicit-global");
+        assert_eq!(first_global, first_explicit);
 
-        assert_eq!(ctx.scope, crate::model::Scope::Global);
-        assert_eq!(ctx.api.paths().global, explicit);
+        // A second, different input must move the global root with it. An
+        // ambient source would pin both runs to the same place.
+        let (second_explicit, second_global) = resolve_global("other-global");
+        assert_eq!(second_global, second_explicit);
+        assert_ne!(first_global, second_global);
     }
 
     /// The home boundary is an input too: the upward walk stops there and does
@@ -1201,6 +1231,58 @@ mod tests {
             find_padz_root(&child, None),
             Some(temp.path().to_path_buf())
         );
+    }
+
+    /// The boundary is EXCLUSIVE: a store sitting directly in `$HOME` is not a
+    /// match, whether the walk arrives from below or starts there. `~/.padz` is
+    /// the shape that matters — matching it would resolve every unstored
+    /// directory under `$HOME` to `$HOME`.
+    #[test]
+    fn test_home_dir_itself_is_never_matched() {
+        let temp = TempDir::new().unwrap();
+        let home = temp.path().join("home");
+        let child = home.join("a").join("b");
+        fs::create_dir_all(&child).unwrap();
+        fs::create_dir_all(home.join(".padz")).unwrap();
+
+        // Walking up from below the boundary.
+        assert_eq!(find_padz_root(&child, Some(&home)), None);
+        // Starting exactly on the boundary.
+        assert_eq!(find_padz_root(&home, Some(&home)), None);
+        // Drop the boundary and the very same store is found — proving the
+        // `None` above is the boundary talking, not a missing fixture.
+        assert_eq!(find_padz_root(&child, None), Some(home.clone()));
+    }
+
+    /// Same exclusivity for auto-init discovery: a home that is itself a git
+    /// repo (a dotfiles checkout, `~/.git`) must not become the auto-init root.
+    #[test]
+    fn test_home_dir_itself_is_never_matched_for_git_root() {
+        let temp = TempDir::new().unwrap();
+        let home = temp.path().join("home");
+        let child = home.join("projects").join("scratch");
+        fs::create_dir_all(&child).unwrap();
+        fs::create_dir_all(home.join(".git")).unwrap();
+
+        assert_eq!(find_git_root(&child, Some(&home)), None);
+        assert_eq!(find_git_root(&home, Some(&home)), None);
+        assert_eq!(find_git_root(&child, None), Some(home.clone()));
+    }
+
+    /// The boundary excludes `$HOME` itself, not everything under it: a real
+    /// project below the home boundary is still found.
+    #[test]
+    fn test_boundary_does_not_block_matches_below_home() {
+        let temp = TempDir::new().unwrap();
+        let home = temp.path().join("home");
+        let project = home.join("projects").join("app");
+        let child = project.join("src").join("deep");
+        fs::create_dir_all(&child).unwrap();
+        fs::create_dir_all(project.join(".padz")).unwrap();
+        // A decoy at the boundary must lose to the nearer, in-bounds store.
+        fs::create_dir_all(home.join(".padz")).unwrap();
+
+        assert_eq!(find_padz_root(&child, Some(&home)), Some(project));
     }
 
     /// The common case: nothing to migrate, so nothing to report.
