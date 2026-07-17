@@ -27,7 +27,6 @@ use padzapp::error::Result;
 use padzapp::init::initialize;
 use standout::cli::{App, RunResult};
 use standout::{embed_styles, embed_templates};
-use std::io::IsTerminal;
 
 pub fn run() -> Result<()> {
     // parse_cli() uses standout's App which handles
@@ -51,15 +50,14 @@ pub fn run() -> Result<()> {
     // Initialize app state for handlers
     let app_state = create_app_state(&cli)?;
 
-    // Determine effective args: handle naked invocation by injecting synthetic command
+    // Determine effective args: handle naked invocation by injecting synthetic command.
+    // Which command a bare `padz` means is decided by `cli::input::naked_command`
+    // (see its docs for why standout's `default_command` cannot express it).
     let args: Vec<String> = if cli.command.is_none() {
-        // Naked padz: list if interactive, create if piped
-        let synthetic_cmd = if !std::io::stdin().is_terminal() {
-            "create"
-        } else {
-            "list"
-        };
-        vec!["padz".to_string(), synthetic_cmd.to_string()]
+        vec![
+            "padz".to_string(),
+            super::input::naked_command_from_process().to_string(),
+        ]
     } else {
         std::env::args().collect()
     };
