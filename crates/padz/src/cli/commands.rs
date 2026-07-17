@@ -84,16 +84,25 @@ fn build_dispatch_app(app_state: AppState) -> App {
         .expect("Failed to build app")
 }
 
-/// Handle the result of a dispatch operation
+/// Handle the result of a dispatch operation.
+///
+/// Standout 7.6 reports handler, hook, and output failures through the native
+/// `RunResult::Error` variant. Under 6.2 there was no such variant: failures
+/// arrived as `Handled("Error: ...")` and had to be detected by string prefix.
+/// The error message still carries standout's `Error: ` prefix, which is
+/// stripped here because `main` re-adds it when printing to stderr.
+///
+/// `RunResult` is `#[non_exhaustive]` as of 7.6, so unknown future variants are
+/// surfaced as an error rather than silently ignored.
 fn handle_dispatch_result(result: RunResult) -> Result<()> {
     match result {
         RunResult::Handled(output) => {
-            if output.starts_with("Error:") {
-                return Err(padzapp::error::PadzError::Api(
-                    output.trim_start_matches("Error: ").to_string(),
-                ));
-            }
             print!("{}", output);
+        }
+        RunResult::Error(msg) => {
+            return Err(padzapp::error::PadzError::Api(
+                msg.trim_start_matches("Error: ").to_string(),
+            ));
         }
         RunResult::Binary(data, filename) => {
             std::fs::write(&filename, &data)
@@ -103,6 +112,12 @@ fn handle_dispatch_result(result: RunResult) -> Result<()> {
         RunResult::Silent => {}
         RunResult::NoMatch(_) => {
             eprintln!("Error: Unknown command");
+        }
+        other => {
+            return Err(padzapp::error::PadzError::Api(format!(
+                "Unsupported dispatch result: {:?}",
+                other
+            )));
         }
     }
     Ok(())

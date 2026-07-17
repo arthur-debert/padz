@@ -88,6 +88,23 @@ static HELP_TOPICS: Lazy<TopicRegistry> = Lazy::new(|| {
     registry
 });
 
+/// Builds an `App` carrying padz's help topics.
+///
+/// Two Standout 7.6 changes are absorbed here:
+///
+/// - The topic registry is private behind `registry_mut()` (6.2's
+///   `App::with_registry` constructor is gone), so it is installed after
+///   construction rather than passed in.
+/// - `help_handling` now defaults to off and must be opted into. It was
+///   implicit in 6.2, and it is what installs the `help` subcommand and routes
+///   `--help`/topics through Standout. 7.6 additionally rejects an app that
+///   configures topics or command groups without it.
+fn app_with_topics() -> App {
+    let mut app = App::new().help_handling(true);
+    *app.registry_mut() = HELP_TOPICS.clone();
+    app
+}
+
 /// Parse a topic file content into a Topic struct
 fn parse_topic_file(name: &str, content: &str) -> Option<standout::topics::Topic> {
     let lines: Vec<&str> = content.lines().collect();
@@ -136,7 +153,7 @@ pub fn parse_cli() -> (Cli, OutputMode) {
         std::process::exit(0);
     }
 
-    let app: App = App::with_registry(HELP_TOPICS.clone());
+    let app: App = app_with_topics();
     let matches = app.parse_with(Cli::command());
 
     // Extract output mode from the matches (standout adds this as _output_mode)
@@ -286,8 +303,8 @@ fn command_groups() -> Vec<CommandGroup> {
 
 /// Renders the custom grouped help output with standout styling.
 fn render_custom_help() -> String {
-    let app = App::with_registry(HELP_TOPICS.clone());
-    let cmd = app.augment_command(Cli::command());
+    let app = app_with_topics();
+    let cmd = app.augment_command_with_help(Cli::command());
 
     let config = HelpConfig {
         command_groups: Some(command_groups()),
@@ -918,8 +935,8 @@ mod tests {
     #[test]
     fn test_help_groups_match_commands() {
         // Use augmented command because standout adds the `help` subcommand
-        let app = App::with_registry(HELP_TOPICS.clone());
-        let cmd = app.augment_command(Cli::command());
+        let app = app_with_topics();
+        let cmd = app.augment_command_with_help(Cli::command());
         validate_command_groups(&cmd, &command_groups()).unwrap();
     }
 
