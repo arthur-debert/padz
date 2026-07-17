@@ -11,31 +11,66 @@ This makes the program unwieldy and notoriously hard to test. So you forgo unit 
 Padz enforces a strict separation of the User Interface (CLI) from the Application Logic (API/Commands).
 
 The project is structured as a Cargo workspace with two crates:
-- `crates/padz/` — The core library (UI-agnostic business logic)
-- `crates/padz-cli/` — The CLI tool (depends on `padz` library)
+- `crates/padzapp/` — The core library (UI-agnostic business logic)
+- `crates/padz/` — The CLI tool (depends on the `padzapp` library)
+
+### 0. The Rule: what the library may not do
+
+`padzapp` is terminal-agnostic, and this is enforced, not merely intended:
+
+-   **No output**: it never writes to stdout/stderr. Non-fatal conditions come
+    back as data (e.g. `init::PadzContext::warnings`) for the caller to surface.
+-   **No styling**: it emits no ANSI. Errors that deserve a rich presentation
+    carry *structured data* — `PadzError::AmbiguousTitle` lists its matches as
+    `AmbiguityCandidate { index, title }` — and `crates/padz/src/cli/errors.rs`
+    styles them.
+-   **No subprocesses**: no editors, clipboard tools, or shells. Those are
+    CLI-owned adapters (`cli/editor.rs`, `cli/clipboard.rs`). The library keeps
+    only the *format*: `editor::EditorContent` parses and renders the buffer.
+-   **No environment or platform discovery**: it reads no env vars and asks no
+    OS crate where user directories live. `cli/env.rs` resolves those once at
+    the composition root and passes explicit values in via `init::PadzEnv`.
+
+Filesystem persistence deliberately *stays* in the library: files are the source
+of truth and `store/` owns them. This is a boundary rule about the user's
+terminal and environment, not about I/O in general.
+
+The payoff is testability. Because the library takes its environment as an
+argument, a test can hand it a tempdir instead of racing on process-global env
+vars, and can assert on an error's *fields* instead of grepping styled text.
+
+The CLI layer follows the same rule one level up: `cli::commands::run` reads the
+process (cwd, `cli/env.rs`) and hands explicit values to `build_app_state`, which
+decides everything. So a CLI test points padz at a tempdir in Rust rather than by
+mutating `$PADZ_GLOBAL_DATA` and `current_dir` and hoping nothing else noticed.
+Reading the process is a job for exactly one function; every other caller is
+given the answer.
 
 ### 1. The CLI Layer (The "Skin")
--   **Location**: `crates/padz-cli/src/cli/`
--   **Entry Point**: `crates/padz-cli/src/cli/commands.rs` — function `run`
+-   **Location**: `crates/padz/src/cli/`
+-   **Entry Point**: `crates/padz/src/cli/commands.rs` — function `run`
 -   **Responsibility**:
     -   Translates `argv` into Rust types (via `clap`).
-    -   Initializes the `AppContext` (API, scope, config).
+    -   Resolves the environment (`cli/env.rs`) and initializes the app state
+        (API, scope, config).
     -   Calls the API.
-    -   Renders the `CmdResult` to stdout using `crates/padz-cli/src/cli/render.rs`.
+    -   Renders results to stdout (`crates/padz/src/cli/render.rs`) and errors
+        to stderr (`crates/padz/src/cli/errors.rs`).
+    -   Owns every user-environment adapter: editor, clipboard, warnings.
 -   **Constraint**: *Never* makes decisions about business state. It only asks the API to do things.
 
 ### 2. The API Layer (The "Facade")
--   **Location**: `crates/padz/src/api.rs`
+-   **Location**: `crates/padzapp/src/api/`
 -   **Key Struct**: `PadzApi<S: DataStore>`
 -   **Responsibility**:
     -   **The Boundary**: Where the edges meet the core.
     -   **Translation**: Converts user-facing concepts (Display Indexes like `1-3`) into internal concepts (UUIDs).
     -   **Dispatch**: Routes requests to the appropriate command module.
     -   **Isolation**: Returns `Result<CmdResult>`, a data structure describing what happened, *not* a string to print.
--   **Generic Over Storage**: `PadzApi<FileStore>` in production, `PadzApi<InMemoryStore>` in tests.
+-   **Generic Over Storage**: `PadzApi<FileStore>` in production, `PadzApi<BucketedStore<MemBackend>>` in tests.
 
 ### 3. The Command Layer (The "Brain")
--   **Location**: `crates/padz/src/commands/*.rs`
+-   **Location**: `crates/padzapp/src/commands/*.rs`
 -   **Responsibility**:
     -   Pure business logic.
     -   Validates state (e.g., "Does this pad exist?", "Is it pinned?").
@@ -43,11 +78,12 @@ The project is structured as a Cargo workspace with two crates:
 -   **Testing**: Unit tested heavily with in-memory stores. No I/O dependencies.
 
 ### 4. The Store Layer (The "Memory")
--   **Location**: `crates/padz/src/store/`
--   **Trait**: `DataStore` (defined in `crates/padz/src/store/mod.rs`)
+-   **Location**: `crates/padzapp/src/store/`
+-   **Trait**: `DataStore` (defined in `crates/padzapp/src/store/mod.rs`), over a
+    `StorageBackend` (`store/backend.rs`) that says where the bytes live.
 -   **Implementations**:
-    -   `FileStore`: Production filesystem storage
-    -   `InMemoryStore`: Test-only in-memory storage
+    -   `FileStore` (= `BucketedStore<FsBackend>`): production filesystem storage
+    -   `BucketedStore<MemBackend>`: test-only in-memory storage
 
 ## Data Flow Example: `padz delete 1`
 
@@ -67,12 +103,33 @@ The project is structured as a Cargo workspace with two crates:
 
 ## Testing Strategy
 
+Each behavior is proven at the **smallest seam that can observe it**, so a test
+fails for one reason and keeps failing for that reason across refactors.
+
 | Layer | Test Type | What to Test |
 |-------|-----------|--------------|
-| CLI | Integration | Arg parsing, output formatting |
-| API | Unit | Dispatch correctness, input normalization |
-| Commands | Unit | Business logic, state transitions |
 | Store | Unit | Read/write operations, sync behavior |
+| Commands | Unit | Business logic, state transitions |
+| API | Unit | Dispatch correctness, input normalization |
+| Typed handlers | Direct call | Adapter mapping: args in, API call, typed result out |
+| CLI pipeline | `TestHarness` (serial, in process) | Clap-through-render: wiring, input chains, templates, styles, output modes, output files |
+| Process | Subprocess E2E | Only boundaries a harness cannot model |
+
+The `padz` crate has a **library target** so the middle two rows are reachable:
+`main.rs` is a shim over `cli::run()`, and the command tree, handlers, and app
+builder live in the library. Without it there is no way to test the CLI except by
+spawning the binary and scraping its stdout — which is exactly the trap the top
+of this document describes.
+
+The last row is a short list on purpose. A subprocess test is justified only by
+something a harness structurally cannot reach: `cli::run`'s own pre-dispatch
+wiring (naked invocation, `config`), a path that calls `std::process::exit`
+(help), a real editor/clipboard/completion install, or the binary's actual
+stdout. Every retained `*_e2e.rs` file names its boundary in its header; if it
+can't, it belongs at a smaller seam.
+
+The canonical statement of the pyramid — including why every `TestHarness` test
+must be `#[serial]` — lives in `crates/padz/src/lib.rs`.
 
 This separation enables:
 -   Fast, isolated unit tests for business logic

@@ -6,8 +6,8 @@
 //! ## Workspace Structure
 //!
 //! Padz is organized as a Cargo workspace with two crates:
-//! - `crates/padz/` — This core library (UI-agnostic business logic)
-//! - `crates/padz-cli/` — The CLI tool (depends on this library)
+//! - `crates/padzapp/` — This core library (UI-agnostic business logic)
+//! - `crates/padz/` — The CLI tool (depends on this library)
 //!
 //! ## The Problem
 //!
@@ -19,7 +19,7 @@
 //!
 //! ```text
 //! ┌─────────────────────────────────────────────────────────────┐
-//! │  CLI Layer (crates/padz-cli/)                               │
+//! │  CLI Layer (crates/padz/)                                   │
 //! │  - Parses arguments, formats output, handles terminal I/O   │
 //! │  - The ONLY place that knows about stdout/stderr/exit codes │
 //! └─────────────────────────────────────────────────────────────┘
@@ -44,7 +44,7 @@
 //! ┌─────────────────────────────────────────────────────────────┐
 //! │  Storage Layer (store/)                                     │
 //! │  - Abstract DataStore trait                                 │
-//! │  - FileStore (production), InMemoryStore (testing)          │
+//! │  - FileStore (production), MemBackend-backed (testing)      │
 //! └─────────────────────────────────────────────────────────────┘
 //! ```
 //!
@@ -99,13 +99,29 @@
 //! - [`index`]: Display indexing system (p1, 1, d1 notation)
 //! - [`init`]: Scope detection and context initialization
 //! - [`config`]: Configuration management
-//! - [`editor`]: External editor integration
-//! - [`clipboard`]: Cross-platform clipboard support
+//! - [`editor`]: The editor *buffer format* — parsing and rendering only
 //! - [`error`]: Error types
+//!
+//! # What lives outside this library
+//!
+//! `padzapp` is terminal-agnostic: it never writes to stdout/stderr, emits no
+//! ANSI styling, launches no subprocesses, and reads no environment variables.
+//! Those are properties of an *application*, not of the domain, and they live
+//! in the `padz` CLI crate instead:
+//!
+//! - Editor **selection and launching** (`padz::cli::editor`) — this crate owns
+//!   only the buffer format ([`editor::EditorContent`]).
+//! - Clipboard writes (`padz::cli::clipboard`) — padz never reads the clipboard.
+//! - Terminal styling of errors, notably the structured
+//!   [`error::PadzError::AmbiguousTitle`] (`padz::cli::errors`).
+//! - Environment and platform-directory discovery: the CLI resolves them and
+//!   passes explicit values in via [`init::PadzEnv`].
+//!
+//! Filesystem persistence deliberately stays here — files are the source of
+//! truth, and [`store`] owns them.
 
 pub mod api;
 pub mod attributes;
-pub mod clipboard;
 pub mod commands;
 pub mod config;
 pub mod editor;

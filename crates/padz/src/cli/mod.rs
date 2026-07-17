@@ -21,22 +21,32 @@
 //!
 //! ### Smart Create (`padz create`)
 //!
-//! Priority order for content source:
+//! Priority order for content source — declared as an input chain in
+//! [`input`], resolved before dispatch, and handed to the handler as one typed
+//! [`input::RequestContent`]:
 //!
-//! 1. **Piped Input** (highest priority)
+//! 1. **Title Argument, used directly** (highest priority)
+//!    - `padz create --no-editor "Meeting Notes"`, or todos mode with a title.
+//!    - Uses the args verbatim. **Skips editor, and does not read stdin** —
+//!      even if something is piped.
+//!
+//! 2. **Piped Input**
 //!    - `echo "foo" | padz create`
-//!    - Creates pad with piped content. **Skips editor**.
+//!    - Creates pad with piped content. **Skips editor**. A piped-but-empty
+//!      stdin aborts the create; it does not fall through to the editor.
 //!
-//! 2. **Clipboard** (fallback when no pipe and no title arg)
-//!    - `padz create` (with something in clipboard)
-//!    - Pre-fills editor with clipboard content. **Opens editor**.
-//!
-//! 3. **Title Argument**
-//!    - `padz create "Meeting Notes"`
-//!    - Uses argument as title. Opens editor for body.
+//! 3. **Editor** (when nothing above applies)
+//!    - `padz create "Meeting Notes"` on a terminal.
+//!    - Uses the argument as title and opens the editor for the body.
 //!
 //! After saving from editor, pad content is automatically copied to clipboard.
 //! Use `--no-editor` flag to skip opening the editor.
+//!
+//! **The clipboard is not an input source.** Padz writes pad text *to* the
+//! clipboard after a pad is saved or viewed; it never reads the clipboard to
+//! pre-fill one. Earlier revisions of this doc described a "clipboard fallback"
+//! that pre-filled the editor — that path was never wired, and the claim is
+//! recorded here only to keep it from being reintroduced as new behavior.
 //!
 //! ### View Copies to Clipboard
 //!
@@ -53,14 +63,23 @@
 //!
 //! ## Module Structure
 //!
-//! - `commands`: Per-command handlers that call API and format output
-//! - `render`: Output formatting using standout's `App` (styles and templates embedded at compile time)
+//! - `commands`: App construction, state wiring, and dispatch
+//! - `input`: Declarative request-input precedence (create/edit) + naked invocation
+//! - `handlers`: Thin typed adapters — extract args, call the API, return a typed result
+//! - `result`: The typed, mode-independent result each handler returns
+//! - `render`: Render-time view derivation for standout's templates
 //! - `setup`: Argument parsing via clap, help text
 
-mod commands;
+pub mod clipboard;
+pub mod commands;
 mod complete;
+pub mod editor;
+pub mod env;
+pub mod errors;
 pub mod handlers;
-mod render;
+pub mod input;
+pub mod render;
+pub mod result;
 pub mod setup;
 
 pub use commands::run;

@@ -88,6 +88,23 @@ static HELP_TOPICS: Lazy<TopicRegistry> = Lazy::new(|| {
     registry
 });
 
+/// Builds an `App` carrying padz's help topics.
+///
+/// Two Standout 7.6 changes are absorbed here:
+///
+/// - The topic registry is private behind `registry_mut()` (6.2's
+///   `App::with_registry` constructor is gone), so it is installed after
+///   construction rather than passed in.
+/// - `help_handling` now defaults to off and must be opted into. It was
+///   implicit in 6.2, and it is what installs the `help` subcommand and routes
+///   `--help`/topics through Standout. 7.6 additionally rejects an app that
+///   configures topics or command groups without it.
+fn app_with_topics() -> App {
+    let mut app = App::new().help_handling(true);
+    *app.registry_mut() = HELP_TOPICS.clone();
+    app
+}
+
 /// Parse a topic file content into a Topic struct
 fn parse_topic_file(name: &str, content: &str) -> Option<standout::topics::Topic> {
     let lines: Vec<&str> = content.lines().collect();
@@ -127,8 +144,17 @@ pub fn build_command() -> clap::Command {
 
 /// Parses command-line arguments using standout's App.
 /// This handles help display (including topics) and errors automatically.
-/// It also adds the --output flag for output mode control (auto, term, text, term-debug).
+/// It also adds the `--output` flag, which standout defines over the full mode set:
+/// `auto`, `term`, `text`, `term-debug`, `json`, `yaml`, `xml`, and `csv`.
 /// Returns the parsed CLI and the output mode extracted from the matches.
+///
+/// The mode is extracted by standout's own [`App::extract_output_mode`] rather than by
+/// a local match. Standout owns the `--output` value set: a hand-written parser here is
+/// a copy that silently rots when standout adds a mode. It did — the local copy knew
+/// only `json`, so `--output yaml|xml|csv` parsed as valid clap values and then fell
+/// through to `Auto`, quietly rendering the human template (ANSI, glyphs, width
+/// truncation) to callers who had asked for machine-readable data. Delegating keeps the
+/// mode set defined in exactly one place.
 pub fn parse_cli() -> (Cli, OutputMode) {
     // Intercept top-level help to show grouped output
     if should_show_custom_help() {
@@ -136,20 +162,9 @@ pub fn parse_cli() -> (Cli, OutputMode) {
         std::process::exit(0);
     }
 
-    let app: App = App::with_registry(HELP_TOPICS.clone());
+    let app: App = app_with_topics();
     let matches = app.parse_with(Cli::command());
-
-    // Extract output mode from the matches (standout adds this as _output_mode)
-    let output_mode = match matches
-        .get_one::<String>("_output_mode")
-        .map(|s| s.as_str())
-    {
-        Some("term") => OutputMode::Term,
-        Some("text") => OutputMode::Text,
-        Some("term-debug") => OutputMode::TermDebug,
-        Some("json") => OutputMode::Json,
-        _ => OutputMode::Auto,
-    };
+    let output_mode = app.extract_output_mode(&matches);
 
     let cli = Cli::from_arg_matches(&matches).expect("Failed to parse CLI arguments");
     (cli, output_mode)
@@ -286,8 +301,8 @@ fn command_groups() -> Vec<CommandGroup> {
 
 /// Renders the custom grouped help output with standout styling.
 fn render_custom_help() -> String {
-    let app = App::with_registry(HELP_TOPICS.clone());
-    let cmd = app.augment_command(Cli::command());
+    let app = app_with_topics();
+    let cmd = app.augment_command_with_help(Cli::command());
 
     let config = HelpConfig {
         command_groups: Some(command_groups()),
@@ -309,8 +324,15 @@ fn render_custom_help() -> String {
 pub enum Commands {
     // --- Core commands ---
     /// Create a new pad
+    ///
+    /// The content source (args / piped stdin / editor) is resolved before
+    /// dispatch by `cli::input`'s chain; the handler receives the decision.
     #[command(alias = "n", display_order = 1)]
-    #[dispatch(pure, template = "modification_result")]
+    #[dispatch(
+        pure,
+        template = "modification_result",
+        pre_dispatch = crate::cli::input::resolve_create_content
+    )]
     Create {
         /// Force opening the editor (even in todos mode)
         #[arg(long, short = 'e', conflicts_with = "no_editor")]
@@ -492,7 +514,11 @@ pub enum Commands {
 
     /// Edit a pad in the editor
     #[command(alias = "e", display_order = 11, hide = true)]
-    #[dispatch(pure, template = "modification_result")]
+    #[dispatch(
+        pure,
+        template = "modification_result",
+        pre_dispatch = crate::cli::input::resolve_edit_content
+    )]
     Edit {
         /// Indexes of the pads (e.g. 1 p1 d1)
         #[arg(required = true, num_args = 1.., add = active_pads_completer())]
@@ -500,8 +526,16 @@ pub enum Commands {
     },
 
     /// Open a pad in the editor (alias for edit)
+    ///
+    /// Shares `edit`'s handler, and therefore needs `edit`'s input chain: the
+    /// handler reads its content decision from the same named input.
     #[command(alias = "o", display_order = 12)]
-    #[dispatch(pure, handler = handlers::edit__handler, template = "modification_result")]
+    #[dispatch(
+        pure,
+        handler = handlers::edit__handler,
+        template = "modification_result",
+        pre_dispatch = crate::cli::input::resolve_edit_content
+    )]
     Open {
         /// Indexes of the pads (e.g. 1 p1 d1)
         #[arg(required = true, num_args = 1.., add = all_pads_completer())]
@@ -582,7 +616,7 @@ pub enum Commands {
 
     /// Print the file path to one or more pads
     #[command(display_order = 17)]
-    #[dispatch(pure)]
+    #[dispatch(pure, template = "path")]
     Path {
         /// Indexes of the pads (e.g. 1 p1 d1)
         #[arg(required = true, num_args = 1.., add = all_pads_completer())]
@@ -591,7 +625,7 @@ pub enum Commands {
 
     /// Print the UUID of one or more pads
     #[command(display_order = 17)]
-    #[dispatch(pure)]
+    #[dispatch(pure, template = "uuid")]
     Uuid {
         /// Indexes of the pads (e.g. 1 p1 d1)
         #[arg(required = true, num_args = 1.., add = all_pads_completer())]
@@ -918,8 +952,8 @@ mod tests {
     #[test]
     fn test_help_groups_match_commands() {
         // Use augmented command because standout adds the `help` subcommand
-        let app = App::with_registry(HELP_TOPICS.clone());
-        let cmd = app.augment_command(Cli::command());
+        let app = app_with_topics();
+        let cmd = app.augment_command_with_help(Cli::command());
         validate_command_groups(&cmd, &command_groups()).unwrap();
     }
 

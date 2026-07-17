@@ -4,42 +4,62 @@
 
 Standard CLIs are "dumb". They do exactly what they are told, often requiring verbose flags for common actions:
 -   Creating a note from clipboard requires `pbpaste | padz create`.
+    (Padz still expects that pipe — see the clipboard note under "The Solution".)
 -   Creating a quick note requires `padz create -m "Title"`.
 -   Just running `padz` shows help instead of the useful list.
 
 ## The Solution: Context-Aware Intelligence
 
-Padz infers intent from the context of execution (Arguments, Stdin, Clipboard).
+Padz infers intent from the context of execution (Arguments, Stdin).
+
+The clipboard is **not** part of that inference: padz writes pad text *to* the
+clipboard (see §3), but never reads it to decide what a pad should contain.
 
 ### 1. Naked Execution (`padz`)
--   **Behavior**: Running `padz` with no arguments defaults to `padz list`.
--   **Location**: `crates/padz-cli/src/cli/commands.rs` — function `run`
--   **Logic**: If `cli.command` is `None`, dispatch to `handle_list`.
--   **Why**: The "Read" operation is 90% of usage. It should be the path of least resistance.
+-   **Behavior**: Running `padz` with no arguments depends on stdin:
+    -   **stdin is a terminal** → `padz list`.
+    -   **stdin is piped** → `padz create`, capturing the pipe (`cat notes | padz`).
+        An empty pipe reaches `create` and aborts there; it does not fall back to `list`.
+-   **Location**: `crates/padz/src/cli/input.rs` — function `naked_command`;
+    called from `cli/commands.rs`'s `run`, which splices the chosen command into argv.
+-   **Why**: The "Read" operation is 90% of usage. It should be the path of least
+    resistance — while a pipe means the user is handing padz something to keep.
+-   **Why not standout's `default_command`**: it names one *static* command, and
+    this rule is conditional. See `naked_command`'s docs.
 
 ### 2. Smart Create (`padz create`)
--   **Location**: `crates/padz-cli/src/cli/commands.rs` — function `handle_create`
+-   **Location**: the precedence is declared as a standout `InputChain` in
+    `crates/padz/src/cli/input.rs`; `cli/handlers.rs`'s `create` acts on the
+    resolved `RequestContent` and never inspects stdin itself.
 
-**Priority order for content source:**
+**Priority order for content source** (first match wins):
 
-1. **Piped Input** (highest priority)
-   -   Detected via `!std::io::stdin().is_terminal()`
+1. **Title Argument, used directly** (highest priority)
+   -   When `--no-editor` is set, or todos mode is given title args — and never
+       when `--editor` is passed.
+   -   `padz create --no-editor "Meeting Notes"`
+   -   Action: uses the args verbatim. **Skips editor, and does not read stdin
+       at all** — piped text is ignored on this path.
+   -   Why: an explicit "just record this" needs no further input.
+
+2. **Piped Input**
+   -   Detected by the `StdinReader` seam (`is_terminal()`), not by the handler.
    -   `echo "foo" | padz create`
-   -   Action: Creates pad with piped content. **Skips editor**.
+   -   Action: Creates pad with piped content. **Skips editor**. A title arg
+       still overrides the piped buffer's title.
    -   Why: Scripting/automation use case.
+   -   **Empty pipe**: aborts the create — no pad, no editor.
 
-2. **Clipboard** (fallback when no pipe and no title arg)
-   -   `padz create` (with something in clipboard)
-   -   Action: Pre-fills editor with clipboard content. **Opens editor** (unless `--no-editor`).
-   -   Why: "I just copied this snippet, I want to save it." Removes `pbpaste` friction but allows review.
-
-3. **Title Argument**
-   -   `padz create "Meeting Notes"`
+3. **Editor** (when nothing above applies)
+   -   `padz create "Meeting Notes"` at a terminal.
    -   Action: Uses argument as title. Opens editor for body.
 
 **Editor behavior:**
 -   After saving from editor, the pad content is automatically copied to clipboard.
 -   Use `--no-editor` flag to skip opening the editor.
+-   The editor runs against the pad's **real file** in `.padz/`; if it fails to
+    launch, the pad created to hold it is removed. That lifecycle is why the
+    editor is a decision the chain defaults to, not a standout `EditorSource`.
 
 ### 3. View Copies to Clipboard
 -   `padz view 1` displays the pad AND copies its content to clipboard.

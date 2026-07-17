@@ -1,5 +1,31 @@
 #![allow(deprecated)]
 
+//! # `init --link` / `--unlink` — subprocess E2E
+//!
+//! ## The real boundary this file protects
+//!
+//! **Store discovery from a real working directory, across separate stores.**
+//!
+//! `init --link` writes a `.padz/link` file that redirects one project's store
+//! to another's; what it protects is that a *later, independent* invocation,
+//! started in the linked directory, resolves through that file to the target
+//! store. That resolution happens in `padzapp::init::initialize` off the process
+//! cwd, before any app is built — so a harness test would have to build its app
+//! state *after* the link was written, i.e. re-enter the composition root the
+//! test is supposed to be exercising. Two real invocations model it honestly;
+//! one process with a hand-rebuilt state models the test's own plumbing.
+//!
+//! The cross-store, multi-directory shape is the other half: these tests need
+//! two initialized stores in different directories and a cwd that moves between
+//! them, which is a process-shaped fact.
+//!
+//! ## Honest classification
+//!
+//! The pure argument-rejection cases (`test_init_link_and_unlink_conflict`, which
+//! asserts clap rejects `--link` with `--unlink`) are a clap-level fact and could
+//! be asserted against `build_command()` directly, with no process and no store.
+//! Left here for now to keep the link suite in one place; tracked as follow-up.
+
 use assert_cmd::cargo::cargo_bin;
 use assert_cmd::Command;
 use predicates::prelude::*;

@@ -3,201 +3,211 @@ name: padz-output
 description: |
   Guide for customizing padz CLI output: templates, styles, and rendering.
   Use when working on: (1) Modifying templates in crates/padz/src/cli/templates/,
-  (2) Adding or changing styles in styles/default.yaml, (3) Debugging output with --output flag,
-  (4) Adding new commands that need rendered output, (5) Understanding the outstanding crate integration.
+  (2) Adding or changing styles in styles/default.css, (3) Debugging output with --output flag,
+  (4) Adding new commands that need rendered output, (5) Understanding the standout crate integration.
 ---
 
-# Padz Output Customization
+# Padz Output
 
-## Architecture Overview
+## The rule this skill exists to state
 
-Padz uses a three-layer system for CLI output, much like web appl, wher the api returns a data object, and
-the rendering system (using outstanding create) uses file based templates (minijinja) + styles to render:
+**Presentation policy lives in templates and CSS, not in Rust.** Wording,
+pluralization, glyphs, section labels, index formatting, indentation, column
+widths and style choice are all decided in `crates/padz/src/cli/templates/` and
+`crates/padz/src/styles/default.css`. Rust derives *data* and stops.
 
-1. **Templates** (Minijinja `.jinja` files) - Define structure and layout
-2. **Styles** (YAML stylesheet) - Define colors and formatting
-3. **Renderer** (outstanding crate) - Combines templates + styles with output mode
+If you are about to write a `format!` that a user will read, or a `match` that
+picks a colour or a glyph, you are in the wrong file.
 
-## Quick Reference
+## Architecture
 
-### Output Modes (`--output` flag)
+Padz renders with **standout** (not "outstanding" — that name is from a previous
+era and appears nowhere in the codebase).
+
+```text
+handler -> Output::Render(typed result) -> standout serializes it once
+                                             |-- structured mode: emitted as-is
+                                             `-- human mode: template + context providers
+```
+
+A handler returns one typed, mode-independent result (`cli/result.rs`) regardless
+of `--output`. Standout serializes it once, then either emits it directly
+(json/yaml/xml/csv) or renders a MiniJinja template with it. **Structured output
+never touches a template or the CSS**, which is what keeps terminal artifacts out
+of it.
+
+### Key files
+
+| Purpose | Location |
+| ------- | -------- |
+| Templates | `crates/padz/src/cli/templates/*.jinja` |
+| Layout + glyph constants | `crates/padz/src/cli/templates/_layout.jinja` |
+| Stylesheet (CSS) | `crates/padz/src/styles/default.css` |
+| View data derivation | `crates/padz/src/cli/render.rs` |
+| App wiring (templates, styles, providers) | `crates/padz/src/cli/commands.rs` |
+| Typed handler results | `crates/padz/src/cli/result.rs` |
+
+There is no `templates.rs`, no `styles.rs`, and no `create_renderer()`. Templates
+and styles are embedded by `embed_templates!("src/cli/templates")` and
+`embed_styles!("src/styles")` in `commands.rs`, and the theme is selected with
+`.default_theme("default")` (the file stem of `default.css`).
+
+## Output modes (`--output`)
 
 ```bash
 padz list --output=auto       # Default: colors for TTY, plain for pipes
-padz list --output=term       # Force ANSI colors
-padz list --output=text       # Plain text, no colors
-padz list --output=term-debug # Debug: shows [style-name]text[/style-name]
-padz list --output=json       # Machine-readable JSON
+padz list --output=term       # Force the terminal path
+padz list --output=text       # Plain text, no escapes
+padz list --output=term-debug # Shows [style-name]text[/style-name]
+padz list --output=json       # Machine-readable
+padz list --output=yaml       # Same data as JSON
+padz list --output=xml        # Same data, element-per-field
+padz list --output=csv        # Flattened dotted-path row (lossy; see below)
 ```
 
-### Key Files
+The mode set is **standout's**, not padz's: `parse_cli` (`cli/setup.rs`) delegates
+to `App::extract_output_mode`. Do not hand-write a `match` over mode strings — padz
+used to, the copy only knew `json`, and `yaml`/`xml`/`csv` silently fell through to
+`Auto` and rendered human text to callers asking for data.
 
-| Purpose | Location |
-| --------- | ---------- |
-| Templates | `crates/padz/src/cli/templates/*.jinja` |
-| Template registry | `crates/padz/src/cli/templates.rs` |
-| Stylesheet | `crates/padz/src/styles/default.yaml` |
-| Theme loading | `crates/padz/src/cli/styles.rs` |
-| Rendering logic | `crates/padz/src/cli/render.rs` |
+CSV is standout's generic flattening of the one result value: a single header row
+and a single data row of dotted paths (`pads.0.pad.metadata.title`), where nesting
+deepens the column name rather than adding rows. It is lossy by design; JSON/YAML
+are the shapes agents should read. `tests/structured_output_e2e.rs` pins all of it.
 
 ## Templates
 
-Templates use Minijinja syntax. Located in `crates/padz/src/cli/templates/`.
+### Where template data comes from
 
-### Main Templates
+Templates see the handler's serialized result at the top level. Two templates also
+read a **context provider** — a render-time-only derivation registered with
+`context_fn` in `commands.rs`, which standout resolves *only* on the template path:
 
-- `list.jinja` - Pad list with columns, indentation, status icons
-- `full_pad.jinja` - Complete pad view (title + content)
-- `text_list.jinja` - Simple line-by-line output
-- `messages.jinja` - Command feedback (success/error/info)
+| Template | Reads | Provider |
+| -------- | ----- | -------- |
+| `list.jinja` | `list_view` | `render::list_view_provider` |
+| `modification_result.jinja` | `modification_view` | `render::modification_view_provider` |
+| *(all templates)* | `terminal.width` | `render::terminal_provider` |
 
-### Partial Templates (reusable)
+Every other template reads the handler result directly.
 
-- `_pad_line.jinja` - Single row in list (included by list.jinja)
-- `_match_lines.jinja` - Search result highlighting
-- `_peek_content.jinja` - Content preview for `--peek`
-- `_deleted_help.jinja` - Help text for deleted section
+See [TEMPLATE_VARIABLES.md](references/TEMPLATE_VARIABLES.md) for the exact shapes.
 
-### Template Syntax
+### The templates
+
+- `list.jinja` — listing; owns section breaks, separators, empty states
+- `modification_result.jinja` — pads changed by a command; owns the action sentence
+- `_pad_line.jinja` — one pad row; owns columns, glyphs, index format, style choice
+- `_match_lines.jinja` — search hit lines; owns their truncation
+- `_peek_content.jinja` — `--peek` preview
+- `_deleted_help.jinja` — the restore/purge help block
+- `_layout.jinja` — **imported, not included**: column widths, glyphs, section labels
+- `view.jinja`, `full_pad.jinja`, `text_list.jinja`, `messages.jinja`,
+  `path.jinja`, `uuid.jinja` — read their result directly
+
+`_layout.jinja` is the one place a width or a glyph is named:
 
 ```jinja
-{#- Whitespace-trimming comment -#}
-{% for pad in pads %}
-  {{- pad.title | col(width) | style("list-title") | nl -}}
-{% endfor %}
+{%- import "_layout.jinja" as L -%}
+{{ L.COLS.index }}   {# 4 #}
+{{ L.STATUS_GLYPH[pad.status] }}
+{{ L.SECTION_TITLE["Deleted"] }}
 ```
 
-Key filters from outstanding:
+### Filters standout provides
 
-- `col(width, align='left'|'right')` - Column layout
-- `style("name")` - Apply semantic style
-- `nl` - Explicit newline
-- `truncate_to_width()` - Truncate with ellipsis
-- `indent(n)` - Add indentation
+- `col(width, align=, truncate=)` — column layout; `width` may be `"fill"`
+- `pad_left(n)` / `pad_right(n)` / `pad_center(n)` — pad to a width
+- `truncate_at(width, position=, ellipsis=)` — truncate; **returns plain text**
+- `display_width` — Unicode-aware width
+- `style_as(name)` — emit `[name]value[/name]`
+- `nl` — explicit newline
+- `tabular(columns, separator=, width=)` — declarative columns; `.row([...])`
 
-### Adding a New Template
+Gotchas that have already bitten this codebase:
 
-1. Create `.jinja` file in `templates/` directory
-2. Register in `templates.rs`:
+- **The `style()` filter was removed in standout 1.0** and now hard-errors. Use
+  BBCode tags: `[name]text[/name]`, or the `style_as` filter.
+- `tabular(...).row_from(...)` is **not** callable from a template. Use `.row([...])`.
+- `tabular(width=)` defaults to a hardcoded 80. Always pass `width=terminal.width`.
+- A column spec's key is `key`, not `name`.
+- `col`/`truncate_at` **drop style tags when they truncate**. Style *around* the
+  filter, never inside the value.
+- MiniJinja has no pluralization. Use an inline conditional:
+  `{{ "pad" if count == 1 else "pads" }}`.
 
-   ```rust
-   pub const MY_TEMPLATE: &str = include_str!("templates/my_template.jinja");
-   ```
+## Styles (CSS)
 
-3. Add to renderer in `create_renderer()`:
+`crates/padz/src/styles/default.css`. Every selector is a **semantic class**: it
+names what a thing is, never what it looks like. A template emits `[name]…[/name]`
+and the tag name *is* the class name.
 
-   ```rust
-   renderer.add_template("my_template", MY_TEMPLATE)?;
-   ```
+```css
+.list-index { font-weight: bold; }
 
-4. Call from render function:
-
-   ```rust
-   renderer.render("my_template", &data)?
-   ```
-
-## Styles (YAML Stylesheet)
-
-Styles are defined in `crates/padz/src/styles/default.yaml` and embedded at compile time.
-
-### Three-Layer Architecture
-
-```yaml
-# Layer 1: Visual (internal, prefixed with _)
-_gold:
-  light:
-    fg: [196, 140, 0]
-  dark:
-    fg: [255, 214, 10]
-
-# Layer 2: Presentation (aliases)
-_accent: _gold
-
-# Layer 3: Semantic (use in templates)
-list-index: _accent
-pinned:
-  bold: true
-  light:
-    fg: [196, 140, 0]
-  dark:
-    fg: [255, 214, 10]
+@media (prefers-color-scheme: light) { .list-index { color: #c48c00; } }
+@media (prefers-color-scheme: dark)  { .list-index { color: #ffd60a; } }
 ```
 
-### Semantic Styles (use in templates)
+A rule inside `@media` **merges onto** the base rule rather than replacing it — so
+shared modifiers (bold/italic) are stated once in the base, and only colours are
+restated per scheme. Base deliberately carries no colour: it is the fallback when
+the scheme is unknown, and inheriting the light palette there would be wrong half
+the time.
 
-**List:** `list-index`, `list-title`, `pinned`, `deleted-index`, `deleted-title`, `status-icon`
+Because CSS has no aliases, the palette is expressed with grouped selectors
+(`.info, .section-header, .empty-message { color: #737373; }`). Naming the concept
+in a comment beats inventing `_secondary` classes no template may emit.
 
-**Content:** `title`, `time`, `hint`
+### Constraints of standout's CSS subset
 
-**Messages:** `error`, `warning`, `success`, `info`
+Learned the hard way; all verified against standout 7.6.4:
 
-**Search:** `highlight`, `match`
+- **Class selectors only.** `body { }` is a hard error. No pseudo-classes, IDs,
+  combinators, or `:root`.
+- **No aliases and no icons** in CSS (both are YAML-only features).
+- **No `rgb()`, no integer colour indices, no CSS variables.** Use `#rrggbb`,
+  named colours, or `cube(r%, g%, b%)`.
+- **`opacity` is silently ignored.** Use `dim: true`.
+- Supported: `color`, `background-color`, `font-weight: bold`, `font-style: italic`,
+  `text-decoration: underline|line-through`, and the flag forms `bold|dim|italic|
+  underline|blink|reverse|hidden|strikethrough: true`.
+- Format is detected by **content, not extension**: a stylesheet must start with
+  `.`, `/*`, or `@media` or it is parsed as YAML and fails.
+- A user theme **fully replaces** `Theme::default()`; nothing is merged in.
 
-**Help:** `help-header`, `help-section`, `help-command`, `help-desc`, `help-usage`
+See [STYLE_REFERENCE.md](references/STYLE_REFERENCE.md) for every class and its
+light/dark values.
 
-**Misc:** `help-text`, `section-header`, `empty-message`, `preview`, `truncation`, `line-number`, `separator`
+### Adding a style
 
-### Adding a New Style
+1. Add the class to `default.css` (base rule for modifiers, `@media` for colours).
+2. Add its name to `REQUIRED` in `crates/padz/tests/theme.rs`.
+3. Emit it from a template as `[my-style]text[/my-style]` or `| style_as("my-style")`.
 
-Add to `default.yaml`:
+A class a template emits but the theme lacks does **not** fail loudly — it renders
+as `[my-style?]text[/my-style?]` in the user's terminal. Step 2 is what turns that
+into a test failure.
 
-```yaml
-# Simple alias
-my-style: _accent
+## Testing output
 
-# With modifiers
-my-style:
-  bold: true
-  italic: true
-  light:
-    fg: [196, 140, 0]
-  dark:
-    fg: [255, 214, 10]
-```
-
-Use in templates: `{{ value | style("my-style") }}`
-
-### Style Embedding
-
-Styles are embedded at compile time via `embed_styles!` macro:
-
-```rust
-pub static DEFAULT_THEME: Lazy<Theme> = Lazy::new(|| {
-    let mut registry = embed_styles!("src/styles");
-    registry.get("default").expect("Failed to load default theme")
-});
-```
-
-## Column Layout
-
-Constants in `render.rs`:
-
-```rust
-pub const LINE_WIDTH: usize = 100;
-pub const COL_LEFT_PIN: usize = 2;
-pub const COL_STATUS: usize = 2;
-pub const COL_INDEX: usize = 4;
-pub const COL_RIGHT_PIN: usize = 2;
-pub const COL_TIME: usize = 14;
-```
-
-Title width: `LINE_WIDTH - fixed_columns - indent_width`
-
-## JSON Output
-
-For `--output=json`, data is serialized directly (bypasses templates).
-
-JSON types in `render.rs`: `JsonPadList`, `JsonPad`, `JsonMessages`
-
-## Debugging Output
-
-Use `--output=term-debug` to see style names:
+- **Style placement** → `--output=term-debug` and assert the *tag name*. Asserting
+  ANSI pins the palette and breaks on every retune.
+- **Template policy** (wording, glyphs, labels, index formats) → `tests/harness.rs`.
+  It drives the real app in-process, which is the only place that policy exists as
+  behaviour. `render.rs`'s unit tests cannot reach it.
+- **View derivation** (flatten/depth/section, `TimeAgo`, peek) → unit tests in
+  `render.rs`.
+- **Theme integrity** → `tests/theme.rs`.
+- **Structured contract** → `tests/structured_output_e2e.rs`; parse with a real
+  parser, never `contains`.
 
 ```text
-[pinned]⚲[/pinned] [list-index]p1.[/list-index] [list-title]My Pad[/list-title]
+$ padz list --output=term-debug
+[pinned]⚲[/pinned] [list-index]p1.[/list-index] [list-title]My Pad[/list-title] [time] 3m ⏲[/time]
 ```
 
 ## References
 
-- [TEMPLATE_VARIABLES.md](references/TEMPLATE_VARIABLES.md) - Variables available in each template
-- [STYLE_REFERENCE.md](references/STYLE_REFERENCE.md) - Complete style reference
+- [TEMPLATE_VARIABLES.md](references/TEMPLATE_VARIABLES.md) — view data shapes
+- [STYLE_REFERENCE.md](references/STYLE_REFERENCE.md) — every semantic class

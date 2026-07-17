@@ -1,44 +1,70 @@
-{#- Single pad line rendering using Tabular with sub-columns -#}
-{#- Expects: pad (PadLineData), peek (bool), col_* (column widths) -#}
+{#- One pad line: pin, status glyph, index, title+tags, relative time. -#}
+{#- Reads `pad` (a render::PadRow) plus `show_status`, `peek_mode` and `terminal` -#}
+{#- from the including template's context, so the list and modification views -#}
+{#- share it. Every width, glyph and style name below is decided here. -#}
+{%- import "_layout.jinja" as L -%}
 
-{#- Determine index style based on section type -#}
+{#- Widths. An unused status column still costs its width, so zero it when off. -#}
+{%- set col_status = L.COLS.status if show_status else 0 -%}
+{%- set indent_width = pad.depth * L.INDENT -%}
+{%- set fixed = L.COLS.left_pin + col_status + L.COLS.index + L.COLS.time -%}
+{%- set title_width = [terminal.width - fixed - indent_width, 0] | max -%}
+
+{#- Index: "p1.", " 1.", "ar1.", "d1." -#}
+{%- if pad.index.type == "Pinned" -%}
+  {%- set index = "p" ~ pad.index.value ~ "." -%}
+{%- elif pad.index.type == "Archived" -%}
+  {%- set index = "ar" ~ pad.index.value ~ "." -%}
+{%- elif pad.index.type == "Deleted" -%}
+  {%- set index = "d" ~ pad.index.value ~ "." -%}
+{%- else -%}
+  {%- set index = (pad.index.value | string | pad_left(2)) ~ "." -%}
+{%- endif -%}
+
+{#- A pinned pad shows its marker only as a root: a nested pad's own line is -#}
+{#- about its place in the tree, not about the pinned block. -#}
+{%- set left_pin = L.PIN if pad.pinned and pad.depth == 0 else "" -%}
+{%- set status_icon = L.STATUS_GLYPH[pad.status] if show_status else "" -%}
+
+{#- Semantic style per section. -#}
 {%- set index_style = "list-index" -%}
-{%- if pad.is_pinned_section -%}
+{%- if pad.section == "Pinned" and pad.depth == 0 -%}
   {%- set index_style = "pinned" -%}
-{%- elif pad.is_deleted -%}
+{%- elif pad.section == "Deleted" -%}
   {%- set index_style = "deleted-index" -%}
 {%- endif -%}
 
-{#- Determine title style based on state -#}
 {%- set title_style = "list-title" -%}
-{%- if pad.is_deleted -%}
+{%- if pad.section == "Deleted" -%}
   {%- set title_style = "deleted-title" -%}
-{%- elif peek -%}
+{%- elif peek_mode -%}
   {%- set title_style = "title" -%}
 {%- endif -%}
 
-{#- Define tabular layout with sub-columns for title+tags -#}
+{%- set title = ("(" ~ pad.short_uuid ~ ") " ~ pad.title) if pad.short_uuid else pad.title -%}
+
+{#- Tags render as bracketed chips, right-aligned after the title. -#}
+{%- set ns = namespace(tags = "") -%}
+{%- for t in pad.tags -%}
+  {%- set ns.tags = ns.tags ~ "「[tag]" ~ (t | trim) ~ "[/tag]」" ~ ("" if loop.last else " ") -%}
+{%- endfor -%}
+
+{%- set time_label = (pad.time.value | string | pad_left(2)) ~ pad.time.unit ~ " " ~ L.CLOCK -%}
+
 {%- set t = tabular([
-    {"name": "left_pin", "width": col_left_pin, "style": "pinned"},
-    {"name": "status", "width": col_status, "style": "status-icon"},
-    {"name": "index", "width": col_index, "style": index_style},
-    {"name": "content", "width": pad.title_width, "sub_columns": {
+    {"key": "left_pin", "width": L.COLS.left_pin, "style": "pinned"},
+    {"key": "status", "width": col_status, "style": "status-icon"},
+    {"key": "index", "width": L.COLS.index, "style": index_style},
+    {"key": "content", "width": title_width, "sub_columns": {
         "columns": [
             {"width": "fill", "overflow": "truncate", "style": title_style},
-            {"width": {"min": 0, "max": 30}, "align": "right"}
+            {"width": {"min": 0, "max": L.TAGS_MAX}, "align": "right"}
         ],
         "separator": " "
     }},
-    {"name": "time", "width": col_time, "align": "right", "style": "time"}
-], width=line_width) -%}
+    {"key": "time", "width": L.COLS.time, "align": "right", "style": "time"}
+], width=terminal.width) -%}
 
-{#- Render the row with indent prefix -#}
-{{- pad.indent -}}
-{{- t.row([
-    pad.left_pin,
-    pad.status_icon,
-    pad.index,
-    [pad.title, pad.tags_display],
-    pad.time_ago
-]) -}}
+{{- "" | pad_right(indent_width) -}}
+{{- t.row([left_pin, status_icon, index, [title, ns.tags], time_label]) -}}
 {{ "" | nl -}}

@@ -3,9 +3,9 @@
 //! This module handles the formatting of pad content for "peek" views.
 //! It truncates content based on configurable line limits while stripping blank lines.
 
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 
-#[derive(Debug, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct PeekResult {
     pub opening_lines: String,
     pub truncated_count: Option<usize>,

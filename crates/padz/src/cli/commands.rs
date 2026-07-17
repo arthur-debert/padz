@@ -17,6 +17,10 @@
 //! 5. **Error Handling**: Convert errors to user-friendly messages and exit codes
 
 use super::handlers::AppState;
+use super::render::{
+    list_view_provider, modification_view_provider, terminal_provider, LIST_VIEW,
+    MODIFICATION_VIEW, TERMINAL,
+};
 use super::setup::{
     build_command, parse_cli, Cli, Commands, CompletionAction, CompletionShell, ConfigSubcommand,
 };
@@ -25,8 +29,7 @@ use padzapp::config::PadzConfig;
 use padzapp::error::Result;
 use padzapp::init::initialize;
 use standout::cli::{App, RunResult};
-use standout::{embed_styles, embed_templates, OutputMode};
-use std::io::IsTerminal;
+use standout::{embed_styles, embed_templates};
 
 pub fn run() -> Result<()> {
     // parse_cli() uses standout's App which handles
@@ -48,17 +51,16 @@ pub fn run() -> Result<()> {
     }
 
     // Initialize app state for handlers
-    let app_state = create_app_state(&cli, output_mode)?;
+    let app_state = create_app_state(&cli)?;
 
-    // Determine effective args: handle naked invocation by injecting synthetic command
+    // Determine effective args: handle naked invocation by injecting synthetic command.
+    // Which command a bare `padz` means is decided by `cli::input::naked_command`
+    // (see its docs for why standout's `default_command` cannot express it).
     let args: Vec<String> = if cli.command.is_none() {
-        // Naked padz: list if interactive, create if piped
-        let synthetic_cmd = if !std::io::stdin().is_terminal() {
-            "create"
-        } else {
-            "list"
-        };
-        vec!["padz".to_string(), synthetic_cmd.to_string()]
+        vec![
+            "padz".to_string(),
+            super::input::naked_command_from_process().to_string(),
+        ]
     } else {
         std::env::args().collect()
     };
@@ -71,29 +73,55 @@ pub fn run() -> Result<()> {
 }
 
 /// Build the dispatch-ready App with templates, styles, command configuration, and app state
-fn build_dispatch_app(app_state: AppState) -> App {
+///
+/// The two `context_fn` registrations are the render-time seam: handlers return typed,
+/// mode-independent results, and these providers derive the template-ready view from
+/// the serialized result. Standout resolves context providers only when it renders a
+/// template, so structured output never sees the derived presentation fields.
+///
+/// Public because it is the whole app-under-test: `TestHarness` tests pair it with
+/// [`build_command`] to drive argv through render in process, against the same
+/// templates, styles, and dispatch table the binary uses. Building the app twice —
+/// once for the binary, once for tests — is exactly the drift this avoids.
+pub fn build_dispatch_app(app_state: AppState) -> App {
     App::builder()
         .app_state(app_state)
         .templates(embed_templates!("src/cli/templates"))
         .template_ext(".jinja")
         .styles(embed_styles!("src/styles"))
         .default_theme("default")
+        .context_fn(TERMINAL, terminal_provider)
+        .context_fn(LIST_VIEW, list_view_provider)
+        .context_fn(MODIFICATION_VIEW, modification_view_provider)
         .commands(Commands::dispatch_config())
         .expect("Failed to configure commands")
         .build()
         .expect("Failed to build app")
 }
 
-/// Handle the result of a dispatch operation
+/// Handle the result of a dispatch operation.
+///
+/// Standout 7.6 reports handler, hook, and output failures through the native
+/// `RunResult::Error` variant. Under 6.2 there was no such variant: failures
+/// arrived as `Handled("Error: ...")` and had to be detected by string prefix.
+/// The error message still carries standout's `Error: ` prefix, which is
+/// stripped here because `main` re-adds it when printing to stderr.
+///
+/// `NoMatch` means dispatch found no handler for the command, which is a
+/// failure: it returns an error so `main` exits non-zero rather than reporting
+/// a miss on stderr and exiting 0.
+///
+/// `RunResult` is `#[non_exhaustive]` as of 7.6, so unknown future variants are
+/// surfaced as an error rather than silently ignored.
 fn handle_dispatch_result(result: RunResult) -> Result<()> {
     match result {
         RunResult::Handled(output) => {
-            if output.starts_with("Error:") {
-                return Err(padzapp::error::PadzError::Api(
-                    output.trim_start_matches("Error: ").to_string(),
-                ));
-            }
             print!("{}", output);
+        }
+        RunResult::Error(msg) => {
+            return Err(padzapp::error::PadzError::Api(
+                msg.trim_start_matches("Error: ").to_string(),
+            ));
         }
         RunResult::Binary(data, filename) => {
             std::fs::write(&filename, &data)
@@ -101,16 +129,54 @@ fn handle_dispatch_result(result: RunResult) -> Result<()> {
             println!("Exported to {}", filename);
         }
         RunResult::Silent => {}
-        RunResult::NoMatch(_) => {
-            eprintln!("Error: Unknown command");
+        RunResult::NoMatch(matches) => {
+            return Err(padzapp::error::PadzError::Api(
+                match matches.subcommand_name() {
+                    Some(name) => format!("Unknown command: {}", name),
+                    None => "Unknown command".to_string(),
+                },
+            ));
+        }
+        other => {
+            return Err(padzapp::error::PadzError::Api(format!(
+                "Unsupported dispatch result: {:?}",
+                other
+            )));
         }
     }
     Ok(())
 }
 
-/// Create app state containing API, scope, and configuration for handlers
-fn create_app_state(cli: &Cli, output_mode: OutputMode) -> Result<AppState> {
+/// Create app state containing API, scope, and configuration for handlers.
+///
+/// This is the composition root's *reading* half: it asks the process where it is
+/// (`current_dir`) and what machine it is on ([`env::resolve`](crate::cli::env::resolve)),
+/// then hands both to [`build_app_state`] as explicit values. Everything that
+/// actually decides anything lives there.
+fn create_app_state(cli: &Cli) -> Result<AppState> {
     let cwd = std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from("."));
+    // Resolve the environment once, here at the composition root, and hand
+    // explicit values to the library.
+    let env = crate::cli::env::resolve();
+    build_app_state(cli, &env, &cwd)
+}
+
+/// Build app state containing API, scope, and configuration for handlers, from an
+/// explicitly supplied environment and working directory.
+///
+/// Deliberately takes no `OutputMode`: durable state carries no rendering concern.
+/// The mode stays in the app-execution path, where it is passed to `dispatch`.
+///
+/// `env` and `cwd` are parameters rather than process reads for the same reason
+/// `padzapp::init::initialize` takes a [`PadzEnv`](padzapp::init::PadzEnv): a test
+/// that wants a store in a tempdir should say so in Rust, not by mutating
+/// `$PADZ_GLOBAL_DATA` and `current_dir` and hoping nothing else on the process
+/// noticed. `create_app_state` is the one caller that reads those from the process.
+pub fn build_app_state(
+    cli: &Cli,
+    env: &padzapp::init::PadzEnv,
+    cwd: &std::path::Path,
+) -> Result<AppState> {
     let data_override = cli.data.as_ref().map(std::path::PathBuf::from);
 
     // `padz init` (plain, non-global) is a creation operation: "create a store HERE".
@@ -124,7 +190,7 @@ fn create_app_state(cli: &Cli, output_mode: OutputMode) -> Result<AppState> {
         })
     );
     let data_override = if is_plain_init && data_override.is_none() && !cli.global {
-        Some(cwd.clone())
+        Some(cwd.to_path_buf())
     } else {
         data_override
     };
@@ -148,18 +214,23 @@ fn create_app_state(cli: &Cli, output_mode: OutputMode) -> Result<AppState> {
                 path.join(".padz")
             }
         }
-        None => padzapp::init::find_padz_root(&cwd)
+        None => padzapp::init::find_padz_root(cwd, env.home_dir.as_deref())
             .map(|root| root.join(".padz"))
             .unwrap_or_else(|| cwd.join(".padz")),
     };
 
-    let padz_ctx = initialize(&cwd, cli.global, data_override, auto_init_for_write)?;
+    let padz_ctx = initialize(env, cwd, cli.global, data_override, auto_init_for_write)?;
+
+    // Initialization warnings are data; the CLI is what turns them into stderr
+    // output. They are advisory — the command runs regardless.
+    for warning in &padz_ctx.warnings {
+        eprintln!("Warning: {}", warning);
+    }
 
     Ok(AppState::new(
         padz_ctx.api,
         padz_ctx.scope,
         padz_ctx.config.import_extensions(),
-        output_mode,
         padz_ctx.config.mode,
         local_padz_dir,
     ))
@@ -168,6 +239,7 @@ fn create_app_state(cli: &Cli, output_mode: OutputMode) -> Result<AppState> {
 fn handle_config(cli: &Cli, subcommand: &Option<ConfigSubcommand>) -> Result<()> {
     let cwd = std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from("."));
     let data_override = cli.data.as_ref().map(std::path::PathBuf::from);
+    let env = crate::cli::env::resolve();
 
     // Resolve paths (lightweight version of initialize — just need dirs, not full API)
     let project_padz_dir = match data_override {
@@ -178,19 +250,12 @@ fn handle_config(cli: &Cli, subcommand: &Option<ConfigSubcommand>) -> Result<()>
                 path.join(".padz")
             }
         }
-        None => padzapp::init::find_padz_root(&cwd)
+        None => padzapp::init::find_padz_root(&cwd, env.home_dir.as_deref())
             .map(|root| root.join(".padz"))
             .unwrap_or_else(|| cwd.join(".padz")),
     };
 
-    let global_data_dir = std::env::var("PADZ_GLOBAL_DATA")
-        .ok()
-        .map(std::path::PathBuf::from)
-        .unwrap_or_else(|| {
-            let proj_dirs = directories::ProjectDirs::from("com", "padz", "padz")
-                .expect("Could not determine config dir");
-            proj_dirs.data_dir().to_path_buf()
-        });
+    let global_data_dir = env.global_data_dir;
 
     // Map -g flag to clapfig scope: None defaults to "local" (first registered)
     let scope: Option<String> = if cli.global {
@@ -524,5 +589,58 @@ mod completion_tests {
     #[test]
     fn empty_quoted() {
         assert_eq!(shell_quote(""), "''");
+    }
+}
+
+#[cfg(test)]
+mod dispatch_result_tests {
+    use super::handle_dispatch_result;
+    use standout::cli::RunResult;
+
+    /// A dispatch miss is a failure, not a silent success: it must surface as an
+    /// error so `main` exits non-zero and callers can detect it.
+    #[test]
+    fn no_match_is_an_error_naming_the_subcommand() {
+        let matches = clap::Command::new("padz")
+            .subcommand(clap::Command::new("bogus"))
+            .get_matches_from(vec!["padz", "bogus"]);
+
+        let err = handle_dispatch_result(RunResult::NoMatch(matches))
+            .expect_err("NoMatch must not report success");
+
+        assert!(
+            err.to_string().contains("bogus"),
+            "error should name the unmatched subcommand, got: {}",
+            err
+        );
+    }
+
+    #[test]
+    fn no_match_without_subcommand_is_still_an_error() {
+        let matches = clap::Command::new("padz").get_matches_from(vec!["padz"]);
+
+        assert!(handle_dispatch_result(RunResult::NoMatch(matches)).is_err());
+    }
+
+    #[test]
+    fn silent_is_success() {
+        assert!(handle_dispatch_result(RunResult::Silent).is_ok());
+    }
+
+    /// standout's message arrives already prefixed with `Error: `, and `main`
+    /// prints its own `Error: ` prefix, so the incoming one is stripped to keep
+    /// the printed line from reading `Error: ... Error: boom`.
+    #[test]
+    fn error_variant_strips_standout_prefix() {
+        let err = handle_dispatch_result(RunResult::Error("Error: boom".to_string()))
+            .expect_err("Error variant must fail");
+
+        let rendered = err.to_string();
+        assert!(rendered.ends_with("boom"), "got: {}", rendered);
+        assert!(
+            !rendered.contains("Error: Error:"),
+            "standout's prefix should not survive, got: {}",
+            rendered
+        );
     }
 }
