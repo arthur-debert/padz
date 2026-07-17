@@ -10,7 +10,8 @@ repository = "https://github.com/arthur-debert/padz"
 
 # Resolve the standout family from the v7.7.0 git tag instead of crates.io.
 #
-# WHY THIS EXISTS — it is a graph-unification fix, not a version change.
+# WHY THIS PATCH EXISTS — it keeps the git-only test harness and the published
+# runtime crates in one dependency graph.
 #
 # The test pyramid needs `standout-test` (the in-process `TestHarness`), and the
 # newest *published* standout-test is 7.5.1, which does not compile against
@@ -28,7 +29,9 @@ repository = "https://github.com/arthur-debert/padz"
 # one layer down (e.g. two `standout-dispatch` crates ⇒ two `CommandContext`s).
 #
 # `[patch]` is workspace-local: it is not published and never reaches consumers
-# of the `padz` crate, who resolve plain 7.7.0 from crates.io.
+# of the `padz` crate. Its three direct Standout dependencies are published at
+# 7.7.0 and downstream consumers resolve those ordinary requirements from
+# crates.io; only the dev-only `standout-test` remains git-only.
 #
 # REMOVE THIS once standout-test 7.7.x is published to crates.io; it then goes
 # back to a plain dev-dependency version requirement in crates/padz/Cargo.toml.
