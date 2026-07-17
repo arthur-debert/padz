@@ -1,8 +1,23 @@
-{#- Search match lines for a pad -#}
-{#- Expects: pad.indent, pad.matches (list of {line_number, segments}), pad.more_matches_count -#}
+{#- Search hit lines under a pad: "    03L …the matching text". -#}
+{#- Reads `pad` (a render::PadRow), `show_status` and `terminal`. -#}
+{%- import "_layout.jinja" as L -%}
+{%- set col_status = L.COLS.status if show_status else 0 -%}
+{%- set indent_width = pad.depth * L.INDENT -%}
+
+{#- A hit line's *text* starts on the title column and stops short of the time
+    column, with the "04L " badge hanging in the gutter to its left. So the badge
+    is printed at `match_indent - line_no` and the text lands on `match_indent`
+    itself — which is what `avail` measures from. Padding to `match_indent`
+    directly would push the text a badge-width past the title column, and padding
+    to a constant would only align for one `show_status` setting. -#}
+{%- set match_indent = indent_width + L.COLS.left_pin + col_status + L.COLS.index -%}
+{%- set badge_indent = [match_indent - L.COLS.line_no, 0] | max -%}
+{%- set avail = [terminal.width - L.COLS.time - match_indent, 0] | max -%}
+
+{#- Truncate the styled run as a whole: each segment is styled *after* it is cut, -#}
+{#- because `truncate_at` measures plain text and would drop the tags otherwise. -#}
 {%- for match in pad.matches -%}
-    {{ pad.indent }}    [line-number]{{ match.line_number }}L[/line-number] {% for seg in match.segments %}{{ seg.text | style_as(seg.style) }}{% endfor %}{{ "" | nl }}
+{{ "" | pad_right(badge_indent) }}[line-number]{#-
+    Line numbers read as a column, so single digits carry a leading zero.
+-#}{{ ("0" ~ match.line_number) if match.line_number < 10 else match.line_number }}L[/line-number] {% set ns = namespace(width = 0, done = false) %}{% for seg in match.segments %}{% if not ns.done %}{% set style = "match" if seg.type == "Match" else "info" %}{% set seg_width = seg.text | display_width %}{% if ns.width + seg_width <= avail %}{{ seg.text | style_as(style) }}{% set ns.width = ns.width + seg_width %}{% else %}{{ seg.text | truncate_at(avail - ns.width) | style_as(style) }}{% set ns.done = true %}{% endif %}{% endif %}{% endfor %}{{ "" | nl }}
 {%- endfor -%}
-{%- if pad.more_matches_count > 0 -%}
-    {{ pad.indent }}    [truncation]And {{ pad.more_matches_count }} more results[/truncation]{{ "" | nl }}
-{%- endif -%}

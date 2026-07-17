@@ -1,18 +1,20 @@
 {#- Unified rendering for modification commands. `modification_view` is derived at -#}
 {#- render time from the handler's ModificationResult; see cli::render. -#}
 {%- set view = modification_view -%}
+{%- set show_status = view.show_status -%}
+{%- set peek_mode = false -%}
+{%- set count = view.rows | length -%}
 
-{#- Start message -#}
-{%- if view.start_message -%}
-[info]{{ view.start_message }}[/info]{{ "" | nl }}
+{#- "Created 1 pad...", "Deleted 3 pads..." — the handler supplies only the verb. -#}
+{%- if count > 0 -%}
+[info]{{ view.action }} {{ count }} {{ "pad" if count == 1 else "pads" }}...[/info]{{ "" | nl }}
 {%- endif -%}
 
-{#- Affected pads list -#}
-{%- for pad in view.pads -%}
+{%- for pad in view.rows -%}
 {%- include "_pad_line.jinja" -%}
 {%- endfor -%}
 
-{#- Trailing messages (info, warnings, errors) -#}
-{%- for msg in view.trailing_messages -%}
-{{ msg.content | style_as(msg.style) }}{{ "" | nl }}
+{#- Trailing messages (info, warnings, errors). -#}
+{%- for msg in view.messages -%}
+{{ msg.content | style_as(msg.level) }}{{ "" | nl }}
 {%- endfor -%}

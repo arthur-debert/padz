@@ -47,6 +47,11 @@ anyhow = "1.0"
 assert_cmd = "2.0.16"
 predicates = "3.1.2"
 tempfile = "3.10.1"
+# Column assertions on rendered text have to count the way a terminal does: the
+# status glyph is several `char`s wide and zero-to-two columns wide, so byte or
+# char offsets would measure the wrong thing. Same crate the renderer measures
+# with, so a test column and a rendered column mean the same number.
+unicode-width = "0.2.2"
 # Standout's in-process harness: drives the real App from argv through render,
 # bundling the injection seams (env, cwd, detectors, stdin, clipboard) behind one
 # builder that restores them on drop. Re-exports `serial_test`, which every

@@ -1,30 +1,43 @@
 {#- Listing output. `list_view` is derived at render time from the handler's -#}
 {#- PadListResult; see cli::render. -#}
+{%- import "_layout.jinja" as L -%}
 {%- set view = list_view -%}
-{%- if view.empty_filtered -%}
+{#- The partials below read these off the shared include context. -#}
+{%- set show_status = view.show_status -%}
+{%- set peek_mode = view.peek -%}
+{%- if view.rows | length == 0 -%}
+{%- if view.filtered -%}
 [info]No matching pads.[/info]{{ "" | nl -}}
-{%- elif view.empty -%}
+{%- else -%}
 [empty-message]No pads yet, create one with `padz create`[/empty-message]{{ "" | nl -}}
 {{ view.help_text }}
+{%- endif -%}
 {%- else -%}
-{%- for pad in view.pads -%}
-{%- if pad.is_section_header -%}
-[section-header]{{ pad.section_title }}[/section-header]{{ "" | nl }}
-{%- elif pad.is_separator -%}
+{%- for pad in view.rows -%}
+{#- Section breaks key off the *root's* bucket, which every row carries, so a -#}
+{#- pinned root's Regular-indexed children never break its block open. -#}
+{%- set changed = loop.previtem is not defined or loop.previtem.section != pad.section -%}
+{#- Leaving the pinned block costs a blank line: the same pads appear again -#}
+{#- below, and the gap is what says "this is the same list, unpinned". -#}
+{%- if loop.previtem is defined and loop.previtem.section == "Pinned" and pad.section != "Pinned" -%}
 {{- "" | nl -}}
-{%- else -%}
+{%- endif -%}
+{%- if view.sections and changed and pad.section in L.SECTION_TITLE -%}
+{{- "" | nl -}}
+[section-header]{{ L.SECTION_TITLE[pad.section] }}[/section-header]{{ "" | nl }}
+{%- endif -%}
 {%- include "_pad_line.jinja" -%}
 {%- include "_match_lines.jinja" -%}
 {%- if pad.peek -%}
 {%- include "_peek_content.jinja" -%}
-{%- endif -%}
 {%- endif -%}
 {%- endfor -%}
 {%- endif -%}
 {%- if view.deleted_help -%}
 {%- include "_deleted_help.jinja" -%}
 {%- endif -%}
-{#- Trailing messages (info, warnings, errors from API) -#}
-{%- for msg in view.trailing_messages -%}
-{{ msg.content | style_as(msg.style) }}{{ "" | nl }}
+{#- Trailing messages (info, warnings, errors from the API). A message's semantic -#}
+{#- style is its level, which CmdMessage serializes lowercase to match the theme. -#}
+{%- for msg in view.messages -%}
+{{ msg.content | style_as(msg.level) }}{{ "" | nl }}
 {%- endfor -%}

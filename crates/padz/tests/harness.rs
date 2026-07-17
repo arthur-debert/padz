@@ -36,6 +36,7 @@ mod support;
 
 use standout_test::{serial, TestHarness};
 use support::Fixture;
+use unicode_width::UnicodeWidthStr;
 
 // =============================================================================
 // Helpers
@@ -664,6 +665,157 @@ fn text_output_carries_no_ansi_escapes() {
 }
 
 // =============================================================================
+// Presentation policy that lives in the templates
+//
+// Wording, pluralization, glyphs, section labels and index formatting are decided
+// in `templates/`, not in Rust — so `render`'s unit tests cannot reach them and
+// these are the tests that hold them. They drive the real template through the
+// real app, which is the only place that policy exists as behaviour.
+// =============================================================================
+
+/// The count and the noun have to agree, and the noun is chosen in the template.
+///
+/// The two cases use separate fixtures on purpose: a pinned pad is
+/// delete-protected, so reusing one store would make the plural case fail for a
+/// reason that has nothing to do with wording.
+#[test]
+#[serial]
+fn a_modification_pluralizes_its_noun_to_match_the_count() {
+    let fx = Fixture::new();
+    let state = fx.app_state();
+    fx.seed_pad(&state, "only one", "");
+    drop(state);
+    let (app, cmd) = fx.read_app();
+    TestHarness::new()
+        .no_color()
+        .terminal_width(80)
+        .text_output()
+        .run(&app, cmd, fx.argv(&["pin", "1"]))
+        .assert_stdout_contains("Pinned 1 pad...");
+
+    let fx = Fixture::new();
+    let state = fx.app_state();
+    fx.seed_pad(&state, "first", "");
+    fx.seed_pad(&state, "second", "");
+    drop(state);
+    let (app, cmd) = fx.read_app();
+    TestHarness::new()
+        .no_color()
+        .terminal_width(80)
+        .text_output()
+        .run(&app, cmd, fx.argv(&["delete", "1", "2"]))
+        .assert_stdout_contains("Deleted 2 pads...");
+}
+
+/// `--all` labels each lifecycle block. The labels are template strings, and the
+/// break is driven by the section every row carries.
+#[test]
+#[serial]
+fn the_all_listing_labels_its_lifecycle_sections() {
+    let fx = Fixture::new();
+    let state = fx.app_state();
+    fx.seed_pad(&state, "live pad", "");
+    fx.seed_pad(&state, "gone pad", "");
+    drop(state);
+
+    let (app, cmd) = fx.read_app();
+    TestHarness::new()
+        .no_color()
+        .terminal_width(80)
+        .text_output()
+        .run(&app, cmd, fx.argv(&["delete", "1"]))
+        .assert_success();
+
+    let (app, cmd) = fx.read_app();
+    let out = TestHarness::new()
+        .no_color()
+        .terminal_width(80)
+        .text_output()
+        .run(&app, cmd, fx.argv(&["list", "--all"]));
+
+    out.assert_success();
+    out.assert_stdout_contains("Deleted Pads");
+    assert!(
+        out.stdout().find("live pad") < out.stdout().find("Deleted Pads"),
+        "the deleted block and its label come after the live pads: {}",
+        out.stdout()
+    );
+}
+
+/// A pinned root is listed twice — once in the pinned block, once in its own —
+/// and each index format is built in the template from a typed DisplayIndex.
+#[test]
+#[serial]
+fn a_pinned_pad_is_indexed_p1_in_the_pinned_block_and_numbered_below() {
+    let fx = Fixture::new();
+    let state = fx.app_state();
+    fx.seed_pad(&state, "pinned pad", "");
+    drop(state);
+
+    let (app, cmd) = fx.read_app();
+    TestHarness::new()
+        .no_color()
+        .terminal_width(80)
+        .text_output()
+        .run(&app, cmd, fx.argv(&["pin", "1"]))
+        .assert_success();
+
+    let (app, cmd) = fx.read_app();
+    let out = TestHarness::new()
+        .no_color()
+        .terminal_width(80)
+        .text_output()
+        .run(&app, cmd, fx.argv(&["list"]));
+
+    out.assert_success();
+    assert!(
+        out.stdout().contains("p1."),
+        "pinned block: {}",
+        out.stdout()
+    );
+    assert!(
+        out.stdout().contains(" 1."),
+        "regular block: {}",
+        out.stdout()
+    );
+}
+
+/// Status glyphs are a template lookup keyed by the serialized TodoStatus, and
+/// they appear only when the listing asked for them.
+#[test]
+#[serial]
+fn status_glyphs_appear_only_when_the_listing_asks_for_them() {
+    let fx = Fixture::new();
+    let state = fx.app_state();
+    fx.seed_pad(&state, "a task", "");
+    drop(state);
+
+    let (app, cmd) = fx.read_app();
+    let off = TestHarness::new().no_color().terminal_width(80).run(
+        &app,
+        cmd,
+        fx.argv(&["list", "--output", "term-debug"]),
+    );
+    assert!(
+        !off.stdout().contains("[status-icon]"),
+        "notes mode draws no status column: {}",
+        off.stdout()
+    );
+
+    let (app, cmd) = fx.read_app();
+    let on = TestHarness::new().no_color().terminal_width(80).run(
+        &app,
+        cmd,
+        fx.argv(&["list", "--show-status", "--output", "term-debug"]),
+    );
+    assert!(
+        on.stdout().contains("[status-icon]"),
+        "--show-status draws the status column: {}",
+        on.stdout()
+    );
+}
+
+// =============================================================================
 // Styles — asserted semantically via term-debug, never by scraping ANSI
 // =============================================================================
 
@@ -1082,6 +1234,78 @@ fn output_file_path_writes_text_without_ansi_escapes() {
         "a file is not a terminal; the written output must be escape-free: {written:?}"
     );
     assert!(written.contains("written pad"));
+}
+
+// =============================================================================
+// Search-hit layout
+// =============================================================================
+
+/// The display column `needle` starts at, counted the way a terminal counts.
+///
+/// Byte and `char` offsets both lie here: the status glyph is two `char`s
+/// (symbol + variation selector) and one column. This measures with the crate
+/// the renderer measures with, so a column here means a column there.
+fn column_of(line: &str, needle: &str) -> usize {
+    let byte = line
+        .find(needle)
+        .unwrap_or_else(|| panic!("{needle:?} not found in {line:?}"));
+    UnicodeWidthStr::width(&line[..byte])
+}
+
+/// A search hit hangs its `04L ` badge in the gutter and lands its *text* on the
+/// pad's title column, so a hit reads as a continuation of the title it matched.
+///
+/// That column is not a constant: it moves with `--show-status`, because the
+/// status column only costs width when it is asked for. The badge offset must
+/// therefore be derived from the same column maths the pad line uses.
+/// Regression guard — a hard-coded gutter lines up in whichever configuration it
+/// was tuned against and silently drifts by the status width in the other, which
+/// is exactly what it used to do.
+///
+/// Only depth 0 is asserted, because only depth 0 is reachable: `apply_search`
+/// filters the root pads and never recurses into their children, so a pad that
+/// carries hits is always a root. The template still derives the badge from
+/// `pad.depth`, which costs nothing and stays correct if search ever descends.
+#[test]
+#[serial]
+fn search_hit_text_lands_on_the_title_column_in_every_configuration() {
+    for show_status in [false, true] {
+        let fx = Fixture::new();
+        let state = fx.app_state();
+        fx.seed_pad(&state, "hit pad", "alpha\nneedle here\n");
+        drop(state);
+
+        let mut argv = vec!["list", "--search", "needle"];
+        if show_status {
+            argv.push("--show-status");
+        }
+
+        let (app, cmd) = fx.read_app();
+        let result = TestHarness::new()
+            .no_color()
+            .terminal_width(80)
+            .text_output()
+            .run(&app, cmd, fx.argv(&argv));
+
+        result.assert_success();
+        let stdout = result.stdout();
+        let case = format!("show_status={show_status}");
+
+        let title_line = stdout
+            .lines()
+            .find(|l| l.contains("hit pad"))
+            .unwrap_or_else(|| panic!("no pad line ({case}):\n{stdout}"));
+        let hit_line = stdout
+            .lines()
+            .find(|l| l.contains("needle here"))
+            .unwrap_or_else(|| panic!("no hit line ({case}):\n{stdout}"));
+
+        assert_eq!(
+            column_of(hit_line, "needle here"),
+            column_of(title_line, "hit pad"),
+            "hit text must start on the title column ({case}):\n{stdout}"
+        );
+    }
 }
 
 // =============================================================================

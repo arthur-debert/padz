@@ -1,0 +1,178 @@
+/* Padz default theme.
+ *
+ * Every selector here is a *semantic* class: it names what a thing is, not what
+ * it looks like. Templates emit `[name]...[/name]` tags; the tag name and the
+ * class name are the same string. Nothing outside this file picks a colour.
+ *
+ * ## How light/dark works
+ *
+ * A rule outside `@media` is the base; a rule inside `@media
+ * (prefers-color-scheme: ...)` *merges onto* that base rather than replacing it.
+ * So the shared modifiers (bold/italic) live in the base rule once, and only the
+ * colours are restated per scheme. Base carries no colour on purpose: it is the
+ * fallback when the terminal's scheme is unknown, and inheriting the light
+ * palette there would be wrong half the time.
+ *
+ * ## Why the grouped selectors
+ *
+ * The comma-separated lists below are the palette. `.info, .section-header, ...`
+ * sharing one declaration is how this file says "these are all secondary text"
+ * without an indirection layer — CSS has no aliases, and naming the concept in a
+ * comment beats inventing `_secondary` classes that no template may emit.
+ *
+ * Colours match the pre-CSS YAML theme exactly (RGB triples converted to hex).
+ */
+
+/* ==========================================================================
+   Modifiers — the non-colour half of each style, stated once.
+   ========================================================================== */
+
+.title,
+.help-header,
+.pinned,
+.help-section,
+.tag,
+.error,
+.warning {
+    font-weight: bold;
+}
+
+.time,
+.line-number {
+    font-style: italic;
+}
+
+/* `help-usage` is the one style with no light/dark split: cyan reads on both. */
+.help-usage {
+    color: cyan;
+}
+
+/* ==========================================================================
+   Light
+   ========================================================================== */
+
+@media (prefers-color-scheme: light) {
+    /* primary — body text */
+    .title,
+    .help-header,
+    .list-title {
+        color: black;
+    }
+
+    /* secondary — supporting text */
+    .time,
+    .line-number,
+    .info,
+    .help-desc,
+    .section-header,
+    .empty-message,
+    .truncation,
+    .deleted-title,
+    .status-icon {
+        color: #737373;
+    }
+
+    /* tertiary — de-emphasised chrome */
+    .hint,
+    .help-text,
+    .preview,
+    .separator {
+        color: #adadad;
+    }
+
+    /* accent */
+    .list-index,
+    .pinned,
+    .help-section,
+    .warning {
+        color: #c48c00;
+    }
+
+    /* danger */
+    .deleted,
+    .deleted-index,
+    .error {
+        color: #ba212d;
+    }
+
+    /* success */
+    .success,
+    .help-command {
+        color: #008000;
+    }
+
+    /* highlighted spans — search hits and tags share one treatment */
+    .highlight,
+    .match,
+    .tag {
+        color: black;
+        background-color: #ffeb3b;
+    }
+}
+
+/* ==========================================================================
+   Dark
+   ========================================================================== */
+
+@media (prefers-color-scheme: dark) {
+    /* primary */
+    .title,
+    .help-header,
+    .list-title {
+        color: white;
+    }
+
+    /* secondary */
+    .time,
+    .info,
+    .help-desc,
+    .section-header,
+    .empty-message,
+    .truncation,
+    .deleted-title,
+    .status-icon {
+        color: #b4b4b4;
+    }
+
+    /* `line-number` is a touch dimmer than the rest of secondary in dark. */
+    .line-number {
+        color: #8a8a8a;
+    }
+
+    /* tertiary */
+    .hint,
+    .help-text,
+    .preview,
+    .separator {
+        color: #6e6e6e;
+    }
+
+    /* accent */
+    .list-index,
+    .pinned,
+    .help-section,
+    .warning {
+        color: #ffd60a;
+    }
+
+    /* danger */
+    .deleted,
+    .deleted-index,
+    .error {
+        color: #ff8a80;
+    }
+
+    /* success */
+    .success,
+    .help-command {
+        color: #90ee90;
+    }
+
+    /* highlighted spans */
+    .highlight,
+    .match,
+    .tag {
+        color: black;
+        background-color: #e5b900;
+    }
+}

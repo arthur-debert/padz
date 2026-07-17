@@ -1,142 +1,149 @@
 # Template Variables Reference
 
-## List Template (`list.tmp`)
+What each template can read. Shapes are the Rust types' **serialized** form —
+that is what a template actually sees.
 
-Receives `ListData` struct:
+Source of truth: `crates/padz/src/cli/result.rs` (handler results) and
+`crates/padz/src/cli/render.rs` (render-time view data).
 
-```rust
-struct ListData {
-    pads: Vec<PadLineData>,      // Array of pad rows
-    empty: bool,                  // True if no pads
-    pin_marker: String,           // "⚲" character
-    help_text: String,            // Help for empty list
-    deleted_help: bool,           // Show deleted section help
-    peek: bool,                   // Show content previews
+## Every template
 
-    // Column widths (pass to col() filter)
-    col_left_pin: usize,          // 2
-    col_status: usize,            // 2
-    col_index: usize,             // 4
-    col_right_pin: usize,         // 2
-    col_time: usize,              // 14
-}
+`terminal` — from `render::terminal_provider`:
+
+```jinja
+{{ terminal.width }}   {# effective layout width; always pass to tabular(width=) #}
 ```
 
-### PadLineData (per row)
+`terminal.width` resolves `$COLUMNS` → real terminal → 80, clamps to ≥30, then
+subtracts 1 to pay back `⏲` (which `unicode-width` measures as 1 column but
+terminals draw as 2).
 
-```rust
-struct PadLineData {
-    indent: String,               // Depth-based indentation
-    left_pin: String,             // Pin marker or empty
-    status_icon: String,          // Todo status (⚪︎, ☉, ⚫︎)
-    index: String,                // Display index (p1., 1., d1.)
-    title: String,                // Pad title (raw)
-    title_width: usize,           // Calculated width for title
-    right_pin: String,            // Pin marker for pinned in regular section
-    time_ago: String,             // Formatted timestamp
+## `list.jinja` — `list_view`
 
-    // Semantic flags
-    is_pinned_section: bool,      // In pinned section
-    is_deleted: bool,             // Deleted pad
-    is_separator: bool,           // Section separator row
+From `render::list_view_provider` (a `render::ListView`):
 
-    // Optional content
-    matches: Vec<MatchLineData>,  // Search results
-    peek: Option<PeekResult>,     // Content preview
-}
+```text
+list_view.rows          [PadRow]   flattened pad tree, in display order
+list_view.filtered      bool       narrowed and matched nothing (vs. store empty)
+list_view.sections      bool       label lifecycle blocks (--all)
+list_view.show_status   bool       draw the status column
+list_view.peek          bool       --peek was asked for
+list_view.deleted_help  bool       append the restore/purge help block
+list_view.help_text     string     grouped command help; only for an empty store
+list_view.messages      [CmdMessage]
 ```
 
-### MatchLineData (search results)
+## `modification_result.jinja` — `modification_view`
 
-```rust
-struct MatchLineData {
-    line_num: usize,
-    prefix: String,               // Text before match
-    matched: String,              // Matched text (for highlighting)
-    suffix: String,               // Text after match
-}
+From `render::modification_view_provider` (a `render::ModificationView`):
+
+```text
+modification_view.action       string   past-tense verb only ("Created", "Pinned")
+modification_view.rows         [PadRow] affected pads, always flat (depth 0)
+modification_view.show_status  bool
+modification_view.messages     [CmdMessage]
 ```
 
-### PeekResult (content preview)
+The template builds the sentence, including the plural:
 
-```rust
-struct PeekResult {
-    lines: Vec<String>,           // Preview lines
-    truncated: bool,              // More content exists
-}
+```jinja
+[info]{{ view.action }} {{ count }} {{ "pad" if count == 1 else "pads" }}...[/info]
 ```
 
-## Full Pad Template (`full_pad.tmp`)
+## `PadRow`
 
-Receives `FullPadData` struct:
+The unit both `_pad_line.jinja` and `_match_lines.jinja` render. Every field is
+data — no widths, no glyphs, no style names, no rendered sentences.
 
-```rust
-struct FullPadData {
-    pads: Vec<FullPadEntry>,
-}
-
-struct FullPadEntry {
-    index: String,                // Display index
-    title: String,                // Pad title
-    content: String,              // Full content
-    is_pinned: bool,
-    is_deleted: bool,
-}
+```text
+index        {type, value}   "Pinned"|"Regular"|"Archived"|"Deleted" + number
+depth        int             0 for a root; the template decides what a level costs
+section      string          the ROOT's bucket — see below
+title        string          raw title
+short_uuid   string?         present only under --uuid (absent otherwise)
+tags         [string]
+status       string          "Planned"|"InProgress"|"Done"
+pinned       bool            the pad is pinned (true in BOTH blocks)
+time         {value, unit}   e.g. {value: 3, unit: "m"} — never a sentence
+matches      [SearchMatch]   search hits; line 0 (the title match) is excluded
+peek         PeekResult?     present only under --peek AND when there is a body
 ```
 
-## Messages Template (`messages.tmp`)
+### `section` vs `index.type` — read this before touching section logic
 
-Receives `MessagesData` struct:
+They are different questions, and confusing them is a real bug:
 
-```rust
-struct MessagesData {
-    messages: Vec<MessageData>,
-}
+- `index.type` is **this row's own** display identifier.
+- `section` is the bucket **this row's root** sits in.
 
-struct MessageData {
-    content: String,              // Message text
-    style: String,                // Style name: "success", "error", "warning", "info"
-}
+`index_pads` gives a pinned root's children `Regular` indexes. A template that
+drove section breaks off `index.type` would split the pinned block open at its
+first child. Because `section` is constant across a root's whole subtree, a break
+is one comparison at any depth:
+
+```jinja
+{%- set changed = loop.previtem is not defined or loop.previtem.section != pad.section -%}
 ```
 
-## Text List Template (`text_list.tmp`)
+### `SearchMatch`
 
-Receives `TextListData` struct:
-
-```rust
-struct TextListData {
-    lines: Vec<String>,           // Simple string lines
-}
+```text
+line_number  int             1-based; line 0 is filtered out by render.rs
+segments     [{type, text}]  type is "Plain" or "Match"
 ```
 
-## JSON Output Types
+`_match_lines.jinja` maps `Plain`→`info` and `Match`→`match`, and truncates the
+run itself (styling each segment *after* cutting it, because `truncate_at` returns
+plain text and would otherwise drop the tags).
 
-When `--output=json`, these are serialized directly:
+### `PeekResult`
 
-```rust
-struct JsonPadList {
-    pads: Vec<JsonPad>,
-}
-
-struct JsonPad {
-    id: String,                   // UUID
-    index: String,                // Display index
-    title: String,
-    content: String,
-    created_at: String,           // ISO 8601
-    updated_at: String,           // ISO 8601
-    is_pinned: bool,
-    is_deleted: bool,
-    parent_id: Option<String>,
-    todo_status: String,          // "planned", "in_progress", "done"
-}
-
-struct JsonMessages {
-    messages: Vec<JsonMessage>,
-}
-
-struct JsonMessage {
-    level: String,                // "success", "error", "warning", "info"
-    content: String,
-}
+```text
+opening_lines    string
+truncated_count  int?
+closing_lines    string?
 ```
+
+## `view.jinja` / `full_pad.jinja` — `PadContentResult`
+
+Read directly from the handler result:
+
+```text
+pads[].title    string   carries its tree indent in --indented mode
+pads[].content  string   body (content minus the title line)
+pads[].depth    int
+pads[].uuid     string?  present only under --uuid
+```
+
+## `messages.jinja` — `MessagesResult`
+
+```text
+messages[].content  string
+messages[].level    string   "info"|"success"|"warning"|"error"
+```
+
+`level` serializes lowercase **to match the theme's class names**, so it can be
+used as a style directly: `{{ msg.content | style_as(msg.level) }}`.
+
+## `path.jinja` / `uuid.jinja`
+
+```text
+paths  [string]
+uuids  [string]
+```
+
+## `text_list.jinja`
+
+```text
+lines          [string]
+empty_message  string
+```
+
+## Structured output
+
+In json/yaml/xml/csv the handler result is serialized directly — templates and the
+`context_fn` providers are **bypassed entirely**. Nothing on this page except the
+handler results themselves (`result.rs`) appears in structured output; `PadRow`,
+`TimeAgo` and `terminal.width` are render-only by construction.
+
+`tests/harness.rs::structured_output_excludes_template_only_view_fields` pins that.

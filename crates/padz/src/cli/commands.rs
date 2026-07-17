@@ -17,7 +17,10 @@
 //! 5. **Error Handling**: Convert errors to user-friendly messages and exit codes
 
 use super::handlers::AppState;
-use super::render::{list_view_provider, modification_view_provider, LIST_VIEW, MODIFICATION_VIEW};
+use super::render::{
+    list_view_provider, modification_view_provider, terminal_provider, LIST_VIEW,
+    MODIFICATION_VIEW, TERMINAL,
+};
 use super::setup::{
     build_command, parse_cli, Cli, Commands, CompletionAction, CompletionShell, ConfigSubcommand,
 };
@@ -87,6 +90,7 @@ pub fn build_dispatch_app(app_state: AppState) -> App {
         .template_ext(".jinja")
         .styles(embed_styles!("src/styles"))
         .default_theme("default")
+        .context_fn(TERMINAL, terminal_provider)
         .context_fn(LIST_VIEW, list_view_provider)
         .context_fn(MODIFICATION_VIEW, modification_view_provider)
         .commands(Commands::dispatch_config())
