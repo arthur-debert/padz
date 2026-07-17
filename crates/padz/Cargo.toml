@@ -40,6 +40,13 @@ anyhow = "1.0"
 assert_cmd = "2.0.16"
 predicates = "3.1.2"
 tempfile = "3.10.1"
+# Format-aware parsers for the structured-output contract tests. A string
+# `contains` assertion would pass on human text that merely mentions a field, so
+# every structured assertion parses the output with a real parser for that format.
+# Pinned to the versions standout itself serializes with, so the tests read back
+# exactly what it wrote.
+csv = "1.4"
+quick-xml = "0.36"
 
 # cargo-deb configuration. Driven by `cargo deb -p padz` in CI.
 # Completions are generated at install time by the postinst maintainer

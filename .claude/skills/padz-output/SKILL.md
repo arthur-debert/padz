@@ -23,12 +23,30 @@ the rendering system (using outstanding create) uses file based templates (minij
 ### Output Modes (`--output` flag)
 
 ```bash
+# Human modes — templates + styles, terminal-dependent
 padz list --output=auto       # Default: colors for TTY, plain for pipes
 padz list --output=term       # Force ANSI colors
 padz list --output=text       # Plain text, no colors
 padz list --output=term-debug # Debug: shows [style-name]text[/style-name]
+
+# Structured modes — the handler result serialized directly, templates bypassed
 padz list --output=json       # Machine-readable JSON
+padz list --output=yaml       # Same data as JSON
+padz list --output=xml        # Same data, element-per-field
+padz list --output=csv        # Flattened to one dotted-path row (lossy; see below)
 ```
+
+The mode set is **standout's**, not padz's: standout defines the `--output` values and
+`parse_cli` (`crates/padz/src/cli/setup.rs`) delegates to `App::extract_output_mode` to
+read them back. Do not hand-write a `match` over mode strings — padz used to, the copy
+only knew `json`, and `yaml`/`xml`/`csv` silently fell through to `Auto` and rendered
+the human template to callers asking for data.
+
+CSV is standout's generic flattening of the one result value: a single header row and a
+single data row of dotted paths (`pads.0.pad.metadata.title`), where nesting deepens the
+column name rather than adding rows, and nulls/empty arrays contribute no column. It is
+lossy by design; JSON/YAML are the shapes agents should read. `crates/padz/tests/structured_output_e2e.rs`
+pins all of this.
 
 ### Key Files
 
@@ -47,8 +65,9 @@ Templates use Minijinja syntax. Located in `crates/padz/src/cli/templates/`.
 ### Where template data comes from
 
 Handlers return one typed, mode-independent result (`crates/padz/src/cli/result.rs`).
-Standout serializes it once, then either emits it directly (`--output json`) or renders
-a template with it. Templates therefore see the handler's result at the top level.
+Standout serializes it once, then either emits it directly (any structured mode: json,
+yaml, xml, csv) or renders a template with it. Templates therefore see the handler's
+result at the top level.
 
 Terminal-only fields — column widths, status glyphs, `time_ago`, the pin marker — are
 **not** in the handler result. They are derived at render time by the view builders in
@@ -208,11 +227,15 @@ pub const COL_TIME: usize = 14;
 
 Title width: `LINE_WIDTH - fixed_columns - indent_width`
 
-## JSON Output
+## Structured Output
 
-For `--output=json`, data is serialized directly (bypasses templates).
+In a structured mode (json, yaml, xml, csv), the handler's result is serialized
+directly and templates — plus the `context_fn` view builders — are bypassed entirely.
 
-JSON types in `render.rs`: `JsonPadList`, `JsonPad`, `JsonMessages`
+The serialized shapes are the result types in `crates/padz/src/cli/result.rs`
+(`PadListResult`, `ModificationResult`, `PadContentResult`, `PathResult`, `UuidResult`,
+`MessagesResult`). There are no separate JSON-only types: one value serves every mode,
+which is what keeps the formats in agreement.
 
 ## Debugging Output
 

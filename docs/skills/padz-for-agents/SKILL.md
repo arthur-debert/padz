@@ -21,9 +21,46 @@ padz is a CLI note + task tool. It stores **pads** — text files with metadata 
 
 Everything else is optional — these two are load-bearing.
 
+## Output formats
+
+`--output` selects the format. Four are machine-readable:
+
+| Mode   | Use it for                                                       |
+| ------ | ---------------------------------------------------------------- |
+| `json` | **The default choice for agents.** Full nesting, stable shape.   |
+| `yaml` | Same data as JSON, value-for-value. Pick on taste.               |
+| `xml`  | Same semantic fields; element-per-field.                         |
+| `csv`  | Flat tabular slices only — **lossy for nested data**, see below. |
+
+All four are terminal-independent: identical bytes regardless of terminal width,
+`NO_COLOR`, `CLICOLOR_FORCE`, or whether stdout is a TTY. They never contain ANSI
+escapes, style tags, glyphs, or width-truncated text. The human modes (`term`,
+`text`, `term-debug`, and the `auto` default) are the only width-sensitive ones.
+
+> **Put `--output` *before* a free-text argument.** `create`'s title captures all
+> trailing words, so `padz create --no-editor "note" --output json` creates a pad
+> titled `note --output json` and prints human text. Write
+> `padz create --no-editor --output json "note"` instead. For commands taking only
+> ids (`list`, `view`, `path`, `uuid`, …) the flag can go anywhere.
+
+### CSV flattens the whole result into one row
+
+CSV is not row-per-pad. The entire response is flattened into **one header row and
+one data row**, with dotted paths as column names:
+
+```text
+pads.0.pad.metadata.title,pads.0.children.0.pad.metadata.title,request.filtered
+parent,child,false
+```
+
+Nesting deepens the column name (`pads.0.children.0…`) rather than adding rows, and
+empty arrays and nulls contribute **no column at all** — so the column set shifts
+with the data and is not a stable schema. Use CSV only for flat, single-purpose
+reads (`padz uuid 1 --output csv` → `uuids.0`). **For anything nested, use JSON.**
+
 ## JSON output shape
 
-Every `--output json` response has this skeleton:
+Most read commands (`list`, `search`, `peek`) return this skeleton:
 
 ```json
 {
@@ -53,7 +90,43 @@ Every `--output json` response has this skeleton:
 
 `content` can be large (pads are full notes). On `list` it's always present; use `peek` if you only need a preview. On `view <id>` it's the primary payload.
 
-Some commands (create, delete, update) return mutated pads in an `affected_pads` key instead of `pads`. Same shape.
+`request` echoes what the invocation asked to *see* (`peek`, `uuid`, `filtered`, …).
+It is a fact about the call, not styling. `filtered: true` is the one that matters in
+practice: it tells you an empty `pads` means "nothing matched your filter" rather than
+"the store is empty".
+
+**`metadata.title` is capped at 60 characters** (59 + `…`) when the pad is written.
+That cap is a property of the stored data, not of your terminal — it is identical at
+every width. When you need the untruncated first line, read `content`, which is never
+truncated.
+
+### The other result shapes
+
+Not every command returns the skeleton above. The three other shapes:
+
+```jsonc
+// Mutations: create, delete, pin, unpin, complete, reopen, move, restore…
+{ "action": "Pinned",            // past-tense verb for what happened
+  "pads": [ /* affected pads, same pad shape as above */ ],
+  "messages": [ … ], "request": { … } }
+
+// view
+{ "pads": [ { "title": "…", "content": "<full body>", "depth": 0 } ] }
+
+// path / uuid
+{ "paths": [ "/abs/path/to/pad-<uuid>.txt" ] }
+{ "uuids": [ "1f7d95d5-55c6-4dda-a688-199d91f4fd2f" ] }
+
+// init, doctor, tag list, copy, import, export, clone, migrate, purge
+{ "messages": [ { "level": "info|success|warning|error", "content": "…" } ] }
+```
+
+Mutations report affected pads under `pads` alongside an `action` verb — there is no
+`affected_pads` key in the CLI contract (that name is internal to the library).
+
+Two commands are deliberately outside this contract: `open`/`edit` spawn `$EDITOR`
+(and emit nothing at all if you leave the file empty), and `completion`/`config` are
+tooling that runs before output-mode handling. Agents should not reach for either.
 
 ## DI vs UUID — the one gotcha that matters
 
@@ -69,7 +142,7 @@ Short UUID prefixes (8+ hex chars) work as selectors interchangeably with DIs, s
 ```bash
 padz list --uuid --output json              # get UUIDs alongside DIs
 padz view 1f7d95d5 --output json            # 8-char prefix — fine
-padz update 1f7d95d5-55c6-4dda-a688-...     # full UUID — also fine
+padz complete 1f7d95d5-55c6-4dda-a688-...   # full UUID — also fine
 padz delete 3                                # DI — fine within the same turn, risky later
 ```
 
