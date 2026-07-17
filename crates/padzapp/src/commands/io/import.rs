@@ -834,18 +834,24 @@ mod tests {
     use chrono::Utc;
 
     /// Build a JSON archive from the source store into a tempfile and return
-    /// the path. Uses `write_json_archive` directly so the test controls the
-    /// output location (the public `run_json` writes to CWD).
+    /// the path. The core supplies owned bytes; this test supplies the final
+    /// destination because the importer consumes a path.
     fn export_to_tmpfile<S: crate::store::DataStore>(
         store: &S,
         scope: Scope,
         selectors: &[PadSelector],
     ) -> std::path::PathBuf {
-        let nested =
-            export::collect_export_pads(store, scope, selectors, NestingMode::Tree).unwrap();
-        let temp = tempfile::NamedTempFile::with_suffix(".tar.gz").unwrap();
-        let (file, path) = temp.keep().unwrap();
-        export::write_json_archive(file, store, scope, &nested, Utc::now()).unwrap();
+        use std::io::Write as _;
+
+        let outcome = export::run_json(store, scope, selectors, NestingMode::Tree).unwrap();
+        let export::ExportOutcome::Artifact(artifact) = outcome else {
+            panic!("expected JSON export artifact");
+        };
+        assert_eq!(artifact.report.format, export::ExportFormat::JsonArchive);
+
+        let mut temp = tempfile::NamedTempFile::with_suffix(".tar.gz").unwrap();
+        temp.write_all(&artifact.bytes).unwrap();
+        let (_, path) = temp.keep().unwrap();
         path
     }
 

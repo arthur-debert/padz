@@ -537,51 +537,15 @@ padz delete 1 --verbose       # Delete and show updated list (default)
 
 ### Command Resolution
 
-PADZ has smart command resolution for convenience:
+A naked invocation adapts to stdin:
 
-1. **No arguments**: Runs `list`
+- At a terminal, `padz` means `padz list`.
+- With redirected stdin, including an empty pipe, `padz` means `padz create`.
 
-   ```bash
-   padz          # Same as: padz list
-   ```
-
-2. **Single integer**: Runs `view` (or `open`, configurable)
-
-   ```bash
-   padz 1        # Same as: padz view 1
-   ```
-
-3. **Starts with flag**: Assumed to be for `list`
-
-   ```bash
-   padz -g       # Same as: padz list -g
-   padz -s "foo" # Same as: padz list -s "foo"
-   ```
-
-4. **Known command**: Runs that command
-
-   ```bash
-   padz create
-   padz search
-   ```
-
-5. **Unknown text**: Assumed to be `create` with title
-
-   ```bash
-   padz "My note"    # Same as: padz create "My note"
-   ```
-
-This means you rarely need to type `create` or `list` explicitly.
-
-The key thing about this, called naked mode (no sub command specified) is how to integrate with the cli library.
-we want to avoid haveing to parse as much as possible.
-
-so the right way to do is;
-execute the command as it. if it has no subcommand , the library will generate an error.
-intercep the error. if it's a no command given error, now you will figure out what needs to be done.
-use the parsed data from the cli to figure out if you have no args (list), an int(view) and so on.
-
-one you do, inject the right string into the user generated input, then re ran the injected command through the cli library.
+Standout resolves that default from a non-consuming terminal fact after a
+successful naked parse. Explicit and nested commands, aliases, global flags,
+help, version, and invalid syntax keep their ordinary Clap behavior; the
+resolver neither rewrites argv locally nor reads the piped content.
 
 ## Output Format
 

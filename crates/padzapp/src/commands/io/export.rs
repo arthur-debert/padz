@@ -1,5 +1,5 @@
 use crate::commands::metadata_schema::{Archive, PadEntry, TagRegistryEntry, SCHEMA_VERSION};
-use crate::commands::{CmdMessage, CmdResult, NestingMode};
+use crate::commands::NestingMode;
 use crate::error::{PadzError, Result};
 use crate::index::DisplayIndex;
 use crate::index::DisplayPad;
@@ -12,7 +12,6 @@ use flate2::Compression;
 use pulldown_cmark::{Event, HeadingLevel, Options, Parser, Tag, TagEnd};
 use pulldown_cmark_to_cmark::cmark;
 use std::collections::HashSet;
-use std::fs::File;
 use std::io::Write;
 use uuid::Uuid;
 
@@ -46,43 +45,102 @@ pub struct SingleFileExportResult {
     pub format: SingleFileFormat,
 }
 
+/// The export representation produced by the reusable application layer.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ExportFormat {
+    Archive,
+    MetadataArchive,
+    JsonArchive,
+    SingleFile,
+}
+
+/// A semantic warning discovered while producing an export.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ExportWarning {
+    /// These pads use a format with no inline metadata dialect.
+    MetadataUnavailable { titles: Vec<String> },
+}
+
+/// Presentation-free facts that accompany a completed export artifact.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ExportReport {
+    pub format: ExportFormat,
+    pub exported: usize,
+    pub warnings: Vec<ExportWarning>,
+}
+
+/// Exact export bytes plus the core's suggested destination and report facts.
+///
+/// The bytes are intentionally owned so a shell adapter can hand them to its
+/// final-output framework without a lifetime or temporary-file contract. Peak
+/// memory is therefore the live source data plus the compressed artifact and
+/// encoder buffers; moving this value across the API/handler seams does not copy
+/// the byte vector.
+#[derive(Debug)]
+pub struct ExportArtifact {
+    pub bytes: Vec<u8>,
+    pub suggested_filename: String,
+    pub report: ExportReport,
+}
+
+/// An export either has no selected pads or yields an artifact for its caller
+/// to place. The reusable core never creates or writes the final destination.
+#[derive(Debug)]
+pub enum ExportOutcome {
+    Empty { format: ExportFormat },
+    Artifact(ExportArtifact),
+}
+
 pub fn run<S: DataStore>(
     store: &S,
     scope: Scope,
     selectors: &[PadSelector],
     nesting: NestingMode,
     with_metadata: bool,
-) -> Result<CmdResult> {
+) -> Result<ExportOutcome> {
     // 1. Resolve pads
     let pads = resolve_pads(store, scope, selectors)?;
 
     if pads.is_empty() {
-        let mut res = CmdResult::default();
-        res.add_message(CmdMessage::info("No pads to export."));
-        return Ok(res);
+        return Ok(ExportOutcome::Empty {
+            format: if with_metadata {
+                ExportFormat::MetadataArchive
+            } else {
+                ExportFormat::Archive
+            },
+        });
     }
 
     let nested = resolve_nested(store, scope, &pads, nesting)?;
 
-    // 2. Prepare output file
+    // 2. Prepare the suggested destination and owned archive bytes.
     let now = Utc::now();
     let suffix = if with_metadata { "meta" } else { "tar" };
     let filename = format!("padz-{}.{}.gz", now.format("%Y-%m-%d_%H-%M-%S"), suffix);
-    let file = File::create(&filename).map_err(PadzError::Io)?;
+    let mut bytes = Vec::new();
 
-    // 3. Write archive
-    let mut result = CmdResult::default();
-    let messages = if with_metadata {
-        write_archive_with_metadata(file, store, scope, &nested)?
+    // 3. Produce archive bytes. Destination selection and writing belong to
+    // the caller (the Padz CLI delegates them to Standout).
+    let warnings = if with_metadata {
+        write_archive_with_metadata(&mut bytes, store, scope, &nested)?
     } else {
-        write_archive(file, &nested)?;
+        write_archive(&mut bytes, &nested)?;
         Vec::new()
     };
-    for m in messages {
-        result.add_message(m);
-    }
-    result.add_message(CmdMessage::success(format!("Exported to {}", filename)));
-    Ok(result)
+
+    Ok(ExportOutcome::Artifact(ExportArtifact {
+        bytes,
+        suggested_filename: filename,
+        report: ExportReport {
+            format: if with_metadata {
+                ExportFormat::MetadataArchive
+            } else {
+                ExportFormat::Archive
+            },
+            exported: pads.len(),
+            warnings,
+        },
+    }))
 }
 
 fn resolve_nested<S: DataStore>(
@@ -156,7 +214,7 @@ pub(crate) fn write_archive_with_metadata<W: Write, S: DataStore>(
     store: &S,
     scope: Scope,
     pads: &[NestedPad],
-) -> Result<Vec<CmdMessage>> {
+) -> Result<Vec<ExportWarning>> {
     use crate::commands::inline_metadata::{serialize_lex_metadata, serialize_md_frontmatter};
 
     let enc = GzEncoder::new(writer, Compression::default());
@@ -216,22 +274,13 @@ pub(crate) fn write_archive_with_metadata<W: Write, S: DataStore>(
 
     tar.finish().map_err(PadzError::Io)?;
 
-    let mut messages = Vec::new();
-    if !skipped_txt.is_empty() {
-        let preview: Vec<&str> = skipped_txt.iter().take(3).map(String::as_str).collect();
-        let suffix = if skipped_txt.len() > 3 {
-            format!(" (+ {} more)", skipped_txt.len() - 3)
-        } else {
-            String::new()
-        };
-        messages.push(CmdMessage::warning(format!(
-            "{} .txt pad(s) exported without metadata (txt has no metadata format): {}{}",
-            skipped_txt.len(),
-            preview.join(", "),
-            suffix,
-        )));
-    }
-    Ok(messages)
+    Ok(if skipped_txt.is_empty() {
+        Vec::new()
+    } else {
+        vec![ExportWarning::MetadataUnavailable {
+            titles: skipped_txt,
+        }]
+    })
 }
 
 fn sanitize_filename(name: &str) -> String {
@@ -255,13 +304,13 @@ pub fn run_single_file<S: DataStore>(
     selectors: &[PadSelector],
     title: &str,
     nesting: NestingMode,
-) -> Result<CmdResult> {
+) -> Result<ExportOutcome> {
     let pads = resolve_pads(store, scope, selectors)?;
 
     if pads.is_empty() {
-        let mut res = CmdResult::default();
-        res.add_message(CmdMessage::info("No pads to export."));
-        return Ok(res);
+        return Ok(ExportOutcome::Empty {
+            format: ExportFormat::SingleFile,
+        });
     }
 
     let nested = resolve_nested(store, scope, &pads, nesting)?;
@@ -269,17 +318,16 @@ pub fn run_single_file<S: DataStore>(
     let format = SingleFileFormat::from_filename(title);
     let result = merge_pads_to_single_file(&nested, title, format);
 
-    // Write to file
     let filename = sanitize_output_filename(title, format);
-    std::fs::write(&filename, &result.content).map_err(PadzError::Io)?;
-
-    let mut cmd_result = CmdResult::default();
-    cmd_result.add_message(CmdMessage::success(format!(
-        "Exported {} pads to {}",
-        pads.len(),
-        filename
-    )));
-    Ok(cmd_result)
+    Ok(ExportOutcome::Artifact(ExportArtifact {
+        bytes: result.content.into_bytes(),
+        suggested_filename: filename,
+        report: ExportReport {
+            format: ExportFormat::SingleFile,
+            exported: pads.len(),
+            warnings: Vec::new(),
+        },
+    }))
 }
 
 /// Merge pads into a single file content string.
@@ -458,39 +506,31 @@ pub fn run_json<S: DataStore>(
     scope: Scope,
     selectors: &[PadSelector],
     nesting: NestingMode,
-) -> Result<CmdResult> {
+) -> Result<ExportOutcome> {
     let pads = resolve_pads(store, scope, selectors)?;
 
     if pads.is_empty() {
-        let mut res = CmdResult::default();
-        res.add_message(CmdMessage::info("No pads to export."));
-        return Ok(res);
+        return Ok(ExportOutcome::Empty {
+            format: ExportFormat::JsonArchive,
+        });
     }
 
     let nested = resolve_nested(store, scope, &pads, nesting)?;
 
     let now = Utc::now();
     let filename = format!("padz-{}.json.tar.gz", now.format("%Y-%m-%d_%H-%M-%S"));
-    let file = File::create(&filename).map_err(PadzError::Io)?;
+    let mut bytes = Vec::new();
+    write_json_archive(&mut bytes, store, scope, &nested, now)?;
 
-    write_json_archive(file, store, scope, &nested, now)?;
-
-    let mut result = CmdResult::default();
-    result.add_message(CmdMessage::success(format!("Exported to {}", filename)));
-    Ok(result)
-}
-
-/// Collect the resolved + nested pads for a JSON export. Public for tests that
-/// want to drive `write_json_archive` directly without writing to CWD.
-#[cfg(test)]
-pub(crate) fn collect_export_pads<S: DataStore>(
-    store: &S,
-    scope: Scope,
-    selectors: &[PadSelector],
-    nesting: NestingMode,
-) -> Result<Vec<NestedPad>> {
-    let pads = resolve_pads(store, scope, selectors)?;
-    resolve_nested(store, scope, &pads, nesting)
+    Ok(ExportOutcome::Artifact(ExportArtifact {
+        bytes,
+        suggested_filename: filename,
+        report: ExportReport {
+            format: ExportFormat::JsonArchive,
+            exported: pads.len(),
+            warnings: Vec::new(),
+        },
+    }))
 }
 
 pub(crate) fn write_json_archive<W: Write, S: DataStore>(
@@ -897,21 +937,25 @@ mod tests {
         );
         // No pads created
         let res = run(&store, Scope::Project, &[], NestingMode::Flat, false).unwrap();
-        assert!(res
-            .messages
-            .iter()
-            .any(|m| m.content.contains("No pads to export")));
+        assert!(matches!(
+            res,
+            ExportOutcome::Empty {
+                format: ExportFormat::Archive
+            }
+        ));
 
         let res_single =
             run_single_file(&store, Scope::Project, &[], "out.md", NestingMode::Flat).unwrap();
-        assert!(res_single
-            .messages
-            .iter()
-            .any(|m| m.content.contains("No pads to export")));
+        assert!(matches!(
+            res_single,
+            ExportOutcome::Empty {
+                format: ExportFormat::SingleFile
+            }
+        ));
     }
 
     #[test]
-    fn test_export_single_file_creates_file() {
+    fn test_export_single_file_returns_owned_artifact_without_writing() {
         use std::path::Path;
         let mut store = BucketedStore::new(
             MemBackend::new(),
@@ -921,10 +965,9 @@ mod tests {
         );
         create::run(&mut store, Scope::Project, "A".into(), "".into(), None).unwrap();
 
-        // Since run_single_file forces writing to CWD with a sanitized name,
-        // we use a unique name to avoid collisions and check CWD.
+        // A unique name proves the core did not create the suggested destination.
         let unique_title = format!("Export_Test_{}", uuid::Uuid::new_v4());
-        let expected_filename = format!("{}.md", unique_title); // sanitization should be no-op for alphanumeric+underscore
+        let expected_filename = format!("{}.md", unique_title);
         let expected_path = Path::new(&expected_filename);
 
         // Export
@@ -934,22 +977,20 @@ mod tests {
         // So passing "Title.md" results in "Title.md".
         let input_title = format!("{}.md", unique_title);
 
-        let res =
+        let outcome =
             run_single_file(&store, Scope::Project, &[], &input_title, NestingMode::Flat).unwrap();
+        let ExportOutcome::Artifact(artifact) = outcome else {
+            panic!("expected an export artifact");
+        };
 
-        assert!(res.messages[0].content.contains("Exported 1 pads"));
-        assert!(
-            expected_path.exists(),
-            "File {} should be created in CWD",
-            expected_filename
-        );
+        assert_eq!(artifact.suggested_filename, expected_filename);
+        assert_eq!(artifact.report.exported, 1);
+        assert_eq!(artifact.report.format, ExportFormat::SingleFile);
+        assert!(!expected_path.exists(), "the reusable core must not write");
 
-        let content = std::fs::read_to_string(expected_path).unwrap();
+        let content = String::from_utf8(artifact.bytes).unwrap();
         assert!(content.contains(&format!("# {}", input_title))); // Title in H1
         assert!(content.contains("## A"));
-
-        // Cleanup
-        let _ = std::fs::remove_file(expected_path);
     }
 
     // --- Nesting mode tests ---

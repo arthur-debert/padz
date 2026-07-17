@@ -30,9 +30,9 @@ console = "0.15"
 directories = "6.0.0"
 dark-light = "0.2"
 once_cell = "1.19"
-standout = "7.7.0"
-standout-macros = "7.7.0"
-standout-dispatch = "7.7.0"
+standout = "7.9.0"
+standout-macros = "7.9.0"
+standout-dispatch = "7.9.0"
 # Standout's template engine. Needed directly to type the context providers in
 # cli::render, whose values standout hands to MiniJinja.
 minijinja = "2"
@@ -57,20 +57,20 @@ unicode-width = "0.2.2"
 # builder that restores them on drop. Re-exports `serial_test`, which every
 # harness test needs: those seams are process-global.
 #
-# Pinned to the v7.7.0 git tag rather than a crates.io version ON PURPOSE. The
+# Pinned to the v7.9.0 git tag rather than a crates.io version ON PURPOSE. The
 # newest *published* standout-test is 7.5.1, and it does not compile against the
-# standout 7.7.0 this crate uses: 7.6 made `RunResult` `#[non_exhaustive]` and
+# standout 7.9.0 this crate uses: 7.6 made `RunResult` `#[non_exhaustive]` and
 # added the `Error` variant, while 7.5.1 matches `RunResult` exhaustively. Its
 # `standout = "^7.5.1"` requirement claims that unification is fine, so Cargo
 # resolves it happily and then fails to build — the incompatibility is real but
-# invisible to semver. The v7.7.0 tag (matching our standout exactly) handles
+# invisible to semver. The v7.9.0 tag (matching our standout exactly) handles
 # `Error` and matches non-exhaustively; it is unpublished only because the crate
 # carries `publish = false` upstream. Tracked at arthur-debert/standout; swap this
-# back to a plain version requirement once 7.7.x is on crates.io.
+# back to a plain version requirement once a compatible release is on crates.io.
 #
 # Safe for `cargo publish`: a dev-dependency with no `version` key is stripped
 # from the packaged manifest, so this git source never reaches consumers.
-standout-test = { git = "https://github.com/arthur-debert/standout", tag = "v7.7.0" }
+standout-test = { git = "https://github.com/arthur-debert/standout", tag = "v7.9.0" }
 # Direct, even though standout-test re-exports `serial`: the macro it re-exports
 # expands to `::serial_test` paths, so the crate has to be nameable here for
 # `#[serial]` to resolve. Same major as standout-test's own requirement, so the

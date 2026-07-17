@@ -20,12 +20,14 @@ clipboard (see §3), but never reads it to decide what a pad should contain.
     -   **stdin is a terminal** → `padz list`.
     -   **stdin is piped** → `padz create`, capturing the pipe (`cat notes | padz`).
         An empty pipe reaches `create` and aborts there; it does not fall back to `list`.
--   **Location**: `crates/padz/src/cli/input.rs` — function `naked_command`;
-    called from `cli/commands.rs`'s `run`, which splices the chosen command into argv.
+-   **Location**: `crates/padz/src/cli/setup.rs` — Standout's
+    `default_command_with` resolver is attached to both the initial parsing app
+    and the stateful dispatch app.
 -   **Why**: The "Read" operation is 90% of usage. It should be the path of least
     resistance — while a pipe means the user is handing padz something to keep.
--   **Why not standout's `default_command`**: it names one *static* command, and
-    this rule is conditional. See `naked_command`'s docs.
+-   **How**: Standout evaluates the resolver only after a successful naked parse
+    and exposes a non-consuming stdin terminal fact, so explicit/nested
+    commands, help, version, and invalid syntax keep Clap precedence.
 
 ### 2. Smart Create (`padz create`)
 -   **Location**: the precedence is declared as a standout `InputChain` in

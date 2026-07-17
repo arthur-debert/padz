@@ -3,7 +3,9 @@ use super::complete::{
 };
 use clap::{CommandFactory, FromArgMatches, Parser, Subcommand, ValueEnum};
 use once_cell::sync::Lazy;
-use standout::cli::{render_help_with_topics, App, CommandGroup, Dispatch, HelpConfig};
+use standout::cli::{
+    render_help_with_topics, App, CommandGroup, DefaultCommandContext, Dispatch, HelpConfig,
+};
 use standout::topics::TopicRegistry;
 use standout::OutputMode;
 
@@ -100,9 +102,25 @@ static HELP_TOPICS: Lazy<TopicRegistry> = Lazy::new(|| {
 ///   `--help`/topics through Standout. 7.6 additionally rejects an app that
 ///   configures topics or command groups without it.
 fn app_with_topics() -> App {
-    let mut app = App::new().help_handling(true);
+    let mut app = App::new()
+        .help_handling(true)
+        .default_command_with(invocation_default_command);
     *app.registry_mut() = HELP_TOPICS.clone();
     app
+}
+
+/// Select the command for a successfully parsed naked invocation without
+/// consuming stdin. Explicit commands, help, version, and usage errors never
+/// reach this resolver; Standout centralizes those precedence rules.
+pub(super) fn invocation_default_command(ctx: &DefaultCommandContext<'_>) -> Option<String> {
+    Some(
+        if ctx.stdin_is_piped() {
+            "create"
+        } else {
+            "list"
+        }
+        .to_string(),
+    )
 }
 
 /// Parse a topic file content into a Topic struct
@@ -657,7 +675,7 @@ pub enum Commands {
 
     /// Export pads to a tar.gz archive (or single file with --single-file)
     #[command(display_order = 21)]
-    #[dispatch(pure, template = "messages")]
+    #[dispatch(pure, template = "export")]
     Export {
         /// Export all pads to a single file with this title (format detected from extension: .md for markdown, otherwise text)
         #[arg(long, value_name = "TITLE", conflicts_with = "json")]
