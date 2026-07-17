@@ -276,7 +276,11 @@ fn structured_output_excludes_template_only_view_fields() {
 
     let json = fx.run(&["list", "--output", "json"]);
     let v = parse_json(&json);
-    let top: Vec<&str> = v.as_object().unwrap().keys().map(|k| k.as_str()).collect();
+    let mut top: Vec<&str> = v.as_object().unwrap().keys().map(|k| k.as_str()).collect();
+    // Sorted before comparing: the contract is the key *set*. serde_json emits keys
+    // in insertion order, i.e. standout's struct field order, which this test does
+    // not pin — a field reorder there is not a contract break and must not fail here.
+    top.sort_unstable();
 
     // The result contract: data + invocation facts, nothing view-derived.
     assert_eq!(top, vec!["messages", "pads", "request"]);

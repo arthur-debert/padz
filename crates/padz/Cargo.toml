@@ -43,8 +43,10 @@ tempfile = "3.10.1"
 # Format-aware parsers for the structured-output contract tests. A string
 # `contains` assertion would pass on human text that merely mentions a field, so
 # every structured assertion parses the output with a real parser for that format.
-# Pinned to the versions standout itself serializes with, so the tests read back
-# exactly what it wrote.
+# These are ordinary caret requirements, chosen to be semver-compatible with the
+# parsers standout serializes with (csv 1.4.x, quick-xml 0.36.x). Cargo unifies
+# each onto a single version across the graph, so the tests read back with the
+# same crate standout wrote with; Cargo.lock records which version that is.
 csv = "1.4"
 quick-xml = "0.36"
 
