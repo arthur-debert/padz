@@ -53,14 +53,13 @@
 
 use clap::ArgMatches;
 use padzapp::config::PadzMode;
-use standout::cli::{get_deepest_matches, CommandContext, HookError};
 use standout::input::env::{DefaultStdin, StdinReader};
-use standout::input::{InputChain, InputCollector, InputError, Inputs};
+use standout::input::{InputChain, InputCollector, InputError};
 use std::sync::Arc;
 
 // `split_indexes_and_content` is the handlers' own arg-splitting rule; the edit
 // source must apply the same one to know whether trailing words are content.
-use super::handlers::{split_indexes_and_content, AppState};
+use super::handlers::split_indexes_and_content;
 
 /// The name the `create` content input is registered and looked up under.
 pub const CREATE_CONTENT: &str = "create_content";
@@ -223,7 +222,7 @@ impl InputCollector<RequestContent> for PipedSource {
 // =============================================================================
 
 /// The `create` content chain: direct args, then piped stdin, then the editor.
-fn create_chain(mode: PadzMode) -> InputChain<RequestContent> {
+pub(super) fn create_chain(mode: PadzMode) -> InputChain<RequestContent> {
     InputChain::new()
         .try_source(CreateDirectSource { mode })
         .try_source(PipedSource::from_process())
@@ -231,73 +230,11 @@ fn create_chain(mode: PadzMode) -> InputChain<RequestContent> {
 }
 
 /// The `edit` content chain: inline todos content, then piped stdin, then the editor.
-fn edit_chain(mode: PadzMode) -> InputChain<RequestContent> {
+pub(super) fn edit_chain(mode: PadzMode) -> InputChain<RequestContent> {
     InputChain::new()
         .try_source(EditDirectSource { mode })
         .try_source(PipedSource::from_process())
         .default(RequestContent::Editor)
-}
-
-// =============================================================================
-// Pre-dispatch hooks
-// =============================================================================
-
-/// Resolves `create`'s content before dispatch. Wired via `#[dispatch(pre_dispatch = ...)]`.
-///
-/// This is what `GroupBuilder::input` does internally; padz spells it out
-/// because its command table is built by the `Dispatch` derive, which exposes
-/// `pre_dispatch` but not `input`. The chain needs the configured [`PadzMode`],
-/// which only exists on app state, so it is built here rather than at app-build
-/// time.
-pub fn resolve_create_content(
-    matches: &ArgMatches,
-    ctx: &mut CommandContext,
-) -> Result<(), HookError> {
-    let mode = mode_of(ctx)?;
-    insert_input(ctx, matches, CREATE_CONTENT, create_chain(mode))
-}
-
-/// Resolves `edit`'s content before dispatch (also used by `open`, which shares
-/// `edit`'s handler).
-pub fn resolve_edit_content(
-    matches: &ArgMatches,
-    ctx: &mut CommandContext,
-) -> Result<(), HookError> {
-    let mode = mode_of(ctx)?;
-    insert_input(ctx, matches, EDIT_CONTENT, edit_chain(mode))
-}
-
-/// Resolves `chain` against the deepest subcommand's matches and files the
-/// result in the request's [`Inputs`] bag under `name`.
-///
-/// Pre-dispatch hooks are handed the top-level matches, but the sources read
-/// args declared on the subcommand — the same matches the handler sees.
-fn insert_input(
-    ctx: &mut CommandContext,
-    matches: &ArgMatches,
-    name: &'static str,
-    chain: InputChain<RequestContent>,
-) -> Result<(), HookError> {
-    let resolved = chain
-        .resolve_with_source(get_deepest_matches(matches))
-        .map_err(|e| HookError::pre_dispatch(format!("input `{}`: {}", name, e)))?;
-
-    if !ctx.extensions.contains::<Inputs>() {
-        ctx.extensions.insert(Inputs::new());
-    }
-    ctx.extensions
-        .get_mut::<Inputs>()
-        .expect("Inputs just inserted")
-        .insert(name, resolved);
-    Ok(())
-}
-
-/// The configured pad mode, read from durable app state.
-fn mode_of(ctx: &CommandContext) -> Result<PadzMode, HookError> {
-    ctx.app_state
-        .get::<AppState>()
-        .map(|s| s.mode)
-        .ok_or_else(|| HookError::pre_dispatch("AppState not initialized in app_state"))
 }
 
 // =============================================================================

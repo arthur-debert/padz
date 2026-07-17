@@ -328,11 +328,7 @@ pub enum Commands {
     /// The content source (args / piped stdin / editor) is resolved before
     /// dispatch by `cli::input`'s chain; the handler receives the decision.
     #[command(alias = "n", display_order = 1)]
-    #[dispatch(
-        pure,
-        template = "modification_result",
-        pre_dispatch = crate::cli::input::resolve_create_content
-    )]
+    #[dispatch(skip)]
     Create {
         /// Force opening the editor (even in todos mode)
         #[arg(long, short = 'e', conflicts_with = "no_editor")]
@@ -514,11 +510,7 @@ pub enum Commands {
 
     /// Edit a pad in the editor
     #[command(alias = "e", display_order = 11, hide = true)]
-    #[dispatch(
-        pure,
-        template = "modification_result",
-        pre_dispatch = crate::cli::input::resolve_edit_content
-    )]
+    #[dispatch(skip)]
     Edit {
         /// Indexes of the pads (e.g. 1 p1 d1)
         #[arg(required = true, num_args = 1.., add = active_pads_completer())]
@@ -530,12 +522,7 @@ pub enum Commands {
     /// Shares `edit`'s handler, and therefore needs `edit`'s input chain: the
     /// handler reads its content decision from the same named input.
     #[command(alias = "o", display_order = 12)]
-    #[dispatch(
-        pure,
-        handler = handlers::edit__handler,
-        template = "modification_result",
-        pre_dispatch = crate::cli::input::resolve_edit_content
-    )]
+    #[dispatch(skip)]
     Open {
         /// Indexes of the pads (e.g. 1 p1 d1)
         #[arg(required = true, num_args = 1.., add = all_pads_completer())]
