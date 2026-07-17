@@ -107,6 +107,10 @@ pub fn build_dispatch_app(app_state: AppState) -> App {
 /// The error message still carries standout's `Error: ` prefix, which is
 /// stripped here because `main` re-adds it when printing to stderr.
 ///
+/// `NoMatch` means dispatch found no handler for the command, which is a
+/// failure: it returns an error so `main` exits non-zero rather than reporting
+/// a miss on stderr and exiting 0.
+///
 /// `RunResult` is `#[non_exhaustive]` as of 7.6, so unknown future variants are
 /// surfaced as an error rather than silently ignored.
 fn handle_dispatch_result(result: RunResult) -> Result<()> {
@@ -125,8 +129,13 @@ fn handle_dispatch_result(result: RunResult) -> Result<()> {
             println!("Exported to {}", filename);
         }
         RunResult::Silent => {}
-        RunResult::NoMatch(_) => {
-            eprintln!("Error: Unknown command");
+        RunResult::NoMatch(matches) => {
+            return Err(padzapp::error::PadzError::Api(
+                match matches.subcommand_name() {
+                    Some(name) => format!("Unknown command: {}", name),
+                    None => "Unknown command".to_string(),
+                },
+            ));
         }
         other => {
             return Err(padzapp::error::PadzError::Api(format!(
@@ -580,5 +589,58 @@ mod completion_tests {
     #[test]
     fn empty_quoted() {
         assert_eq!(shell_quote(""), "''");
+    }
+}
+
+#[cfg(test)]
+mod dispatch_result_tests {
+    use super::handle_dispatch_result;
+    use standout::cli::RunResult;
+
+    /// A dispatch miss is a failure, not a silent success: it must surface as an
+    /// error so `main` exits non-zero and callers can detect it.
+    #[test]
+    fn no_match_is_an_error_naming_the_subcommand() {
+        let matches = clap::Command::new("padz")
+            .subcommand(clap::Command::new("bogus"))
+            .get_matches_from(vec!["padz", "bogus"]);
+
+        let err = handle_dispatch_result(RunResult::NoMatch(matches))
+            .expect_err("NoMatch must not report success");
+
+        assert!(
+            err.to_string().contains("bogus"),
+            "error should name the unmatched subcommand, got: {}",
+            err
+        );
+    }
+
+    #[test]
+    fn no_match_without_subcommand_is_still_an_error() {
+        let matches = clap::Command::new("padz").get_matches_from(vec!["padz"]);
+
+        assert!(handle_dispatch_result(RunResult::NoMatch(matches)).is_err());
+    }
+
+    #[test]
+    fn silent_is_success() {
+        assert!(handle_dispatch_result(RunResult::Silent).is_ok());
+    }
+
+    /// standout's message arrives already prefixed with `Error: `, and `main`
+    /// prints its own `Error: ` prefix, so the incoming one is stripped to keep
+    /// the printed line from reading `Error: ... Error: boom`.
+    #[test]
+    fn error_variant_strips_standout_prefix() {
+        let err = handle_dispatch_result(RunResult::Error("Error: boom".to_string()))
+            .expect_err("Error variant must fail");
+
+        let rendered = err.to_string();
+        assert!(rendered.ends_with("boom"), "got: {}", rendered);
+        assert!(
+            !rendered.contains("Error: Error:"),
+            "standout's prefix should not survive, got: {}",
+            rendered
+        );
     }
 }
