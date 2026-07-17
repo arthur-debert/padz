@@ -1,5 +1,21 @@
 #![allow(deprecated)]
 
+//! # Help and topics — subprocess E2E
+//!
+//! ## The real boundary this file protects
+//!
+//! **`cli::setup::parse_cli`, which renders help and then calls
+//! `std::process::exit(0)`.**
+//!
+//! Help never reaches dispatch: `parse_cli` intercepts the root help itself
+//! (`should_show_custom_help`), prints, and exits the process; clap's
+//! `--help`/`-h` likewise terminate during parsing. `TestHarness` drives
+//! `App::run_to_string`, which begins at dispatch, so it sees none of this — and
+//! an in-process test of a path that calls `exit(0)` would take the test runner
+//! down with it. A real process is the only place these can be observed.
+//!
+//! ## Original note
+//!
 //! Help/topic contract coverage, pinned during the Standout 6.2 -> 7.6 upgrade.
 //!
 //! Standout 7.6 requires `help_handling(true)` to be opted into explicitly (it

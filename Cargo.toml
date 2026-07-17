@@ -7,3 +7,41 @@ version = "1.9.0"
 edition = "2021"
 license = "MIT"
 repository = "https://github.com/arthur-debert/padz"
+
+# Resolve the standout family from the v7.6.4 git tag instead of crates.io.
+#
+# WHY THIS EXISTS — it is a graph-unification fix, not a version change.
+#
+# The test pyramid needs `standout-test` (the in-process `TestHarness`), and the
+# newest *published* standout-test is 7.5.1, which does not compile against
+# standout 7.6: 7.6 made `RunResult` `#[non_exhaustive]` and added the `Error`
+# variant, and 7.5.1 matches it exhaustively. The fixed standout-test exists —
+# version 7.6.4 in the upstream repo — but carries `publish = false`, so it can
+# only be reached as a git dependency. And a git standout-test resolves its own
+# `standout` through a workspace *path* dep, which Cargo treats as a crate
+# distinct from crates.io's standout: the two `App` types then don't unify and
+# `TestHarness::run(&app, ..)` won't typecheck.
+#
+# Patching the whole family to the tag collapses that back into one graph.
+#
+# WHY IT IS SAFE: the v7.6.4 tag is byte-identical to the published 7.6.4 for
+# every crate patched below (verified with `diff -r` across all eight `src/`
+# trees), so this changes *no code* — only which copy Cargo considers canonical.
+# The whole family is listed because a partial patch reintroduces the same split
+# one layer down (e.g. two `standout-dispatch` crates ⇒ two `CommandContext`s).
+#
+# `[patch]` is workspace-local: it is not published and never reaches consumers
+# of the `padz` crate, who resolve plain 7.6.4 from crates.io.
+#
+# REMOVE THIS once standout-test 7.6.x is published to crates.io; it then goes
+# back to a plain dev-dependency version requirement in crates/padz/Cargo.toml.
+# Tracked upstream at arthur-debert/standout.
+[patch.crates-io]
+standout = { git = "https://github.com/arthur-debert/standout", tag = "v7.6.4" }
+standout-bbparser = { git = "https://github.com/arthur-debert/standout", tag = "v7.6.4" }
+standout-dispatch = { git = "https://github.com/arthur-debert/standout", tag = "v7.6.4" }
+standout-input = { git = "https://github.com/arthur-debert/standout", tag = "v7.6.4" }
+standout-macros = { git = "https://github.com/arthur-debert/standout", tag = "v7.6.4" }
+standout-pipe = { git = "https://github.com/arthur-debert/standout", tag = "v7.6.4" }
+standout-render = { git = "https://github.com/arthur-debert/standout", tag = "v7.6.4" }
+standout-seeker = { git = "https://github.com/arthur-debert/standout", tag = "v7.6.4" }

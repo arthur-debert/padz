@@ -1,4 +1,28 @@
-//! # Structured output contract (JSON / YAML / XML / CSV)
+//! # Structured output contract (JSON / YAML / XML / CSV) — subprocess E2E
+//!
+//! ## The real boundary this file protects
+//!
+//! **The binary's actual stdout**, across the full command × format matrix.
+//!
+//! The bug this suite was written for (see below) was a mode silently falling
+//! back to the human renderer. `TestHarness` returns the string the app
+//! *rendered*; only a process shows what padz actually *wrote to a pipe* —
+//! including `main.rs`'s `print!`, the `Binary` file-writing arm, and the stderr
+//! and exit-code split. For a contract whose whole point is "what a script
+//! reading our stdout receives", that last hop is the thing under test.
+//!
+//! ## Honest classification: this suite is broader than that boundary
+//!
+//! The matrix itself — every read and mutating command in all four formats — is
+//! reachable in `TestHarness`, and `tests/harness.rs` now owns a representative
+//! slice of it (one command per format, parsed with a real parser; plus the
+//! width-invariance and view-field-leak assertions). The full matrix is kept
+//! here rather than duplicated there, and rather than bulk-moved: it is WS03's
+//! deliverable and its value is breadth, which is exactly what makes a blind
+//! rewrite risky. Narrowing it to the stdout hop — leaving breadth to the
+//! harness — is follow-up work, not this workstream's to do silently.
+//!
+//! ## The contract
 //!
 //! These tests pin the machine-readable contract padz offers agents and scripts:
 //! `--output json|yaml|xml|csv` emits *data*, never the human renderer's text.

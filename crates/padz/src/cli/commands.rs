@@ -75,7 +75,12 @@ pub fn run() -> Result<()> {
 /// mode-independent results, and these providers derive the template-ready view from
 /// the serialized result. Standout resolves context providers only when it renders a
 /// template, so structured output never sees the derived presentation fields.
-fn build_dispatch_app(app_state: AppState) -> App {
+///
+/// Public because it is the whole app-under-test: `TestHarness` tests pair it with
+/// [`build_command`] to drive argv through render in process, against the same
+/// templates, styles, and dispatch table the binary uses. Building the app twice —
+/// once for the binary, once for tests — is exactly the drift this avoids.
+pub fn build_dispatch_app(app_state: AppState) -> App {
     App::builder()
         .app_state(app_state)
         .templates(embed_templates!("src/cli/templates"))
@@ -129,12 +134,36 @@ fn handle_dispatch_result(result: RunResult) -> Result<()> {
     Ok(())
 }
 
-/// Create app state containing API, scope, and configuration for handlers
+/// Create app state containing API, scope, and configuration for handlers.
 ///
-/// Deliberately takes no `OutputMode`: durable state carries no rendering concern.
-/// The mode stays here in the app-execution path, where it is passed to `dispatch`.
+/// This is the composition root's *reading* half: it asks the process where it is
+/// (`current_dir`) and what machine it is on ([`env::resolve`](crate::cli::env::resolve)),
+/// then hands both to [`build_app_state`] as explicit values. Everything that
+/// actually decides anything lives there.
 fn create_app_state(cli: &Cli) -> Result<AppState> {
     let cwd = std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from("."));
+    // Resolve the environment once, here at the composition root, and hand
+    // explicit values to the library.
+    let env = crate::cli::env::resolve();
+    build_app_state(cli, &env, &cwd)
+}
+
+/// Build app state containing API, scope, and configuration for handlers, from an
+/// explicitly supplied environment and working directory.
+///
+/// Deliberately takes no `OutputMode`: durable state carries no rendering concern.
+/// The mode stays in the app-execution path, where it is passed to `dispatch`.
+///
+/// `env` and `cwd` are parameters rather than process reads for the same reason
+/// `padzapp::init::initialize` takes a [`PadzEnv`](padzapp::init::PadzEnv): a test
+/// that wants a store in a tempdir should say so in Rust, not by mutating
+/// `$PADZ_GLOBAL_DATA` and `current_dir` and hoping nothing else on the process
+/// noticed. `create_app_state` is the one caller that reads those from the process.
+pub fn build_app_state(
+    cli: &Cli,
+    env: &padzapp::init::PadzEnv,
+    cwd: &std::path::Path,
+) -> Result<AppState> {
     let data_override = cli.data.as_ref().map(std::path::PathBuf::from);
 
     // `padz init` (plain, non-global) is a creation operation: "create a store HERE".
@@ -148,7 +177,7 @@ fn create_app_state(cli: &Cli) -> Result<AppState> {
         })
     );
     let data_override = if is_plain_init && data_override.is_none() && !cli.global {
-        Some(cwd.clone())
+        Some(cwd.to_path_buf())
     } else {
         data_override
     };
@@ -163,10 +192,6 @@ fn create_app_state(cli: &Cli) -> Result<AppState> {
         Some(Commands::Create { .. }) | Some(Commands::Import { .. })
     );
 
-    // Resolve the environment once, here at the composition root, and hand
-    // explicit values to the library.
-    let env = crate::cli::env::resolve();
-
     // Compute the local .padz dir BEFORE link resolution (used by link/unlink commands)
     let local_padz_dir = match &data_override {
         Some(path) => {
@@ -176,12 +201,12 @@ fn create_app_state(cli: &Cli) -> Result<AppState> {
                 path.join(".padz")
             }
         }
-        None => padzapp::init::find_padz_root(&cwd, env.home_dir.as_deref())
+        None => padzapp::init::find_padz_root(cwd, env.home_dir.as_deref())
             .map(|root| root.join(".padz"))
             .unwrap_or_else(|| cwd.join(".padz")),
     };
 
-    let padz_ctx = initialize(&env, &cwd, cli.global, data_override, auto_init_for_write)?;
+    let padz_ctx = initialize(env, cwd, cli.global, data_override, auto_init_for_write)?;
 
     // Initialization warnings are data; the CLI is what turns them into stderr
     // output. They are advisory — the command runs regardless.

@@ -716,6 +716,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "either"
+version = "1.16.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "91622ff5e7162018101f2fea40d6ebf4a78bbe5a49736a2020649edf9693679e"
+
+[[package]]
 name = "encode_unicode"
 version = "1.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -741,6 +747,12 @@ dependencies = [
  "quote",
  "syn 2.0.111",
 ]
+
+[[package]]
+name = "env_home"
+version = "0.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "c7f84e12ccf0a7ddc17a6c41c93326024c42920d7ee630d04950e6926645c0fe"
 
 [[package]]
 name = "equivalent"
@@ -853,6 +865,17 @@ name = "futures-core"
 version = "0.3.31"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "05f29059c0c2090612e8d742178b0580d2dc940c837851ad723096f87af6663e"
+
+[[package]]
+name = "futures-executor"
+version = "0.3.31"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "1e28d1d997f585e54aebc3f97d39e72338912123a67330d723fdbb564d646c9f"
+dependencies = [
+ "futures-core",
+ "futures-task",
+ "futures-util",
+]
 
 [[package]]
 name = "futures-io"
@@ -1127,6 +1150,15 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "df1d3c3b53da64cf5760482273a98e575c651a67eec7f77df96b5b642de8f039"
 
 [[package]]
+name = "lock_api"
+version = "0.4.14"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "224399e74b87b5f3557511d98dff8b14089b3dadafcab6bb93eab67d3aace965"
+dependencies = [
+ "scopeguard",
+]
+
+[[package]]
 name = "log"
 version = "0.4.29"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1288,12 +1320,15 @@ dependencies = [
  "serde",
  "serde_json",
  "serde_yaml",
+ "serial_test",
  "standout",
  "standout-dispatch",
  "standout-macros",
+ "standout-test",
  "tempfile",
  "terminal_size",
  "unicode-width",
+ "uuid",
 ]
 
 [[package]]
@@ -1324,6 +1359,29 @@ name = "parking"
 version = "2.2.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f38d5652c16fde515bb1ecef450ab0f6a219d619a7274976324d5e377f7dceba"
+
+[[package]]
+name = "parking_lot"
+version = "0.12.5"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "93857453250e3077bd71ff98b6a65ea6621a19bb0f559a85248955ac12c45a1a"
+dependencies = [
+ "lock_api",
+ "parking_lot_core",
+]
+
+[[package]]
+name = "parking_lot_core"
+version = "0.9.12"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "2621685985a2ebf1c516881c026032ac7deafcda1a2c9b7850dc81e3dfcb64c1"
+dependencies = [
+ "cfg-if",
+ "libc",
+ "redox_syscall",
+ "smallvec",
+ "windows-link",
+]
 
 [[package]]
 name = "phf"
@@ -1684,6 +1742,12 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "28d3b2b1366ec20994f1fd18c3c594f05c5dd4bc44d8bb0c1c632c8d6829481f"
 
 [[package]]
+name = "scopeguard"
+version = "1.2.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "94143f37725109f92c262ed2cf5e59bce7498c01bcc1502d7b9afe439a4e9f49"
+
+[[package]]
 name = "self_cell"
 version = "1.2.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1785,6 +1849,31 @@ dependencies = [
 ]
 
 [[package]]
+name = "serial_test"
+version = "3.5.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "699f4197115b8a7e7ff19c9a315a4bd6fffec26cc4626ef45ecaea389e081c6d"
+dependencies = [
+ "futures-executor",
+ "futures-util",
+ "log",
+ "once_cell",
+ "parking_lot",
+ "serial_test_derive",
+]
+
+[[package]]
+name = "serial_test_derive"
+version = "3.5.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "94e153fc76e1c6a068703d6d29c508a0b15c061c4b7e43da59cc097bc342673c"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn 2.0.111",
+]
+
+[[package]]
 name = "sha1"
 version = "0.10.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1794,6 +1883,12 @@ dependencies = [
  "cpufeatures",
  "digest",
 ]
+
+[[package]]
+name = "shell-words"
+version = "1.1.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "dc6fe69c597f9c37bfeeeeeb33da3530379845f10be461a66d16d03eca2ded77"
 
 [[package]]
 name = "shlex"
@@ -1847,8 +1942,7 @@ dependencies = [
 [[package]]
 name = "standout"
 version = "7.6.4"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f0cb71324c1238ad6c97d723f30aa5e03f4752950d8c945e1128b61dde463a2d"
+source = "git+https://github.com/arthur-debert/standout?tag=v7.6.4#baf96ab6f6bf44e946584759ea90564b88b652ed"
 dependencies = [
  "anyhow",
  "clap",
@@ -1873,8 +1967,7 @@ dependencies = [
 [[package]]
 name = "standout-bbparser"
 version = "7.6.4"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f1174ce546a42cf864b6e7a56ef44d215e74e3c649508c35462e31007bf38082"
+source = "git+https://github.com/arthur-debert/standout?tag=v7.6.4#baf96ab6f6bf44e946584759ea90564b88b652ed"
 dependencies = [
  "console 0.16.4",
 ]
@@ -1882,8 +1975,7 @@ dependencies = [
 [[package]]
 name = "standout-dispatch"
 version = "7.6.4"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5c88e6052ec15d8485a4244a5dd7d6e7825ec5245b210c2ef47f5e2571d4a80c"
+source = "git+https://github.com/arthur-debert/standout?tag=v7.6.4#baf96ab6f6bf44e946584759ea90564b88b652ed"
 dependencies = [
  "anyhow",
  "clap",
@@ -1895,19 +1987,20 @@ dependencies = [
 [[package]]
 name = "standout-input"
 version = "7.6.4"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "84d48b5267fe51dc56aeea07e1421630e4130a918c785065bb12918b18a76d29"
+source = "git+https://github.com/arthur-debert/standout?tag=v7.6.4#baf96ab6f6bf44e946584759ea90564b88b652ed"
 dependencies = [
  "clap",
  "once_cell",
+ "shell-words",
+ "tempfile",
  "thiserror 2.0.17",
+ "which",
 ]
 
 [[package]]
 name = "standout-macros"
 version = "7.6.4"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b74b39a61bbcfda7f08fd095b2562d0d7cdcc2d605589a3d03267f658d048b37"
+source = "git+https://github.com/arthur-debert/standout?tag=v7.6.4#baf96ab6f6bf44e946584759ea90564b88b652ed"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -1917,8 +2010,7 @@ dependencies = [
 [[package]]
 name = "standout-pipe"
 version = "7.6.4"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a1656829de3ba9493b35a31e583b03da0265b203ed59579f81e34d0a14c332e2"
+source = "git+https://github.com/arthur-debert/standout?tag=v7.6.4#baf96ab6f6bf44e946584759ea90564b88b652ed"
 dependencies = [
  "thiserror 2.0.17",
  "wait-timeout",
@@ -1927,8 +2019,7 @@ dependencies = [
 [[package]]
 name = "standout-render"
 version = "7.6.4"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c4254c1d8ac6fc4b1c743e22f4cb84d61aafda648c56b45eb29d7d0a0f7042b5"
+source = "git+https://github.com/arthur-debert/standout?tag=v7.6.4#baf96ab6f6bf44e946584759ea90564b88b652ed"
 dependencies = [
  "console 0.16.4",
  "cssparser",
@@ -1949,11 +2040,23 @@ dependencies = [
 [[package]]
 name = "standout-seeker"
 version = "7.6.4"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e982aef053ec4369426b80d9a4cf10c386d97581fa40671b462b4dea82ae4413"
+source = "git+https://github.com/arthur-debert/standout?tag=v7.6.4#baf96ab6f6bf44e946584759ea90564b88b652ed"
 dependencies = [
  "regex",
  "thiserror 2.0.17",
+]
+
+[[package]]
+name = "standout-test"
+version = "7.6.4"
+source = "git+https://github.com/arthur-debert/standout?tag=v7.6.4#baf96ab6f6bf44e946584759ea90564b88b652ed"
+dependencies = [
+ "clap",
+ "serial_test",
+ "standout",
+ "standout-input",
+ "standout-render",
+ "tempfile",
 ]
 
 [[package]]
@@ -2353,6 +2456,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "which"
+version = "7.0.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "24d643ce3fd3e5b54854602a080f34fb10ab75e0b813ee32d00ca2b44fa74762"
+dependencies = [
+ "either",
+ "env_home",
+ "rustix 1.1.2",
+ "winsafe",
+]
+
+[[package]]
 name = "winapi"
 version = "0.3.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2681,6 +2796,12 @@ checksum = "80d0f4e272c85def139476380b12f9ac60926689dd2e01d4923222f40580869d"
 dependencies = [
  "winapi",
 ]
+
+[[package]]
+name = "winsafe"
+version = "0.0.19"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d135d17ab770252ad95e9a872d365cf3090e3be864a34ab46f48555993efc904"
 
 [[package]]
 name = "wit-bindgen"

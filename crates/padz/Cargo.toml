@@ -9,6 +9,13 @@ keywords = ["cli", "notes", "scratchpad", "productivity", "terminal"]
 categories = ["command-line-utilities"]
 readme = "README.md"
 
+# The CLI's guts (command tree, typed handlers, app builder) live in the library
+# target so the test pyramid can drive them in process; `main.rs` is a shim over
+# `cli::run()`. See `src/lib.rs` for the layering and the seam each test group owns.
+[lib]
+name = "padz"
+path = "src/lib.rs"
+
 [[bin]]
 name = "padz"
 path = "src/main.rs"
@@ -40,6 +47,30 @@ anyhow = "1.0"
 assert_cmd = "2.0.16"
 predicates = "3.1.2"
 tempfile = "3.10.1"
+# Standout's in-process harness: drives the real App from argv through render,
+# bundling the injection seams (env, cwd, detectors, stdin, clipboard) behind one
+# builder that restores them on drop. Re-exports `serial_test`, which every
+# harness test needs: those seams are process-global.
+#
+# Pinned to the v7.6.4 git tag rather than a crates.io version ON PURPOSE. The
+# newest *published* standout-test is 7.5.1, and it does not compile against the
+# standout 7.6.4 this crate uses: 7.6 made `RunResult` `#[non_exhaustive]` and
+# added the `Error` variant, while 7.5.1 matches `RunResult` exhaustively. Its
+# `standout = "^7.5.1"` requirement claims that unification is fine, so Cargo
+# resolves it happily and then fails to build — the incompatibility is real but
+# invisible to semver. The v7.6.4 tag (matching our standout exactly) handles
+# `Error` and matches non-exhaustively; it is unpublished only because the crate
+# carries `publish = false` upstream. Tracked at arthur-debert/standout; swap this
+# back to a plain version requirement once 7.6.x is on crates.io.
+#
+# Safe for `cargo publish`: a dev-dependency with no `version` key is stripped
+# from the packaged manifest, so this git source never reaches consumers.
+standout-test = { git = "https://github.com/arthur-debert/standout", tag = "v7.6.4" }
+# Direct, even though standout-test re-exports `serial`: the macro it re-exports
+# expands to `::serial_test` paths, so the crate has to be nameable here for
+# `#[serial]` to resolve. Same major as standout-test's own requirement, so the
+# two unify onto one copy of the lock that makes harness tests serial.
+serial_test = "3"
 # Format-aware parsers for the structured-output contract tests. A string
 # `contains` assertion would pass on human text that merely mentions a field, so
 # every structured assertion parses the output with a real parser for that format.
@@ -49,6 +80,9 @@ tempfile = "3.10.1"
 # same crate standout wrote with; Cargo.lock records which version that is.
 csv = "1.4"
 quick-xml = "0.36"
+# The `uuid` handler's contract is "a parseable uuid per selector"; asserting that
+# with the real parser beats a hand-rolled shape check that would accept garbage.
+uuid = "1.19.0"
 
 # cargo-deb configuration. Driven by `cargo deb -p padz` in CI.
 # Completions are generated at install time by the postinst maintainer
