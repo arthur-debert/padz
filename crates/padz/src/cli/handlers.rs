@@ -16,16 +16,16 @@
 
 use crate::cli::clipboard::{copy_to_clipboard, format_for_clipboard};
 use crate::cli::errors::to_anyhow;
+use crate::cli::input::{RequestContent, CREATE_CONTENT, EDIT_CONTENT};
 use padzapp::api::{CmdMessage, PadFilter, PadStatusFilter, PadzApi, TodoStatus};
 use padzapp::commands::{CmdResult, NestingMode};
 use padzapp::config::PadzMode;
 use padzapp::error::PadzError;
 use padzapp::model::{extract_title_and_body, Scope};
 use padzapp::store::fs::FileStore;
-use standout::cli::{CommandContext, Output};
+use standout::cli::{CommandContext, CommandContextInput, Output};
 use standout_macros::handler;
 use std::cell::RefCell;
-use std::io::IsTerminal;
 
 use super::result::{
     ListRequest, MessagesResult, ModificationRequest, ModificationResult, PadContent,
@@ -578,25 +578,14 @@ fn indent_lines(text: &str, prefix: &str) -> String {
         .join("\n")
 }
 
-/// Try to read content from piped stdin.
-/// Returns None if stdin is a terminal (interactive), Some if piped.
-fn try_read_stdin() -> Result<Option<String>, anyhow::Error> {
-    use std::io::Read;
-    if std::io::stdin().is_terminal() {
-        return Ok(None);
-    }
-    let mut content = String::new();
-    std::io::stdin()
-        .read_to_string(&mut content)
-        .map_err(|e| anyhow::anyhow!("Failed to read stdin: {}", e))?;
-    Ok(Some(content.trim().to_string()))
-}
-
 /// Split a list of args into index selectors and trailing content words.
 ///
 /// Index patterns are: digits, pN, dN, N.N, N-N, pN-pN etc.
 /// Once an arg fails to parse as an index, everything from that point is content.
-fn split_indexes_and_content(args: &[String]) -> (Vec<String>, Vec<String>) {
+///
+/// Shared with [`crate::cli::input`], whose edit source decides whether the
+/// trailing words make a quick-edit and so must split them the same way.
+pub(crate) fn split_indexes_and_content(args: &[String]) -> (Vec<String>, Vec<String>) {
     use padzapp::index::parse_index_or_range;
 
     let mut indexes = Vec::new();
@@ -627,16 +616,22 @@ fn split_indexes_and_content(args: &[String]) -> (Vec<String>, Vec<String>) {
 // Core commands
 // =============================================================================
 
+/// Create a pad.
+///
+/// Where the text comes from — args, piped stdin, or the editor — is *not*
+/// decided here: `cli::input`'s chain resolves it before dispatch and this
+/// handler matches on the resulting [`RequestContent`]. The `editor` /
+/// `no_editor` flags are part of that chain's availability rules, so they are
+/// not read here either.
 #[handler]
 pub fn create(
     #[ctx] ctx: &CommandContext,
-    #[flag] editor: bool,
-    #[flag(name = "no_editor")] no_editor: bool,
     #[arg] inside: Option<String>,
     #[arg] format: Option<String>,
     #[arg] title: Vec<String>,
 ) -> Result<Output<ModificationResult>, anyhow::Error> {
     let state = get_state(ctx);
+    let content = ctx.input::<RequestContent>(CREATE_CONTENT)?;
     let title_arg = if title.is_empty() {
         None
     } else {
@@ -664,86 +659,90 @@ pub fn create(
         })
     }
 
-    // --editor forces interactive editor; --no-editor forces skip;
-    // default: todos mode with title args skips editor
-    let skip_editor =
-        !editor && (no_editor || (state.mode == PadzMode::Todos && title_arg.is_some()));
-
-    let result = if skip_editor {
-        // Quick-create: use args directly, no editor
-        let raw_text = title_arg.unwrap_or_default();
-        // Convert literal \n sequences to real newlines
-        let expanded = raw_text.replace("\\n", "\n");
-        let (title, body) =
-            extract_title_and_body(&expanded).unwrap_or_else(|| (String::new(), String::new()));
-        let result = do_create(state, title.clone(), body.clone(), inside, format_ref)?;
-        // Propagate status now — content is non-empty, safe from reconciliation
-        let parent_id = result.affected_pads[0].pad.metadata.parent_id;
-        state.with_api(|api| api.propagate_status(state.scope, parent_id))?;
-        // Copy to clipboard
-        let clipboard_text = format_for_clipboard(&title, &body);
-        let _ = copy_to_clipboard(&clipboard_text);
-        result
-    } else if let Some(raw) = try_read_stdin()? {
-        // Piped content from stdin
-        if raw.is_empty() {
-            return Ok(Output::Render(aborted_create()));
-        }
-        let parsed = padzapp::editor::EditorContent::from_buffer(&raw);
-        // Determine title: title_arg override > parsed title > empty
-        let final_title = match (&title_arg, parsed.title.is_empty()) {
-            (Some(t), _) => t.clone(),  // CLI title always wins
-            (_, false) => parsed.title, // parsed has title, no CLI override
-            (None, true) => String::new(),
-        };
-        let result = do_create(state, final_title, parsed.content, inside, format_ref)?;
-        // Propagate status now — content is non-empty, safe from reconciliation
-        let parent_id = result.affected_pads[0].pad.metadata.parent_id;
-        state.with_api(|api| api.propagate_status(state.scope, parent_id))?;
-        // Copy to clipboard
-        copy_content_to_clipboard(&raw);
-        result
-    } else {
-        // Interactive: create pad first, then open real file in editor
-        let initial_title = title_arg.clone().unwrap_or_default();
-        let create_result = do_create(state, initial_title, String::new(), inside, format_ref)?;
-        let pad_path = create_result.pad_paths[0].clone();
-        let pad_id = create_result.affected_pads[0].pad.metadata.id;
-
-        // Open editor on the real pad file in .padz/
-        if let Err(e) = crate::cli::editor::open_in_editor(&pad_path) {
-            // Editor failed - clean up the pad
-            let _ = state.with_api(|api| api.remove_pad(state.scope, pad_id));
-            return Err(to_anyhow(e));
+    let result = match content {
+        // Quick-create: args used directly, no editor. The chain already joined
+        // the args and expanded literal `\n`.
+        RequestContent::Direct(expanded) => {
+            let (title, body) =
+                extract_title_and_body(expanded).unwrap_or_else(|| (String::new(), String::new()));
+            let result = do_create(state, title.clone(), body.clone(), inside, format_ref)?;
+            // Propagate status now — content is non-empty, safe from reconciliation
+            let parent_id = result.affected_pads[0].pad.metadata.parent_id;
+            state.with_api(|api| api.propagate_status(state.scope, parent_id))?;
+            // Copy to clipboard
+            let clipboard_text = format_for_clipboard(&title, &body);
+            let _ = copy_to_clipboard(&clipboard_text);
+            result
         }
 
-        // Refresh pad from disk (re-reads content, updates title)
-        match state.with_api(|api| api.refresh_pad(state.scope, &pad_id).map_err(to_anyhow))? {
-            Some(pad) => {
-                // Propagate status now — pad has real content after editor,
-                // safe from reconciliation deleting the empty file.
-                let parent_id = pad.metadata.parent_id;
-                state.with_api(|api| {
-                    api.propagate_status(state.scope, parent_id)
-                        .map_err(to_anyhow)
-                })?;
-                // Copy to clipboard
-                copy_content_to_clipboard(&pad.content);
-                // Build result
-                let display_pad = padzapp::index::DisplayPad {
-                    pad,
-                    index: padzapp::index::DisplayIndex::Regular(1),
-                    matches: None,
-                    children: Vec::new(),
-                };
-                CmdResult {
-                    affected_pads: vec![display_pad],
-                    ..Default::default()
-                }
+        // Piped content from stdin.
+        RequestContent::Piped(raw) => {
+            let parsed = padzapp::editor::EditorContent::from_buffer(raw);
+            // Determine title: title_arg override > parsed title > empty
+            let final_title = match (&title_arg, parsed.title.is_empty()) {
+                (Some(t), _) => t.clone(),  // CLI title always wins
+                (_, false) => parsed.title, // parsed has title, no CLI override
+                (None, true) => String::new(),
+            };
+            let result = do_create(state, final_title, parsed.content, inside, format_ref)?;
+            // Propagate status now — content is non-empty, safe from reconciliation
+            let parent_id = result.affected_pads[0].pad.metadata.parent_id;
+            state.with_api(|api| api.propagate_status(state.scope, parent_id))?;
+            // Copy to clipboard
+            copy_content_to_clipboard(raw);
+            result
+        }
+
+        // An empty pipe is an abort: no pad, no editor.
+        RequestContent::PipedEmpty => return Ok(Output::Render(aborted_create())),
+
+        // Interactive: create pad first, then open real file in editor.
+        //
+        // This arm is why the chain stops at a decision rather than resolving a
+        // string through standout's `EditorSource`: the editor runs against the
+        // pad's real file in `.padz/`, and a failed launch must delete the pad
+        // that was created to hold it.
+        RequestContent::Editor => {
+            let initial_title = title_arg.clone().unwrap_or_default();
+            let create_result = do_create(state, initial_title, String::new(), inside, format_ref)?;
+            let pad_path = create_result.pad_paths[0].clone();
+            let pad_id = create_result.affected_pads[0].pad.metadata.id;
+
+            // Open editor on the real pad file in .padz/
+            if let Err(e) = crate::cli::editor::open_in_editor(&pad_path) {
+                // Editor failed - clean up the pad
+                let _ = state.with_api(|api| api.remove_pad(state.scope, pad_id));
+                return Err(to_anyhow(e));
             }
-            None => {
-                // Empty file - user aborted
-                return Ok(Output::Render(aborted_create()));
+
+            // Refresh pad from disk (re-reads content, updates title)
+            match state.with_api(|api| api.refresh_pad(state.scope, &pad_id).map_err(to_anyhow))? {
+                Some(pad) => {
+                    // Propagate status now — pad has real content after editor,
+                    // safe from reconciliation deleting the empty file.
+                    let parent_id = pad.metadata.parent_id;
+                    state.with_api(|api| {
+                        api.propagate_status(state.scope, parent_id)
+                            .map_err(to_anyhow)
+                    })?;
+                    // Copy to clipboard
+                    copy_content_to_clipboard(&pad.content);
+                    // Build result
+                    let display_pad = padzapp::index::DisplayPad {
+                        pad,
+                        index: padzapp::index::DisplayIndex::Regular(1),
+                        matches: None,
+                        children: Vec::new(),
+                    };
+                    CmdResult {
+                        affected_pads: vec![display_pad],
+                        ..Default::default()
+                    }
+                }
+                None => {
+                    // Empty file - user aborted
+                    return Ok(Output::Render(aborted_create()));
+                }
             }
         }
     };
@@ -902,62 +901,62 @@ pub fn copy(
     api(ctx).copy_pads(&indexes, nesting)
 }
 
+/// Edit a pad.
+///
+/// Like [`create`], the content source is resolved before dispatch by
+/// `cli::input`'s chain; this handler only splits the index selectors out of
+/// the positional args and acts on the resolved decision.
 #[handler]
 pub fn edit(
     #[ctx] ctx: &CommandContext,
     #[arg] indexes: Vec<String>,
 ) -> Result<Output<ModificationResult>, anyhow::Error> {
     let state = get_state(ctx);
+    let content = ctx.input::<RequestContent>(EDIT_CONTENT)?;
 
     // Split args into index selectors and trailing content words.
     // Index patterns: digits, pN, dN, N.N, N-N, pN-pN, etc.
-    let (index_args, content_words) = split_indexes_and_content(&indexes);
+    // Only the selectors matter here; the trailing words already reached the
+    // input chain, which decided whether they are a quick-edit.
+    let (index_args, _) = split_indexes_and_content(&indexes);
 
     if index_args.is_empty() {
         return Err(anyhow::anyhow!("No pad index provided"));
     }
 
-    // In todos mode, trailing content words become a quick-edit (skip editor)
-    let inline_content = if !content_words.is_empty() {
-        let raw_text = content_words.join(" ");
-        let expanded = raw_text.replace("\\n", "\n");
-        Some(expanded)
-    } else {
-        None
+    // Writes `raw` to every selected pad.
+    let update = |raw: &str| -> Result<CmdResult, anyhow::Error> {
+        state.with_api(|api| {
+            api.update_pads_from_content(state.scope, &index_args, raw)
+                .map_err(to_anyhow)
+        })
     };
 
-    let skip_editor = state.mode == PadzMode::Todos && inline_content.is_some();
-
-    if skip_editor {
-        let raw = inline_content.unwrap();
-        let result = state.with_api(|api| {
-            api.update_pads_from_content(state.scope, &index_args, &raw)
-                .map_err(to_anyhow)
-        })?;
-
-        let clipboard_text = raw.clone();
-        let _ = copy_to_clipboard(&clipboard_text);
-
-        return Ok(Output::Render(
-            api(ctx).modification_result("Updated", result, false),
-        ));
-    }
-
-    // Check for piped stdin
-    if let Some(raw) = try_read_stdin()? {
-        if raw.is_empty() {
-            return Err(anyhow::anyhow!("Aborted: empty content"));
+    match content {
+        // Quick-edit (todos mode, inline words): the raw text is copied as typed.
+        RequestContent::Direct(raw) => {
+            let result = update(raw)?;
+            let _ = copy_to_clipboard(raw);
+            return Ok(Output::Render(
+                api(ctx).modification_result("Updated", result, false),
+            ));
         }
-        let result = state.with_api(|api| {
-            api.update_pads_from_content(state.scope, &index_args, &raw)
-                .map_err(to_anyhow)
-        })?;
 
-        copy_content_to_clipboard(&raw);
+        // Piped content is copied in the pad's title/body shape.
+        RequestContent::Piped(raw) => {
+            let result = update(raw)?;
+            copy_content_to_clipboard(raw);
+            return Ok(Output::Render(
+                api(ctx).modification_result("Updated", result, false),
+            ));
+        }
 
-        return Ok(Output::Render(
-            api(ctx).modification_result("Updated", result, false),
-        ));
+        // An empty pipe aborts the edit outright — unlike create, which reports
+        // the abort as a warning, this has always been an error.
+        RequestContent::PipedEmpty => return Err(anyhow::anyhow!("Aborted: empty content")),
+
+        // Fall through to the interactive editor below.
+        RequestContent::Editor => {}
     }
 
     // Interactive editor: open real pad file
