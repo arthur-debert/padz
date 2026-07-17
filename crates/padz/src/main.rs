@@ -8,8 +8,8 @@
 //! ## Workspace Structure
 //!
 //! Padz is organized as a Cargo workspace with two crates:
-//! - `crates/padz/` — Core library with UI-agnostic business logic
-//! - `crates/padz-cli/` — This CLI tool, depends on the `padz` library
+//! - `crates/padzapp/` — Core library with UI-agnostic business logic
+//! - `crates/padz/` — This CLI tool, depends on the `padzapp` library
 //!
 //! ## Layering
 //!
@@ -17,7 +17,7 @@
 //!
 //! ```text
 //! ┌─────────────────────────────────────────────────────────────┐
-//! │  CLI Layer (crates/padz-cli/src/cli/)                       │
+//! │  CLI Layer (crates/padz/src/cli/)                           │
 //! │  - clap argument parsing (setup.rs)                         │
 //! │  - Command selection + context wiring (commands.rs)         │
 //! │  - Terminal rendering via Standout templates (render.rs)    │
@@ -26,7 +26,7 @@
 //!                              │
 //!                              ▼
 //! ┌─────────────────────────────────────────────────────────────┐
-//! │  API Layer (crates/padz/src/api.rs)                         │
+//! │  API Layer (crates/padzapp/src/api/)                        │
 //! │  - Normalizes user-facing IDs → UUIDs                       │
 //! │  - Dispatches to command modules                            │
 //! │  - Returns structured `CmdResult` values                    │
@@ -34,7 +34,7 @@
 //!                              │
 //!                              ▼
 //! ┌─────────────────────────────────────────────────────────────┐
-//! │  Command Layer (crates/padz/src/commands/*)                 │
+//! │  Command Layer (crates/padzapp/src/commands/*)              │
 //! │  - Pure business logic + data access                        │
 //! │  - No knowledge of stdout/stderr or process exits           │
 //! └─────────────────────────────────────────────────────────────┘
@@ -56,9 +56,9 @@
 //!
 //! ## Testing Approach
 //!
-//! - **Commands layer (`crates/padz/src/commands/`)**: heavy unit testing of the
+//! - **Commands layer (`crates/padzapp/src/commands/`)**: heavy unit testing of the
 //!   business logic.
-//! - **API layer (`crates/padz/src/api.rs`)**: mock-focused tests to ensure the
+//! - **API layer (`crates/padzapp/src/api/`)**: mock-focused tests to ensure the
 //!   correct command functions are invoked with the right arguments and that
 //!   results are normalized properly.
 //! - **CLI layer (`src/cli/`)**: tests build `clap` argument strings, mock the
@@ -77,7 +77,10 @@ fn main() {
     clap_complete::CompleteEnv::with_factory(cli::setup::build_command).complete();
 
     if let Err(e) = cli::run() {
-        eprintln!("Error: {}", e);
+        // `cli::errors::render` styles the errors that carry structured data
+        // (see `padzapp::error::PadzError::AmbiguousTitle`) and falls back to
+        // `Display` for the rest.
+        eprintln!("Error: {}", cli::errors::render(&e));
         std::process::exit(1);
     }
 }

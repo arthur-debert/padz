@@ -1303,8 +1303,6 @@ dependencies = [
  "chrono",
  "clapfig",
  "confique",
- "console 0.15.11",
- "directories",
  "flate2",
  "once_cell",
  "pulldown-cmark",

@@ -21,6 +21,7 @@ pub(crate) fn make_api() -> PadzApi<TestStore> {
     let paths = PadzPaths {
         project: Some(PathBuf::from("/tmp/test")),
         global: PathBuf::from("/tmp/global"),
+        home: None,
     };
     PadzApi::new(store, paths)
 }

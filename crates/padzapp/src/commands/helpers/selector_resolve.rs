@@ -1,4 +1,4 @@
-use crate::error::{PadzError, Result};
+use crate::error::{AmbiguityCandidate, PadzError, Result};
 use crate::index::{DisplayIndex, DisplayPad, PadSelector};
 use crate::model::Scope;
 use crate::store::DataStore;
@@ -150,29 +150,28 @@ pub fn resolve_selectors<S: DataStore>(
                         results.push((path.clone(), dp.pad.metadata.id));
                     }
                     n if n <= AMBIGUITY_LIST_THRESHOLD => {
-                        let listing: String = matches
+                        let candidates = matches
                             .iter()
-                            .map(|(path, dp)| {
-                                format!(
-                                    "    {}. {}",
-                                    style_index(&fmt_path(path)),
-                                    style_title_with_match(&dp.pad.metadata.title, &term_lower)
-                                )
+                            .map(|(path, dp)| AmbiguityCandidate {
+                                index: fmt_path(path),
+                                title: dp.pad.metadata.title.clone(),
                             })
-                            .collect::<Vec<_>>()
-                            .join("\n");
-                        return Err(PadzError::Api(format!(
-                            "Term {} matches multiple pads. Use one, or be more specific:\n{}",
-                            style_match(term),
-                            listing
-                        )));
+                            .collect();
+                        return Err(PadzError::AmbiguousTitle {
+                            term: term.clone(),
+                            total: n,
+                            candidates,
+                        });
                     }
                     n => {
-                        return Err(PadzError::Api(format!(
-                            "Term {} matches {} pads. Please be more specific.",
-                            style_match(term),
-                            n
-                        )));
+                        // Above the threshold, enumerating the matches helps
+                        // nobody — report the count alone and leave
+                        // `candidates` empty.
+                        return Err(PadzError::AmbiguousTitle {
+                            term: term.clone(),
+                            total: n,
+                            candidates: Vec::new(),
+                        });
                     }
                 }
             }
@@ -180,46 +179,6 @@ pub fn resolve_selectors<S: DataStore>(
     }
 
     Ok(results)
-}
-
-/// Format a display index in the same accent color the list/search renderer
-/// uses for `list-index` (gold/yellow). When stderr is not a TTY or the
-/// terminal can't take color, `console::style` collapses to plain text on its
-/// own — no extra `IsTerminal` checks needed here.
-fn style_index(s: &str) -> String {
-    console::style(s).yellow().to_string()
-}
-
-/// Format the search term with the same yellow-background highlight the list/
-/// search renderer uses for `match` hits (yellow bg, black fg). Wraps the
-/// styled term in quotes so the message reads `Term "foo" matches ...`.
-fn style_match(term: &str) -> String {
-    format!("\"{}\"", console::style(term).black().on_yellow())
-}
-
-/// Render `title` plain, except for the substring matching `term_lower` (case-
-/// insensitive), which gets the same yellow-background highlight as search hits.
-fn style_title_with_match(title: &str, term_lower: &str) -> String {
-    if term_lower.is_empty() {
-        return title.to_string();
-    }
-    let title_lower = title.to_lowercase();
-    let mut out = String::with_capacity(title.len() + 16);
-    let mut cursor = 0usize;
-    while let Some(rel) = title_lower[cursor..].find(term_lower) {
-        let start = cursor + rel;
-        let end = start + term_lower.len();
-        out.push_str(&title[cursor..start]);
-        out.push_str(
-            &console::style(&title[start..end])
-                .black()
-                .on_yellow()
-                .to_string(),
-        );
-        cursor = end;
-    }
-    out.push_str(&title[cursor..]);
-    out
 }
 
 /// Is this pad in the bucket we're filtering to?
@@ -592,16 +551,30 @@ mod tests {
             TitleBucket::Any,
         );
 
-        assert!(result.is_err());
-        let err = result.unwrap_err().to_string();
-        // Strip ANSI styling so substring assertions are stable regardless of
-        // whether `console` decided to emit colors in this environment.
-        let plain = console::strip_ansi_codes(&err).to_string();
-        assert!(plain.contains("multiple pads"));
-        // Under the listing threshold, matches are enumerated by title.
-        assert!(plain.contains("Meeting Monday"));
-        assert!(plain.contains("Meeting Tuesday"));
-        assert!(plain.contains("Meeting Wednesday"));
+        // Under the listing threshold, every match is carried as structured
+        // candidate data — index and title, unstyled — for a presenter to
+        // render.
+        match result.unwrap_err() {
+            PadzError::AmbiguousTitle {
+                term,
+                total,
+                candidates,
+            } => {
+                assert_eq!(term, "Meeting");
+                assert_eq!(total, 3);
+                // Candidates arrive in display order — newest pad first, the
+                // same order `padz list` shows — so index N names the same pad
+                // in the error as it does in the listing the user just read.
+                let titles: Vec<&str> = candidates.iter().map(|c| c.title.as_str()).collect();
+                assert_eq!(
+                    titles,
+                    ["Meeting Wednesday", "Meeting Tuesday", "Meeting Monday"]
+                );
+                let indexes: Vec<&str> = candidates.iter().map(|c| c.index.as_str()).collect();
+                assert_eq!(indexes, ["1", "2", "3"]);
+            }
+            other => panic!("expected AmbiguousTitle; got {other:?}"),
+        }
     }
 
     #[test]
@@ -1387,10 +1360,67 @@ mod tests {
             false,
             TitleBucket::Active,
         );
-        assert!(result.is_err());
-        let err = result.unwrap_err().to_string();
-        // Over the threshold we fall back to a count-only error, without enumerating titles.
-        assert!(err.contains("6 pads"));
-        assert!(!err.contains("Meeting 1"));
+        // Over the threshold we report the count alone: `total` is the full
+        // match count and `candidates` is empty, so no presenter enumerates
+        // six near-identical titles.
+        match result.unwrap_err() {
+            PadzError::AmbiguousTitle {
+                term,
+                total,
+                candidates,
+            } => {
+                assert_eq!(term, "Meeting");
+                assert_eq!(total, 6);
+                assert!(
+                    candidates.is_empty(),
+                    "over-threshold matches must not be enumerated; got {candidates:?}"
+                );
+            }
+            other => panic!("expected AmbiguousTitle; got {other:?}"),
+        }
+    }
+
+    /// The library's own rendering of an ambiguity is plain text: readable,
+    /// but carrying no terminal styling. Styling is the CLI's job (see
+    /// `padz::cli::errors`), so nothing here may emit an escape sequence.
+    #[test]
+    fn test_title_ambiguity_display_is_plain_text() {
+        let err = PadzError::AmbiguousTitle {
+            term: "Meeting".to_string(),
+            total: 2,
+            candidates: vec![
+                AmbiguityCandidate {
+                    index: "1".to_string(),
+                    title: "Meeting Monday".to_string(),
+                },
+                AmbiguityCandidate {
+                    index: "p2".to_string(),
+                    title: "Meeting Tuesday".to_string(),
+                },
+            ],
+        };
+        let rendered = err.to_string();
+        assert!(
+            !rendered.contains('\x1b'),
+            "library errors must not carry ANSI; got {rendered:?}"
+        );
+        assert!(rendered.contains("Meeting Monday"));
+        assert!(rendered.contains("    1. Meeting Monday"));
+        assert!(rendered.contains("    p2. Meeting Tuesday"));
+    }
+
+    /// Over the threshold, `Display` reports the count and never invents a
+    /// listing out of the empty `candidates`.
+    #[test]
+    fn test_title_ambiguity_display_count_only_when_no_candidates() {
+        let err = PadzError::AmbiguousTitle {
+            term: "Meeting".to_string(),
+            total: 6,
+            candidates: Vec::new(),
+        };
+        let rendered = err.to_string();
+        assert!(rendered.contains("6 pads"));
+        assert!(rendered.contains("more specific"));
+        assert!(!rendered.contains('\x1b'));
     }
 }

@@ -72,7 +72,10 @@ impl TransferMode {
 /// `init::resolve_link` — matches the CLI's read-side discovery so a
 /// linked store is treated the same whether accessed via `clone`/`migrate`
 /// or the normal command pipeline.
-pub fn resolve_target_dir(path: &Path) -> Result<PathBuf> {
+///
+/// `home_dir` bounds the upward walk in case 3, exactly as it does for
+/// `init::find_padz_root`; `None` walks to the filesystem root.
+pub fn resolve_target_dir(path: &Path, home_dir: Option<&Path>) -> Result<PathBuf> {
     let path = path
         .canonicalize()
         .map_err(|e| PadzError::Api(format!("Target path '{}': {}", path.display(), e)))?;
@@ -81,7 +84,7 @@ pub fn resolve_target_dir(path: &Path) -> Result<PathBuf> {
         path
     } else if path.join(".padz").is_dir() {
         path.join(".padz")
-    } else if let Some(root) = find_padz_root(&path) {
+    } else if let Some(root) = find_padz_root(&path, home_dir) {
         root.join(".padz")
     } else {
         return Err(PadzError::Api(format!(
@@ -1057,7 +1060,7 @@ mod tests {
         let padz_dir = temp.path().join(".padz");
         init_layout(&padz_dir);
 
-        let resolved = resolve_target_dir(&padz_dir).unwrap();
+        let resolved = resolve_target_dir(&padz_dir, None).unwrap();
         assert_eq!(resolved, padz_dir.canonicalize().unwrap());
     }
 
@@ -1068,7 +1071,7 @@ mod tests {
         std::fs::create_dir_all(&project).unwrap();
         init_layout(&project.join(".padz"));
 
-        let resolved = resolve_target_dir(&project).unwrap();
+        let resolved = resolve_target_dir(&project, None).unwrap();
         assert_eq!(resolved, project.join(".padz").canonicalize().unwrap());
     }
 
@@ -1080,7 +1083,7 @@ mod tests {
         std::fs::create_dir_all(&nested).unwrap();
         init_layout(&project.join(".padz"));
 
-        let resolved = resolve_target_dir(&nested).unwrap();
+        let resolved = resolve_target_dir(&nested, None).unwrap();
         assert_eq!(resolved, project.join(".padz").canonicalize().unwrap());
     }
 
@@ -1090,7 +1093,7 @@ mod tests {
         // deterministic regardless of what exists on the host filesystem.
         let temp = tempfile::tempdir().unwrap();
         let missing = temp.path().join("does-not-exist");
-        let err = resolve_target_dir(&missing).unwrap_err();
+        let err = resolve_target_dir(&missing, None).unwrap_err();
         // Either "Target path '…': No such file" or "No padz store found" —
         // both signal the same user-visible failure to locate a store.
         let msg = err.to_string();

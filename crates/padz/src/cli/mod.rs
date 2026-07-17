@@ -59,8 +59,12 @@
 //! - `render`: Render-time view derivation for standout's templates
 //! - `setup`: Argument parsing via clap, help text
 
+pub mod clipboard;
 mod commands;
 mod complete;
+pub mod editor;
+pub mod env;
+pub mod errors;
 pub mod handlers;
 pub mod render;
 pub mod result;

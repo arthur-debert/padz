@@ -11,8 +11,11 @@
 //! ## The Scopes
 //!
 //! - **Project**: Bound to a specific `.padz/` directory. Data lives in `<project_root>/.padz/`.
-//! - **Global**: Bound to the user. Data lives in the OS-appropriate data directory
-//!   (via the `directories` crate).
+//! - **Global**: Bound to the user. Data lives wherever the caller says it does —
+//!   this module does not go looking. The application resolves the global data
+//!   directory (and the home boundary the walks stop at) and passes both in via
+//!   [`PadzEnv`]; the padz CLI reads `$PADZ_GLOBAL_DATA` with an OS-data-directory
+//!   fallback.
 //!
 //! ## Two Discovery Modes
 //!
@@ -25,7 +28,7 @@
 //! 1. Start at `CWD`.
 //! 2. If `current/.padz` exists → this is the project root.
 //! 3. Otherwise move to the parent directory.
-//! 4. Stop at `$HOME` or the filesystem root; return `None`.
+//! 4. Stop at the caller-supplied home boundary or the filesystem root; return `None`.
 //!
 //! If a `.padz` is found, it is used (resolving any `link` file). Otherwise the read
 //! falls back to the global store.
@@ -75,18 +78,39 @@
 
 use crate::api::{PadzApi, PadzPaths};
 use crate::config::PadzConfig;
-use crate::error::PadzError;
+use crate::error::{InitWarning, PadzError};
 use crate::model::Scope;
 use crate::store::fs::FileStore;
 use clapfig::{Clapfig, SearchMode, SearchPath};
-use directories::{BaseDirs, ProjectDirs};
 use std::path::{Path, PathBuf};
 use uuid::Uuid;
+
+/// The environment inputs initialization depends on, resolved by the caller.
+///
+/// Both fields are questions about the *user's machine* rather than about pads,
+/// so this library refuses to answer them itself: reading `$PADZ_GLOBAL_DATA`
+/// or asking the `directories` crate where a home directory lives would make
+/// every consumer inherit the CLI's idea of an environment, and would make
+/// tests fight over process-global state. The application resolves them once at
+/// its composition root (see `padz::cli::env`) and passes them in.
+#[derive(Debug, Clone)]
+pub struct PadzEnv {
+    /// Where global-scope pads live. The CLI resolves this from
+    /// `$PADZ_GLOBAL_DATA`, falling back to the OS data directory.
+    pub global_data_dir: PathBuf,
+    /// The user's home directory, used only as the stopping point for the
+    /// upward `.padz`/`.git` walks. `None` means "walk to the filesystem root".
+    pub home_dir: Option<PathBuf>,
+}
 
 pub struct PadzContext {
     pub api: PadzApi<FileStore>,
     pub scope: Scope,
     pub config: PadzConfig,
+    /// Non-fatal conditions raised during initialization (e.g. a legacy layout
+    /// that could not be migrated). Initialization succeeded regardless; it is
+    /// the application's call whether and how to show these to the user.
+    pub warnings: Vec<InitWarning>,
 }
 
 /// Materialize the padz store layout (`active/`, `archived/`, `deleted/`) at
@@ -107,9 +131,12 @@ pub fn create_bucket_layout(padz_dir: &Path) -> std::io::Result<()> {
 /// existing store, regardless of whether the enclosing directory is a git repo.
 /// `.padz` must be a directory; a stray regular file with that name is ignored
 /// so it cannot masquerade as a store and trip later I/O.
-/// Stops at `$HOME` or the filesystem root and returns `None`.
-pub fn find_padz_root(cwd: &Path) -> Option<PathBuf> {
-    walk_up_matching(cwd, |dir| dir.join(".padz").is_dir())
+///
+/// The walk stops at `home_dir` (exclusive) or the filesystem root, returning
+/// `None`. Pass `None` for `home_dir` to walk all the way to the root; the CLI
+/// passes the real home directory (see [`PadzEnv::home_dir`]).
+pub fn find_padz_root(cwd: &Path, home_dir: Option<&Path>) -> Option<PathBuf> {
+    walk_up_matching(cwd, home_dir, |dir| dir.join(".padz").is_dir())
 }
 
 /// Walk upward from `cwd` looking for a directory that contains a `.git` entry
@@ -119,19 +146,20 @@ pub fn find_padz_root(cwd: &Path) -> Option<PathBuf> {
 /// where to create a new `.padz/` when none is found upward. Accepts `.git` as
 /// either a directory (normal repo) or a regular file (git worktrees and
 /// submodules store the real gitdir elsewhere and leave a `.git` file pointer).
-/// Stops at `$HOME` or the filesystem root and returns `None`.
-pub fn find_git_root(cwd: &Path) -> Option<PathBuf> {
-    walk_up_matching(cwd, |dir| dir.join(".git").exists())
+///
+/// The walk stops at `home_dir` (exclusive) or the filesystem root, returning
+/// `None`. See [`find_padz_root`] for the `home_dir` contract.
+pub fn find_git_root(cwd: &Path, home_dir: Option<&Path>) -> Option<PathBuf> {
+    walk_up_matching(cwd, home_dir, |dir| dir.join(".git").exists())
 }
 
 /// Shared upward-walk helper. Returns the first ancestor (including `cwd`
-/// itself) for which `matches` returns true. Stops at `$HOME` or the
-/// filesystem root.
-fn walk_up_matching<F>(cwd: &Path, matches: F) -> Option<PathBuf>
+/// itself) for which `matches` returns true. Stops at `home_dir` (exclusive)
+/// or the filesystem root.
+fn walk_up_matching<F>(cwd: &Path, home_dir: Option<&Path>, matches: F) -> Option<PathBuf>
 where
     F: Fn(&Path) -> bool,
 {
-    let home_dir = BaseDirs::new().map(|bd| bd.home_dir().to_path_buf());
     let mut current = cwd.to_path_buf();
 
     loop {
@@ -139,8 +167,8 @@ where
             return Some(current);
         }
 
-        if let Some(ref home) = home_dir {
-            if &current == home {
+        if let Some(home) = home_dir {
+            if current == home {
                 return None;
             }
         }
@@ -217,6 +245,8 @@ pub fn resolve_link(padz_dir: &Path) -> crate::error::Result<Option<PathBuf>> {
 ///
 /// # Arguments
 ///
+/// * `env` - Environment-derived inputs ([`PadzEnv`]): where global pads live
+///   and where the upward walk stops. Resolved by the caller, never probed here.
 /// * `cwd` - The current working directory to start scope detection from
 /// * `use_global` - If true, forces `Scope::Global` regardless of detection
 /// * `data_override` - Optional explicit path to the data directory.
@@ -228,10 +258,12 @@ pub fn resolve_link(padz_dir: &Path) -> crate::error::Result<Option<PathBuf>> {
 ///   returning `Scope::Project`. Only write commands (`create`, `import`) should
 ///   pass `true`; reads pass `false` and fall back to global cleanly.
 ///
-/// # Environment Variables
+/// # Warnings
 ///
-/// * `PADZ_GLOBAL_DATA` - If set, overrides the default global data directory.
-///   This is primarily used for testing to isolate global state.
+/// Best-effort work that fails without stopping the command (currently only
+/// legacy-layout migration) is reported as [`InitWarning`] values on the
+/// returned [`PadzContext::warnings`]. This function writes nothing to stderr;
+/// surfacing warnings is the caller's decision.
 ///
 /// # Errors
 ///
@@ -251,38 +283,33 @@ pub fn resolve_link(padz_dir: &Path) -> crate::error::Result<Option<PathBuf>> {
 /// # Examples
 ///
 /// ```ignore
+/// // The application resolves the environment once, at its composition root.
+/// let env = PadzEnv { global_data_dir, home_dir };
+///
 /// // Read path: discover .padz upward, else global
-/// let ctx = initialize(&cwd, false, None, false)?;
+/// let ctx = initialize(&env, &cwd, false, None, false)?;
 ///
 /// // Write path: discover .padz upward; if none, auto-init at git root; else global
-/// let ctx = initialize(&cwd, false, None, true)?;
+/// let ctx = initialize(&env, &cwd, false, None, true)?;
 ///
 /// // Force global scope
-/// let ctx = initialize(&cwd, true, None, false)?;
+/// let ctx = initialize(&env, &cwd, true, None, false)?;
 ///
 /// // Use explicit data directory - path ends with .padz, used directly
-/// let ctx = initialize(&cwd, false, Some(PathBuf::from("/path/to/project/.padz")), false)?;
+/// let ctx = initialize(&env, &cwd, false, Some(PathBuf::from("/path/to/project/.padz")), false)?;
 ///
 /// // Use explicit project directory - .padz is appended
-/// let ctx = initialize(&cwd, false, Some(PathBuf::from("/path/to/project")), false)?;
+/// let ctx = initialize(&env, &cwd, false, Some(PathBuf::from("/path/to/project")), false)?;
 /// ```
 pub fn initialize(
+    env: &PadzEnv,
     cwd: &Path,
     use_global: bool,
     data_override: Option<PathBuf>,
     auto_init_for_write: bool,
 ) -> crate::error::Result<PadzContext> {
-    // Determine global data directory:
-    // 1. Check PADZ_GLOBAL_DATA environment variable (primarily for testing)
-    // 2. Fall back to OS-appropriate data directory via directories crate
-    let global_data_dir = std::env::var("PADZ_GLOBAL_DATA")
-        .ok()
-        .map(PathBuf::from)
-        .unwrap_or_else(|| {
-            let proj_dirs =
-                ProjectDirs::from("com", "padz", "padz").expect("Could not determine config dir");
-            proj_dirs.data_dir().to_path_buf()
-        });
+    let global_data_dir = env.global_data_dir.clone();
+    let home_dir = env.home_dir.as_deref();
 
     // Determine project data directory and scope:
     // 1. If use_global → Global scope, no project dir
@@ -305,7 +332,7 @@ pub fn initialize(
                 };
                 (Some(dir), Scope::Project)
             }
-            None => match find_padz_root(cwd) {
+            None => match find_padz_root(cwd, home_dir) {
                 Some(root) => {
                     let detected = root.join(".padz");
                     // Follow .padz/link if present. A broken/uninitialized/
@@ -326,7 +353,7 @@ pub fn initialize(
                     // a git root IS found but layout creation fails, surface
                     // the error — the write would otherwise silently land in
                     // Global despite the user sitting in a git repo.
-                    match find_git_root(cwd) {
+                    match find_git_root(cwd, home_dir) {
                         Some(git_root) => {
                             let new_padz = git_root.join(".padz");
                             create_bucket_layout(&new_padz).map_err(|err| {
@@ -367,21 +394,30 @@ pub fn initialize(
     crate::index::set_ordering_key(config.ordering);
     let format_ext = config.format_ext();
 
-    // Migrate legacy flat layout to bucketed layout (if needed)
+    // Migrate legacy flat layout to bucketed layout (if needed). Failures are
+    // collected rather than printed: the command still runs, and the caller
+    // decides how to tell the user.
+    let mut warnings = Vec::new();
     if let Some(ref project_dir) = project_padz_dir {
-        migrate_if_needed(project_dir);
+        warnings.extend(migrate_if_needed(project_dir));
     }
-    migrate_if_needed(&global_data_dir);
+    warnings.extend(migrate_if_needed(&global_data_dir));
 
     let store = FileStore::new_fs(project_padz_dir.clone(), global_data_dir.clone())
         .with_format(&format_ext);
     let paths = PadzPaths {
         project: project_padz_dir,
         global: global_data_dir,
+        home: env.home_dir.clone(),
     };
     let api = PadzApi::new(store, paths);
 
-    Ok(PadzContext { api, scope, config })
+    Ok(PadzContext {
+        api,
+        scope,
+        config,
+        warnings,
+    })
 }
 
 /// Migrates a legacy flat `.padz/` layout to the bucketed layout.
@@ -410,23 +446,25 @@ pub fn initialize(
 ///
 /// Detection: `data.json` exists at root AND `active/` does NOT exist.
 /// Idempotent: only runs if legacy layout detected.
-fn migrate_if_needed(scope_root: &Path) {
+///
+/// Best-effort: a failure is returned as an [`InitWarning`] for the caller to
+/// surface, not printed, and never aborts initialization — the legacy store is
+/// left untouched and stays readable.
+fn migrate_if_needed(scope_root: &Path) -> Option<InitWarning> {
     let legacy_data = scope_root.join("data.json");
     let active_dir = scope_root.join("active");
 
     // Only migrate if legacy data.json exists and active/ doesn't
     if !legacy_data.exists() || active_dir.exists() {
-        return;
+        return None;
     }
 
-    // Best-effort migration — log errors but don't crash
-    if let Err(e) = migrate_flat_to_bucketed(scope_root) {
-        eprintln!(
-            "Warning: migration of {} failed: {}",
-            scope_root.display(),
-            e
-        );
-    }
+    migrate_flat_to_bucketed(scope_root)
+        .err()
+        .map(|e| InitWarning::MigrationFailed {
+            path: scope_root.to_path_buf(),
+            error: e.to_string(),
+        })
 }
 
 fn migrate_flat_to_bucketed(scope_root: &Path) -> std::io::Result<()> {
@@ -533,6 +571,27 @@ mod tests {
     use std::fs;
     use tempfile::TempDir;
 
+    /// A [`PadzEnv`] for tests.
+    ///
+    /// Global scope points at a unique scratch path that is never created:
+    /// these tests exercise project-scope resolution, and pointing global at a
+    /// path of our own keeps them off the developer's real global store —
+    /// which the old env-reading `initialize` could otherwise touch and
+    /// migrate.
+    ///
+    /// `home_dir: None` lets the upward walk run to the filesystem root, which
+    /// is what tempdir fixtures need: they live outside `$HOME`, so a real
+    /// home boundary would never be hit anyway.
+    fn test_env() -> PadzEnv {
+        use std::sync::atomic::{AtomicUsize, Ordering};
+        static COUNTER: AtomicUsize = AtomicUsize::new(0);
+        let n = COUNTER.fetch_add(1, Ordering::Relaxed);
+        PadzEnv {
+            global_data_dir: std::env::temp_dir().join(format!("padz-test-global-{n}")),
+            home_dir: None,
+        }
+    }
+
     // --- find_padz_root tests ---
 
     #[test]
@@ -543,7 +602,7 @@ mod tests {
         let root = temp.path();
         fs::create_dir(root.join(".padz")).unwrap();
 
-        let result = find_padz_root(root);
+        let result = find_padz_root(root, None);
         assert_eq!(result, Some(root.to_path_buf()));
     }
 
@@ -555,7 +614,7 @@ mod tests {
         fs::create_dir_all(&child).unwrap();
         fs::create_dir(parent.join(".padz")).unwrap();
 
-        assert_eq!(find_padz_root(&child), Some(parent.to_path_buf()));
+        assert_eq!(find_padz_root(&child, None), Some(parent.to_path_buf()));
     }
 
     #[test]
@@ -568,7 +627,7 @@ mod tests {
         fs::create_dir(outer.join(".padz")).unwrap();
         fs::create_dir(inner.join(".padz")).unwrap();
 
-        assert_eq!(find_padz_root(&inner), Some(inner));
+        assert_eq!(find_padz_root(&inner, None), Some(inner));
     }
 
     #[test]
@@ -577,7 +636,7 @@ mod tests {
         let dir = temp.path().join("a").join("b");
         fs::create_dir_all(&dir).unwrap();
 
-        assert_eq!(find_padz_root(&dir), None);
+        assert_eq!(find_padz_root(&dir, None), None);
     }
 
     // --- find_git_root tests ---
@@ -588,7 +647,7 @@ mod tests {
         let root = temp.path();
         fs::create_dir(root.join(".git")).unwrap();
 
-        assert_eq!(find_git_root(root), Some(root.to_path_buf()));
+        assert_eq!(find_git_root(root, None), Some(root.to_path_buf()));
     }
 
     #[test]
@@ -600,7 +659,7 @@ mod tests {
         fs::create_dir_all(&sub).unwrap();
         fs::create_dir(repo.join(".git")).unwrap();
 
-        assert_eq!(find_git_root(&sub), Some(repo.to_path_buf()));
+        assert_eq!(find_git_root(&sub, None), Some(repo.to_path_buf()));
     }
 
     #[test]
@@ -613,7 +672,7 @@ mod tests {
         fs::create_dir(outer.join(".git")).unwrap();
         fs::create_dir(inner.join(".git")).unwrap();
 
-        assert_eq!(find_git_root(&inner), Some(inner));
+        assert_eq!(find_git_root(&inner, None), Some(inner));
     }
 
     #[test]
@@ -622,7 +681,7 @@ mod tests {
         let dir = temp.path().join("a");
         fs::create_dir_all(&dir).unwrap();
 
-        assert_eq!(find_git_root(&dir), None);
+        assert_eq!(find_git_root(&dir, None), None);
     }
 
     #[test]
@@ -635,7 +694,7 @@ mod tests {
         let root = temp.path();
         fs::write(root.join(".padz"), "not a store").unwrap();
 
-        assert_eq!(find_padz_root(root), None);
+        assert_eq!(find_padz_root(root, None), None);
     }
 
     #[test]
@@ -652,7 +711,7 @@ mod tests {
         )
         .unwrap();
 
-        assert_eq!(find_git_root(&worktree), Some(worktree));
+        assert_eq!(find_git_root(&worktree, None), Some(worktree));
     }
 
     #[test]
@@ -669,7 +728,7 @@ mod tests {
         let sub = repo.join("src");
         fs::create_dir_all(&sub).unwrap();
 
-        let msg = match initialize(&sub, false, None, true) {
+        let msg = match initialize(&test_env(), &sub, false, None, true) {
             Ok(_) => panic!("expected auto-init failure, got Ok"),
             Err(e) => e.to_string(),
         };
@@ -699,7 +758,7 @@ mod tests {
         )
         .unwrap();
 
-        let msg = match initialize(&project, false, None, false) {
+        let msg = match initialize(&test_env(), &project, false, None, false) {
             Ok(_) => panic!("expected broken-link error, got Ok"),
             Err(e) => e.to_string(),
         };
@@ -720,14 +779,14 @@ mod tests {
         fs::create_dir(padz_only.join(".padz")).unwrap();
         fs::create_dir(git_only.join(".git")).unwrap();
 
-        assert_eq!(find_padz_root(&padz_only), Some(padz_only.clone()));
-        assert_eq!(find_git_root(&padz_only), None);
+        assert_eq!(find_padz_root(&padz_only, None), Some(padz_only.clone()));
+        assert_eq!(find_git_root(&padz_only, None), None);
 
-        assert_eq!(find_git_root(&git_only), Some(git_only.clone()));
-        assert_eq!(find_padz_root(&git_only), None);
+        assert_eq!(find_git_root(&git_only, None), Some(git_only.clone()));
+        assert_eq!(find_padz_root(&git_only, None), None);
     }
 
-    // --- initialize() with data_override tests ---
+    // --- initialize(&test_env(), ) with data_override tests ---
 
     #[test]
     fn test_initialize_with_data_override_ending_in_padz() {
@@ -742,7 +801,7 @@ mod tests {
         fs::create_dir_all(&override_dir).unwrap();
 
         // Initialize with override ending in .padz - should use it directly
-        let ctx = initialize(repo, false, Some(override_dir.clone()), false).unwrap();
+        let ctx = initialize(&test_env(), repo, false, Some(override_dir.clone()), false).unwrap();
 
         // Verify the override path is used directly (no .padz appended)
         assert_eq!(ctx.api.paths().project, Some(override_dir));
@@ -762,7 +821,7 @@ mod tests {
         fs::create_dir_all(&override_dir).unwrap();
 
         // Initialize with override - should append .padz
-        let ctx = initialize(repo, false, Some(override_dir.clone()), false).unwrap();
+        let ctx = initialize(&test_env(), repo, false, Some(override_dir.clone()), false).unwrap();
 
         // Verify .padz was appended
         assert_eq!(ctx.api.paths().project, Some(override_dir.join(".padz")));
@@ -778,7 +837,7 @@ mod tests {
         fs::create_dir(repo.join(".padz")).unwrap();
 
         // Initialize without override - should use detected .padz
-        let ctx = initialize(repo, false, None, false).unwrap();
+        let ctx = initialize(&test_env(), repo, false, None, false).unwrap();
 
         // Verify the detected path is used
         assert_eq!(ctx.api.paths().project, Some(repo.join(".padz")));
@@ -800,7 +859,7 @@ mod tests {
         // Initialize with override AND global flag
         // Global flag wins: scope is Global, project path is None
         // Note: CLI prevents this combination (--data conflicts with -g)
-        let ctx = initialize(repo, true, Some(override_dir), false).unwrap();
+        let ctx = initialize(&test_env(), repo, true, Some(override_dir), false).unwrap();
 
         assert_eq!(ctx.api.paths().project, None);
         assert_eq!(ctx.scope, crate::model::Scope::Global);
@@ -821,7 +880,14 @@ mod tests {
         fs::create_dir_all(&workdir).unwrap();
 
         // Initialize from workdir, pointing to project's .padz
-        let ctx = initialize(&workdir, false, Some(project.join(".padz")), false).unwrap();
+        let ctx = initialize(
+            &test_env(),
+            &workdir,
+            false,
+            Some(project.join(".padz")),
+            false,
+        )
+        .unwrap();
 
         // Should use project's .padz path
         assert_eq!(ctx.api.paths().project, Some(project.join(".padz")));
@@ -839,7 +905,7 @@ mod tests {
         fs::create_dir_all(project.join(".padz").join("active")).unwrap();
         // No .git on purpose.
 
-        let ctx = initialize(&project, false, None, false).unwrap();
+        let ctx = initialize(&test_env(), &project, false, None, false).unwrap();
 
         assert_eq!(ctx.api.paths().project, Some(project.join(".padz")));
         assert_eq!(ctx.scope, Scope::Project);
@@ -857,7 +923,7 @@ mod tests {
         fs::create_dir_all(&sub).unwrap();
         fs::create_dir(repo.join(".git")).unwrap();
 
-        let ctx = initialize(&sub, false, None, true).unwrap();
+        let ctx = initialize(&test_env(), &sub, false, None, true).unwrap();
 
         assert_eq!(ctx.api.paths().project, Some(repo.join(".padz")));
         assert_eq!(ctx.scope, Scope::Project);
@@ -877,7 +943,7 @@ mod tests {
         fs::create_dir_all(&sub).unwrap();
         fs::create_dir(repo.join(".git")).unwrap();
 
-        let ctx = initialize(&sub, false, None, false).unwrap();
+        let ctx = initialize(&test_env(), &sub, false, None, false).unwrap();
 
         assert_eq!(ctx.scope, Scope::Global);
         assert_eq!(ctx.api.paths().project, None);
@@ -891,7 +957,7 @@ mod tests {
         let dir = temp.path().join("loose").join("dir");
         fs::create_dir_all(&dir).unwrap();
 
-        let ctx = initialize(&dir, false, None, true).unwrap();
+        let ctx = initialize(&test_env(), &dir, false, None, true).unwrap();
 
         assert_eq!(ctx.scope, Scope::Global);
         assert_eq!(ctx.api.paths().project, None);
@@ -909,7 +975,7 @@ mod tests {
         fs::create_dir(parent.join(".padz")).unwrap();
         fs::create_dir(child.join(".git")).unwrap();
 
-        let ctx = initialize(&child, false, None, true).unwrap();
+        let ctx = initialize(&test_env(), &child, false, None, true).unwrap();
 
         assert_eq!(ctx.api.paths().project, Some(parent.join(".padz")));
         // Child must not have had a .padz created under it.
@@ -1032,6 +1098,120 @@ mod tests {
 
         // No bucket directories should be created
         assert!(!root.join("active").exists());
+    }
+
+    /// A migration that cannot proceed reports a warning as *data* — the
+    /// library writes nothing to stderr — and leaves the legacy store alone.
+    #[test]
+    fn test_migration_failure_is_returned_as_a_warning() {
+        let temp = TempDir::new().unwrap();
+        let root = temp.path().join(".padz");
+        fs::create_dir_all(&root).unwrap();
+        // Unparseable legacy data: detected as a legacy layout, fails to migrate.
+        fs::write(root.join("data.json"), "{ not json").unwrap();
+
+        let warning = migrate_if_needed(&root).expect("expected a migration warning");
+        match &warning {
+            InitWarning::MigrationFailed { path, error } => {
+                assert_eq!(path, &root);
+                assert!(!error.is_empty(), "warning should say what went wrong");
+            }
+        }
+        // Rendered for humans by the CLI, and it names the store.
+        assert!(
+            warning.to_string().contains("migration of"),
+            "got: {warning}"
+        );
+        // The legacy file is untouched, so the store stays readable.
+        assert!(root.join("data.json").exists());
+    }
+
+    /// A successful migration is silent: no warning to surface.
+    #[test]
+    fn test_successful_migration_reports_no_warning() {
+        let temp = TempDir::new().unwrap();
+        let root = temp.path().join(".padz");
+        fs::create_dir_all(&root).unwrap();
+        fs::write(root.join("data.json"), "{}").unwrap();
+
+        assert!(migrate_if_needed(&root).is_none());
+        assert!(root.join("active").exists());
+    }
+
+    /// `initialize` surfaces migration warnings on the context rather than
+    /// printing them, so the caller decides whether the user hears about it.
+    #[test]
+    fn test_initialize_surfaces_migration_warnings_as_data() {
+        let temp = TempDir::new().unwrap();
+        let project = temp.path().join("proj");
+        let padz_dir = project.join(".padz");
+        fs::create_dir_all(&padz_dir).unwrap();
+        fs::write(padz_dir.join("data.json"), "{ not json").unwrap();
+
+        let ctx = initialize(&test_env(), &project, false, None, false).unwrap();
+
+        // Initialization still succeeded — the warning is advisory.
+        assert_eq!(ctx.scope, crate::model::Scope::Project);
+        assert!(
+            ctx.warnings.iter().any(|w| matches!(
+                w,
+                InitWarning::MigrationFailed { path, .. } if path == &padz_dir
+            )),
+            "expected a MigrationFailed warning for {}; got {:?}",
+            padz_dir.display(),
+            ctx.warnings
+        );
+    }
+
+    /// Global scope goes exactly where `PadzEnv` says, with no environment
+    /// consulted. Guards the boundary: if someone reintroduces a
+    /// `$PADZ_GLOBAL_DATA` read inside the library, the env var set here would
+    /// win over the explicit value and this fails.
+    #[test]
+    fn test_global_data_dir_comes_from_env_argument_only() {
+        let temp = TempDir::new().unwrap();
+        let explicit = temp.path().join("explicit-global");
+        let env = PadzEnv {
+            global_data_dir: explicit.clone(),
+            home_dir: None,
+        };
+
+        std::env::set_var("PADZ_GLOBAL_DATA", temp.path().join("decoy"));
+        let ctx = initialize(&env, temp.path(), true, None, false).unwrap();
+        std::env::remove_var("PADZ_GLOBAL_DATA");
+
+        assert_eq!(ctx.scope, crate::model::Scope::Global);
+        assert_eq!(ctx.api.paths().global, explicit);
+    }
+
+    /// The home boundary is an input too: the upward walk stops there and does
+    /// not consult the real `$HOME`.
+    #[test]
+    fn test_home_dir_argument_bounds_the_upward_walk() {
+        let temp = TempDir::new().unwrap();
+        let home = temp.path().join("home");
+        let child = home.join("a").join("b");
+        fs::create_dir_all(&child).unwrap();
+        // A store ABOVE the home boundary must not be found from below it.
+        fs::create_dir_all(temp.path().join(".padz")).unwrap();
+
+        assert_eq!(find_padz_root(&child, Some(&home)), None);
+        // Without the boundary, the same walk reaches it.
+        assert_eq!(
+            find_padz_root(&child, None),
+            Some(temp.path().to_path_buf())
+        );
+    }
+
+    /// The common case: nothing to migrate, so nothing to report.
+    #[test]
+    fn test_initialize_without_migration_has_no_warnings() {
+        let temp = TempDir::new().unwrap();
+        let project = temp.path().join("proj");
+        fs::create_dir_all(project.join(".padz").join("active")).unwrap();
+
+        let ctx = initialize(&test_env(), &project, false, None, false).unwrap();
+        assert!(ctx.warnings.is_empty(), "got: {:?}", ctx.warnings);
     }
 
     #[test]
@@ -1195,7 +1375,7 @@ mod tests {
         .unwrap();
 
         // Initialize from project-b — should follow link to project-a
-        let ctx = initialize(&project_b, false, None, false).unwrap();
+        let ctx = initialize(&test_env(), &project_b, false, None, false).unwrap();
         assert_eq!(
             ctx.api.paths().project,
             Some(project_a.canonicalize().unwrap().join(".padz"))
