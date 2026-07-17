@@ -3,8 +3,9 @@
 //! # The seam this file protects
 //!
 //! Everything between argv and rendered output, in process: clap parsing, the
-//! pre-dispatch input chains, dispatch to the right handler, the view builders,
-//! the templates, the stylesheet, and the output-mode matrix. It is the only
+//! declaratively registered pre-dispatch input chains, dispatch to the right
+//! handler, the view builders, the templates, the stylesheet, and the
+//! output-mode matrix. It is the only
 //! layer that can catch a flag wired to the wrong parameter, a template that
 //! reads a field the result no longer carries, or a structured mode that
 //! accidentally renders human text.
@@ -31,6 +32,11 @@
 //! a spawned process has no pty, so its stdin can never *be* a terminal, and its
 //! terminal width can never be forced — the harness injects both as values. See
 //! each section for what its old file could not reach.
+//!
+//! `create`, `edit`, and `open` are registered explicitly at app assembly so
+//! Standout owns their input bags. The direct, piped, empty-pipe, editor, and
+//! shared-`open` cases below therefore also guard that composition-root wiring:
+//! if a named input is not installed, the handlers' typed lookups fail.
 
 mod support;
 
@@ -515,8 +521,8 @@ fn open_shares_edits_input_resolution() {
     fx.seed_pad(&state, "Orig", "");
     drop(state);
 
-    // `open` aliases `edit`'s handler; without its own chain registration the
-    // handler's input lookup would fail outright.
+    // `open` aliases `edit`'s handler; its explicit declarative registration
+    // must supply the same named input or typed retrieval fails outright.
     let (app, cmd) = fx.app(&["list"]);
     let result = TestHarness::new()
         .no_color()

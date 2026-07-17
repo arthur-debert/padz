@@ -84,6 +84,15 @@ pub fn run() -> Result<()> {
 /// templates, styles, and dispatch table the binary uses. Building the app twice —
 /// once for the binary, once for tests — is exactly the drift this avoids.
 pub fn build_dispatch_app(app_state: AppState) -> App {
+    // Input policy depends on the configured mode, so construct the chains at
+    // assembly time before moving the durable state into Standout. These three
+    // commands are skipped by the Dispatch derive and registered explicitly so
+    // Standout owns deepest-match resolution and the request-scoped Inputs bag.
+    let mode = app_state.mode;
+    let create_content = super::input::create_chain(mode);
+    let edit_content = super::input::edit_chain(mode);
+    let open_content = super::input::edit_chain(mode);
+
     App::builder()
         .app_state(app_state)
         .templates(embed_templates!("src/cli/templates"))
@@ -95,6 +104,24 @@ pub fn build_dispatch_app(app_state: AppState) -> App {
         .context_fn(MODIFICATION_VIEW, modification_view_provider)
         .commands(Commands::dispatch_config())
         .expect("Failed to configure commands")
+        .command_with("create", super::handlers::create__handler, |config| {
+            config
+                .template("modification_result")
+                .input(super::input::CREATE_CONTENT, create_content)
+        })
+        .expect("Failed to configure create input")
+        .command_with("edit", super::handlers::edit__handler, |config| {
+            config
+                .template("modification_result")
+                .input(super::input::EDIT_CONTENT, edit_content)
+        })
+        .expect("Failed to configure edit input")
+        .command_with("open", super::handlers::edit__handler, |config| {
+            config
+                .template("modification_result")
+                .input(super::input::EDIT_CONTENT, open_content)
+        })
+        .expect("Failed to configure open input")
         .build()
         .expect("Failed to build app")
 }
