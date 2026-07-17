@@ -39,6 +39,13 @@ The payoff is testability. Because the library takes its environment as an
 argument, a test can hand it a tempdir instead of racing on process-global env
 vars, and can assert on an error's *fields* instead of grepping styled text.
 
+The CLI layer follows the same rule one level up: `cli::commands::run` reads the
+process (cwd, `cli/env.rs`) and hands explicit values to `build_app_state`, which
+decides everything. So a CLI test points padz at a tempdir in Rust rather than by
+mutating `$PADZ_GLOBAL_DATA` and `current_dir` and hoping nothing else noticed.
+Reading the process is a job for exactly one function; every other caller is
+given the answer.
+
 ### 1. The CLI Layer (The "Skin")
 -   **Location**: `crates/padz/src/cli/`
 -   **Entry Point**: `crates/padz/src/cli/commands.rs` — function `run`
@@ -96,12 +103,33 @@ vars, and can assert on an error's *fields* instead of grepping styled text.
 
 ## Testing Strategy
 
+Each behavior is proven at the **smallest seam that can observe it**, so a test
+fails for one reason and keeps failing for that reason across refactors.
+
 | Layer | Test Type | What to Test |
 |-------|-----------|--------------|
-| CLI | Integration | Arg parsing, output formatting |
-| API | Unit | Dispatch correctness, input normalization |
-| Commands | Unit | Business logic, state transitions |
 | Store | Unit | Read/write operations, sync behavior |
+| Commands | Unit | Business logic, state transitions |
+| API | Unit | Dispatch correctness, input normalization |
+| Typed handlers | Direct call | Adapter mapping: args in, API call, typed result out |
+| CLI pipeline | `TestHarness` (serial, in process) | Clap-through-render: wiring, input chains, templates, styles, output modes, output files |
+| Process | Subprocess E2E | Only boundaries a harness cannot model |
+
+The `padz` crate has a **library target** so the middle two rows are reachable:
+`main.rs` is a shim over `cli::run()`, and the command tree, handlers, and app
+builder live in the library. Without it there is no way to test the CLI except by
+spawning the binary and scraping its stdout — which is exactly the trap the top
+of this document describes.
+
+The last row is a short list on purpose. A subprocess test is justified only by
+something a harness structurally cannot reach: `cli::run`'s own pre-dispatch
+wiring (naked invocation, `config`), a path that calls `std::process::exit`
+(help), a real editor/clipboard/completion install, or the binary's actual
+stdout. Every retained `*_e2e.rs` file names its boundary in its header; if it
+can't, it belongs at a smaller seam.
+
+The canonical statement of the pyramid — including why every `TestHarness` test
+must be `#[serial]` — lives in `crates/padz/src/lib.rs`.
 
 This separation enables:
 -   Fast, isolated unit tests for business logic

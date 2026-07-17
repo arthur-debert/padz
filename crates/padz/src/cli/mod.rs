@@ -71,7 +71,7 @@
 //! - `setup`: Argument parsing via clap, help text
 
 pub mod clipboard;
-mod commands;
+pub mod commands;
 mod complete;
 pub mod editor;
 pub mod env;

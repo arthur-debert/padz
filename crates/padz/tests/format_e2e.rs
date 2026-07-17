@@ -1,5 +1,36 @@
 #![allow(deprecated)]
 
+//! # Pad file formats — subprocess E2E
+//!
+//! ## The real boundary this file protects
+//!
+//! **`padz config set format`, which `cli::run` handles before dispatch.**
+//!
+//! Most of this suite turns on the config *write* path: `config` is intercepted
+//! by `run` and handed to clapfig, never reaching a handler, so
+//! `App::run_to_string` — where `TestHarness` starts — cannot reach it. The
+//! tests that flip `format` in config and then observe the next create honor it
+//! (`test_config_set_format_affects_new_pads`,
+//! `test_config_set_format_does_not_rename_existing_pads`,
+//! `test_config_with_stale_keys_still_loads_format`) need that round trip.
+//!
+//! ## Honest classification: not all of it needs a process
+//!
+//! The cases that only assert "`create --format md` writes a `.md` file"
+//! (`test_create_uses_default_txt_format`, `test_create_with_format_override_creates_md`,
+//! `test_format_override_does_not_affect_subsequent_creates`,
+//! `test_format_alias_markdown_creates_md`, `test_format_alias_text_creates_txt`,
+//! `test_mixed_formats_list_and_view_work`) do **not** need a real process: the
+//! format reaches `padzapp` as an argument and the on-disk filename is a
+//! `padzapp` fact, so they belong in `padzapp`'s own tests, with the CLI's
+//! `--format`-to-argument mapping proven in `handlers_direct.rs`.
+//!
+//! They are left here deliberately rather than migrated blind: moving them is a
+//! `padzapp`-side change, and this workstream's rule is to move one
+//! representative behavior at a time and delete the redundant assertion, not to
+//! bulk-rewrite a suite against an API the mover hasn't read. Tracked as
+//! follow-up; see this workstream's PR.
+
 use assert_cmd::cargo::cargo_bin;
 use assert_cmd::Command;
 use predicates::prelude::*;

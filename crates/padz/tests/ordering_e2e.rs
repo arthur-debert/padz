@@ -1,6 +1,24 @@
 #![allow(deprecated)]
 
-//! End-to-end tests for the configurable `ordering` setting.
+//! # Configurable `ordering` — subprocess E2E
+//!
+//! ## The real boundary this file protects
+//!
+//! **`padz config set`, which `cli::run` handles before dispatch.**
+//!
+//! `config` never reaches a handler: `run` intercepts it and hands it to
+//! clapfig (`handle_config`), which owns reading, merging, and *writing* the
+//! config file. `TestHarness` drives `App::run_to_string`, which starts at
+//! dispatch, so it cannot invoke `config set` at all. These tests need the
+//! round trip — write the setting through the real command, then observe a
+//! later invocation read it back — which is exactly what the process gives.
+//!
+//! A harness test could fake this by writing `padz.toml` directly (as
+//! `tests/support`'s `todos_mode` does for a mode this suite doesn't own), but
+//! that would assert padz reads a file the test wrote, not that `config set`
+//! writes the file padz reads. The write half is the point here.
+//!
+//! ## Original note
 //!
 //! Exercises the full binary path: create pads, flip the config, edit a pad
 //! (via piped stdin, which triggers the update flow non-interactively), and
