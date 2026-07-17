@@ -53,14 +53,17 @@
 //!
 //! ## Module Structure
 //!
-//! - `commands`: Per-command handlers that call API and format output
-//! - `render`: Output formatting using standout's `App` (styles and templates embedded at compile time)
+//! - `commands`: App construction, state wiring, and dispatch
+//! - `handlers`: Thin typed adapters — extract args, call the API, return a typed result
+//! - `result`: The typed, mode-independent result each handler returns
+//! - `render`: Render-time view derivation for standout's templates
 //! - `setup`: Argument parsing via clap, help text
 
 mod commands;
 mod complete;
 pub mod handlers;
-mod render;
+pub mod render;
+pub mod result;
 pub mod setup;
 
 pub use commands::run;

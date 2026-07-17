@@ -1,10 +1,13 @@
-{%- if empty_filtered -%}
+{#- Listing output. `list_view` is derived at render time from the handler's -#}
+{#- PadListResult; see cli::render. -#}
+{%- set view = list_view -%}
+{%- if view.empty_filtered -%}
 [info]No matching pads.[/info]{{ "" | nl -}}
-{%- elif empty -%}
+{%- elif view.empty -%}
 [empty-message]No pads yet, create one with `padz create`[/empty-message]{{ "" | nl -}}
-{{ help_text }}
+{{ view.help_text }}
 {%- else -%}
-{%- for pad in pads -%}
+{%- for pad in view.pads -%}
 {%- if pad.is_section_header -%}
 [section-header]{{ pad.section_title }}[/section-header]{{ "" | nl }}
 {%- elif pad.is_separator -%}
@@ -18,10 +21,10 @@
 {%- endif -%}
 {%- endfor -%}
 {%- endif -%}
-{%- if deleted_help -%}
+{%- if view.deleted_help -%}
 {%- include "_deleted_help.jinja" -%}
 {%- endif -%}
 {#- Trailing messages (info, warnings, errors from API) -#}
-{%- for msg in trailing_messages -%}
+{%- for msg in view.trailing_messages -%}
 {{ msg.content | style_as(msg.style) }}{{ "" | nl }}
 {%- endfor -%}

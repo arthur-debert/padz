@@ -17,6 +17,7 @@
 //! 5. **Error Handling**: Convert errors to user-friendly messages and exit codes
 
 use super::handlers::AppState;
+use super::render::{list_view_provider, modification_view_provider, LIST_VIEW, MODIFICATION_VIEW};
 use super::setup::{
     build_command, parse_cli, Cli, Commands, CompletionAction, CompletionShell, ConfigSubcommand,
 };
@@ -25,7 +26,7 @@ use padzapp::config::PadzConfig;
 use padzapp::error::Result;
 use padzapp::init::initialize;
 use standout::cli::{App, RunResult};
-use standout::{embed_styles, embed_templates, OutputMode};
+use standout::{embed_styles, embed_templates};
 use std::io::IsTerminal;
 
 pub fn run() -> Result<()> {
@@ -48,7 +49,7 @@ pub fn run() -> Result<()> {
     }
 
     // Initialize app state for handlers
-    let app_state = create_app_state(&cli, output_mode)?;
+    let app_state = create_app_state(&cli)?;
 
     // Determine effective args: handle naked invocation by injecting synthetic command
     let args: Vec<String> = if cli.command.is_none() {
@@ -71,6 +72,11 @@ pub fn run() -> Result<()> {
 }
 
 /// Build the dispatch-ready App with templates, styles, command configuration, and app state
+///
+/// The two `context_fn` registrations are the render-time seam: handlers return typed,
+/// mode-independent results, and these providers derive the template-ready view from
+/// the serialized result. Standout resolves context providers only when it renders a
+/// template, so structured output never sees the derived presentation fields.
 fn build_dispatch_app(app_state: AppState) -> App {
     App::builder()
         .app_state(app_state)
@@ -78,6 +84,8 @@ fn build_dispatch_app(app_state: AppState) -> App {
         .template_ext(".jinja")
         .styles(embed_styles!("src/styles"))
         .default_theme("default")
+        .context_fn(LIST_VIEW, list_view_provider)
+        .context_fn(MODIFICATION_VIEW, modification_view_provider)
         .commands(Commands::dispatch_config())
         .expect("Failed to configure commands")
         .build()
@@ -124,7 +132,10 @@ fn handle_dispatch_result(result: RunResult) -> Result<()> {
 }
 
 /// Create app state containing API, scope, and configuration for handlers
-fn create_app_state(cli: &Cli, output_mode: OutputMode) -> Result<AppState> {
+///
+/// Deliberately takes no `OutputMode`: durable state carries no rendering concern.
+/// The mode stays here in the app-execution path, where it is passed to `dispatch`.
+fn create_app_state(cli: &Cli) -> Result<AppState> {
     let cwd = std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from("."));
     let data_override = cli.data.as_ref().map(std::path::PathBuf::from);
 
@@ -174,7 +185,6 @@ fn create_app_state(cli: &Cli, output_mode: OutputMode) -> Result<AppState> {
         padz_ctx.api,
         padz_ctx.scope,
         padz_ctx.config.import_extensions(),
-        output_mode,
         padz_ctx.config.mode,
         local_padz_dir,
     ))

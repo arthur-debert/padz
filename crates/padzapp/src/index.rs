@@ -47,7 +47,7 @@
 
 use crate::config::OrderingKey;
 use crate::model::Pad;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use std::cell::Cell;
 use std::collections::HashMap;
 use std::str::FromStr;
@@ -80,7 +80,7 @@ pub fn current_ordering_key() -> OrderingKey {
 }
 
 /// A segment of text in a search match, either plain text or a matched term.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "type", content = "text")]
 pub enum MatchSegment {
     Plain(String),
@@ -88,14 +88,14 @@ pub enum MatchSegment {
 }
 
 /// A line containing a search match.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct SearchMatch {
     pub line_number: usize, // 0 for title, 1+ for content lines
     pub segments: Vec<MatchSegment>,
 }
 
 /// A user-facing index for a pad.
-#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(tag = "type", content = "value")]
 pub enum DisplayIndex {
     Pinned(usize),
@@ -146,7 +146,7 @@ impl std::fmt::Display for PadSelector {
     }
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DisplayPad {
     pub pad: Pad,
     pub index: DisplayIndex,
