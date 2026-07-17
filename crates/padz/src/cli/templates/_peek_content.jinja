@@ -1,13 +1,14 @@
 {#- Peek content preview for a pad -#}
-{#- Expects: pad.left_pad, pad.peek (PeekResult with opening_lines, truncated_count, closing_lines) -#}
+{#- Expects: pad.indent, pad.indent_width, pad.peek (PeekResult with opening_lines, truncated_count, closing_lines) -#}
+{#- indent() carries pad.indent_width too, so a nested pad's continuation lines stay flush with its first line. -#}
 {{ "" | nl }}
-    {{ pad.left_pad }}    [preview]{{ pad.peek.opening_lines | indent(8) }}[/preview]{{ "" | nl }}
+    {{ pad.indent }}    [preview]{{ pad.peek.opening_lines | indent(8 + pad.indent_width) }}[/preview]{{ "" | nl }}
 {%- if pad.peek.truncated_count -%}
 {{ "" | nl }}
-    {{ pad.left_pad }}                      [truncation]... {{ pad.peek.truncated_count }} lines not shown ...[/truncation]{{ "" | nl }}
+    {{ pad.indent }}                      [truncation]... {{ pad.peek.truncated_count }} lines not shown ...[/truncation]{{ "" | nl }}
 {{ "" | nl }}
 {%- endif -%}
 {%- if pad.peek.closing_lines -%}
-    {{ pad.left_pad }}    [preview]{{ pad.peek.closing_lines | indent(8) }}[/preview]{{ "" | nl }}
+    {{ pad.indent }}    [preview]{{ pad.peek.closing_lines | indent(8 + pad.indent_width) }}[/preview]{{ "" | nl }}
 {%- endif -%}
 {{ "" | nl }}

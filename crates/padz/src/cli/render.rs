@@ -272,6 +272,11 @@ struct RowLayout {
 /// Each row is self-contained — it carries its own column widths and line width — so
 /// that `_pad_line.jinja` needs nothing but the row itself and can be included from
 /// both the list and modification templates.
+///
+/// The row's nesting indent ships in two forms: `indent` (the literal spaces every
+/// partial prefixes its lines with) and `indent_width` (the same value as a number,
+/// which `_peek_content.jinja` adds to the `indent()` filter so a peek block's
+/// continuation lines line up with its own first line).
 fn base_pad_row(dp: &DisplayPad, layout: RowLayout) -> serde_json::Value {
     use serde_json::json;
 
@@ -294,6 +299,7 @@ fn base_pad_row(dp: &DisplayPad, layout: RowLayout) -> serde_json::Value {
 
     json!({
         "indent": " ".repeat(layout.indent_width),
+        "indent_width": layout.indent_width,
         "left_pin": "",
         "status_icon": status_icon,
         "index": format!("{}.", local_idx_str),
@@ -986,6 +992,92 @@ mod tests {
         assert_eq!(
             child_indent, "  ",
             "depth-1 child should have 2-space indent"
+        );
+    }
+
+    /// `_match_lines.jinja` and `_peek_content.jinja` prefix their lines with
+    /// `pad.indent`, so every row must carry it — including rows built for a
+    /// listing that requested peek previews.
+    #[test]
+    fn test_build_list_peek_rows_carry_indent_for_partials() {
+        let child = make_display_pad(make_pad("Child Note", false), DisplayIndex::Regular(1));
+        let parent = make_display_pad_with_children(
+            make_pad("Parent Note", false),
+            DisplayIndex::Regular(1),
+            vec![child],
+        );
+        let request = ListRequest {
+            peek: true,
+            ..Default::default()
+        };
+
+        let data = build_list_view(&list_result(vec![parent], request));
+        let pads = data.get("pads").and_then(|v| v.as_array()).unwrap();
+
+        for (row, expected) in pads.iter().zip(["", "  "]) {
+            let indent = row.get("indent").and_then(|v| v.as_str());
+            assert_eq!(
+                indent,
+                Some(expected),
+                "peek row must carry the indent its partials prefix with"
+            );
+        }
+    }
+
+    /// `_peek_content.jinja` feeds `indent_width` to the `indent()` filter so a
+    /// nested pad's continuation lines stay flush with its own first line. It must
+    /// therefore be present and agree with the `indent` string.
+    #[test]
+    fn test_build_list_row_indent_width_matches_indent_string() {
+        let grandchild = make_display_pad(make_pad("Grandchild", false), DisplayIndex::Regular(1));
+        let child = make_display_pad_with_children(
+            make_pad("Child", false),
+            DisplayIndex::Regular(1),
+            vec![grandchild],
+        );
+        let parent = make_display_pad_with_children(
+            make_pad("Parent", false),
+            DisplayIndex::Regular(1),
+            vec![child],
+        );
+
+        let data = build_list_view(&list_result(vec![parent], todos_request()));
+        let pads = data.get("pads").and_then(|v| v.as_array()).unwrap();
+        assert_eq!(pads.len(), 3, "parent + child + grandchild");
+
+        for (depth, row) in pads.iter().enumerate() {
+            let indent = row.get("indent").and_then(|v| v.as_str()).unwrap();
+            let indent_width = row
+                .get("indent_width")
+                .and_then(|v| v.as_u64())
+                .unwrap_or_else(|| panic!("row at depth {depth} must carry indent_width"));
+
+            assert_eq!(
+                indent_width as usize,
+                indent.len(),
+                "indent_width must agree with the indent string at depth {depth}"
+            );
+            assert_eq!(
+                indent_width,
+                depth as u64 * 2,
+                "each nesting level adds 2 columns"
+            );
+        }
+    }
+
+    /// Modification rows are flat, so their indent must stay zero-width — this pins
+    /// the `_pad_line.jinja` prefix for the modification path.
+    #[test]
+    fn test_build_modification_rows_have_zero_indent() {
+        let dp = make_display_pad(make_pad("Note", false), DisplayIndex::Regular(1));
+        let data = build_modification_view(&modification_result("Created", vec![dp], false));
+
+        let pads = data.get("pads").and_then(|v| v.as_array()).unwrap();
+        assert_eq!(pads[0].get("indent").and_then(|v| v.as_str()), Some(""));
+        assert_eq!(
+            pads[0].get("indent_width").and_then(|v| v.as_u64()),
+            Some(0),
+            "modification rows are flat"
         );
     }
 
