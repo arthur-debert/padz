@@ -70,20 +70,17 @@ padz list
 
 # Create a new pad (opens $EDITOR)
 padz create
-padz new
 padz n
 
 # Create with a title
 padz create "My note title"
-padz "Quick note"
 
 # Create with piped content
-echo "TODO: Fix the bug" | padz new "Bug fix"
+echo "TODO: Fix the bug" | padz n "Bug fix"
 
 # View a pad
 padz view 1
 padz v 1
-padz 1          # Shortcut: naked integer
 
 # Edit a pad in $EDITOR
 padz open 1
@@ -104,7 +101,7 @@ padz ls -s "keyword"
 
 #### `padz create [title...] [flags]`
 
-Aliases: `new`, `n`, `c`
+Alias: `n`
 
 Create a new pad. If no content is piped, opens `$EDITOR`.
 
@@ -118,16 +115,15 @@ Create a new pad. If no content is piped, opens `$EDITOR`.
 ```bash
 padz create                              # Opens editor, prompts for title
 padz create "Shopping list"              # Opens editor with title set
-padz "Quick note"                        # Shortcut syntax
-padz -t "My Title" Some initial content  # Title + initial content
-echo "Content" | padz new "Title"        # Pipe content in
+echo "Content" | padz n "Title"          # Pipe content in
 padz create --global "Global note"       # Create in global scope
 ```
 
 **Shortcuts:**
 
-- Just `padz "Some text"` creates a new pad
-- Anything that isn't a recognized command is treated as a create
+- `padz n` is the short form of `padz create`.
+- A command name is required when arguments are present. Only a no-argument
+  invocation is resolved contextually; see [Command Resolution](#command-resolution).
 
 ### Viewing pad
 
@@ -192,12 +188,9 @@ View the content of a pad in your terminal.
 ```bash
 padz view 1      # View pad #1
 padz v 1         # Same (alias)
-padz 1           # Same (naked integer shortcut)
 padz view p1     # View pinned pad #1
 padz view d1     # View deleted pad #1 (if using --deleted flag)
 ```
-
-**Note:** The "naked integer" shortcut (`padz 1`) defaults to `view`. This is configurable in the code via `config.NakedIntCommand`.
 
 #### `padz peek <index> [flags]`
 
