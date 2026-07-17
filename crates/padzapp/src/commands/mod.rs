@@ -108,10 +108,16 @@ pub mod update;
 pub mod uuid;
 pub mod view;
 
+/// The filesystem locations a `PadzApi` operates against, supplied by the
+/// caller rather than discovered here.
 #[derive(Debug, Clone)]
 pub struct PadzPaths {
     pub project: Option<PathBuf>,
     pub global: PathBuf,
+    /// The user's home directory, used only as the stopping point when walking
+    /// upward to resolve a user-supplied transfer path. `None` means "walk to
+    /// the filesystem root". See `init::PadzEnv::home_dir`.
+    pub home: Option<PathBuf>,
 }
 
 impl PadzPaths {

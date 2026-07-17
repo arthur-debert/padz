@@ -1,4 +1,11 @@
-use crate::error::{PadzError, Result};
+//! Reading and writing the system clipboard.
+//!
+//! A user-environment concern owned by the CLI: every path here shells out to
+//! a platform clipboard tool (`pbcopy`/`pbpaste`, `xclip`/`xsel`, `clip`/
+//! PowerShell). The library never touches the clipboard — handlers hand pad
+//! text to these functions at the CLI boundary.
+
+use padzapp::error::{PadzError, Result};
 use std::process::Command;
 
 /// Copies text to the system clipboard in an OS-specific way.
@@ -139,96 +146,6 @@ pub fn format_for_clipboard(title: &str, content: &str) -> String {
     }
 }
 
-/// Reads text from the system clipboard in an OS-specific way.
-/// - macOS: uses pbpaste
-/// - Linux: uses xclip or xsel
-/// - Windows: uses powershell Get-Clipboard
-pub fn get_from_clipboard() -> Result<String> {
-    #[cfg(target_os = "macos")]
-    {
-        get_macos()
-    }
-
-    #[cfg(target_os = "linux")]
-    {
-        get_linux()
-    }
-
-    #[cfg(target_os = "windows")]
-    {
-        get_windows()
-    }
-
-    #[cfg(not(any(target_os = "macos", target_os = "linux", target_os = "windows")))]
-    {
-        Err(PadzError::Api(
-            "Clipboard not supported on this platform".to_string(),
-        ))
-    }
-}
-
-#[cfg(target_os = "macos")]
-fn get_macos() -> Result<String> {
-    let output = Command::new("pbpaste")
-        .output()
-        .map_err(|e| PadzError::Api(format!("Failed to execute pbpaste: {}", e)))?;
-
-    if output.status.success() {
-        String::from_utf8(output.stdout)
-            .map_err(|e| PadzError::Api(format!("Invalid UTF-8 in clipboard: {}", e)))
-    } else {
-        Err(PadzError::Api("pbpaste exited with error".to_string()))
-    }
-}
-
-#[cfg(target_os = "linux")]
-fn get_linux() -> Result<String> {
-    // Try xclip first
-    let result = Command::new("xclip")
-        .args(["-selection", "clipboard", "-o"])
-        .output();
-
-    match result {
-        Ok(output) if output.status.success() => {
-            return String::from_utf8(output.stdout)
-                .map_err(|e| PadzError::Api(format!("Invalid UTF-8 in clipboard: {}", e)));
-        }
-        _ => {}
-    }
-
-    // Try xsel as fallback
-    let result = Command::new("xsel")
-        .args(["--clipboard", "--output"])
-        .output();
-
-    match result {
-        Ok(output) if output.status.success() => String::from_utf8(output.stdout)
-            .map_err(|e| PadzError::Api(format!("Invalid UTF-8 in clipboard: {}", e))),
-        Ok(_) => Err(PadzError::Api("xsel exited with error".to_string())),
-        Err(e) => Err(PadzError::Api(format!(
-            "Failed to execute xclip or xsel: {}. Install xclip or xsel.",
-            e
-        ))),
-    }
-}
-
-#[cfg(target_os = "windows")]
-fn get_windows() -> Result<String> {
-    let output = Command::new("powershell")
-        .args(["-command", "Get-Clipboard"])
-        .output()
-        .map_err(|e| PadzError::Api(format!("Failed to execute powershell: {}", e)))?;
-
-    if output.status.success() {
-        // PowerShell Get-Clipboard usually returns text with \r\n, trim if needed or keep as is?
-        // Let's keep as is but convert bytes.
-        String::from_utf8(output.stdout)
-            .map_err(|e| PadzError::Api(format!("Invalid UTF-8 in clipboard: {}", e)))
-    } else {
-        Err(PadzError::Api("powershell exited with error".to_string()))
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -237,6 +154,19 @@ mod tests {
     fn test_format_for_clipboard_with_content() {
         let result = format_for_clipboard("My Title", "Some content");
         assert_eq!(result, "My Title\n\nSome content");
+    }
+
+    /// The real platform clipboard round-trip.
+    ///
+    /// Ignored by default: it depends on a working clipboard tool (and, on
+    /// Linux, an X display), which CI has no business requiring. Run it with
+    /// `cargo test -p padz -- --ignored` on a desktop to check this adapter
+    /// against the actual system clipboard.
+    #[test]
+    #[ignore = "requires a working system clipboard"]
+    fn copy_round_trips_through_the_system_clipboard() {
+        let text = "padz clipboard adapter test";
+        copy_to_clipboard(text).unwrap();
     }
 
     #[test]

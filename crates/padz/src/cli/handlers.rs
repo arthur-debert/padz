@@ -14,8 +14,9 @@
 // Allow non_snake_case for macro-generated __handler wrapper functions
 #![allow(non_snake_case)]
 
+use crate::cli::clipboard::{copy_to_clipboard, format_for_clipboard};
+use crate::cli::errors::to_anyhow;
 use padzapp::api::{CmdMessage, PadFilter, PadStatusFilter, PadzApi, TodoStatus};
-use padzapp::clipboard::{copy_to_clipboard, format_for_clipboard};
 use padzapp::commands::{CmdResult, NestingMode};
 use padzapp::config::PadzMode;
 use padzapp::error::PadzError;
@@ -107,7 +108,7 @@ fn get_state(ctx: &CommandContext) -> &AppState {
 /// ```ignore
 /// let state = get_state(ctx);
 /// let result = state.with_api(|api| {
-///     api.method(state.scope, &args).map_err(|e| anyhow::anyhow!("{}", e))
+///     api.method(state.scope, &args).map_err(to_anyhow)
 /// })?;
 /// Ok(Output::Render(ModificationResult { ... }))
 /// ```
@@ -130,7 +131,7 @@ impl<'a> ScopedApi<'a> {
         F: FnOnce(&mut PadzApi<FileStore>, Scope) -> Result<T, PadzError>,
     {
         self.state
-            .with_api(|api| f(api, self.state.scope).map_err(|e| anyhow::anyhow!("{}", e)))
+            .with_api(|api| f(api, self.state.scope).map_err(to_anyhow))
     }
 
     /// Map a CmdResult (modification) into the typed modification result.
@@ -655,10 +656,10 @@ pub fn create(
         state.with_api(|api| {
             if let Some(fmt) = format {
                 api.create_pad_with_format(state.scope, title, content, inside, fmt)
-                    .map_err(|e| anyhow::anyhow!("{}", e))
+                    .map_err(to_anyhow)
             } else {
                 api.create_pad(state.scope, title, content, inside)
-                    .map_err(|e| anyhow::anyhow!("{}", e))
+                    .map_err(to_anyhow)
             }
         })
     }
@@ -710,24 +711,21 @@ pub fn create(
         let pad_id = create_result.affected_pads[0].pad.metadata.id;
 
         // Open editor on the real pad file in .padz/
-        if let Err(e) = padzapp::editor::open_in_editor(&pad_path) {
+        if let Err(e) = crate::cli::editor::open_in_editor(&pad_path) {
             // Editor failed - clean up the pad
             let _ = state.with_api(|api| api.remove_pad(state.scope, pad_id));
-            return Err(anyhow::anyhow!("{}", e));
+            return Err(to_anyhow(e));
         }
 
         // Refresh pad from disk (re-reads content, updates title)
-        match state.with_api(|api| {
-            api.refresh_pad(state.scope, &pad_id)
-                .map_err(|e| anyhow::anyhow!("{}", e))
-        })? {
+        match state.with_api(|api| api.refresh_pad(state.scope, &pad_id).map_err(to_anyhow))? {
             Some(pad) => {
                 // Propagate status now — pad has real content after editor,
                 // safe from reconciliation deleting the empty file.
                 let parent_id = pad.metadata.parent_id;
                 state.with_api(|api| {
                     api.propagate_status(state.scope, parent_id)
-                        .map_err(|e| anyhow::anyhow!("{}", e))
+                        .map_err(to_anyhow)
                 })?;
                 // Copy to clipboard
                 copy_content_to_clipboard(&pad.content);
@@ -934,7 +932,7 @@ pub fn edit(
         let raw = inline_content.unwrap();
         let result = state.with_api(|api| {
             api.update_pads_from_content(state.scope, &index_args, &raw)
-                .map_err(|e| anyhow::anyhow!("{}", e))
+                .map_err(to_anyhow)
         })?;
 
         let clipboard_text = raw.clone();
@@ -952,7 +950,7 @@ pub fn edit(
         }
         let result = state.with_api(|api| {
             api.update_pads_from_content(state.scope, &index_args, &raw)
-                .map_err(|e| anyhow::anyhow!("{}", e))
+                .map_err(to_anyhow)
         })?;
 
         copy_content_to_clipboard(&raw);
@@ -969,7 +967,7 @@ pub fn edit(
             &index_args,
             padzapp::commands::NestingMode::Flat,
         )
-        .map_err(|e| anyhow::anyhow!("{}", e))
+        .map_err(to_anyhow)
     })?;
 
     let pad = view_result
@@ -979,19 +977,14 @@ pub fn edit(
     let pad_id = pad.pad.metadata.id;
     let display_index = pad.index.clone();
 
-    let pad_path = state.with_api(|api| {
-        api.get_path_by_id(state.scope, pad_id)
-            .map_err(|e| anyhow::anyhow!("{}", e))
-    })?;
+    let pad_path =
+        state.with_api(|api| api.get_path_by_id(state.scope, pad_id).map_err(to_anyhow))?;
 
     // Open editor on the real pad file in .padz/
-    padzapp::editor::open_in_editor(&pad_path)?;
+    crate::cli::editor::open_in_editor(&pad_path)?;
 
     // Refresh pad from disk (re-reads content, updates title)
-    match state.with_api(|api| {
-        api.refresh_pad(state.scope, &pad_id)
-            .map_err(|e| anyhow::anyhow!("{}", e))
-    })? {
+    match state.with_api(|api| api.refresh_pad(state.scope, &pad_id).map_err(to_anyhow))? {
         Some(pad) => {
             copy_content_to_clipboard(&pad.content);
 
@@ -1086,10 +1079,7 @@ pub fn path(
     #[arg] indexes: Vec<String>,
 ) -> Result<Output<PathResult>, anyhow::Error> {
     let state = get_state(ctx);
-    let result = state.with_api(|api| {
-        api.pad_paths(state.scope, &indexes)
-            .map_err(|e| anyhow::anyhow!("{}", e))
-    })?;
+    let result = state.with_api(|api| api.pad_paths(state.scope, &indexes).map_err(to_anyhow))?;
 
     Ok(Output::Render(PathResult {
         paths: result
@@ -1107,10 +1097,7 @@ pub fn uuid(
     #[arg] indexes: Vec<String>,
 ) -> Result<Output<UuidResult>, anyhow::Error> {
     let state = get_state(ctx);
-    let result = state.with_api(|api| {
-        api.pad_uuids(state.scope, &indexes)
-            .map_err(|e| anyhow::anyhow!("{}", e))
-    })?;
+    let result = state.with_api(|api| api.pad_uuids(state.scope, &indexes).map_err(to_anyhow))?;
 
     Ok(Output::Render(UuidResult {
         uuids: result.messages.iter().map(|m| m.content.clone()).collect(),
@@ -1285,7 +1272,7 @@ pub mod tag {
         let state = get_state(ctx);
         let result = state.with_api(|api| {
             api.add_tags_to_pads(state.scope, &indexes, &tags)
-                .map_err(|e| anyhow::anyhow!("{}", e))
+                .map_err(to_anyhow)
         })?;
         Ok(Output::Render(
             api(ctx).modification_result("Tagged", result, false),
@@ -1301,7 +1288,7 @@ pub mod tag {
         let state = get_state(ctx);
         let result = state.with_api(|api| {
             api.remove_tags_from_pads(state.scope, &indexes, &tags)
-                .map_err(|e| anyhow::anyhow!("{}", e))
+                .map_err(to_anyhow)
         })?;
         Ok(Output::Render(
             api(ctx).modification_result("Untagged", result, false),
@@ -1334,10 +1321,8 @@ pub mod tag {
             api(ctx).list_tags()
         } else {
             let state = get_state(ctx);
-            let result = state.with_api(|api| {
-                api.list_pad_tags(state.scope, &ids)
-                    .map_err(|e| anyhow::anyhow!("{}", e))
-            })?;
+            let result =
+                state.with_api(|api| api.list_pad_tags(state.scope, &ids).map_err(to_anyhow))?;
             Ok(Output::Render(MessagesResult::new(result.messages)))
         }
     }
@@ -1361,7 +1346,10 @@ mod tests {
 
     /// A project-scoped store in a temp dir, wired into a CommandContext.
     ///
-    /// Uses `data_override` so the store is explicit and no global/env state is read.
+    /// Uses `data_override` for the project store and an explicit [`PadzEnv`]
+    /// pointing global inside the same temp dir, so the fixture reads no
+    /// process environment and can never touch the developer's real global
+    /// store.
     struct TestApp {
         _temp: TempDir,
         ctx: CommandContext,
@@ -1371,7 +1359,11 @@ mod tests {
         fn new(mode: PadzMode) -> Self {
             let temp = TempDir::new().unwrap();
             let root = temp.path().to_path_buf();
-            let padz_ctx = initialize(&root, false, Some(root.clone()), true).unwrap();
+            let env = padzapp::init::PadzEnv {
+                global_data_dir: root.join("global-data"),
+                home_dir: None,
+            };
+            let padz_ctx = initialize(&env, &root, false, Some(root.clone()), true).unwrap();
 
             let state = AppState::new(
                 padz_ctx.api,

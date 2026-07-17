@@ -1,16 +1,9 @@
 use padzapp::api::PadzApi;
 use padzapp::commands::{NestingMode, PadzPaths};
+use padzapp::error::PadzError;
 use padzapp::model::Scope;
 use padzapp::store::bucketed::BucketedStore;
 use padzapp::store::mem_backend::MemBackend;
-
-/// Strip ANSI styling so substring assertions are stable across TTY/non-TTY
-/// test environments — the ambiguity error highlights the matched substring
-/// inside each title, so a literal `contains("Groceries")` check would fail
-/// when colors are enabled.
-fn strip_ansi(s: &str) -> String {
-    console::strip_ansi_codes(s).to_string()
-}
 
 fn setup() -> PadzApi<BucketedStore<MemBackend>> {
     let store = BucketedStore::new(
@@ -22,6 +15,7 @@ fn setup() -> PadzApi<BucketedStore<MemBackend>> {
     let paths = PadzPaths {
         project: Some(std::path::PathBuf::from(".padz")),
         global: std::path::PathBuf::from(".padz"),
+        home: None,
     };
     let mut api = PadzApi::new(store, paths);
 
@@ -114,12 +108,24 @@ fn test_referencing_ambiguous() {
     let api = setup();
     // "Gro" matches "Groceries" and "Grocery List"
     let res = api.view_pads(Scope::Project, &["Gro"], NestingMode::Flat);
-    assert!(res.is_err());
-    let err = strip_ansi(&res.err().unwrap().to_string());
-    assert!(err.contains("matches multiple pads"));
-    // The error should list the matching pads so the user can pick one.
-    assert!(err.contains("Groceries"));
-    assert!(err.contains("Grocery List"));
+    // The error carries the matches as structured data so a presenter can
+    // offer them; no ANSI-stripping is needed because the library emits none.
+    match res.unwrap_err() {
+        PadzError::AmbiguousTitle {
+            term, candidates, ..
+        } => {
+            assert_eq!(term, "Gro");
+            let titles: Vec<&str> = candidates.iter().map(|c| c.title.as_str()).collect();
+            assert!(titles.contains(&"Groceries"), "got: {titles:?}");
+            assert!(titles.contains(&"Grocery List"), "got: {titles:?}");
+            // Each candidate names the index the user would type to pick it.
+            assert!(
+                candidates.iter().all(|c| !c.index.is_empty()),
+                "got: {candidates:?}"
+            );
+        }
+        other => panic!("expected AmbiguousTitle; got {other}"),
+    }
 }
 
 #[test]
@@ -154,6 +160,7 @@ fn test_referencing_does_not_match_deleted_titles() {
     let paths = PadzPaths {
         project: Some(std::path::PathBuf::from(".padz")),
         global: std::path::PathBuf::from(".padz"),
+        home: None,
     };
     let mut api = PadzApi::new(store, paths);
 

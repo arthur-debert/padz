@@ -60,7 +60,8 @@ impl<S: DataStore> PadzApi<S> {
         mode: commands::transfer::TransferMode,
     ) -> Result<commands::CmdResult> {
         let selectors = parse_selectors(indexes)?;
-        let dest_padz = commands::transfer::resolve_target_dir(dest_path)?;
+        let dest_padz =
+            commands::transfer::resolve_target_dir(dest_path, self.paths.home.as_deref())?;
         // Refuse to transfer to the same store. For migrate the user would
         // see the pad copied over itself and then deleted — data loss.
         // Clone would no-op at best; we reject both for a clear error.
@@ -92,7 +93,8 @@ impl<S: DataStore> PadzApi<S> {
         source_path: &std::path::Path,
         mode: commands::transfer::TransferMode,
     ) -> Result<commands::CmdResult> {
-        let source_padz = commands::transfer::resolve_target_dir(source_path)?;
+        let source_padz =
+            commands::transfer::resolve_target_dir(source_path, self.paths.home.as_deref())?;
         let current_padz = self.paths.scope_dir(scope)?;
         if canonicalize_or_self(&current_padz) == canonicalize_or_self(&source_padz) {
             return Err(PadzError::Api(format!(
@@ -141,6 +143,7 @@ mod tests {
             PadzPaths {
                 project: Some(project_dir),
                 global: PathBuf::from("/tmp/global"),
+                home: None,
             },
         )
     }

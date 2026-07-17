@@ -1,8 +1,12 @@
-use crate::error::{PadzError, Result};
+//! The editor *buffer* format — the wire format between a pad and whatever
+//! text editor a user edits it in.
+//!
+//! Only the format lives here: turning a pad's title and content into a buffer
+//! and parsing one back. Choosing an editor and launching it are user-environment
+//! concerns owned by the application (see `padz::cli::editor` in the CLI crate),
+//! not by this library.
+
 use crate::model::extract_title_and_body;
-use std::env;
-use std::path::Path;
-use std::process::Command;
 
 /// Represents the content parsed from an editor buffer.
 /// Format: title\n\ncontent
@@ -43,58 +47,6 @@ impl EditorContent {
             content: String::new(),
         }
     }
-}
-
-/// Gets the editor command from environment.
-/// Checks $EDITOR, then $VISUAL, then falls back to common editors.
-pub fn get_editor() -> Result<String> {
-    if let Ok(editor) = env::var("EDITOR") {
-        if !editor.is_empty() {
-            return Ok(editor);
-        }
-    }
-
-    if let Ok(editor) = env::var("VISUAL") {
-        if !editor.is_empty() {
-            return Ok(editor);
-        }
-    }
-
-    // Try common fallbacks
-    for fallback in &["vim", "vi", "nano"] {
-        if Command::new("which")
-            .arg(fallback)
-            .output()
-            .map(|o| o.status.success())
-            .unwrap_or(false)
-        {
-            return Ok((*fallback).to_string());
-        }
-    }
-
-    Err(PadzError::Api(
-        "No editor found. Set $EDITOR environment variable.".to_string(),
-    ))
-}
-
-/// Opens a file in the user's editor and waits for it to close.
-pub fn open_in_editor<P: AsRef<Path>>(file_path: P) -> Result<()> {
-    let editor = get_editor()?;
-    let path = file_path.as_ref();
-
-    let status = Command::new(&editor)
-        .arg(path)
-        .status()
-        .map_err(|e| PadzError::Api(format!("Failed to launch editor '{}': {}", editor, e)))?;
-
-    if !status.success() {
-        return Err(PadzError::Api(format!(
-            "Editor '{}' exited with non-zero status",
-            editor
-        )));
-    }
-
-    Ok(())
 }
 
 #[cfg(test)]

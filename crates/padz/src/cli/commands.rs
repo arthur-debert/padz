@@ -165,6 +165,10 @@ fn create_app_state(cli: &Cli) -> Result<AppState> {
         Some(Commands::Create { .. }) | Some(Commands::Import { .. })
     );
 
+    // Resolve the environment once, here at the composition root, and hand
+    // explicit values to the library.
+    let env = crate::cli::env::resolve();
+
     // Compute the local .padz dir BEFORE link resolution (used by link/unlink commands)
     let local_padz_dir = match &data_override {
         Some(path) => {
@@ -174,12 +178,18 @@ fn create_app_state(cli: &Cli) -> Result<AppState> {
                 path.join(".padz")
             }
         }
-        None => padzapp::init::find_padz_root(&cwd)
+        None => padzapp::init::find_padz_root(&cwd, env.home_dir.as_deref())
             .map(|root| root.join(".padz"))
             .unwrap_or_else(|| cwd.join(".padz")),
     };
 
-    let padz_ctx = initialize(&cwd, cli.global, data_override, auto_init_for_write)?;
+    let padz_ctx = initialize(&env, &cwd, cli.global, data_override, auto_init_for_write)?;
+
+    // Initialization warnings are data; the CLI is what turns them into stderr
+    // output. They are advisory — the command runs regardless.
+    for warning in &padz_ctx.warnings {
+        eprintln!("Warning: {}", warning);
+    }
 
     Ok(AppState::new(
         padz_ctx.api,
@@ -193,6 +203,7 @@ fn create_app_state(cli: &Cli) -> Result<AppState> {
 fn handle_config(cli: &Cli, subcommand: &Option<ConfigSubcommand>) -> Result<()> {
     let cwd = std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from("."));
     let data_override = cli.data.as_ref().map(std::path::PathBuf::from);
+    let env = crate::cli::env::resolve();
 
     // Resolve paths (lightweight version of initialize — just need dirs, not full API)
     let project_padz_dir = match data_override {
@@ -203,19 +214,12 @@ fn handle_config(cli: &Cli, subcommand: &Option<ConfigSubcommand>) -> Result<()>
                 path.join(".padz")
             }
         }
-        None => padzapp::init::find_padz_root(&cwd)
+        None => padzapp::init::find_padz_root(&cwd, env.home_dir.as_deref())
             .map(|root| root.join(".padz"))
             .unwrap_or_else(|| cwd.join(".padz")),
     };
 
-    let global_data_dir = std::env::var("PADZ_GLOBAL_DATA")
-        .ok()
-        .map(std::path::PathBuf::from)
-        .unwrap_or_else(|| {
-            let proj_dirs = directories::ProjectDirs::from("com", "padz", "padz")
-                .expect("Could not determine config dir");
-            proj_dirs.data_dir().to_path_buf()
-        });
+    let global_data_dir = env.global_data_dir;
 
     // Map -g flag to clapfig scope: None defaults to "local" (first registered)
     let scope: Option<String> = if cli.global {
