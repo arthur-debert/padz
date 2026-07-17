@@ -1,7 +1,7 @@
 //! # Typed handler results
 //!
 //! Every padz handler returns one of the types in this module (or `Output::Silent` /
-//! `Output::Binary`). A result is **mode-independent**: the same value is serialized
+//! `Output::Artifact`). A result is **mode-independent**: the same value is serialized
 //! once by standout and then either fed to a MiniJinja template (human modes) or
 //! emitted directly (structured modes). Handlers therefore never look at
 //! `OutputMode`, never branch on it, and never print.
@@ -99,6 +99,100 @@ pub struct MessagesResult {
 impl MessagesResult {
     pub fn new(messages: Vec<CmdMessage>) -> Self {
         Self { messages }
+    }
+}
+
+/// The machine-readable report carried by an export artifact.
+///
+/// Standout wraps this value with its own `receipt` after the final write. An
+/// empty selection renders this value directly with `status = "empty"` and
+/// never enters the artifact path.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ExportReportResult {
+    pub status: ExportStatus,
+    pub format: ExportFormat,
+    pub exported: usize,
+    pub warnings: Vec<ExportWarning>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ExportStatus {
+    Empty,
+    Exported,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ExportFormat {
+    Archive,
+    MetadataArchive,
+    JsonArchive,
+    SingleFile,
+}
+
+/// A CLI-owned projection of a semantic core warning.
+///
+/// The template owns the sentence; structured modes retain the warning kind,
+/// complete title list, count, preview, and overflow count as facts.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum ExportWarning {
+    MetadataUnavailable {
+        count: usize,
+        titles: Vec<String>,
+        preview: Vec<String>,
+        additional: usize,
+    },
+}
+
+impl ExportReportResult {
+    pub fn empty(format: padzapp::commands::export::ExportFormat) -> Self {
+        Self {
+            status: ExportStatus::Empty,
+            format: format.into(),
+            exported: 0,
+            warnings: Vec::new(),
+        }
+    }
+}
+
+impl From<padzapp::commands::export::ExportReport> for ExportReportResult {
+    fn from(report: padzapp::commands::export::ExportReport) -> Self {
+        Self {
+            status: ExportStatus::Exported,
+            format: report.format.into(),
+            exported: report.exported,
+            warnings: report.warnings.into_iter().map(Into::into).collect(),
+        }
+    }
+}
+
+impl From<padzapp::commands::export::ExportFormat> for ExportFormat {
+    fn from(format: padzapp::commands::export::ExportFormat) -> Self {
+        match format {
+            padzapp::commands::export::ExportFormat::Archive => Self::Archive,
+            padzapp::commands::export::ExportFormat::MetadataArchive => Self::MetadataArchive,
+            padzapp::commands::export::ExportFormat::JsonArchive => Self::JsonArchive,
+            padzapp::commands::export::ExportFormat::SingleFile => Self::SingleFile,
+        }
+    }
+}
+
+impl From<padzapp::commands::export::ExportWarning> for ExportWarning {
+    fn from(warning: padzapp::commands::export::ExportWarning) -> Self {
+        match warning {
+            padzapp::commands::export::ExportWarning::MetadataUnavailable { titles } => {
+                let count = titles.len();
+                let preview = titles.iter().take(3).cloned().collect();
+                Self::MetadataUnavailable {
+                    count,
+                    titles,
+                    preview,
+                    additional: count.saturating_sub(3),
+                }
+            }
+        }
     }
 }
 

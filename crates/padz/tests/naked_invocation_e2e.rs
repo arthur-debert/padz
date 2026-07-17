@@ -2,31 +2,14 @@
 //!
 //! ## The real boundary this file protects
 //!
-//! **`cli::run`'s own wiring, which no in-process harness can reach.**
+//! **`cli::run`'s two-stage parse/state wiring, which the in-process app harness
+//! does not enter.**
 //!
-//! Which command a bare `padz` means is decided by `cli::run` *before* dispatch:
-//! it calls `input::naked_command_from_process()` and injects a synthetic
-//! command into the argv it hands to standout. `TestHarness` drives
-//! `App::run_to_string`, which starts at dispatch — so it enters *after* the
-//! decision this file is about, and cannot test it. Only a real process runs
-//! `run()` from the top.
-//!
-//! `naked_command`'s own logic (terminal → `list`, pipe → `create`, empty pipe →
-//! `create`-then-abort) is not what these tests protect: that is covered at a
-//! smaller seam by the unit tests in `cli::input`, which inject a `MockStdin`
-//! and assert all three arms directly. What is left here, and only here, is that
-//! `run()` actually *consults* that decision and injects the command it names —
-//! a wiring fact whose only observation point is the process.
-//!
-//! ## What used to live here
-//!
-//! This file was `input_precedence_e2e.rs`, and it owned the whole create/edit
-//! input-precedence suite. Those cases moved to `tests/harness.rs`, which drives
-//! the same input chain in process through an injected stdin reader. The move
-//! removed a hole rather than trading one for another: this file's own header
-//! used to note that a spawned process has no pty, so a *terminal* stdin — and
-//! therefore the editor arm — was unreachable. The harness injects the reader,
-//! so it tests both arms; see `a_terminal_stdin_routes_create_to_the_editor`.
+//! Standout now owns the invocation-aware decision in both the initial parsing
+//! app and the stateful dispatch app. `tests/harness.rs` covers terminal,
+//! piped, piped-empty, globals, and explicit-command precedence at the smaller
+//! in-process seam. This single smoke remains to prove the real binary's first
+//! parse also installs the resolver before it builds command-specific state.
 
 use assert_cmd::Command;
 use std::fs;
@@ -122,23 +105,12 @@ impl Fixture {
             })
             .collect()
     }
-
-    fn messages(json: &str) -> Vec<String> {
-        let v: serde_json::Value = serde_json::from_str(json).unwrap();
-        v["messages"]
-            .as_array()
-            .map(|ms| {
-                ms.iter()
-                    .map(|m| m["content"].as_str().unwrap_or_default().to_string())
-                    .collect()
-            })
-            .unwrap_or_default()
-    }
 }
 
 /// `cat file | padz` captures the pipe as a new pad.
 ///
-/// Proves `run()` injects `create` for a piped naked invocation.
+/// Proves both parses resolve the same default and the stateful dispatch reads
+/// the still-unconsumed pipe.
 #[test]
 fn naked_padz_with_a_pipe_creates() {
     let f = Fixture::new();
@@ -146,39 +118,5 @@ fn naked_padz_with_a_pipe_creates() {
     assert_eq!(
         Fixture::pads(&out),
         vec![("Captured".into(), "Captured\n\nFrom a pipe".into())]
-    );
-}
-
-/// A naked invocation whose pipe is empty routes to `create`, which then aborts.
-/// It must not silently fall back to listing.
-#[test]
-fn naked_padz_with_an_empty_pipe_aborts_the_create() {
-    let f = Fixture::new();
-    let out = f.run_piped(&["--output", "json"], "");
-    assert!(
-        Fixture::messages(&out)
-            .iter()
-            .any(|m| m.contains("Aborted: empty content")),
-        "expected the create abort, got: {out}"
-    );
-}
-
-/// A naked invocation with no pipe lists.
-///
-/// `.output()` gives the child a null stdin, which is not a terminal — so padz
-/// sees "piped" and this asserts the *create* arm's abort rather than a listing.
-/// The terminal arm genuinely needs a pty, and is covered instead by
-/// `cli::input`'s unit tests against `MockStdin::terminal()`.
-#[test]
-fn naked_padz_without_a_terminal_stdin_routes_to_create() {
-    let f = Fixture::new();
-    f.run(&["create", "--output", "json", "--no-editor", "Existing"]);
-
-    let out = f.run_piped(&["--output", "json"], "");
-    assert!(
-        Fixture::messages(&out)
-            .iter()
-            .any(|m| m.contains("Aborted: empty content")),
-        "a non-terminal stdin must route to create, not list: {out}"
     );
 }

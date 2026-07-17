@@ -22,7 +22,8 @@ use super::render::{
     MODIFICATION_VIEW, TERMINAL,
 };
 use super::setup::{
-    build_command, parse_cli, Cli, Commands, CompletionAction, CompletionShell, ConfigSubcommand,
+    build_command, invocation_default_command, parse_cli, Cli, Commands, CompletionAction,
+    CompletionShell, ConfigSubcommand,
 };
 use clapfig::{Clapfig, ConfigAction, SearchMode, SearchPath};
 use padzapp::config::PadzConfig;
@@ -53,22 +54,11 @@ pub fn run() -> Result<()> {
     // Initialize app state for handlers
     let app_state = create_app_state(&cli)?;
 
-    // Determine effective args: handle naked invocation by injecting synthetic command.
-    // Which command a bare `padz` means is decided by `cli::input::naked_command`
-    // (see its docs for why standout's `default_command` cannot express it).
-    let args: Vec<String> = if cli.command.is_none() {
-        vec![
-            "padz".to_string(),
-            super::input::naked_command_from_process().to_string(),
-        ]
-    } else {
-        std::env::args().collect()
-    };
-
-    // Build app with injected state, parse, and dispatch through unified path
+    // The same invocation-aware resolver ran during `parse_cli`, so the first
+    // parse and this stateful dispatch parse agree without local argv surgery.
     let app = build_dispatch_app(app_state);
     let cmd = build_command();
-    let matches = app.parse_from(cmd, args);
+    let matches = app.parse_from(cmd, std::env::args());
     handle_dispatch_result(app.dispatch(matches, output_mode))
 }
 
@@ -95,6 +85,7 @@ pub fn build_dispatch_app(app_state: AppState) -> App {
 
     App::builder()
         .app_state(app_state)
+        .default_command_with(invocation_default_command)
         .templates(embed_templates!("src/cli/templates"))
         .template_ext(".jinja")
         .styles(embed_styles!("src/styles"))
@@ -128,7 +119,7 @@ pub fn build_dispatch_app(app_state: AppState) -> App {
 
 /// Handle the result of a dispatch operation.
 ///
-/// Standout 7.6 reports handler, hook, and output failures through the native
+/// Standout reports handler, hook, and output failures through the native
 /// `RunResult::Error` variant. Under 6.2 there was no such variant: failures
 /// arrived as `Handled("Error: ...")` and had to be detected by string prefix.
 /// The error message still carries standout's `Error: ` prefix, which is
@@ -150,10 +141,12 @@ fn handle_dispatch_result(result: RunResult) -> Result<()> {
                 msg.trim_start_matches("Error: ").to_string(),
             ));
         }
-        RunResult::Binary(data, filename) => {
-            std::fs::write(&filename, &data)
-                .map_err(|e| padzapp::error::PadzError::Api(e.to_string()))?;
-            println!("Exported to {}", filename);
+        RunResult::Artifact(artifact) => {
+            // Standout has already selected and written the final destination.
+            // Its receipt makes the report truthful; Padz only emits it.
+            if let Some(report) = artifact.report() {
+                print!("{}", report);
+            }
         }
         RunResult::Silent => {}
         RunResult::NoMatch(matches) => {

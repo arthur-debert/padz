@@ -15,7 +15,7 @@ impl<S: DataStore> PadzApi<S> {
         indexes: &[I],
         nesting: commands::NestingMode,
         with_metadata: bool,
-    ) -> Result<commands::CmdResult> {
+    ) -> Result<commands::export::ExportOutcome> {
         let selectors = parse_selectors(indexes)?;
         commands::export::run(&self.store, scope, &selectors, nesting, with_metadata)
     }
@@ -26,7 +26,7 @@ impl<S: DataStore> PadzApi<S> {
         indexes: &[I],
         title: &str,
         nesting: commands::NestingMode,
-    ) -> Result<commands::CmdResult> {
+    ) -> Result<commands::export::ExportOutcome> {
         let selectors = parse_selectors(indexes)?;
         commands::export::run_single_file(&self.store, scope, &selectors, title, nesting)
     }
@@ -36,7 +36,7 @@ impl<S: DataStore> PadzApi<S> {
         scope: Scope,
         indexes: &[I],
         nesting: commands::NestingMode,
-    ) -> Result<commands::CmdResult> {
+    ) -> Result<commands::export::ExportOutcome> {
         let selectors = parse_selectors(indexes)?;
         commands::export::run_json(&self.store, scope, &selectors, nesting)
     }

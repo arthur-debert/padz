@@ -23,13 +23,13 @@ use padzapp::config::PadzMode;
 use padzapp::error::PadzError;
 use padzapp::model::{extract_title_and_body, Scope};
 use padzapp::store::fs::FileStore;
-use standout::cli::{CommandContext, CommandContextInput, Output};
+use standout::cli::{Artifact, CommandContext, CommandContextInput, Output};
 use standout_macros::handler;
 use std::cell::RefCell;
 
 use super::result::{
-    ListRequest, MessagesResult, ModificationRequest, ModificationResult, PadContent,
-    PadContentResult, PadListResult, PathResult, UuidResult,
+    ExportReportResult, ListRequest, MessagesResult, ModificationRequest, ModificationResult,
+    PadContent, PadContentResult, PadListResult, PathResult, UuidResult,
 };
 
 // =============================================================================
@@ -316,7 +316,7 @@ impl<'a> ScopedApi<'a> {
         json: bool,
         with_metadata: bool,
         nesting: NestingMode,
-    ) -> Result<Output<MessagesResult>, anyhow::Error> {
+    ) -> Result<Output<ExportReportResult>, anyhow::Error> {
         let result = if let Some(title) = single_file {
             self.call(|api, scope| api.export_pads_single_file(scope, indexes, title, nesting))?
         } else if json {
@@ -324,7 +324,19 @@ impl<'a> ScopedApi<'a> {
         } else {
             self.call(|api, scope| api.export_pads(scope, indexes, nesting, with_metadata))?
         };
-        self.messages(result)
+        Ok(match result {
+            padzapp::commands::export::ExportOutcome::Empty { format } => {
+                Output::Render(ExportReportResult::empty(format))
+            }
+            padzapp::commands::export::ExportOutcome::Artifact(artifact) => {
+                let report = artifact.report.into();
+                Output::Artifact(
+                    Artifact::new(artifact.bytes)
+                        .suggest_destination(artifact.suggested_filename)
+                        .with_report(report),
+                )
+            }
+        })
     }
 
     pub fn import_pads(
@@ -1145,7 +1157,7 @@ pub fn export(
     #[flag] flat: bool,
     #[flag] tree: bool,
     #[flag] indented: bool,
-) -> Result<Output<MessagesResult>, anyhow::Error> {
+) -> Result<Output<ExportReportResult>, anyhow::Error> {
     let nesting = parse_nesting_mode(flat, tree, indented);
     api(ctx).export_pads(
         &indexes,

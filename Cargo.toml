@@ -8,7 +8,7 @@ edition = "2021"
 license = "MIT"
 repository = "https://github.com/arthur-debert/padz"
 
-# Resolve the standout family from the v7.7.0 git tag instead of crates.io.
+# Resolve the standout family from the v7.9.0 git tag instead of crates.io.
 #
 # WHY THIS PATCH EXISTS — it keeps the git-only test harness and the published
 # runtime crates in one dependency graph.
@@ -17,7 +17,7 @@ repository = "https://github.com/arthur-debert/padz"
 # newest *published* standout-test is 7.5.1, which does not compile against
 # standout 7.x: 7.6 made `RunResult` `#[non_exhaustive]` and added the `Error`
 # variant, and 7.5.1 matches it exhaustively. The fixed standout-test exists —
-# version 7.7.0 in the upstream repo — but carries `publish = false`, so it can
+# version 7.9.0 in the upstream repo — but carries `publish = false`, so it can
 # only be reached as a git dependency. And a git standout-test resolves its own
 # `standout` through a workspace *path* dep, which Cargo treats as a crate
 # distinct from crates.io's standout: the two `App` types then don't unify and
@@ -30,18 +30,18 @@ repository = "https://github.com/arthur-debert/padz"
 #
 # `[patch]` is workspace-local: it is not published and never reaches consumers
 # of the `padz` crate. Its three direct Standout dependencies are published at
-# 7.7.0 and downstream consumers resolve those ordinary requirements from
+# 7.9.0 and downstream consumers resolve those ordinary requirements from
 # crates.io; only the dev-only `standout-test` remains git-only.
 #
-# REMOVE THIS once standout-test 7.7.x is published to crates.io; it then goes
+# REMOVE THIS once a compatible standout-test is published to crates.io; it then goes
 # back to a plain dev-dependency version requirement in crates/padz/Cargo.toml.
 # Tracked upstream at arthur-debert/standout.
 [patch.crates-io]
-standout = { git = "https://github.com/arthur-debert/standout", tag = "v7.7.0" }
-standout-bbparser = { git = "https://github.com/arthur-debert/standout", tag = "v7.7.0" }
-standout-dispatch = { git = "https://github.com/arthur-debert/standout", tag = "v7.7.0" }
-standout-input = { git = "https://github.com/arthur-debert/standout", tag = "v7.7.0" }
-standout-macros = { git = "https://github.com/arthur-debert/standout", tag = "v7.7.0" }
-standout-pipe = { git = "https://github.com/arthur-debert/standout", tag = "v7.7.0" }
-standout-render = { git = "https://github.com/arthur-debert/standout", tag = "v7.7.0" }
-standout-seeker = { git = "https://github.com/arthur-debert/standout", tag = "v7.7.0" }
+standout = { git = "https://github.com/arthur-debert/standout", tag = "v7.9.0" }
+standout-bbparser = { git = "https://github.com/arthur-debert/standout", tag = "v7.9.0" }
+standout-dispatch = { git = "https://github.com/arthur-debert/standout", tag = "v7.9.0" }
+standout-input = { git = "https://github.com/arthur-debert/standout", tag = "v7.9.0" }
+standout-macros = { git = "https://github.com/arthur-debert/standout", tag = "v7.9.0" }
+standout-pipe = { git = "https://github.com/arthur-debert/standout", tag = "v7.9.0" }
+standout-render = { git = "https://github.com/arthur-debert/standout", tag = "v7.9.0" }
+standout-seeker = { git = "https://github.com/arthur-debert/standout", tag = "v7.9.0" }

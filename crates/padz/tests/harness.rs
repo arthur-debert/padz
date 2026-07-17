@@ -166,6 +166,85 @@ fn an_unknown_command_does_not_dispatch() {
     result.assert_error_kind(RunErrorKind::ClapUsage);
 }
 
+// =============================================================================
+// Invocation-aware default command
+// =============================================================================
+
+#[test]
+#[serial]
+fn a_naked_invocation_lists_when_stdin_is_a_terminal() {
+    let fx = Fixture::new();
+    let state = fx.app_state();
+    fx.seed_pad(&state, "existing", "body");
+    drop(state);
+
+    let (app, cmd) = fx.read_app();
+    let result =
+        TestHarness::new()
+            .interactive_stdin()
+            .run(&app, cmd, fx.argv(&["--output", "json"]));
+
+    result.assert_success();
+    assert_eq!(
+        pads(result.stdout()),
+        vec![("existing".into(), "existing\n\nbody".into())]
+    );
+}
+
+#[test]
+#[serial]
+fn a_naked_invocation_creates_from_piped_stdin() {
+    let fx = Fixture::new();
+    let (app, cmd) = fx.read_app();
+    let result = TestHarness::new()
+        .piped_stdin("Captured\n\nFrom a pipe")
+        .run(&app, cmd, fx.argv(&["--output", "json"]));
+
+    result.assert_success();
+    assert_eq!(
+        pads(result.stdout()),
+        vec![("Captured".into(), "Captured\n\nFrom a pipe".into())]
+    );
+}
+
+#[test]
+#[serial]
+fn a_naked_invocation_with_an_empty_pipe_aborts_create() {
+    let fx = Fixture::new();
+    let (app, cmd) = fx.read_app();
+    let result = TestHarness::new()
+        .piped_stdin("")
+        .run(&app, cmd, fx.argv(&["--output", "json"]));
+
+    result.assert_success();
+    assert_eq!(pads(result.stdout()), Vec::<(String, String)>::new());
+    assert!(messages(result.stdout())
+        .iter()
+        .any(|message| message.contains("Aborted: empty content")));
+}
+
+#[test]
+#[serial]
+fn an_explicit_command_keeps_precedence_over_piped_stdin() {
+    let fx = Fixture::new();
+    let state = fx.app_state();
+    fx.seed_pad(&state, "existing", "");
+    drop(state);
+
+    let (app, cmd) = fx.read_app();
+    let result = TestHarness::new().piped_stdin("must not create").run(
+        &app,
+        cmd,
+        fx.argv(&["list", "--output", "json"]),
+    );
+
+    result.assert_success();
+    assert_eq!(
+        pads(result.stdout()),
+        vec![("existing".into(), "existing".into())]
+    );
+}
+
 #[test]
 #[serial]
 fn search_flag_reaches_the_handler_as_a_filter() {
@@ -1246,6 +1325,135 @@ fn an_empty_result_stays_valid_in_every_structured_mode() {
 // =============================================================================
 // Output file
 // =============================================================================
+
+#[test]
+#[serial]
+fn export_artifact_uses_the_explicit_destination_and_reports_its_receipt() {
+    let fx = Fixture::new();
+    let state = fx.app_state();
+    fx.seed_pad(&state, "exported", "body");
+    drop(state);
+
+    let target = fx.root().join("chosen.tar.gz");
+    let (app, cmd) = fx.read_app();
+    let result = TestHarness::new().no_color().run(
+        &app,
+        cmd,
+        fx.argv(&["export", "--output-file-path", target.to_str().unwrap()]),
+    );
+
+    result.assert_success();
+    assert_eq!(&result.artifact_bytes().unwrap()[..2], &[0x1f, 0x8b]);
+    result.assert_artifact_written_to(&target);
+    result.assert_artifact_report_contains(&format!("Exported to {}", target.display()));
+    assert_eq!(
+        std::fs::read(&target).unwrap(),
+        result.artifact_bytes().unwrap()
+    );
+}
+
+#[test]
+#[serial]
+fn export_artifact_report_is_machine_readable_and_keeps_metadata_warnings() {
+    let fx = Fixture::new();
+    let state = fx.app_state();
+    fx.seed_pad(&state, "plain text", "body");
+    drop(state);
+
+    let target = fx.root().join("metadata.tar.gz");
+    let (app, cmd) = fx.read_app();
+    let result = TestHarness::new().run(
+        &app,
+        cmd,
+        fx.argv(&[
+            "export",
+            "--with-metadata",
+            "--output",
+            "json",
+            "--output-file-path",
+            target.to_str().unwrap(),
+        ]),
+    );
+
+    result.assert_success();
+    let report: serde_json::Value =
+        serde_json::from_str(result.artifact_report().unwrap()).unwrap();
+    assert_eq!(report["report"]["status"], "exported");
+    assert_eq!(report["report"]["format"], "metadata_archive");
+    assert_eq!(report["report"]["exported"], 1);
+    assert_eq!(
+        report["report"]["warnings"][0]["kind"],
+        "metadata_unavailable"
+    );
+    assert_eq!(report["report"]["warnings"][0]["titles"][0], "plain text");
+    assert_eq!(
+        report["receipt"]["destination"],
+        target.display().to_string()
+    );
+}
+
+#[test]
+#[serial]
+fn export_artifact_uses_its_suggested_single_file_destination() {
+    let fx = Fixture::new();
+    let state = fx.app_state();
+    fx.seed_pad(&state, "one", "body");
+    drop(state);
+
+    let (app, cmd) = fx.read_app();
+    let result = TestHarness::new().no_color().cwd(fx.root()).run(
+        &app,
+        cmd,
+        fx.argv(&["export", "--single-file", "My / Export.md"]),
+    );
+
+    result.assert_success();
+    result.assert_artifact_suggested_destination("My _ Export.md");
+    result.assert_artifact_written_to("My _ Export.md");
+    result.assert_artifact_report_contains("Exported 1 pads to My _ Export.md");
+    let written = std::fs::read_to_string(fx.root().join("My _ Export.md")).unwrap();
+    assert!(written.contains("## one"));
+}
+
+#[test]
+#[serial]
+fn empty_export_remains_non_artifact_output() {
+    let fx = Fixture::new();
+    let (app, cmd) = fx.read_app();
+    let result = TestHarness::new()
+        .no_color()
+        .run(&app, cmd, fx.argv(&["export"]));
+
+    result.assert_success();
+    assert!(result.artifact().is_none());
+    result.assert_stdout_contains("No pads to export.");
+}
+
+#[test]
+#[serial]
+fn artifact_write_failure_is_typed_and_emits_no_success_report() {
+    let fx = Fixture::new();
+    let state = fx.app_state();
+    fx.seed_pad(&state, "unwritten", "");
+    drop(state);
+
+    let target = fx.root();
+    let (app, cmd) = fx.read_app();
+    let result = TestHarness::new().no_color().run(
+        &app,
+        cmd,
+        fx.argv(&["export", "--output-file-path", target.to_str().unwrap()]),
+    );
+
+    result.assert_error();
+    result.assert_exit_status(ExitStatus::FAILURE);
+    result.assert_error_kind(RunErrorKind::FinalWrite(OutputKind::Artifact));
+    assert!(
+        result.artifact().is_none(),
+        "failed writes have no receipt/report"
+    );
+    assert!(!result.error().unwrap_or_default().contains("Exported to"));
+}
 
 #[test]
 #[serial]

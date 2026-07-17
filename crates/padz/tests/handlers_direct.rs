@@ -26,7 +26,8 @@ mod support;
 use padz::cli::handlers;
 use padz::cli::input::{RequestContent, CREATE_CONTENT, EDIT_CONTENT};
 use padz::cli::result::{
-    MessagesResult, ModificationResult, PadContentResult, PadListResult, PathResult, UuidResult,
+    ExportFormat, ExportStatus, ExportWarning, MessagesResult, ModificationResult,
+    PadContentResult, PadListResult, PathResult, UuidResult,
 };
 use padzapp::commands::{CmdNotice, NestingMode};
 use standout::cli::Output;
@@ -42,6 +43,8 @@ where
         Output::Render(value) => value,
         Output::Silent => panic!("expected Output::Render, got Silent"),
         Output::Binary { .. } => panic!("expected Output::Render, got Binary"),
+        Output::Artifact(_) => panic!("expected Output::Render, got Artifact"),
+        _ => panic!("expected Output::Render, got a newer output variant"),
     }
 }
 
@@ -482,6 +485,64 @@ fn uuid_maps_selectors_to_one_uuid_each() {
         "uuid handler should return a parseable uuid, got {:?}",
         result.uuids[0]
     );
+}
+
+// =============================================================================
+// Export artifacts
+// =============================================================================
+
+#[test]
+fn export_maps_core_bytes_suggestion_and_report_without_writing() {
+    let fx = Fixture::new();
+    let state = fx.app_state();
+    fx.seed_pad(&state, "plain text", "body");
+    let ctx = support::ctx_with_state(state);
+
+    let Output::Artifact(artifact) =
+        handlers::export(&ctx, None, false, true, vec![], false, false, false)
+            .expect("export handler failed")
+    else {
+        panic!("expected an artifact");
+    };
+
+    assert_eq!(&artifact.bytes()[..2], &[0x1f, 0x8b], "tar.gz magic");
+    assert!(artifact
+        .suggested_destination()
+        .is_some_and(|path| path.to_string_lossy().ends_with(".meta.gz")));
+
+    let report = artifact.report().expect("artifact report");
+    assert_eq!(report.status, ExportStatus::Exported);
+    assert_eq!(report.format, ExportFormat::MetadataArchive);
+    assert_eq!(report.exported, 1);
+    assert!(matches!(
+        &report.warnings[0],
+        ExportWarning::MetadataUnavailable {
+            count: 1,
+            additional: 0,
+            ..
+        }
+    ));
+}
+
+#[test]
+fn empty_export_stays_a_non_artifact_result() {
+    let fx = Fixture::new();
+    let ctx = fx.ctx();
+
+    let report = rendered(handlers::export(
+        &ctx,
+        None,
+        false,
+        false,
+        vec![],
+        false,
+        false,
+        false,
+    ));
+
+    assert_eq!(report.status, ExportStatus::Empty);
+    assert_eq!(report.format, ExportFormat::Archive);
+    assert_eq!(report.exported, 0);
 }
 
 // =============================================================================

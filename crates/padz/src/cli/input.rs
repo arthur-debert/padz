@@ -1,4 +1,4 @@
-//! Request-scoped input resolution for `create`/`edit`, and naked invocation.
+//! Request-scoped input resolution for `create` and `edit`.
 //!
 //! # Why this module exists
 //!
@@ -44,12 +44,8 @@
 //!   so the chain resolves to [`RequestContent::Editor`] and stops there; it
 //!   does not try to launch anything.
 //! - **`ClipboardSource`**: padz does not, and did not, read the clipboard as a
-//!   create/edit input source. See [`naked_command`]'s sibling note in
-//!   `cli::mod` docs — the clipboard is written to after a pad is saved, never
-//!   read from to prefill one.
-//! - **`App::default_command`**: it names one static command, but padz's naked
-//!   invocation picks between two depending on whether stdin is piped. See
-//!   [`naked_command`].
+//!   create/edit input source. The clipboard is written to after a pad is
+//!   saved, never read from to prefill one.
 
 use clap::ArgMatches;
 use padzapp::config::PadzMode;
@@ -235,39 +231,6 @@ pub(super) fn edit_chain(mode: PadzMode) -> InputChain<RequestContent> {
         .try_source(EditDirectSource { mode })
         .try_source(PipedSource::from_process())
         .default(RequestContent::Editor)
-}
-
-// =============================================================================
-// Naked invocation
-// =============================================================================
-
-/// Which command a naked `padz` stands for: `create` when stdin is piped,
-/// `list` otherwise.
-///
-/// # Why this is not `App::default_command`
-///
-/// Standout 7.6 has a declarative default command, but it names exactly one
-/// static command (`insert_default_command` splices that literal into argv).
-/// Padz's rule is *conditional* — the whole point is that `cat notes | padz`
-/// captures while a bare `padz` reads — and 7.6 offers no predicate hook for
-/// that. Standout's default also only fires inside `App::run`, and padz drives
-/// `parse_from` + `dispatch` so it can build app state and resolve the output
-/// mode first, so the setting would not apply on that path regardless.
-///
-/// So this stays application-owned, but it is a pure function of a
-/// [`StdinReader`] rather than an inline `is_terminal()` probe, which is what
-/// makes both arms testable without a pty.
-pub fn naked_command(reader: &dyn StdinReader) -> &'static str {
-    if reader.is_terminal() {
-        "list"
-    } else {
-        "create"
-    }
-}
-
-/// [`naked_command`] against the process's real stdin (honoring test overrides).
-pub fn naked_command_from_process() -> &'static str {
-    naked_command(&DefaultStdin)
 }
 
 // =============================================================================
@@ -554,24 +517,5 @@ mod tests {
             &edit_matches(&["1", "Inline"]),
         );
         assert_eq!(value, RequestContent::Direct("Inline".into()));
-    }
-
-    // --- naked invocation ---
-
-    #[test]
-    fn naked_padz_lists_on_a_terminal() {
-        assert_eq!(naked_command(&MockStdin::terminal()), "list");
-    }
-
-    #[test]
-    fn naked_padz_creates_when_piped() {
-        assert_eq!(naked_command(&MockStdin::piped("captured")), "create");
-    }
-
-    /// An empty pipe is still a pipe: naked padz routes to `create`, which then
-    /// aborts on the empty content rather than listing.
-    #[test]
-    fn naked_padz_creates_even_when_the_pipe_is_empty() {
-        assert_eq!(naked_command(&MockStdin::piped_empty()), "create");
     }
 }
