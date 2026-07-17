@@ -1941,8 +1941,8 @@ dependencies = [
 
 [[package]]
 name = "standout"
-version = "7.6.4"
-source = "git+https://github.com/arthur-debert/standout?tag=v7.6.4#baf96ab6f6bf44e946584759ea90564b88b652ed"
+version = "7.7.0"
+source = "git+https://github.com/arthur-debert/standout?tag=v7.7.0#6fbe99944a81b8f77faa7e0954329c7a08c8bf69"
 dependencies = [
  "anyhow",
  "clap",
@@ -1966,16 +1966,16 @@ dependencies = [
 
 [[package]]
 name = "standout-bbparser"
-version = "7.6.4"
-source = "git+https://github.com/arthur-debert/standout?tag=v7.6.4#baf96ab6f6bf44e946584759ea90564b88b652ed"
+version = "7.7.0"
+source = "git+https://github.com/arthur-debert/standout?tag=v7.7.0#6fbe99944a81b8f77faa7e0954329c7a08c8bf69"
 dependencies = [
  "console 0.16.4",
 ]
 
 [[package]]
 name = "standout-dispatch"
-version = "7.6.4"
-source = "git+https://github.com/arthur-debert/standout?tag=v7.6.4#baf96ab6f6bf44e946584759ea90564b88b652ed"
+version = "7.7.0"
+source = "git+https://github.com/arthur-debert/standout?tag=v7.7.0#6fbe99944a81b8f77faa7e0954329c7a08c8bf69"
 dependencies = [
  "anyhow",
  "clap",
@@ -1986,8 +1986,8 @@ dependencies = [
 
 [[package]]
 name = "standout-input"
-version = "7.6.4"
-source = "git+https://github.com/arthur-debert/standout?tag=v7.6.4#baf96ab6f6bf44e946584759ea90564b88b652ed"
+version = "7.7.0"
+source = "git+https://github.com/arthur-debert/standout?tag=v7.7.0#6fbe99944a81b8f77faa7e0954329c7a08c8bf69"
 dependencies = [
  "clap",
  "once_cell",
@@ -1999,8 +1999,8 @@ dependencies = [
 
 [[package]]
 name = "standout-macros"
-version = "7.6.4"
-source = "git+https://github.com/arthur-debert/standout?tag=v7.6.4#baf96ab6f6bf44e946584759ea90564b88b652ed"
+version = "7.7.0"
+source = "git+https://github.com/arthur-debert/standout?tag=v7.7.0#6fbe99944a81b8f77faa7e0954329c7a08c8bf69"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -2009,8 +2009,8 @@ dependencies = [
 
 [[package]]
 name = "standout-pipe"
-version = "7.6.4"
-source = "git+https://github.com/arthur-debert/standout?tag=v7.6.4#baf96ab6f6bf44e946584759ea90564b88b652ed"
+version = "7.7.0"
+source = "git+https://github.com/arthur-debert/standout?tag=v7.7.0#6fbe99944a81b8f77faa7e0954329c7a08c8bf69"
 dependencies = [
  "thiserror 2.0.17",
  "wait-timeout",
@@ -2018,8 +2018,8 @@ dependencies = [
 
 [[package]]
 name = "standout-render"
-version = "7.6.4"
-source = "git+https://github.com/arthur-debert/standout?tag=v7.6.4#baf96ab6f6bf44e946584759ea90564b88b652ed"
+version = "7.7.0"
+source = "git+https://github.com/arthur-debert/standout?tag=v7.7.0#6fbe99944a81b8f77faa7e0954329c7a08c8bf69"
 dependencies = [
  "console 0.16.4",
  "cssparser",
@@ -2034,13 +2034,14 @@ dependencies = [
  "serde_yaml",
  "standout-bbparser",
  "terminal_size",
+ "thiserror 2.0.17",
  "unicode-width",
 ]
 
 [[package]]
 name = "standout-seeker"
-version = "7.6.4"
-source = "git+https://github.com/arthur-debert/standout?tag=v7.6.4#baf96ab6f6bf44e946584759ea90564b88b652ed"
+version = "7.7.0"
+source = "git+https://github.com/arthur-debert/standout?tag=v7.7.0#6fbe99944a81b8f77faa7e0954329c7a08c8bf69"
 dependencies = [
  "regex",
  "thiserror 2.0.17",
@@ -2048,8 +2049,8 @@ dependencies = [
 
 [[package]]
 name = "standout-test"
-version = "7.6.4"
-source = "git+https://github.com/arthur-debert/standout?tag=v7.6.4#baf96ab6f6bf44e946584759ea90564b88b652ed"
+version = "7.7.0"
+source = "git+https://github.com/arthur-debert/standout?tag=v7.7.0#6fbe99944a81b8f77faa7e0954329c7a08c8bf69"
 dependencies = [
  "clap",
  "serial_test",
