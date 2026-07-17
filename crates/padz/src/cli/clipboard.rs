@@ -1,9 +1,14 @@
-//! Reading and writing the system clipboard.
+//! Writing the system clipboard.
 //!
-//! A user-environment concern owned by the CLI: every path here shells out to
-//! a platform clipboard tool (`pbcopy`/`pbpaste`, `xclip`/`xsel`, `clip`/
-//! PowerShell). The library never touches the clipboard — handlers hand pad
-//! text to these functions at the CLI boundary.
+//! A user-environment concern owned by the CLI: each supported platform shells
+//! out to its clipboard *write* tool (`pbcopy`, `xclip`/`xsel`, `clip`); any
+//! other platform is an error. The library never touches the clipboard —
+//! handlers hand pad text to these functions at the CLI boundary.
+//!
+//! Write-only by design: padz copies pad text *to* the clipboard after a pad is
+//! saved or viewed, and never reads it back to pre-fill one. There is no
+//! clipboard read API here — see the `cli::input` docs for why the clipboard is
+//! not an input source.
 
 use padzapp::error::{PadzError, Result};
 use std::process::Command;
@@ -156,15 +161,16 @@ mod tests {
         assert_eq!(result, "My Title\n\nSome content");
     }
 
-    /// The real platform clipboard round-trip.
+    /// A real platform clipboard write.
     ///
-    /// Ignored by default: it depends on a working clipboard tool (and, on
-    /// Linux, an X display), which CI has no business requiring. Run it with
-    /// `cargo test -p padz -- --ignored` on a desktop to check this adapter
-    /// against the actual system clipboard.
+    /// This module is write-only, so the assertion is that the copy succeeds —
+    /// the text is not read back. Ignored by default: it depends on a working
+    /// clipboard tool (and, on Linux, an X display), which CI has no business
+    /// requiring. Run it with `cargo test -p padz -- --ignored` on a desktop to
+    /// check this adapter against the actual system clipboard.
     #[test]
     #[ignore = "requires a working system clipboard"]
-    fn copy_round_trips_through_the_system_clipboard() {
+    fn copy_writes_to_the_system_clipboard() {
         let text = "padz clipboard adapter test";
         copy_to_clipboard(text).unwrap();
     }

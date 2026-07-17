@@ -111,7 +111,7 @@
 //!
 //! - Editor **selection and launching** (`padz::cli::editor`) — this crate owns
 //!   only the buffer format ([`editor::EditorContent`]).
-//! - Clipboard reads/writes (`padz::cli::clipboard`).
+//! - Clipboard writes (`padz::cli::clipboard`) — padz never reads the clipboard.
 //! - Terminal styling of errors, notably the structured
 //!   [`error::PadzError::AmbiguousTitle`] (`padz::cli::errors`).
 //! - Environment and platform-directory discovery: the CLI resolves them and
