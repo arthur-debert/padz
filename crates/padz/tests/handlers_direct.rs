@@ -28,6 +28,7 @@ use padz::cli::input::{RequestContent, CREATE_CONTENT, EDIT_CONTENT};
 use padz::cli::result::{
     MessagesResult, ModificationResult, PadContentResult, PadListResult, PathResult, UuidResult,
 };
+use padzapp::commands::{CmdNotice, NestingMode};
 use standout::cli::Output;
 use support::Fixture;
 
@@ -233,6 +234,32 @@ fn view_includes_the_uuid_only_when_requested() {
 }
 
 #[test]
+fn indented_view_returns_raw_content_plus_nesting_facts() {
+    let fx = Fixture::new();
+    let state = fx.app_state();
+    fx.seed_pad(&state, "parent", "parent body");
+    fx.seed_child(&state, "1", "child", "child body\nsecond line");
+    let ctx = support::ctx_with_state(state);
+
+    let result: PadContentResult = rendered(handlers::view(
+        &ctx,
+        vec!["1".to_string()],
+        false,
+        false,
+        false,
+        false,
+        true,
+    ));
+
+    assert_eq!(result.nesting, NestingMode::Indented);
+    assert_eq!(result.pads[1].depth, 1);
+    assert_eq!(result.pads[1].title, "child");
+    assert_eq!(result.pads[1].content, "child body\nsecond line");
+    assert!(!result.pads[1].title.starts_with(' '));
+    assert!(!result.pads[1].content.starts_with(' '));
+}
+
+#[test]
 fn view_of_an_unknown_selector_is_an_error_not_an_empty_result() {
     let fx = Fixture::new();
     let ctx = fx.ctx();
@@ -329,6 +356,25 @@ fn plain_modification_handlers_do_not_request_status_icons_in_notes_mode() {
     let result = rendered(handlers::pin(&ctx, vec!["1".to_string()]));
 
     assert!(!result.request.status);
+}
+
+#[test]
+fn repeated_pin_maps_the_core_notice_without_parsing_prose() {
+    let fx = Fixture::new();
+    let state = fx.app_state();
+    fx.seed_pad(&state, "note", "");
+    let ctx = support::ctx_with_state(state);
+
+    rendered(handlers::pin(&ctx, vec!["1".to_string()]));
+    let result = rendered(handlers::pin(&ctx, vec!["p1".to_string()]));
+
+    assert_eq!(
+        result.notices,
+        vec![CmdNotice::AlreadyPinned {
+            path: vec![padzapp::index::DisplayIndex::Pinned(1)]
+        }]
+    );
+    assert!(result.messages.is_empty());
 }
 
 #[test]

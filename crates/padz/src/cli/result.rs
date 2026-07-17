@@ -27,6 +27,7 @@
 //! it is part of the result and visible in structured output.
 
 use padzapp::api::CmdMessage;
+use padzapp::commands::{CmdNotice, NestingMode};
 use padzapp::index::DisplayPad;
 use serde::{Deserialize, Serialize};
 
@@ -80,6 +81,9 @@ pub struct ModificationResult {
     pub action: String,
     pub pads: Vec<DisplayPad>,
     pub messages: Vec<CmdMessage>,
+    /// Machine-readable facts emitted by the core; templates own their prose.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub notices: Vec<CmdNotice>,
     pub request: ModificationRequest,
 }
 
@@ -101,9 +105,9 @@ impl MessagesResult {
 /// One pad's full content, as returned by `view`.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PadContent {
-    /// Title, already carrying its tree indentation prefix in indented nesting mode.
+    /// Raw title with no presentation indentation.
     pub title: String,
-    /// Body (content minus the title line), indented to match `title`.
+    /// Raw body (content minus the title line), with no presentation indentation.
     pub content: String,
     /// Depth in the pad tree; 0 for a root pad.
     pub depth: usize,
@@ -116,6 +120,8 @@ pub struct PadContent {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PadContentResult {
     pub pads: Vec<PadContent>,
+    /// The requested relationship shape; human rendering decides how it looks.
+    pub nesting: NestingMode,
 }
 
 /// Filesystem paths of the selected pads, one per selector match.

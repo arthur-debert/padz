@@ -644,6 +644,84 @@ fn a_modification_renders_its_action_verb() {
 
 #[test]
 #[serial]
+fn a_semantic_pin_notice_renders_compatible_human_wording() {
+    let fx = Fixture::new();
+    let state = fx.app_state();
+    fx.seed_pad(&state, "target", "");
+    state
+        .with_api(|api| api.pin_pads(state.scope, &["1"]))
+        .unwrap();
+    drop(state);
+
+    let (app, cmd) = fx.read_app();
+    let result =
+        TestHarness::new()
+            .no_color()
+            .text_output()
+            .run(&app, cmd, fx.argv(&["pin", "p1"]));
+
+    result.assert_success();
+    result.assert_stdout_contains("Pad p1 is already pinned");
+}
+
+#[test]
+#[serial]
+fn semantic_pin_notice_is_machine_readable() {
+    let fx = Fixture::new();
+    let state = fx.app_state();
+    fx.seed_pad(&state, "target", "");
+    state
+        .with_api(|api| api.pin_pads(state.scope, &["1"]))
+        .unwrap();
+    drop(state);
+
+    let (app, cmd) = fx.read_app();
+    let result =
+        TestHarness::new()
+            .no_color()
+            .run(&app, cmd, fx.argv(&["pin", "p1", "--output", "json"]));
+    let value: serde_json::Value = serde_json::from_str(result.stdout()).unwrap();
+
+    assert_eq!(value["notices"][0]["kind"], "already_pinned");
+    assert_eq!(value["notices"][0]["path"][0]["type"], "Pinned");
+    assert_eq!(value["notices"][0]["path"][0]["value"], 1);
+    assert!(value["messages"].as_array().is_some_and(Vec::is_empty));
+}
+
+#[test]
+#[serial]
+fn indented_view_is_shaped_by_the_template_not_the_result() {
+    let fx = Fixture::new();
+    let state = fx.app_state();
+    fx.seed_pad(&state, "parent", "parent body");
+    fx.seed_child(&state, "1", "child", "child body\nsecond line");
+    drop(state);
+
+    let (app, cmd) = fx.read_app();
+    let human = TestHarness::new().no_color().text_output().run(
+        &app,
+        cmd,
+        fx.argv(&["view", "1", "--indented"]),
+    );
+    human.assert_stdout_contains("    child");
+    human.assert_stdout_contains("    child body\n    second line");
+    drop(human);
+
+    let (app, cmd) = fx.read_app();
+    let structured = TestHarness::new().no_color().run(
+        &app,
+        cmd,
+        fx.argv(&["view", "1", "--indented", "--output", "json"]),
+    );
+    let value: serde_json::Value = serde_json::from_str(structured.stdout()).unwrap();
+    assert_eq!(value["nesting"], "indented");
+    assert_eq!(value["pads"][1]["depth"], 1);
+    assert_eq!(value["pads"][1]["title"], "child");
+    assert_eq!(value["pads"][1]["content"], "child body\nsecond line");
+}
+
+#[test]
+#[serial]
 fn text_output_carries_no_ansi_escapes() {
     let fx = Fixture::new();
     let state = fx.app_state();

@@ -67,22 +67,6 @@ teardown() {
 }
 
 # -----------------------------------------------------------------------------
-# VIEW --indented
-# -----------------------------------------------------------------------------
-
-@test "view: --indented shows children with indentation" {
-    local idx
-    idx=$(find_pad_by_title "Nested Test Parent" global)
-
-    run "${PADZ_BIN}" -g view --indented "${idx}"
-    assert_success
-    [[ "$output" == *"Nested Test Parent"* ]]
-    [[ "$output" == *"Nested Test Child"* ]]
-    # Indented children should have leading spaces
-    [[ "$output" == *"    Nested Test Child"* ]]
-}
-
-# -----------------------------------------------------------------------------
 # VIEW on leaf pad
 # -----------------------------------------------------------------------------
 

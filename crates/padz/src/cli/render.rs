@@ -50,6 +50,7 @@ use super::setup::get_grouped_help;
 use chrono::{DateTime, Utc};
 use minijinja::Value;
 use padzapp::api::CmdMessage;
+use padzapp::commands::CmdNotice;
 use padzapp::index::{DisplayIndex, DisplayPad, SearchMatch};
 use padzapp::model::TodoStatus;
 use padzapp::peek::{format_as_peek, PeekResult};
@@ -215,6 +216,15 @@ pub struct ModificationView {
     pub rows: Vec<PadRow>,
     pub show_status: bool,
     pub messages: Vec<CmdMessage>,
+    /// Presentation-ready projections of semantic core notices.
+    pub notices: Vec<ModificationNoticeView>,
+}
+
+/// The small amount of display shaping a semantic modification notice needs.
+#[derive(Debug, Clone, Serialize)]
+pub struct ModificationNoticeView {
+    pub kind: &'static str,
+    pub index: String,
 }
 
 // =============================================================================
@@ -295,6 +305,22 @@ pub fn build_modification_view(result: &ModificationResult) -> ModificationView 
             .collect(),
         show_status: result.request.status,
         messages: result.messages.clone(),
+        notices: result.notices.iter().map(modification_notice).collect(),
+    }
+}
+
+fn modification_notice(notice: &CmdNotice) -> ModificationNoticeView {
+    let (kind, path) = match notice {
+        CmdNotice::AlreadyPinned { path } => ("already_pinned", path),
+        CmdNotice::AlreadyUnpinned { path } => ("already_unpinned", path),
+    };
+    ModificationNoticeView {
+        kind,
+        index: path
+            .iter()
+            .map(ToString::to_string)
+            .collect::<Vec<_>>()
+            .join("."),
     }
 }
 
@@ -590,6 +616,7 @@ mod tests {
                 vec![dp(pad("child"), DisplayIndex::Regular(1), vec![])],
             )],
             messages: vec![],
+            notices: vec![],
             request: ModificationRequest { status: true },
         };
         let view = build_modification_view(&result);

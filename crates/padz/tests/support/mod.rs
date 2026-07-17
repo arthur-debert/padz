@@ -163,6 +163,20 @@ impl Fixture {
             .with_api(|api| api.create_pad(state.scope, title.to_string(), body.to_string(), None))
             .unwrap_or_else(|e| panic!("failed to seed pad {title:?}: {e}"));
     }
+
+    /// Creates a child pad under a canonical display selector.
+    pub fn seed_child(&self, state: &AppState, parent: &str, title: &str, body: &str) {
+        state
+            .with_api(|api| {
+                api.create_pad(
+                    state.scope,
+                    title.to_string(),
+                    body.to_string(),
+                    Some(parent),
+                )
+            })
+            .unwrap_or_else(|e| panic!("failed to seed child pad {title:?}: {e}"));
+    }
 }
 
 impl Default for Fixture {
