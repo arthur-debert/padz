@@ -67,7 +67,8 @@ use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 
 /// Controls how nested (parent/child) pads are rendered.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
 pub enum NestingMode {
     /// Show only the selected pad(s), no children (legacy behavior).
     Flat,
@@ -76,6 +77,22 @@ pub enum NestingMode {
     Tree,
     /// Recursively include children, with 4-space indentation per nesting level.
     Indented,
+}
+
+/// A semantic, presentation-free fact a command wants the caller to surface.
+///
+/// Unlike [`CmdMessage`], notices carry no authored prose. CLI clients can render
+/// them for people while structured clients can branch on `kind` and fields.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum CmdNotice {
+    /// A pin/unpin request found the pad in the requested state already.
+    AlreadyPinned {
+        path: Vec<crate::index::DisplayIndex>,
+    },
+    AlreadyUnpinned {
+        path: Vec<crate::index::DisplayIndex>,
+    },
 }
 
 pub mod archive;
@@ -186,6 +203,8 @@ pub struct CmdResult {
     pub listed_depths: Vec<usize>,
     pub pad_paths: Vec<PathBuf>,
     pub messages: Vec<CmdMessage>,
+    /// Semantic notices that clients render or inspect without parsing English.
+    pub notices: Vec<CmdNotice>,
     /// The nesting mode used to produce listed_pads.
     pub nesting: NestingMode,
 }

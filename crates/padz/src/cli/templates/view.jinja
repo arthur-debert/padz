@@ -13,8 +13,14 @@
 {%- if pad.uuid %}
 [info]uuid: {{ pad.uuid }}[/info]
 {% endif -%}
+{%- if nesting == "indented" -%}
+{{ pad.title | indent(pad.depth * 4, true) }}
+
+{{ pad.content | indent(pad.depth * 4, true) }}
+{%- else -%}
 {{ pad.title }}
 
 {{ pad.content }}
+{%- endif -%}
 {% endfor -%}
 {% endif %}

@@ -1,5 +1,5 @@
 use crate::attributes::AttrValue;
-use crate::commands::{CmdMessage, CmdResult};
+use crate::commands::{CmdNotice, CmdResult};
 use crate::error::Result;
 use crate::index::{DisplayIndex, DisplayPad, PadSelector};
 use crate::model::Scope;
@@ -43,17 +43,15 @@ fn pin_state<S: DataStore>(
         pad.metadata.set_attr("pinned", AttrValue::Bool(is_pinned));
         store.save_pad(&pad, scope, Bucket::Active)?;
 
-        // Only add info messages for no-op cases; success cases are shown via pad list
+        // No-op cases are semantic notices; the CLI owns their wording.
         if is_pinned && was_already_pinned {
-            result.add_message(CmdMessage::info(format!(
-                "Pad {} is already pinned",
-                super::helpers::fmt_path(&display_index)
-            )));
+            result.notices.push(CmdNotice::AlreadyPinned {
+                path: display_index.clone(),
+            });
         } else if !is_pinned && !was_already_pinned {
-            result.add_message(CmdMessage::info(format!(
-                "Pad {} is already unpinned",
-                super::helpers::fmt_path(&display_index)
-            )));
+            result.notices.push(CmdNotice::AlreadyUnpinned {
+                path: display_index.clone(),
+            });
         }
         affected_uuids.push(uuid);
     }
@@ -209,12 +207,13 @@ mod tests {
         )
         .unwrap();
 
-        // Should return info message
-        assert!(matches!(
-            result.messages[0].level,
-            crate::commands::MessageLevel::Info
-        ));
-        assert!(result.messages[0].content.contains("already pinned"));
+        assert_eq!(
+            result.notices,
+            vec![CmdNotice::AlreadyPinned {
+                path: vec![DisplayIndex::Pinned(1)]
+            }]
+        );
+        assert!(result.messages.is_empty());
     }
 
     #[test]
@@ -235,12 +234,13 @@ mod tests {
         )
         .unwrap();
 
-        // Should return info message
-        assert!(matches!(
-            result.messages[0].level,
-            crate::commands::MessageLevel::Info
-        ));
-        assert!(result.messages[0].content.contains("already unpinned"));
+        assert_eq!(
+            result.notices,
+            vec![CmdNotice::AlreadyUnpinned {
+                path: vec![DisplayIndex::Regular(1)]
+            }]
+        );
+        assert!(result.messages.is_empty());
     }
 
     #[test]

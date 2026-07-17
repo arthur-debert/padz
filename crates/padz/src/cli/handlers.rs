@@ -162,6 +162,7 @@ impl<'a> ScopedApi<'a> {
             action: action.to_string(),
             pads: result.affected_pads,
             messages: result.messages,
+            notices: result.notices,
             request: ModificationRequest {
                 status: self.state.wants_status(force_show_status),
             },
@@ -423,52 +424,37 @@ impl<'a> ScopedApi<'a> {
     ) -> Result<Output<PadContentResult>, anyhow::Error> {
         let result = self.call(|api, scope| api.view_pads(scope, indexes, nesting))?;
 
-        // Copy content to clipboard (only root-level pads for tree/indented)
-        for (i, dp) in result.listed_pads.iter().enumerate() {
-            let depth = result.listed_depths.get(i).copied().unwrap_or(0);
-            if depth == 0 {
-                copy_content_to_clipboard(&dp.pad.content);
-            }
-        }
-
-        let indent_per_level: usize = match nesting {
-            NestingMode::Indented => 4,
-            _ => 0,
-        };
-
         let pads: Vec<PadContent> = result
             .listed_pads
             .iter()
             .enumerate()
             .map(|(i, dp)| {
                 let depth = result.listed_depths.get(i).copied().unwrap_or(0);
-                let indent = " ".repeat(depth * indent_per_level);
-
                 // Extract body (content minus title) to avoid double-title in output
                 let body = extract_title_and_body(&dp.pad.content)
                     .map(|(_, b)| b)
                     .unwrap_or_default();
 
-                // Apply indentation to content lines if indented mode
-                let (display_title, display_body) = if indent.is_empty() {
-                    (dp.pad.metadata.title.clone(), body)
-                } else {
-                    let indented_body = indent_lines(&body, &indent);
-                    (
-                        format!("{}{}", indent, dp.pad.metadata.title),
-                        indented_body,
-                    )
-                };
-
                 PadContent {
-                    title: display_title,
-                    content: display_body,
+                    title: dp.pad.metadata.title.clone(),
+                    content: body,
                     depth,
                     uuid: show_uuid.then(|| dp.pad.metadata.id.to_string()),
                 }
             })
             .collect();
-        Ok(Output::Render(PadContentResult { pads }))
+        let view = PadContentResult { pads, nesting };
+
+        // `view` copies only the selected roots, in display order. Build one
+        // payload and perform one CLI-owned write so multiple selectors do not
+        // overwrite one another and rendered/structured output never becomes the
+        // clipboard source.
+        let clipboard_text = view_clipboard_text(&view);
+        if !clipboard_text.is_empty() {
+            let _ = copy_to_clipboard(&clipboard_text);
+        }
+
+        Ok(Output::Render(view))
     }
 
     // --- Copy operations ---
@@ -534,6 +520,20 @@ impl<'a> ScopedApi<'a> {
             msg,
         )])))
     }
+}
+
+/// Clipboard payload for `view`, derived only from its semantic result.
+///
+/// Child rows are excluded to preserve `view`'s established clipboard contract;
+/// selected roots are joined in their canonical display order with the same
+/// separator used by human multi-pad output.
+fn view_clipboard_text(view: &PadContentResult) -> String {
+    view.pads
+        .iter()
+        .filter(|pad| pad.depth == 0)
+        .map(|pad| format_for_clipboard(&pad.title, &pad.content))
+        .collect::<Vec<_>>()
+        .join("\n---\n\n")
 }
 
 /// Get a scoped API accessor from the command context
@@ -760,6 +760,7 @@ fn aborted_create() -> ModificationResult {
         action: "Created".to_string(),
         pads: Vec::new(),
         messages: vec![CmdMessage::warning("Aborted: empty content")],
+        notices: Vec::new(),
         request: ModificationRequest::default(),
     }
 }
@@ -1555,6 +1556,38 @@ mod tests {
             rendered(view(&app.ctx, vec!["1".into()], false, true, false, false, false).unwrap());
 
         assert!(result.pads[0].uuid.is_some());
+    }
+
+    #[test]
+    fn view_clipboard_payload_joins_roots_once_and_excludes_children() {
+        let view = PadContentResult {
+            nesting: NestingMode::Tree,
+            pads: vec![
+                PadContent {
+                    title: "First".to_string(),
+                    content: "one".to_string(),
+                    depth: 0,
+                    uuid: None,
+                },
+                PadContent {
+                    title: "Child".to_string(),
+                    content: "nested".to_string(),
+                    depth: 1,
+                    uuid: None,
+                },
+                PadContent {
+                    title: "Second".to_string(),
+                    content: "two".to_string(),
+                    depth: 0,
+                    uuid: None,
+                },
+            ],
+        };
+
+        assert_eq!(
+            view_clipboard_text(&view),
+            "First\n\none\n---\n\nSecond\n\ntwo"
+        );
     }
 
     // --- mutation -------------------------------------------------------------

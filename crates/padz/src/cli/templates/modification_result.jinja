@@ -18,3 +18,12 @@
 {%- for msg in view.messages -%}
 {{ msg.content | style_as(msg.level) }}{{ "" | nl }}
 {%- endfor -%}
+
+{#- Semantic notices: wording stays here; structured modes receive kind + fields. -#}
+{%- for notice in view.notices -%}
+{%- if notice.kind == "already_pinned" -%}
+[info]Pad {{ notice.index }} is already pinned[/info]{{ "" | nl }}
+{%- elif notice.kind == "already_unpinned" -%}
+[info]Pad {{ notice.index }} is already unpinned[/info]{{ "" | nl }}
+{%- endif -%}
+{%- endfor -%}
