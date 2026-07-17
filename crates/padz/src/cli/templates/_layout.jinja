@@ -5,7 +5,12 @@
     the caller zeroes it when they are off, because an unused column still costs
     its width. `time` is 5 because that is what unicode-width makes of "34s ⏲"
     (the ⏲ measures 1 there but draws 2 — `render::line_width` pays that back). -#}
-{%- set COLS = {"left_pin": 2, "status": 2, "index": 4, "time": 5} -%}
+{#- `line_no` is the width of the hit-line badge a search match carries ("04L "):
+    two zero-padded digits, the "L", and the space before the text. It is not a
+    column of the pad line itself — it hangs in the gutter to the *left* of the
+    title column, so `_match_lines.jinja` subtracts it from the title-column
+    offset to land the match text on that column. -#}
+{%- set COLS = {"left_pin": 2, "status": 2, "index": 4, "time": 5, "line_no": 4} -%}
 
 {#- Spaces per level of nesting. -#}
 {%- set INDENT = 2 -%}

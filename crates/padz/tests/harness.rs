@@ -36,6 +36,7 @@ mod support;
 
 use standout_test::{serial, TestHarness};
 use support::Fixture;
+use unicode_width::UnicodeWidthStr;
 
 // =============================================================================
 // Helpers
@@ -1233,6 +1234,78 @@ fn output_file_path_writes_text_without_ansi_escapes() {
         "a file is not a terminal; the written output must be escape-free: {written:?}"
     );
     assert!(written.contains("written pad"));
+}
+
+// =============================================================================
+// Search-hit layout
+// =============================================================================
+
+/// The display column `needle` starts at, counted the way a terminal counts.
+///
+/// Byte and `char` offsets both lie here: the status glyph is two `char`s
+/// (symbol + variation selector) and one column. This measures with the crate
+/// the renderer measures with, so a column here means a column there.
+fn column_of(line: &str, needle: &str) -> usize {
+    let byte = line
+        .find(needle)
+        .unwrap_or_else(|| panic!("{needle:?} not found in {line:?}"));
+    UnicodeWidthStr::width(&line[..byte])
+}
+
+/// A search hit hangs its `04L ` badge in the gutter and lands its *text* on the
+/// pad's title column, so a hit reads as a continuation of the title it matched.
+///
+/// That column is not a constant: it moves with `--show-status`, because the
+/// status column only costs width when it is asked for. The badge offset must
+/// therefore be derived from the same column maths the pad line uses.
+/// Regression guard — a hard-coded gutter lines up in whichever configuration it
+/// was tuned against and silently drifts by the status width in the other, which
+/// is exactly what it used to do.
+///
+/// Only depth 0 is asserted, because only depth 0 is reachable: `apply_search`
+/// filters the root pads and never recurses into their children, so a pad that
+/// carries hits is always a root. The template still derives the badge from
+/// `pad.depth`, which costs nothing and stays correct if search ever descends.
+#[test]
+#[serial]
+fn search_hit_text_lands_on_the_title_column_in_every_configuration() {
+    for show_status in [false, true] {
+        let fx = Fixture::new();
+        let state = fx.app_state();
+        fx.seed_pad(&state, "hit pad", "alpha\nneedle here\n");
+        drop(state);
+
+        let mut argv = vec!["list", "--search", "needle"];
+        if show_status {
+            argv.push("--show-status");
+        }
+
+        let (app, cmd) = fx.read_app();
+        let result = TestHarness::new()
+            .no_color()
+            .terminal_width(80)
+            .text_output()
+            .run(&app, cmd, fx.argv(&argv));
+
+        result.assert_success();
+        let stdout = result.stdout();
+        let case = format!("show_status={show_status}");
+
+        let title_line = stdout
+            .lines()
+            .find(|l| l.contains("hit pad"))
+            .unwrap_or_else(|| panic!("no pad line ({case}):\n{stdout}"));
+        let hit_line = stdout
+            .lines()
+            .find(|l| l.contains("needle here"))
+            .unwrap_or_else(|| panic!("no hit line ({case}):\n{stdout}"));
+
+        assert_eq!(
+            column_of(hit_line, "needle here"),
+            column_of(title_line, "hit pad"),
+            "hit text must start on the title column ({case}):\n{stdout}"
+        );
+    }
 }
 
 // =============================================================================
