@@ -2,8 +2,9 @@
 //!
 //! A user-environment concern owned by the CLI: each supported platform shells
 //! out to its clipboard *write* tool (`pbcopy`, `xclip`/`xsel`, `clip`); any
-//! other platform is an error. The library never touches the clipboard —
-//! handlers hand pad text to these functions at the CLI boundary.
+//! other platform is an error. The library never touches the clipboard — the
+//! CLI injects a [`ClipboardWriter`] into application state and handlers hand it
+//! semantic pad text at that boundary.
 //!
 //! Write-only by design: padz copies pad text *to* the clipboard after a pad is
 //! saved or viewed, and never reads it back to pre-fill one. There is no
@@ -12,6 +13,25 @@
 
 use padzapp::error::{PadzError, Result};
 use std::process::Command;
+
+/// A CLI-owned destination for semantic clipboard payloads.
+///
+/// The production implementation writes to the platform clipboard. Keeping the
+/// dependency behind this one-method interface lets in-process CLI tests observe
+/// write count and ordering without making rendered output the clipboard source.
+pub trait ClipboardWriter {
+    fn write(&self, text: &str) -> Result<()>;
+}
+
+/// The real platform clipboard used by ordinary Padz invocations.
+#[derive(Debug, Default)]
+pub struct SystemClipboardWriter;
+
+impl ClipboardWriter for SystemClipboardWriter {
+    fn write(&self, text: &str) -> Result<()> {
+        copy_to_clipboard(text)
+    }
+}
 
 /// Copies text to the system clipboard in an OS-specific way.
 /// - macOS: uses pbcopy

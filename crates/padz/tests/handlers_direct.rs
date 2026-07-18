@@ -26,7 +26,8 @@ mod support;
 use padz::cli::handlers;
 use padz::cli::input::{RequestContent, CREATE_CONTENT, EDIT_CONTENT};
 use padz::cli::result::{
-    DoctorResult, ExportFormat, ExportStatus, ExportWarning, ImportDiagnosticResult, ImportResult,
+    CopyResult, CreateAbortKindResult, CreateAbortReasonResult, CreateResult, DoctorResult,
+    ExportFormat, ExportStatus, ExportWarning, ImportDiagnosticResult, ImportResult,
     ImportSourceKindResult, ImportSourceStatusResult, ImportStatusResult, InitializationResult,
     MetadataWarningReasonResult, ModificationNoticeResult, ModificationResult,
     MutationOutcomeResult, MutationStatusResult, PadContentResult, PadListResult, PathResult,
@@ -60,6 +61,16 @@ fn titles(result: &PadListResult) -> Vec<String> {
         .iter()
         .map(|p| p.pad.metadata.title.clone())
         .collect()
+}
+
+/// Unwraps the successful modification arm of create without changing its public
+/// serialized shape.
+#[track_caller]
+fn created(out: Result<Output<CreateResult>, anyhow::Error>) -> ModificationResult {
+    match rendered(out) {
+        CreateResult::Created(result) => result,
+        CreateResult::Aborted(abort) => panic!("expected created pad, got {abort:?}"),
+    }
 }
 
 // =============================================================================
@@ -289,6 +300,86 @@ fn view_of_an_unknown_selector_is_an_error_not_an_empty_result() {
         err.to_string().to_lowercase().contains("99")
             || err.to_string().to_lowercase().contains("not found"),
         "error should name the bad selector, got: {err}"
+    );
+}
+
+// =============================================================================
+// Content family — copy
+// =============================================================================
+
+#[test]
+fn copy_maps_a_single_root_to_typed_facts_and_one_semantic_write() {
+    let fx = Fixture::new();
+    let (state, clipboard) = fx.app_state_with_recording_clipboard_for(&["copy", "1"]);
+    fx.seed_pad(&state, "single", "body");
+    let ctx = support::ctx_with_state(state);
+
+    let result: CopyResult = rendered(handlers::copy(
+        &ctx,
+        vec!["1".to_string()],
+        false,
+        false,
+        false,
+        false,
+    ));
+
+    assert_eq!(
+        result,
+        CopyResult {
+            root_pad_count: 1,
+            titles: vec!["single".to_string()],
+        }
+    );
+    assert_eq!(clipboard.writes(), vec!["single\n\nbody"]);
+}
+
+#[test]
+fn copy_maps_multiple_roots_in_display_order() {
+    let fx = Fixture::new();
+    let (state, clipboard) = fx.app_state_with_recording_clipboard_for(&["copy", "1", "2"]);
+    fx.seed_pad(&state, "first", "one");
+    fx.seed_pad(&state, "second", "two");
+    let ctx = support::ctx_with_state(state);
+
+    let result: CopyResult = rendered(handlers::copy(
+        &ctx,
+        vec!["1".to_string(), "2".to_string()],
+        false,
+        false,
+        false,
+        false,
+    ));
+
+    assert_eq!(result.root_pad_count, 2);
+    assert_eq!(result.titles, vec!["second", "first"]);
+    assert_eq!(
+        clipboard.writes(),
+        vec!["second\n\ntwo\n---\n\nfirst\n\none"]
+    );
+}
+
+#[test]
+fn copy_keeps_nested_content_in_the_payload_but_counts_only_the_root() {
+    let fx = Fixture::new();
+    let (state, clipboard) = fx.app_state_with_recording_clipboard_for(&["copy", "1"]);
+    fx.seed_pad(&state, "parent", "parent body");
+    fx.seed_child(&state, "1", "child", "child body");
+    let ctx = support::ctx_with_state(state);
+
+    let result: CopyResult = rendered(handlers::copy(
+        &ctx,
+        vec!["1".to_string()],
+        false,
+        false,
+        false,
+        false,
+    ));
+
+    assert_eq!(result.root_pad_count, 1);
+    assert_eq!(result.titles, vec!["parent"]);
+    assert_eq!(
+        clipboard.writes(),
+        vec!["parent\n\nparent body\n\nchild\n\nchild body"]
     );
 }
 
@@ -974,7 +1065,7 @@ fn create_with_direct_content_splits_title_from_body() {
         RequestContent::Direct("the title\nthe body".to_string()),
     );
 
-    let result = rendered(handlers::create(&ctx, None, None, vec![]));
+    let result = created(handlers::create(&ctx, None, None, vec![]));
 
     assert_eq!(result.action, "Created");
     assert_eq!(result.pads[0].pad.metadata.title, "the title");
@@ -989,18 +1080,28 @@ fn create_with_an_empty_pipe_aborts_without_creating_a_pad() {
 
     let result = rendered(handlers::create(&ctx, None, None, vec![]));
 
-    assert!(
-        result.pads.is_empty(),
-        "an aborted create must report no pads"
-    );
-    assert!(
-        result
-            .messages
-            .iter()
-            .any(|m| m.content.to_lowercase().contains("aborted")),
-        "the abort must be visible to the user, got: {:?}",
-        result.messages
-    );
+    let CreateResult::Aborted(abort) = result else {
+        panic!("expected a semantic create abort")
+    };
+    assert_eq!(abort.kind, CreateAbortKindResult::Aborted);
+    assert_eq!(abort.reason, CreateAbortReasonResult::EmptyContent);
+
+    let listed = rendered(handlers::list(
+        &ctx,
+        vec![],
+        None,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        vec![],
+        false,
+        false,
+    ));
+    assert!(listed.pads.is_empty());
 }
 
 #[test]
@@ -1012,7 +1113,7 @@ fn create_piped_content_takes_its_title_from_the_first_line() {
         RequestContent::Piped("piped title\npiped body".to_string()),
     );
 
-    let result = rendered(handlers::create(&ctx, None, None, vec![]));
+    let result = created(handlers::create(&ctx, None, None, vec![]));
 
     assert_eq!(result.pads[0].pad.metadata.title, "piped title");
 }
@@ -1026,7 +1127,7 @@ fn create_prefers_the_title_argument_over_the_piped_title() {
         RequestContent::Piped("piped title\npiped body".to_string()),
     );
 
-    let result = rendered(handlers::create(
+    let result = created(handlers::create(
         &ctx,
         None,
         None,

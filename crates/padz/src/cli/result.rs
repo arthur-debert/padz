@@ -857,6 +857,50 @@ impl MessagesResult {
     }
 }
 
+/// Semantic facts reported after copying pads to the system clipboard.
+///
+/// Only selected roots contribute to the count and titles. Descendants remain in
+/// the clipboard payload according to the requested nesting mode, but they are not
+/// additional user selections.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct CopyResult {
+    pub root_pad_count: usize,
+    pub titles: Vec<String>,
+}
+
+/// The typed outcome of `create`.
+///
+/// `Created` deliberately serializes exactly like the existing
+/// [`ModificationResult`] so successful-create automation remains compatible.
+/// `Aborted` replaces the former prose-only warning with semantic facts.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(untagged)]
+pub enum CreateResult {
+    Created(ModificationResult),
+    Aborted(CreateAbortResult),
+}
+
+/// Why a create invocation stopped without creating a pad.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub struct CreateAbortResult {
+    pub kind: CreateAbortKindResult,
+    pub reason: CreateAbortReasonResult,
+}
+
+/// The top-level outcome class for a create abort.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum CreateAbortKindResult {
+    Aborted,
+}
+
+/// The semantic reason a create invocation aborted.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum CreateAbortReasonResult {
+    EmptyContent,
+}
+
 /// CLI projection of explicit store initialization and link maintenance.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "action", rename_all = "snake_case")]
