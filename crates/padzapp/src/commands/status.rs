@@ -4,7 +4,7 @@
 //! - [`complete`]: Marks pads as Done
 //! - [`reopen`]: Reopens pads (sets them back to Planned)
 
-use crate::commands::{CmdMessage, CmdResult};
+use crate::commands::{CmdNotice, CmdOutcome, CmdResult};
 use crate::error::Result;
 use crate::index::{DisplayIndex, DisplayPad, PadSelector};
 use crate::model::{Scope, TodoStatus};
@@ -46,18 +46,15 @@ fn set_status<S: DataStore>(
         let old_status = pad.metadata.status;
 
         if old_status == new_status {
-            // Already in desired state - add info message
-            let status_name = match new_status {
-                TodoStatus::Done => "done",
-                TodoStatus::Planned => "planned",
-                TodoStatus::InProgress => "in progress",
-            };
-            result.add_message(CmdMessage::info(format!(
-                "Pad {} is already {}",
-                super::helpers::fmt_path(&display_index),
-                status_name
-            )));
+            result.notices.push(CmdNotice::AlreadyInStatus {
+                path: display_index,
+                status: new_status,
+            });
         } else {
+            result.outcomes.push(CmdOutcome::StatusChanged {
+                path: display_index.clone(),
+                status: new_status,
+            });
             pad.metadata.status = new_status;
             pad.metadata.updated_at = chrono::Utc::now();
 
@@ -165,11 +162,14 @@ mod tests {
         // Complete again
         let result = complete(&mut store, Scope::Project, slice::from_ref(&sel)).unwrap();
 
-        assert!(matches!(
-            result.messages[0].level,
-            crate::commands::MessageLevel::Info
-        ));
-        assert!(result.messages[0].content.contains("already done"));
+        assert_eq!(
+            result.notices,
+            vec![CmdNotice::AlreadyInStatus {
+                path: vec![DisplayIndex::Regular(1)],
+                status: TodoStatus::Done,
+            }]
+        );
+        assert!(result.messages.is_empty());
     }
 
     #[test]
@@ -187,11 +187,62 @@ mod tests {
         // Reopen an already planned pad
         let result = reopen(&mut store, Scope::Project, slice::from_ref(&sel)).unwrap();
 
-        assert!(matches!(
-            result.messages[0].level,
-            crate::commands::MessageLevel::Info
-        ));
-        assert!(result.messages[0].content.contains("already planned"));
+        assert_eq!(
+            result.notices,
+            vec![CmdNotice::AlreadyInStatus {
+                path: vec![DisplayIndex::Regular(1)],
+                status: TodoStatus::Planned,
+            }]
+        );
+        assert!(result.messages.is_empty());
+    }
+
+    #[test]
+    fn complete_mixed_request_distinguishes_changed_and_no_op_pads() {
+        let mut store = BucketedStore::new(
+            MemBackend::new(),
+            MemBackend::new(),
+            MemBackend::new(),
+            MemBackend::new(),
+        );
+        create::run(
+            &mut store,
+            Scope::Project,
+            "Changed".into(),
+            "".into(),
+            None,
+        )
+        .unwrap();
+        create::run(&mut store, Scope::Project, "No op".into(), "".into(), None).unwrap();
+        let first = PadSelector::Path(vec![DisplayIndex::Regular(1)]);
+        complete(&mut store, Scope::Project, slice::from_ref(&first)).unwrap();
+
+        let result = complete(
+            &mut store,
+            Scope::Project,
+            &[first, PadSelector::Path(vec![DisplayIndex::Regular(2)])],
+        )
+        .unwrap();
+
+        assert_eq!(result.affected_pads.len(), 2);
+        assert_eq!(
+            result.notices,
+            vec![CmdNotice::AlreadyInStatus {
+                path: vec![DisplayIndex::Regular(1)],
+                status: TodoStatus::Done,
+            }]
+        );
+        assert!(result
+            .affected_pads
+            .iter()
+            .all(|pad| pad.pad.metadata.status == TodoStatus::Done));
+        assert_eq!(
+            result.outcomes,
+            vec![CmdOutcome::StatusChanged {
+                path: vec![DisplayIndex::Regular(2)],
+                status: TodoStatus::Done,
+            }]
+        );
     }
 
     #[test]

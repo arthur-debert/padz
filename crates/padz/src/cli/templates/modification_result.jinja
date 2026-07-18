@@ -19,11 +19,27 @@
 {{ msg.content | style_as(msg.level) }}{{ "" | nl }}
 {%- endfor -%}
 
+{#- Semantic successful outcomes: wording stays here; refresh updates deliberately -#}
+{#- add no extra line, preserving the interactive editor's established output. -#}
+{%- for outcome in view.outcomes -%}
+{%- if outcome.kind == "updated" and outcome.update_kind == "structured" -%}
+[success]Pad updated ({{ outcome.index }}): {{ outcome.title }}[/success]{{ "" | nl }}
+{%- elif outcome.kind == "updated" and outcome.update_kind == "content" -%}
+[success]Updated ({{ outcome.index }}): {{ outcome.title }}[/success]{{ "" | nl }}
+{%- endif -%}
+{%- endfor -%}
+
 {#- Semantic notices: wording stays here; structured modes receive kind + fields. -#}
 {%- for notice in view.notices -%}
 {%- if notice.kind == "already_pinned" -%}
 [info]Pad {{ notice.index }} is already pinned[/info]{{ "" | nl }}
 {%- elif notice.kind == "already_unpinned" -%}
 [info]Pad {{ notice.index }} is already unpinned[/info]{{ "" | nl }}
+{%- elif notice.kind == "already_at_destination" -%}
+[info]Pad '{{ notice.index }}' is already at destination[/info]{{ "" | nl }}
+{%- elif notice.kind == "already_in_status" -%}
+[info]Pad {{ notice.index }} is already {{ notice.status }}[/info]{{ "" | nl }}
+{%- elif notice.kind == "no_completed_pads" -%}
+[info]No completed pads to delete.[/info]{{ "" | nl }}
 {%- endif -%}
 {%- endfor -%}

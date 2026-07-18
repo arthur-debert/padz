@@ -401,6 +401,200 @@ fn empty_purge_is_distinct_in_text_and_structured_output() {
     );
 }
 
+// =============================================================================
+// Semantic pad mutation outcomes
+// =============================================================================
+
+#[test]
+#[serial]
+fn nested_edit_preserves_text_and_exposes_update_facts() {
+    let fx = Fixture::new();
+    let state = fx.app_state();
+    fx.seed_pad(&state, "parent", "");
+    fx.seed_child(&state, "1", "child", "");
+    drop(state);
+    let (app, cmd) = fx.app(&["list"]);
+
+    let text = TestHarness::new()
+        .no_color()
+        .piped_stdin("Edited child")
+        .run(
+            &app,
+            cmd.clone(),
+            fx.argv(&["edit", "1.1", "--output", "text"]),
+        );
+    text.assert_success();
+    text.assert_stdout_contains("Updated 1 pad...");
+    text.assert_stdout_contains("Updated (1.1): Edited child");
+    drop(text);
+
+    let json = TestHarness::new().piped_stdin("Edited child").run(
+        &app,
+        cmd,
+        fx.argv(&["edit", "1.1", "--output", "json"]),
+    );
+    json.assert_success();
+    let value: serde_json::Value = serde_json::from_str(json.stdout()).unwrap();
+    let fixture: serde_json::Value =
+        serde_json::from_str(include_str!("fixtures/semantic_outcomes/edit-content.json")).unwrap();
+    assert_eq!(value["outcomes"], fixture);
+    assert!(value["messages"].as_array().is_some_and(Vec::is_empty));
+}
+
+#[test]
+#[serial]
+fn same_parent_move_preserves_text_and_exposes_the_nested_no_op() {
+    let fx = Fixture::new();
+    let state = fx.app_state();
+    fx.seed_pad(&state, "parent", "");
+    fx.seed_child(&state, "1", "child", "");
+    drop(state);
+    let (app, cmd) = fx.read_app();
+
+    let text = TestHarness::new().no_color().run(
+        &app,
+        cmd.clone(),
+        fx.argv(&["move", "1.1", "1", "--output", "text"]),
+    );
+    text.assert_success();
+    assert_eq!(text.stdout(), "Pad '1.1' is already at destination\n");
+    drop(text);
+
+    let json = TestHarness::new().run(
+        &app,
+        cmd,
+        fx.argv(&["move", "1.1", "1", "--output", "json"]),
+    );
+    json.assert_success();
+    let value: serde_json::Value = serde_json::from_str(json.stdout()).unwrap();
+    let fixture: serde_json::Value =
+        serde_json::from_str(include_str!("fixtures/semantic_outcomes/move-no-op.json")).unwrap();
+    assert_eq!(value["notices"], fixture);
+    assert!(value["messages"].as_array().is_some_and(Vec::is_empty));
+}
+
+#[test]
+#[serial]
+fn mixed_complete_distinguishes_changed_pads_from_no_ops() {
+    let fx = Fixture::new();
+    fx.todos_mode();
+    let state = fx.app_state();
+    fx.seed_pad(&state, "changed", "");
+    fx.seed_pad(&state, "no op", "");
+    state
+        .with_api(|api| api.complete_pads(state.scope, &["1"]))
+        .unwrap();
+    drop(state);
+    let (app, cmd) = fx.read_app();
+
+    let json = TestHarness::new().run(
+        &app,
+        cmd,
+        fx.argv(&["complete", "1", "2", "--output", "json"]),
+    );
+    json.assert_success();
+    let value: serde_json::Value = serde_json::from_str(json.stdout()).unwrap();
+    let fixture: serde_json::Value = serde_json::from_str(include_str!(
+        "fixtures/semantic_outcomes/complete-mixed.json"
+    ))
+    .unwrap();
+    assert_eq!(
+        serde_json::json!({
+            "notices": value["notices"].clone(),
+            "outcomes": value["outcomes"].clone(),
+        }),
+        fixture
+    );
+    assert_eq!(value["pads"].as_array().map(Vec::len), Some(2));
+    assert!(value["pads"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .all(|pad| pad["pad"]["metadata"]["status"] == "Done"));
+}
+
+#[test]
+#[serial]
+fn repeated_complete_and_reopen_keep_compatible_text_and_typed_statuses() {
+    let complete_fx = Fixture::new();
+    complete_fx.todos_mode();
+    let state = complete_fx.app_state();
+    complete_fx.seed_pad(&state, "done", "");
+    state
+        .with_api(|api| api.complete_pads(state.scope, &["1"]))
+        .unwrap();
+    drop(state);
+    let (app, cmd) = complete_fx.read_app();
+    let complete = TestHarness::new().no_color().run(
+        &app,
+        cmd,
+        complete_fx.argv(&["complete", "1", "--output", "text"]),
+    );
+    complete.assert_success();
+    complete.assert_stdout_contains("Pad 1 is already done");
+    drop(complete);
+
+    let reopen_fx = Fixture::new();
+    reopen_fx.todos_mode();
+    let state = reopen_fx.app_state();
+    reopen_fx.seed_pad(&state, "planned", "");
+    drop(state);
+    let (app, cmd) = reopen_fx.read_app();
+    let text = TestHarness::new().no_color().run(
+        &app,
+        cmd.clone(),
+        reopen_fx.argv(&["reopen", "1", "--output", "text"]),
+    );
+    text.assert_success();
+    text.assert_stdout_contains("Pad 1 is already planned");
+    drop(text);
+
+    let json = TestHarness::new().run(
+        &app,
+        cmd,
+        reopen_fx.argv(&["reopen", "1", "--output", "json"]),
+    );
+    json.assert_success();
+    let value: serde_json::Value = serde_json::from_str(json.stdout()).unwrap();
+    let fixture: serde_json::Value =
+        serde_json::from_str(include_str!("fixtures/semantic_outcomes/reopen-no-op.json")).unwrap();
+    assert_eq!(value["notices"], fixture);
+}
+
+#[test]
+#[serial]
+fn empty_delete_completed_preserves_text_and_exposes_a_typed_no_op() {
+    let fx = Fixture::new();
+    fx.todos_mode();
+    let state = fx.app_state();
+    fx.seed_pad(&state, "still open", "");
+    drop(state);
+    let (app, cmd) = fx.read_app();
+
+    let text = TestHarness::new().no_color().run(
+        &app,
+        cmd.clone(),
+        fx.argv(&["delete", "--completed", "--output", "text"]),
+    );
+    text.assert_success();
+    assert_eq!(text.stdout(), "No completed pads to delete.\n");
+    drop(text);
+
+    let json = TestHarness::new().run(
+        &app,
+        cmd,
+        fx.argv(&["delete", "--completed", "--output", "json"]),
+    );
+    json.assert_success();
+    let value: serde_json::Value = serde_json::from_str(json.stdout()).unwrap();
+    let fixture: serde_json::Value = serde_json::from_str(include_str!(
+        "fixtures/semantic_outcomes/delete-completed-empty.json"
+    ))
+    .unwrap();
+    assert_eq!(value["notices"], fixture);
+    assert!(value["messages"].as_array().is_some_and(Vec::is_empty));
+}
+
 #[test]
 #[serial]
 fn uuid_flag_reaches_the_view_handler() {
@@ -1112,6 +1306,26 @@ fn status_glyphs_appear_only_when_the_listing_asks_for_them() {
 // =============================================================================
 // Styles — asserted semantically via term-debug, never by scraping ANSI
 // =============================================================================
+
+#[test]
+#[serial]
+fn mutation_outcomes_keep_the_established_info_and_success_styles() {
+    let fx = Fixture::new();
+    let state = fx.app_state();
+    fx.seed_pad(&state, "before", "");
+    drop(state);
+
+    let (app, cmd) = fx.app(&["list"]);
+    let result = TestHarness::new().piped_stdin("after").run(
+        &app,
+        cmd,
+        fx.argv(&["edit", "1", "--output", "term-debug"]),
+    );
+
+    result.assert_success();
+    result.assert_stdout_contains("[info]Updated 1 pad...[/info]");
+    result.assert_stdout_contains("[success]Updated (1): after[/success]");
+}
 
 #[test]
 #[serial]

@@ -62,10 +62,13 @@ impl<S: DataStore> PadzApi<S> {
     }
 
     /// Soft-deletes all active pads marked as Done (completed).
+    ///
+    /// Returns a semantic `NoCompletedPads` notice when there are no matches.
     pub fn delete_completed_pads(&mut self, scope: Scope) -> Result<commands::CmdResult> {
         commands::delete::run_completed(&mut self.store, scope)
     }
 
+    /// Applies typed updates and returns affected pads plus semantic update facts.
     pub fn update_pads(
         &mut self,
         scope: Scope,
@@ -74,7 +77,8 @@ impl<S: DataStore> PadzApi<S> {
         commands::update::run(&mut self.store, scope, updates)
     }
 
-    /// Updates pads with raw content (e.g., from piped stdin).
+    /// Updates pads with raw content (e.g., from piped stdin), returning affected
+    /// pads plus semantic content-update facts.
     pub fn update_pads_from_content<I: AsRef<str>>(
         &mut self,
         scope: Scope,

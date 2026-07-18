@@ -27,9 +27,10 @@ use padz::cli::handlers;
 use padz::cli::input::{RequestContent, CREATE_CONTENT, EDIT_CONTENT};
 use padz::cli::result::{
     DoctorResult, ExportFormat, ExportStatus, ExportWarning, InitializationResult,
-    ModificationResult, PadContentResult, PadListResult, PathResult, PurgeResult, UuidResult,
+    ModificationNoticeResult, ModificationResult, MutationOutcomeResult, MutationStatusResult,
+    PadContentResult, PadListResult, PathResult, PurgeResult, UpdateKindResult, UuidResult,
 };
-use padzapp::commands::{CmdNotice, NestingMode};
+use padzapp::commands::NestingMode;
 use standout::cli::Output;
 use support::Fixture;
 
@@ -373,7 +374,7 @@ fn repeated_pin_maps_the_core_notice_without_parsing_prose() {
 
     assert_eq!(
         result.notices,
-        vec![CmdNotice::AlreadyPinned {
+        vec![ModificationNoticeResult::AlreadyPinned {
             path: vec![padzapp::index::DisplayIndex::Pinned(1)]
         }]
     );
@@ -444,6 +445,81 @@ fn move_to_root_needs_only_the_sources() {
     assert!(
         result.pads[0].pad.metadata.parent_id.is_none(),
         "--root detaches the pad from its parent"
+    );
+}
+
+#[test]
+fn same_parent_move_maps_the_nested_no_op_path() {
+    let fx = Fixture::new();
+    let state = fx.app_state();
+    fx.seed_pad(&state, "parent", "");
+    fx.seed_child(&state, "1", "child", "");
+    let ctx = support::ctx_with_state(state);
+
+    let result = rendered(handlers::move_pads(
+        &ctx,
+        vec!["1.1".to_string(), "1".to_string()],
+        false,
+    ));
+
+    assert!(result.pads.is_empty());
+    assert_eq!(
+        result.notices,
+        vec![ModificationNoticeResult::AlreadyAtDestination {
+            path: vec![
+                padzapp::index::DisplayIndex::Regular(1),
+                padzapp::index::DisplayIndex::Regular(1),
+            ],
+        }]
+    );
+    assert!(result.outcomes.is_empty());
+}
+
+#[test]
+fn mixed_complete_maps_changed_pads_and_requested_status_no_ops() {
+    let fx = Fixture::new();
+    let state = fx.app_state();
+    fx.seed_pad(&state, "changed", "");
+    fx.seed_pad(&state, "no op", "");
+    let ctx = support::ctx_with_state(state);
+    rendered(handlers::complete(&ctx, vec!["1".to_string()]));
+
+    let result = rendered(handlers::complete(
+        &ctx,
+        vec!["1".to_string(), "2".to_string()],
+    ));
+
+    assert_eq!(result.pads.len(), 2);
+    assert_eq!(
+        result.notices,
+        vec![ModificationNoticeResult::AlreadyInStatus {
+            path: vec![padzapp::index::DisplayIndex::Regular(1)],
+            status: MutationStatusResult::Done,
+        }]
+    );
+    assert_eq!(
+        result.outcomes,
+        vec![MutationOutcomeResult::StatusChanged {
+            path: vec![padzapp::index::DisplayIndex::Regular(2)],
+            status: MutationStatusResult::Done,
+        }]
+    );
+}
+
+#[test]
+fn empty_delete_completed_maps_the_core_no_op() {
+    let fx = Fixture::new();
+    let state = fx.app_state();
+    fx.seed_pad(&state, "still open", "");
+    let ctx = support::ctx_with_state(state);
+
+    let result = rendered(handlers::delete(&ctx, vec![], true));
+
+    assert!(result.pads.is_empty());
+    assert!(result.messages.is_empty());
+    assert_eq!(
+        result.notices,
+        vec![ModificationNoticeResult::NoCompletedPads]
     );
 }
 
@@ -749,4 +825,39 @@ fn edit_with_direct_content_replaces_the_selected_pads_text() {
 
     assert_eq!(result.pads[0].pad.metadata.title, "after");
     assert!(result.pads[0].pad.content.contains("new body"));
+    assert_eq!(
+        result.outcomes,
+        vec![MutationOutcomeResult::Updated {
+            path: vec![padzapp::index::DisplayIndex::Regular(1)],
+            title: "after".to_string(),
+            update_kind: UpdateKindResult::Content,
+        }]
+    );
+}
+
+#[test]
+fn edit_maps_a_nested_canonical_path_without_parsing_prose() {
+    let fx = Fixture::new();
+    let state = fx.app_state();
+    fx.seed_pad(&state, "parent", "");
+    fx.seed_child(&state, "1", "child", "");
+    let ctx = support::ctx_with_input(
+        state,
+        EDIT_CONTENT,
+        RequestContent::Direct("edited child".to_string()),
+    );
+
+    let result = rendered(handlers::edit(&ctx, vec!["1.1".to_string()]));
+
+    assert_eq!(
+        result.outcomes,
+        vec![MutationOutcomeResult::Updated {
+            path: vec![
+                padzapp::index::DisplayIndex::Regular(1),
+                padzapp::index::DisplayIndex::Regular(1),
+            ],
+            title: "edited child".to_string(),
+            update_kind: UpdateKindResult::Content,
+        }]
+    );
 }
