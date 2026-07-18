@@ -1,0 +1,12 @@
+{#- Human projection of InitializationResult. Completion guidance and layout are CLI-owned. -#}
+{%- if action == "initialized" -%}
+[success]Initialized padz store at {{ store_path }}[/success]{{ "" | nl -}}
+{{ "" | nl -}}
+[info]Tip: Enable shell completions for padz:[/info]{{ "" | nl -}}
+[info]  eval "$(padz completions bash)"  # add to ~/.bashrc[/info]{{ "" | nl -}}
+[info]  eval "$(padz completions zsh)"   # add to ~/.zshrc[/info]{{ "" | nl }}
+{%- elif action == "linked" -%}
+[success]Linked to {{ target }}[/success]{{ "" | nl }}
+{%- elif action == "unlinked" -%}
+[success]Unlinked.[/success]{{ "" | nl }}
+{%- endif -%}

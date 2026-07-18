@@ -658,7 +658,7 @@ pub enum Commands {
     // --- Data operations ---
     /// Permanently delete pads
     #[command(display_order = 20)]
-    #[dispatch(pure, template = "messages")]
+    #[dispatch(pure, template = "purge")]
     Purge {
         /// Indexes of the pads (e.g. d1 d2) - if omitted, purges all deleted pads
         #[arg(required = false, num_args = 0.., add = deleted_pads_completer())]
@@ -763,7 +763,7 @@ pub enum Commands {
     // --- Misc commands ---
     /// Check and fix data inconsistencies
     #[command(display_order = 30)]
-    #[dispatch(pure, template = "messages")]
+    #[dispatch(pure, template = "doctor")]
     Doctor,
 
     /// Manage configuration
@@ -776,7 +776,7 @@ pub enum Commands {
 
     /// Initialize the store (optional utility)
     #[command(display_order = 32)]
-    #[dispatch(pure, template = "messages")]
+    #[dispatch(pure, template = "initialization")]
     Init {
         /// Link to another project's padz data
         #[arg(long, value_name = "PATH", conflicts_with = "unlink")]

@@ -28,8 +28,9 @@ use standout_macros::handler;
 use std::cell::RefCell;
 
 use super::result::{
-    ExportReportResult, ListRequest, MessagesResult, ModificationRequest, ModificationResult,
-    PadContent, PadContentResult, PadListResult, PathResult, UuidResult,
+    DoctorResult, ExportReportResult, InitializationResult, ListRequest, MessagesResult,
+    ModificationRequest, ModificationResult, PadContent, PadContentResult, PadListResult,
+    PathResult, PurgeResult, UuidResult,
 };
 
 // =============================================================================
@@ -271,41 +272,41 @@ impl<'a> ScopedApi<'a> {
         self.modification("Moved", result, false)
     }
 
-    // --- Message-only operations ---
+    // --- Maintenance outcomes ---
 
     pub fn purge_pads(
         &self,
         indexes: &[String],
         yes: bool,
         recursive: bool,
-    ) -> Result<Output<MessagesResult>, anyhow::Error> {
+    ) -> Result<Output<PurgeResult>, anyhow::Error> {
         let include_done = self.state.mode == PadzMode::Todos;
-        let result =
+        let outcome =
             self.call(|api, scope| api.purge_pads(scope, indexes, recursive, yes, include_done))?;
-        self.messages(result)
+        Ok(Output::Render(outcome.into()))
     }
 
-    pub fn doctor(&self) -> Result<Output<MessagesResult>, anyhow::Error> {
-        let result = self.call(|api, scope| api.doctor(scope))?;
-        self.messages(result)
+    pub fn doctor(&self) -> Result<Output<DoctorResult>, anyhow::Error> {
+        let outcome = self.call(|api, scope| api.doctor(scope))?;
+        Ok(Output::Render(outcome.into()))
     }
 
-    pub fn init(&self) -> Result<Output<MessagesResult>, anyhow::Error> {
-        let result = self.call(|api, scope| api.init(scope))?;
-        self.messages(result)
+    pub fn init(&self) -> Result<Output<InitializationResult>, anyhow::Error> {
+        let outcome = self.call(|api, scope| api.init(scope))?;
+        Ok(Output::Render(outcome.into()))
     }
 
-    pub fn init_link(&self, target: &str) -> Result<Output<MessagesResult>, anyhow::Error> {
+    pub fn init_link(&self, target: &str) -> Result<Output<InitializationResult>, anyhow::Error> {
         let target_path = std::path::PathBuf::from(target);
         let local_padz = &self.state.local_padz_dir;
-        let result = self.call(|api, _scope| api.init_link(local_padz, &target_path))?;
-        self.messages(result)
+        let outcome = self.call(|api, _scope| api.init_link(local_padz, &target_path))?;
+        Ok(Output::Render(outcome.into()))
     }
 
-    pub fn init_unlink(&self) -> Result<Output<MessagesResult>, anyhow::Error> {
+    pub fn init_unlink(&self) -> Result<Output<InitializationResult>, anyhow::Error> {
         let local_padz = &self.state.local_padz_dir;
-        let result = self.call(|api, _scope| api.init_unlink(local_padz))?;
-        self.messages(result)
+        let outcome = self.call(|api, _scope| api.init_unlink(local_padz))?;
+        Ok(Output::Render(outcome.into()))
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -1142,7 +1143,7 @@ pub fn purge(
     #[arg] indexes: Vec<String>,
     #[flag] yes: bool,
     #[flag] recursive: bool,
-) -> Result<Output<MessagesResult>, anyhow::Error> {
+) -> Result<Output<PurgeResult>, anyhow::Error> {
     api(ctx).purge_pads(&indexes, yes, recursive)
 }
 
@@ -1212,7 +1213,7 @@ pub fn migrate(
 // =============================================================================
 
 #[handler]
-pub fn doctor(#[ctx] ctx: &CommandContext) -> Result<Output<MessagesResult>, anyhow::Error> {
+pub fn doctor(#[ctx] ctx: &CommandContext) -> Result<Output<DoctorResult>, anyhow::Error> {
     api(ctx).doctor()
 }
 
@@ -1221,7 +1222,7 @@ pub fn init(
     #[ctx] ctx: &CommandContext,
     #[arg] link: Option<String>,
     #[flag] unlink: bool,
-) -> Result<Output<MessagesResult>, anyhow::Error> {
+) -> Result<Output<InitializationResult>, anyhow::Error> {
     if let Some(target) = link {
         api(ctx).init_link(&target)
     } else if unlink {

@@ -97,6 +97,7 @@ impl<S: DataStore> PadzApi<S> {
     /// Permanently deletes pads.
     ///
     /// **Confirmation required**: The `confirmed` parameter must be `true` to proceed.
+    /// Returns an empty outcome or unique selected pads and completed deletion counts.
     pub fn purge_pads<I: AsRef<str>>(
         &mut self,
         scope: Scope,
@@ -104,7 +105,7 @@ impl<S: DataStore> PadzApi<S> {
         recursive: bool,
         confirmed: bool,
         include_done: bool,
-    ) -> Result<commands::CmdResult> {
+    ) -> Result<commands::purge::PurgeOutcome> {
         let selectors = parse_selectors(indexes)?;
         commands::purge::run(
             &mut self.store,

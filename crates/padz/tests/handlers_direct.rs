@@ -26,8 +26,8 @@ mod support;
 use padz::cli::handlers;
 use padz::cli::input::{RequestContent, CREATE_CONTENT, EDIT_CONTENT};
 use padz::cli::result::{
-    ExportFormat, ExportStatus, ExportWarning, MessagesResult, ModificationResult,
-    PadContentResult, PadListResult, PathResult, UuidResult,
+    DoctorResult, ExportFormat, ExportStatus, ExportWarning, InitializationResult,
+    ModificationResult, PadContentResult, PadListResult, PathResult, PurgeResult, UuidResult,
 };
 use padzapp::commands::{CmdNotice, NestingMode};
 use standout::cli::Output;
@@ -546,22 +546,96 @@ fn empty_export_stays_a_non_artifact_result() {
 }
 
 // =============================================================================
-// Message-only family
+// Initialization and maintenance outcomes
 // =============================================================================
 
 #[test]
-fn doctor_maps_a_healthy_store_to_messages() {
+fn initialization_maps_scope_and_store_path() {
+    let fx = Fixture::new();
+    let ctx = support::ctx_with_state(fx.app_state_for(&["init"]));
+
+    let result: InitializationResult = rendered(handlers::init(&ctx, None, false));
+
+    assert_eq!(
+        result,
+        InitializationResult::Initialized {
+            scope: "project".to_string(),
+            store_path: fx.project().join(".padz").display().to_string(),
+        }
+    );
+}
+
+#[test]
+fn link_and_unlink_map_typed_actions_and_resolved_target() {
+    let fx = Fixture::new();
+    let target = fx.root().join("target");
+    padzapp::init::create_bucket_layout(&target.join(".padz")).unwrap();
+    let ctx = fx.ctx();
+
+    let linked: InitializationResult = rendered(handlers::init(
+        &ctx,
+        Some(target.display().to_string()),
+        false,
+    ));
+    assert_eq!(
+        linked,
+        InitializationResult::Linked {
+            target: target
+                .join(".padz")
+                .canonicalize()
+                .unwrap()
+                .display()
+                .to_string(),
+        }
+    );
+
+    let unlinked: InitializationResult = rendered(handlers::init(&ctx, None, true));
+    assert_eq!(unlinked, InitializationResult::Unlinked);
+}
+
+#[test]
+fn doctor_maps_a_healthy_store_to_a_clean_result() {
     let fx = Fixture::new();
     let state = fx.app_state();
     fx.seed_pad(&state, "note", "");
     let ctx = support::ctx_with_state(state);
 
-    let result: MessagesResult = rendered(handlers::doctor(&ctx));
+    let result: DoctorResult = rendered(handlers::doctor(&ctx));
 
-    assert!(
-        !result.messages.is_empty(),
-        "doctor always reports what it checked"
+    assert_eq!(
+        result,
+        DoctorResult::Clean {
+            missing_files: 0,
+            recovered_files: 0,
+        }
     );
+}
+
+#[test]
+fn purge_maps_selected_pads_and_counts() {
+    let fx = Fixture::new();
+    let state = fx.app_state();
+    fx.seed_pad(&state, "gone", "");
+    state
+        .with_api(|api| api.delete_pads(state.scope, &["1"]))
+        .unwrap();
+    let ctx = support::ctx_with_state(state);
+
+    let result: PurgeResult = rendered(handlers::purge(&ctx, vec![], true, false));
+
+    let PurgeResult::Purged {
+        selected_pads,
+        total_purged,
+        descendant_count,
+    } = result
+    else {
+        panic!("expected a completed purge");
+    };
+    assert_eq!(selected_pads.len(), 1);
+    assert_eq!(selected_pads[0].selector, "d1");
+    assert_eq!(selected_pads[0].title, "gone");
+    assert_eq!(total_purged, 1);
+    assert_eq!(descendant_count, 0);
 }
 
 // =============================================================================
