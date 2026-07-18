@@ -32,9 +32,9 @@
 //! throughout the API—clients always receive pads with their resolved indexes.
 //!
 //! Initialization, doctor, purge, import, cross-store transfer, tag
-//! catalog/mutation, and artifact-producing commands use dedicated outcome
-//! types where a generic result would obscure the operation's facts. Pad
-//! mutations that still use [`CmdResult`] attach presentation-free
+//! catalog/mutation, UUID selection, and artifact-producing commands return
+//! direct values or dedicated outcome types where a generic result would obscure
+//! the operation's facts. Pad mutations that still use [`CmdResult`] attach presentation-free
 //! [`CmdOutcome`] and [`CmdNotice`] facts. The UI layer (CLI, web, etc.) decides
 //! how to render every result.
 //!
@@ -61,6 +61,7 @@
 //! - [`export`]: Export pads to archive
 //! - [`import`]: Import pads from files
 //! - [`paths`]: Get filesystem paths to pads
+//! - [`uuid`]: Resolve selected pads to durable UUID values
 //! - [`init`]: Initialize scope directories
 //! - [`doctor`]: Verify and fix data consistency
 //! - [`tags`]: List and mutate the tag registry

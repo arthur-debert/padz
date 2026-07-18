@@ -699,20 +699,34 @@ fn path_maps_selectors_to_one_filesystem_path_each() {
 }
 
 #[test]
-fn uuid_maps_selectors_to_one_uuid_each() {
+fn uuid_maps_single_multiple_and_range_selectors_in_order() {
     let fx = Fixture::new();
     let state = fx.app_state();
-    fx.seed_pad(&state, "first", "");
+    let first = state
+        .with_api(|api| api.create_pad(state.scope, "first".into(), "".into(), None))
+        .unwrap()
+        .affected_pads[0]
+        .pad
+        .metadata
+        .id;
+    let second = state
+        .with_api(|api| api.create_pad(state.scope, "second".into(), "".into(), None))
+        .unwrap()
+        .affected_pads[0]
+        .pad
+        .metadata
+        .id;
     let ctx = support::ctx_with_state(state);
 
-    let result: UuidResult = rendered(handlers::uuid(&ctx, vec!["1".to_string()]));
+    let single: UuidResult = rendered(handlers::uuid(&ctx, vec!["1".to_string()]));
+    assert_eq!(single.uuids, vec![second.to_string()]);
 
-    assert_eq!(result.uuids.len(), 1);
-    assert!(
-        uuid::Uuid::parse_str(&result.uuids[0]).is_ok(),
-        "uuid handler should return a parseable uuid, got {:?}",
-        result.uuids[0]
-    );
+    let multiple: UuidResult =
+        rendered(handlers::uuid(&ctx, vec!["2".to_string(), "1".to_string()]));
+    assert_eq!(multiple.uuids, vec![first.to_string(), second.to_string()],);
+
+    let range: UuidResult = rendered(handlers::uuid(&ctx, vec!["1-2".to_string()]));
+    assert_eq!(range.uuids, vec![second.to_string(), first.to_string()]);
 }
 
 // =============================================================================

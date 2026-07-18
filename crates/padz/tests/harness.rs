@@ -2025,8 +2025,145 @@ fn term_debug_marks_a_deleted_pad_with_its_own_styles() {
 }
 
 // =============================================================================
+// UUID selections — selector ordering, human rendering, and structured data
+// =============================================================================
+
+#[test]
+#[serial]
+fn uuid_renders_single_multiple_and_range_selections_in_order() {
+    let fx = Fixture::new();
+    let state = fx.app_state();
+    fx.seed_pad(&state, "first", "");
+    fx.seed_pad(&state, "second", "");
+    fx.seed_pad(&state, "third", "");
+    drop(state);
+
+    let mut ids = Vec::new();
+    for selector in ["1", "2", "3"] {
+        let (app, cmd) = fx.read_app();
+        let result = TestHarness::new().no_color().text_output().run(
+            &app,
+            cmd,
+            fx.argv(&["uuid", selector]),
+        );
+        result.assert_success();
+        let lines: Vec<&str> = result.stdout().lines().collect();
+        assert_eq!(lines.len(), 1, "{selector}: one UUID per line");
+        uuid::Uuid::parse_str(lines[0])
+            .unwrap_or_else(|e| panic!("{selector}: invalid UUID {:?}: {e}", lines[0]));
+        ids.push(lines[0].to_string());
+    }
+
+    let (app, cmd) = fx.read_app();
+    let multiple =
+        TestHarness::new()
+            .no_color()
+            .text_output()
+            .run(&app, cmd, fx.argv(&["uuid", "3", "1"]));
+    multiple.assert_success();
+    assert_eq!(
+        multiple.stdout().lines().collect::<Vec<_>>(),
+        vec![ids[2].as_str(), ids[0].as_str()],
+        "multiple selectors must retain selector order"
+    );
+    drop(multiple);
+
+    let (app, cmd) = fx.read_app();
+    let range =
+        TestHarness::new()
+            .no_color()
+            .text_output()
+            .run(&app, cmd, fx.argv(&["uuid", "1-3"]));
+    range.assert_success();
+    assert_eq!(
+        range.stdout().lines().collect::<Vec<_>>(),
+        ids.iter().map(String::as_str).collect::<Vec<_>>(),
+        "ranges must expand in canonical display order"
+    );
+}
+
+// =============================================================================
 // Structured output — every mode parses with a real parser for that format
 // =============================================================================
+
+#[test]
+#[serial]
+fn uuid_preserves_its_array_contract_in_every_structured_mode() {
+    let fx = Fixture::new();
+    let state = fx.app_state();
+    fx.seed_pad(&state, "structured UUID", "");
+    drop(state);
+
+    let (app, cmd) = fx.read_app();
+    let text = TestHarness::new()
+        .no_color()
+        .text_output()
+        .run(&app, cmd, fx.argv(&["uuid", "1"]));
+    text.assert_success();
+    let expected = text.stdout().trim().to_string();
+    uuid::Uuid::parse_str(&expected).expect("human output should contain a full UUID");
+    drop(text);
+
+    for mode in ["json", "yaml", "xml", "csv"] {
+        let (app, cmd) = fx.read_app();
+        let result =
+            TestHarness::new()
+                .no_color()
+                .run(&app, cmd, fx.argv(&["uuid", "1", "--output", mode]));
+        result.assert_success();
+
+        let actual = match mode {
+            "json" => {
+                let value: serde_json::Value = serde_json::from_str(result.stdout())
+                    .unwrap_or_else(|e| panic!("not JSON: {e}\n{}", result.stdout()));
+                value["uuids"][0].as_str().expect("uuids[0]").to_string()
+            }
+            "yaml" => {
+                let value: serde_json::Value = serde_yaml::from_str(result.stdout())
+                    .unwrap_or_else(|e| panic!("not YAML: {e}\n{}", result.stdout()));
+                value["uuids"][0].as_str().expect("uuids[0]").to_string()
+            }
+            "xml" => {
+                let mut reader = quick_xml::Reader::from_str(result.stdout());
+                let mut in_uuid = false;
+                let mut uuid = None;
+                loop {
+                    match reader.read_event() {
+                        Ok(quick_xml::events::Event::Start(e)) => {
+                            in_uuid = e.name().as_ref() == b"uuids";
+                        }
+                        Ok(quick_xml::events::Event::Text(e)) if in_uuid => {
+                            uuid = Some(e.unescape().expect("UUID XML text").into_owned());
+                        }
+                        Ok(quick_xml::events::Event::End(e)) if e.name().as_ref() == b"uuids" => {
+                            in_uuid = false;
+                        }
+                        Ok(quick_xml::events::Event::Eof) => break,
+                        Ok(_) => {}
+                        Err(e) => panic!("not XML: {e}\n{}", result.stdout()),
+                    }
+                }
+                uuid.expect("XML uuids element")
+            }
+            "csv" => {
+                let mut reader = csv::Reader::from_reader(result.stdout().as_bytes());
+                assert_eq!(
+                    reader.headers().expect("CSV header").get(0),
+                    Some("uuids.0")
+                );
+                reader
+                    .records()
+                    .next()
+                    .expect("CSV row")
+                    .expect("valid CSV row")[0]
+                    .to_string()
+            }
+            other => unreachable!("unhandled mode {other}"),
+        };
+
+        assert_eq!(actual, expected, "{mode} UUID array changed");
+    }
+}
 
 #[test]
 #[serial]
