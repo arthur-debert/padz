@@ -97,7 +97,7 @@ impl<S: DataStore> PadzApi<S> {
     /// Permanently deletes pads.
     ///
     /// **Confirmation required**: The `confirmed` parameter must be `true` to proceed.
-    /// Returns an empty outcome or the selected pads and completed deletion counts.
+    /// Returns an empty outcome or unique selected pads and completed deletion counts.
     pub fn purge_pads<I: AsRef<str>>(
         &mut self,
         scope: Scope,

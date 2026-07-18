@@ -3,6 +3,7 @@ use crate::index::{DisplayIndex, DisplayPad, PadSelector};
 use crate::model::{Scope, TodoStatus};
 use crate::store::Bucket;
 use crate::store::DataStore;
+use std::collections::HashSet;
 use uuid::Uuid;
 
 use super::helpers::{indexed_pads, pads_by_selectors, TitleBucket};
@@ -12,8 +13,11 @@ use super::helpers::{indexed_pads, pads_by_selectors, TitleBucket};
 pub enum PurgeOutcome {
     Empty,
     Purged {
+        /// Explicitly selected pads, de-duplicated by UUID in display order.
         selected_pads: Vec<DisplayPad>,
+        /// Total number of unique pads permanently deleted.
         total_purged: usize,
+        /// Unique deleted descendants that were not explicitly selected.
         descendant_count: usize,
     },
 }
@@ -30,6 +34,7 @@ pub enum PurgeOutcome {
 /// - If `recursive` is false and any target has children, returns an error
 /// - If `confirmed` is false, returns an error (no pads are deleted)
 /// - `include_done`: when true and no selectors given, also purges pads with Done status
+/// - Duplicate display indexes and selected/descendant overlap count each UUID once
 pub fn run<S: DataStore>(
     store: &mut S,
     scope: Scope,
@@ -39,7 +44,7 @@ pub fn run<S: DataStore>(
     include_done: bool,
 ) -> Result<PurgeOutcome> {
     // 1. Resolve targets
-    let pads_to_purge = if selectors.is_empty() {
+    let mut pads_to_purge = if selectors.is_empty() {
         let all_pads = indexed_pads(store, scope)?;
         all_pads
             .into_iter()
@@ -51,6 +56,11 @@ pub fn run<S: DataStore>(
     } else {
         pads_by_selectors(store, scope, selectors, true, TitleBucket::Deleted)?
     };
+
+    // Pinned active pads appear under both pinned and regular display indexes.
+    // Preserve the first display identity while keeping semantic selections unique.
+    let mut seen_targets = HashSet::new();
+    pads_to_purge.retain(|dp| seen_targets.insert(dp.pad.metadata.id));
 
     if pads_to_purge.is_empty() {
         return Ok(PurgeOutcome::Empty);
@@ -76,8 +86,15 @@ pub fn run<S: DataStore>(
         )));
     }
 
-    // 4. Calculate total count for message
-    let total_count = pads_to_purge.len() + descendants.len();
+    // 4. Build the unique deletion set. A selected child can also be returned as
+    // a descendant of another selected pad, but remains an explicit selection.
+    let mut all_ids = target_ids;
+    all_ids.extend(descendants);
+    all_ids.sort();
+    all_ids.dedup();
+
+    let total_count = all_ids.len();
+    let descendant_count = total_count - pads_to_purge.len();
 
     // 5. Confirmation check - must come after we know the count
     if !confirmed {
@@ -88,11 +105,6 @@ pub fn run<S: DataStore>(
     }
 
     // 6. Execute the purge
-    let mut all_ids = target_ids;
-    all_ids.extend(descendants.clone());
-    all_ids.sort();
-    all_ids.dedup();
-
     for id in all_ids {
         // Try each bucket (deleted first, then active for Done pads, then archived)
         for &bucket in &[Bucket::Deleted, Bucket::Active, Bucket::Archived] {
@@ -106,14 +118,14 @@ pub fn run<S: DataStore>(
     Ok(PurgeOutcome::Purged {
         selected_pads: pads_to_purge,
         total_purged: total_count,
-        descendant_count: descendants.len(),
+        descendant_count,
     })
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::commands::{create, delete, get};
+    use crate::commands::{create, delete, get, pinning};
     use crate::index::DisplayIndex;
     use crate::model::Scope;
     use crate::store::bucketed::BucketedStore;
@@ -355,6 +367,40 @@ mod tests {
     }
 
     #[test]
+    fn selected_child_is_not_counted_again_as_a_descendant() {
+        let mut store = BucketedStore::new(
+            MemBackend::new(),
+            MemBackend::new(),
+            MemBackend::new(),
+            MemBackend::new(),
+        );
+        create::run(&mut store, Scope::Project, "Parent".into(), "".into(), None).unwrap();
+        create::run(
+            &mut store,
+            Scope::Project,
+            "Child".into(),
+            "".into(),
+            Some(PadSelector::Path(vec![DisplayIndex::Regular(1)])),
+        )
+        .unwrap();
+
+        let res = run(
+            &mut store,
+            Scope::Project,
+            &[
+                PadSelector::Path(vec![DisplayIndex::Regular(1)]),
+                PadSelector::Path(vec![DisplayIndex::Regular(1), DisplayIndex::Regular(1)]),
+            ],
+            true,
+            true,
+            false,
+        )
+        .unwrap();
+
+        assert_purged(res, &["1 Parent", "1 Child"], 2, 0);
+    }
+
+    #[test]
     fn purge_without_recursive_fails_when_has_children() {
         let mut store = BucketedStore::new(
             MemBackend::new(),
@@ -519,6 +565,40 @@ mod tests {
         let listed = get::run(&store, Scope::Project, get::PadFilter::default(), &[]).unwrap();
         assert_eq!(listed.listed_pads.len(), 1);
         assert_eq!(listed.listed_pads[0].pad.metadata.title, "Keep Me");
+    }
+
+    #[test]
+    fn purge_include_done_reports_a_pinned_pad_once() {
+        let mut store = BucketedStore::new(
+            MemBackend::new(),
+            MemBackend::new(),
+            MemBackend::new(),
+            MemBackend::new(),
+        );
+        create::run(
+            &mut store,
+            Scope::Project,
+            "Complete Me".into(),
+            "".into(),
+            None,
+        )
+        .unwrap();
+        crate::commands::status::complete(
+            &mut store,
+            Scope::Project,
+            &[PadSelector::Path(vec![DisplayIndex::Regular(1)])],
+        )
+        .unwrap();
+        pinning::pin(
+            &mut store,
+            Scope::Project,
+            &[PadSelector::Path(vec![DisplayIndex::Regular(1)])],
+        )
+        .unwrap();
+
+        let res = run(&mut store, Scope::Project, &[], false, true, true).unwrap();
+
+        assert_purged(res, &["p1 Complete Me"], 1, 0);
     }
 
     #[test]

@@ -169,7 +169,7 @@ impl From<padzapp::commands::doctor::DoctorOutcome> for DoctorResult {
     }
 }
 
-/// Identity facts for one explicitly selected pad in a purge report.
+/// Identity facts for one unique, explicitly selected pad in a purge report.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct PurgePadResult {
     pub selector: String,
@@ -177,7 +177,7 @@ pub struct PurgePadResult {
     pub title: String,
 }
 
-/// CLI projection of a permanent-deletion request.
+/// CLI projection of a permanent-deletion request with UUID-unique counts.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "status", rename_all = "snake_case")]
 pub enum PurgeResult {
