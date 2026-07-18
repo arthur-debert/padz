@@ -52,16 +52,23 @@ impl<S: DataStore> PadzApi<S> {
         commands::import::run(&mut self.store, scope, paths, import_exts)
     }
 
-    /// Direction for clone/migrate: the external path is either the
-    /// destination (`--to`) or the source (`--from`).
+    /// Copy or migrate the requested selection into a resolved peer store.
+    ///
+    /// The returned report identifies the peer, direction, original selection,
+    /// copied IDs, and every partial-success diagnostic without presentation
+    /// prose.
     pub fn transfer_pads_to<I: AsRef<str>>(
         &mut self,
         scope: Scope,
         indexes: &[I],
         dest_path: &std::path::Path,
         mode: commands::transfer::TransferMode,
-    ) -> Result<commands::CmdResult> {
-        let selectors = parse_selectors(indexes)?;
+    ) -> Result<commands::transfer::TransferReport> {
+        let requested: Vec<String> = indexes
+            .iter()
+            .map(|index| index.as_ref().to_string())
+            .collect();
+        let selectors = parse_selectors(&requested)?;
         let dest_padz =
             commands::transfer::resolve_target_dir(dest_path, self.paths.home.as_deref())?;
         // Refuse to transfer to the same store. For migrate the user would
@@ -81,20 +88,26 @@ impl<S: DataStore> PadzApi<S> {
             &mut dest_store,
             Scope::Project,
             &selectors,
-            &dest_padz,
-            mode,
+            commands::transfer::TransferRequest {
+                operation: mode,
+                direction: commands::transfer::TransferDirection::To,
+                peer_store: dest_padz,
+                requested_selection: requested_selection(requested),
+            },
         )
     }
 
-    /// `--from <path>`: read selectors from the external store, write into
-    /// the current store.
+    /// Copy or migrate the requested selection from a resolved peer store.
+    ///
+    /// Selectors resolve against the external source, while the report retains
+    /// the exact caller-supplied selector strings and resolved peer path.
     pub fn transfer_pads_from<I: AsRef<str>>(
         &mut self,
         scope: Scope,
         indexes: &[I],
         source_path: &std::path::Path,
         mode: commands::transfer::TransferMode,
-    ) -> Result<commands::CmdResult> {
+    ) -> Result<commands::transfer::TransferReport> {
         let source_padz =
             commands::transfer::resolve_target_dir(source_path, self.paths.home.as_deref())?;
         let current_padz = self.paths.scope_dir(scope)?;
@@ -105,16 +118,33 @@ impl<S: DataStore> PadzApi<S> {
             )));
         }
         let mut source_store = commands::transfer::open_target_store(&source_padz)?;
-        let selectors = parse_selectors(indexes).map_err(|e| PadzError::Api(format!("{}", e)))?;
+        let requested: Vec<String> = indexes
+            .iter()
+            .map(|index| index.as_ref().to_string())
+            .collect();
+        let selectors =
+            parse_selectors(&requested).map_err(|e| PadzError::Api(format!("{}", e)))?;
         commands::transfer::run(
             &mut source_store,
             Scope::Project,
             &mut self.store,
             scope,
             &selectors,
-            &source_padz,
-            mode,
+            commands::transfer::TransferRequest {
+                operation: mode,
+                direction: commands::transfer::TransferDirection::From,
+                peer_store: source_padz,
+                requested_selection: requested_selection(requested),
+            },
         )
+    }
+}
+
+fn requested_selection(selectors: Vec<String>) -> commands::transfer::TransferSelection {
+    if selectors.is_empty() {
+        commands::transfer::TransferSelection::AllNonDeleted
+    } else {
+        commands::transfer::TransferSelection::Explicit { selectors }
     }
 }
 
@@ -188,14 +218,18 @@ mod tests {
             .transfer_pads_to(Scope::Project, empty, &dest_padz, TransferMode::Clone)
             .unwrap();
 
-        assert!(
-            result
-                .messages
-                .iter()
-                .any(|m| m.content.contains("Cloned 2 pad(s)")),
-            "expected Cloned message; got {:?}",
-            result.messages
+        assert_eq!(
+            result.status,
+            commands::transfer::TransferStatus::FullSuccess
         );
+        assert_eq!(result.operation, TransferMode::Clone);
+        assert_eq!(result.direction, commands::transfer::TransferDirection::To);
+        assert_eq!(result.peer_store, dest_padz.canonicalize().unwrap());
+        assert_eq!(
+            result.requested_selection,
+            commands::transfer::TransferSelection::AllNonDeleted
+        );
+        assert_eq!(result.copied_count, 2);
 
         // Source must still hold both pads after a clone.
         let still_there = api
@@ -269,14 +303,16 @@ mod tests {
             .transfer_pads_from(Scope::Project, empty, &src_padz, TransferMode::Clone)
             .unwrap();
 
-        assert!(
-            result
-                .messages
-                .iter()
-                .any(|m| m.content.contains("Cloned 1 pad(s)")),
-            "expected Cloned message; got {:?}",
-            result.messages
+        assert_eq!(
+            result.status,
+            commands::transfer::TransferStatus::FullSuccess
         );
+        assert_eq!(
+            result.direction,
+            commands::transfer::TransferDirection::From
+        );
+        assert_eq!(result.peer_store, src_padz.canonicalize().unwrap());
+        assert_eq!(result.copied_count, 1);
 
         let landed = api
             .get_pads(Scope::Project, Default::default(), &[] as &[String])

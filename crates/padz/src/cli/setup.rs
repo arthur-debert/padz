@@ -722,7 +722,7 @@ pub enum Commands {
 
     /// Copy pads to (or from) another padz store (source is kept)
     #[command(display_order = 23)]
-    #[dispatch(pure, template = "messages")]
+    #[dispatch(pure, template = "transfer")]
     Clone {
         /// Indexes of the pads (e.g. 1 2) - if omitted, all non-deleted pads (active + archived)
         #[arg(required = false, num_args = 0.., add = active_pads_completer())]
@@ -739,7 +739,7 @@ pub enum Commands {
 
     /// Move pads to (or from) another padz store (source is removed on success)
     #[command(display_order = 24)]
-    #[dispatch(pure, template = "messages")]
+    #[dispatch(pure, template = "transfer")]
     Migrate {
         /// Indexes of the pads (e.g. 1 2) - if omitted, all non-deleted pads (active + archived)
         #[arg(required = false, num_args = 0.., add = active_pads_completer())]
