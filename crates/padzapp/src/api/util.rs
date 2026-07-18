@@ -9,7 +9,8 @@ use super::selectors::parse_selectors;
 use super::PadzApi;
 
 impl<S: DataStore> PadzApi<S> {
-    pub fn doctor(&mut self, scope: Scope) -> Result<commands::CmdResult> {
+    /// Reconciles the store and returns a clean/repaired outcome with direct counts.
+    pub fn doctor(&mut self, scope: Scope) -> Result<commands::doctor::DoctorOutcome> {
         commands::doctor::run(&mut self.store, scope)
     }
 
@@ -73,7 +74,13 @@ mod tests {
 
         let result = api.doctor(Scope::Project).unwrap();
 
-        assert!(!result.messages.is_empty());
+        assert_eq!(
+            result,
+            crate::commands::doctor::DoctorOutcome::Clean {
+                missing_files: 0,
+                recovered_files: 0
+            }
+        );
     }
 
     #[test]

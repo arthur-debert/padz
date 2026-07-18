@@ -265,6 +265,142 @@ fn search_flag_reaches_the_handler_as_a_filter() {
     assert_eq!(got, vec!["meeting notes"]);
 }
 
+// =============================================================================
+// Semantic initialization and maintenance outcomes
+// =============================================================================
+
+#[test]
+#[serial]
+fn initialization_preserves_text_and_exposes_structured_facts() {
+    let fx = Fixture::new();
+    let (app, cmd) = fx.app(&["init"]);
+    let text = TestHarness::new().no_color().run(
+        &app,
+        cmd.clone(),
+        fx.argv(&["init", "--output", "text"]),
+    );
+
+    text.assert_success();
+    assert_eq!(
+        text.stdout(),
+        format!(
+            "Initialized padz store at {}\n\nTip: Enable shell completions for padz:\n  \
+             eval \"$(padz completions bash)\"  # add to ~/.bashrc\n  \
+             eval \"$(padz completions zsh)\"   # add to ~/.zshrc\n",
+            fx.project().join(".padz").display()
+        )
+    );
+    drop(text);
+
+    let json = TestHarness::new().run(&app, cmd, fx.argv(&["init", "--output", "json"]));
+    json.assert_success();
+    let mut value: serde_json::Value = serde_json::from_str(json.stdout()).unwrap();
+    value["store_path"] = serde_json::json!("<STORE_PATH>");
+    let fixture: serde_json::Value = serde_json::from_str(include_str!(
+        "fixtures/semantic_outcomes/initialization.json"
+    ))
+    .unwrap();
+    assert_eq!(value, fixture);
+    assert!(
+        value.get("messages").is_none(),
+        "initialization schema must expose facts rather than prose"
+    );
+}
+
+#[test]
+#[serial]
+fn doctor_preserves_clean_text_and_exposes_counts() {
+    let fx = Fixture::new();
+    let (app, cmd) = fx.read_app();
+    let text = TestHarness::new().no_color().run(
+        &app,
+        cmd.clone(),
+        fx.argv(&["doctor", "--output", "text"]),
+    );
+
+    text.assert_success();
+    assert_eq!(text.stdout(), "No inconsistencies found.\n");
+    drop(text);
+
+    let json = TestHarness::new().run(&app, cmd, fx.argv(&["doctor", "--output", "json"]));
+    json.assert_success();
+    let value: serde_json::Value = serde_json::from_str(json.stdout()).unwrap();
+    let fixture: serde_json::Value =
+        serde_json::from_str(include_str!("fixtures/semantic_outcomes/doctor-clean.json")).unwrap();
+    assert_eq!(value, fixture);
+}
+
+#[test]
+#[serial]
+fn purge_preserves_completed_text_and_exposes_selection_and_counts() {
+    let text_fx = Fixture::new();
+    let state = text_fx.app_state();
+    text_fx.seed_pad(&state, "gone", "");
+    state
+        .with_api(|api| api.delete_pads(state.scope, &["1"]))
+        .unwrap();
+    drop(state);
+    let (app, cmd) = text_fx.read_app();
+    let text = TestHarness::new().no_color().run(
+        &app,
+        cmd,
+        text_fx.argv(&["purge", "--yes", "--output", "text"]),
+    );
+
+    text.assert_success();
+    assert_eq!(text.stdout(), "Purging 1 pad(s)...\nPurged: d1 gone\n");
+
+    let json_fx = Fixture::new();
+    let state = json_fx.app_state();
+    json_fx.seed_pad(&state, "gone", "");
+    state
+        .with_api(|api| api.delete_pads(state.scope, &["1"]))
+        .unwrap();
+    drop(state);
+    let (app, cmd) = json_fx.read_app();
+    let json = TestHarness::new().run(
+        &app,
+        cmd,
+        json_fx.argv(&["purge", "--yes", "--output", "json"]),
+    );
+
+    json.assert_success();
+    let mut value: serde_json::Value = serde_json::from_str(json.stdout()).unwrap();
+    assert!(value["selected_pads"][0]["id"]
+        .as_str()
+        .is_some_and(|id| id.len() == 36));
+    value["selected_pads"][0]["id"] = serde_json::json!("<UUID>");
+    let fixture: serde_json::Value = serde_json::from_str(include_str!(
+        "fixtures/semantic_outcomes/purge-completed.json"
+    ))
+    .unwrap();
+    assert_eq!(value, fixture);
+}
+
+#[test]
+#[serial]
+fn empty_purge_is_distinct_in_text_and_structured_output() {
+    let fx = Fixture::new();
+    let (app, cmd) = fx.read_app();
+    let text = TestHarness::new().no_color().run(
+        &app,
+        cmd.clone(),
+        fx.argv(&["purge", "--yes", "--output", "text"]),
+    );
+    text.assert_success();
+    assert_eq!(text.stdout(), "No pads to purge.\n");
+    drop(text);
+
+    let json = TestHarness::new().run(&app, cmd, fx.argv(&["purge", "--yes", "--output", "json"]));
+    json.assert_success();
+    let fixture: serde_json::Value =
+        serde_json::from_str(include_str!("fixtures/semantic_outcomes/purge-empty.json")).unwrap();
+    assert_eq!(
+        serde_json::from_str::<serde_json::Value>(json.stdout()).unwrap(),
+        fixture
+    );
+}
+
 #[test]
 #[serial]
 fn uuid_flag_reaches_the_view_handler() {

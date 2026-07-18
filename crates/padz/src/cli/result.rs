@@ -102,6 +102,119 @@ impl MessagesResult {
     }
 }
 
+/// CLI projection of explicit store initialization and link maintenance.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "action", rename_all = "snake_case")]
+pub enum InitializationResult {
+    Initialized { scope: String, store_path: String },
+    Linked { target: String },
+    Unlinked,
+}
+
+impl From<padzapp::commands::init::InitializationOutcome> for InitializationResult {
+    fn from(outcome: padzapp::commands::init::InitializationOutcome) -> Self {
+        use padzapp::commands::init::InitializationOutcome;
+
+        match outcome {
+            InitializationOutcome::Initialized { scope, store_path } => Self::Initialized {
+                scope: match scope {
+                    padzapp::model::Scope::Project => "project",
+                    padzapp::model::Scope::Global => "global",
+                }
+                .to_string(),
+                store_path: store_path.display().to_string(),
+            },
+            InitializationOutcome::Linked { target } => Self::Linked {
+                target: target.display().to_string(),
+            },
+            InitializationOutcome::Unlinked => Self::Unlinked,
+        }
+    }
+}
+
+/// CLI projection of a store reconciliation report.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "status", rename_all = "snake_case")]
+pub enum DoctorResult {
+    Clean {
+        missing_files: usize,
+        recovered_files: usize,
+    },
+    Repaired {
+        missing_files: usize,
+        recovered_files: usize,
+    },
+}
+
+impl From<padzapp::commands::doctor::DoctorOutcome> for DoctorResult {
+    fn from(outcome: padzapp::commands::doctor::DoctorOutcome) -> Self {
+        use padzapp::commands::doctor::DoctorOutcome;
+
+        match outcome {
+            DoctorOutcome::Clean {
+                missing_files,
+                recovered_files,
+            } => Self::Clean {
+                missing_files,
+                recovered_files,
+            },
+            DoctorOutcome::Repaired {
+                missing_files,
+                recovered_files,
+            } => Self::Repaired {
+                missing_files,
+                recovered_files,
+            },
+        }
+    }
+}
+
+/// Identity facts for one explicitly selected pad in a purge report.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct PurgePadResult {
+    pub selector: String,
+    pub id: String,
+    pub title: String,
+}
+
+/// CLI projection of a permanent-deletion request.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "status", rename_all = "snake_case")]
+pub enum PurgeResult {
+    Empty,
+    Purged {
+        selected_pads: Vec<PurgePadResult>,
+        total_purged: usize,
+        descendant_count: usize,
+    },
+}
+
+impl From<padzapp::commands::purge::PurgeOutcome> for PurgeResult {
+    fn from(outcome: padzapp::commands::purge::PurgeOutcome) -> Self {
+        use padzapp::commands::purge::PurgeOutcome;
+
+        match outcome {
+            PurgeOutcome::Empty => Self::Empty,
+            PurgeOutcome::Purged {
+                selected_pads,
+                total_purged,
+                descendant_count,
+            } => Self::Purged {
+                selected_pads: selected_pads
+                    .into_iter()
+                    .map(|selected| PurgePadResult {
+                        selector: selected.index.to_string(),
+                        id: selected.pad.metadata.id.to_string(),
+                        title: selected.pad.metadata.title,
+                    })
+                    .collect(),
+                total_purged,
+                descendant_count,
+            },
+        }
+    }
+}
+
 /// The machine-readable report carried by an export artifact.
 ///
 /// Standout wraps this value with its own `receipt` after the final write. An

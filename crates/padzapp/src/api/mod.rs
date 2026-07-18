@@ -8,7 +8,7 @@
 //! The API facade:
 //! - **Dispatches** to the appropriate command function
 //! - **Normalizes inputs** (e.g., converting display indexes to UUIDs)
-//! - **Returns structured types** (`Result<CmdResult>`)
+//! - **Returns structured types** (`CmdResult` or operation-specific outcomes)
 //!
 //! ## What the API Does NOT Do
 //!
@@ -17,9 +17,9 @@
 //! - **I/O operations**: No stdout, stderr, or file formatting
 //! - **Presentation concerns**: Returns data structures, not strings
 //!
-//! ## Consistent Output Representation
+//! ## Consistent Pad Representation
 //!
-//! All pad data in [`CmdResult`] uses [`DisplayPad`], which pairs a [`Pad`] with its
+//! All pad data in [`CmdResult`] and semantic outcomes uses [`DisplayPad`], which pairs a [`Pad`] with its
 //! canonical [`DisplayIndex`]. This applies to both:
 //! - `affected_pads`: Pads modified by the operation (with post-operation index)
 //! - `listed_pads`: Pads returned for display (with current index)
@@ -78,7 +78,10 @@ impl<S: DataStore> PadzApi<S> {
 }
 
 pub use crate::model::TodoStatus;
+pub use commands::doctor::DoctorOutcome;
 pub use commands::get::{PadFilter, PadStatusFilter};
+pub use commands::init::InitializationOutcome;
+pub use commands::purge::PurgeOutcome;
 pub use commands::{CmdMessage, CmdResult, MessageLevel, PadUpdate, PadzPaths};
 
 #[cfg(test)]

@@ -1,0 +1,12 @@
+{#- Human projection of DoctorResult; counts and status remain structured facts. -#}
+{%- if status == "clean" -%}
+[success]No inconsistencies found.[/success]{{ "" | nl }}
+{%- else -%}
+[warning]Inconsistencies found and fixed:[/warning]{{ "" | nl }}
+{%- if missing_files > 0 -%}
+[info]  - Removed {{ missing_files }} pad(s) listed in DB but missing from disk.[/info]{{ "" | nl }}
+{%- endif -%}
+{%- if recovered_files > 0 -%}
+[success]  - Recovered {{ recovered_files }} pad(s) found on disk but missing from DB.[/success]{{ "" | nl }}
+{%- endif -%}
+{%- endif -%}

@@ -1,12 +1,22 @@
-use crate::commands::{CmdMessage, CmdResult};
 use crate::error::{PadzError, Result};
-use crate::index::{DisplayIndex, PadSelector};
+use crate::index::{DisplayIndex, DisplayPad, PadSelector};
 use crate::model::{Scope, TodoStatus};
 use crate::store::Bucket;
 use crate::store::DataStore;
 use uuid::Uuid;
 
 use super::helpers::{indexed_pads, pads_by_selectors, TitleBucket};
+
+/// Semantic result of a permanent-deletion request.
+#[derive(Debug, Clone)]
+pub enum PurgeOutcome {
+    Empty,
+    Purged {
+        selected_pads: Vec<DisplayPad>,
+        total_purged: usize,
+        descendant_count: usize,
+    },
+}
 
 /// Permanently removes pads from the store.
 ///
@@ -27,7 +37,7 @@ pub fn run<S: DataStore>(
     recursive: bool,
     confirmed: bool,
     include_done: bool,
-) -> Result<CmdResult> {
+) -> Result<PurgeOutcome> {
     // 1. Resolve targets
     let pads_to_purge = if selectors.is_empty() {
         let all_pads = indexed_pads(store, scope)?;
@@ -43,9 +53,7 @@ pub fn run<S: DataStore>(
     };
 
     if pads_to_purge.is_empty() {
-        let mut res = CmdResult::default();
-        res.add_message(CmdMessage::info("No pads to purge."));
-        return Ok(res);
+        return Ok(PurgeOutcome::Empty);
     }
 
     // 2. Find descendants
@@ -85,14 +93,6 @@ pub fn run<S: DataStore>(
     all_ids.sort();
     all_ids.dedup();
 
-    let mut result = CmdResult::default();
-
-    // Add the "Purging X padz..." message first
-    result.add_message(CmdMessage::info(format!(
-        "Purging {} pad(s)...",
-        total_count
-    )));
-
     for id in all_ids {
         // Try each bucket (deleted first, then active for Done pads, then archived)
         for &bucket in &[Bucket::Deleted, Bucket::Active, Bucket::Archived] {
@@ -103,20 +103,11 @@ pub fn run<S: DataStore>(
         }
     }
 
-    for dp in pads_to_purge {
-        result.add_message(CmdMessage::success(format!(
-            "Purged: {} {}",
-            dp.index, dp.pad.metadata.title
-        )));
-    }
-    if !descendants.is_empty() {
-        result.add_message(CmdMessage::success(format!(
-            "And purged {} descendant(s)",
-            descendants.len()
-        )));
-    }
-
-    Ok(result)
+    Ok(PurgeOutcome::Purged {
+        selected_pads: pads_to_purge,
+        total_purged: total_count,
+        descendant_count: descendants.len(),
+    })
 }
 
 #[cfg(test)]
@@ -127,6 +118,29 @@ mod tests {
     use crate::model::Scope;
     use crate::store::bucketed::BucketedStore;
     use crate::store::mem_backend::MemBackend;
+
+    fn assert_purged(
+        outcome: PurgeOutcome,
+        selected: &[&str],
+        total_purged: usize,
+        descendant_count: usize,
+    ) {
+        let PurgeOutcome::Purged {
+            selected_pads,
+            total_purged: actual_total,
+            descendant_count: actual_descendants,
+        } = outcome
+        else {
+            panic!("expected PurgeOutcome::Purged");
+        };
+        let actual_selected: Vec<String> = selected_pads
+            .iter()
+            .map(|pad| format!("{} {}", pad.index, pad.pad.metadata.title))
+            .collect();
+        assert_eq!(actual_selected, selected);
+        assert_eq!(actual_total, total_purged);
+        assert_eq!(actual_descendants, descendant_count);
+    }
 
     #[test]
     fn purges_deleted_pads_when_confirmed() {
@@ -170,12 +184,7 @@ mod tests {
         )
         .unwrap();
 
-        // Should have "Purging 1 pad(s)..." and "Purged: d1 A"
-        assert!(res.messages.iter().any(|m| m.content.contains("Purging 1")));
-        assert!(res
-            .messages
-            .iter()
-            .any(|m| m.content.contains("Purged: d1 A")));
+        assert_purged(res, &["d1 A"], 1, 0);
 
         // Verify empty
         let deleted_after = get::run(
@@ -260,10 +269,7 @@ mod tests {
         )
         .unwrap();
 
-        assert!(res
-            .messages
-            .iter()
-            .any(|m| m.content.contains("Purged: 1 A")));
+        assert_purged(res, &["1 A"], 1, 0);
 
         // Verify gone
         let listed = get::run(&store, Scope::Project, get::PadFilter::default(), &[]).unwrap();
@@ -283,8 +289,7 @@ mod tests {
         // Purge deleted (none) - even with confirmed=true, should just say "No pads"
         let res = run(&mut store, Scope::Project, &[], false, true, false).unwrap();
 
-        assert_eq!(res.messages.len(), 1);
-        assert!(res.messages[0].content.contains("No pads to purge"));
+        assert!(matches!(res, PurgeOutcome::Empty));
 
         // A still exists
         let listed = get::run(&store, Scope::Project, get::PadFilter::default(), &[]).unwrap();
@@ -330,15 +335,7 @@ mod tests {
         )
         .unwrap();
 
-        assert!(res.messages.iter().any(|m| m.content.contains("Purging 2"))); // parent + child
-        assert!(res
-            .messages
-            .iter()
-            .any(|m| m.content.contains("Purged: d1 Parent")));
-        assert!(res
-            .messages
-            .iter()
-            .any(|m| m.content.contains("And purged 1 descendant")));
+        assert_purged(res, &["d1 Parent"], 2, 1);
 
         // Verify Store is empty (both Active and Deleted)
         assert_eq!(
@@ -430,7 +427,7 @@ mod tests {
         )
         .unwrap();
 
-        assert!(res.messages.iter().any(|m| m.content.contains("Purging 1")));
+        assert_purged(res, &["d1 B"], 1, 0);
 
         let remaining = store.list_pads(Scope::Project, Bucket::Deleted).unwrap();
         assert_eq!(remaining.len(), 1); // One remains in Deleted bucket
@@ -446,7 +443,7 @@ mod tests {
         );
         // Empty store - even with confirmed=true
         let res = run(&mut store, Scope::Project, &[], false, true, false).unwrap();
-        assert!(res.messages[0].content.contains("No pads to purge"));
+        assert!(matches!(res, PurgeOutcome::Empty));
     }
 
     #[test]
@@ -516,8 +513,7 @@ mod tests {
         // Purge with include_done=true (no selectors)
         let res = run(&mut store, Scope::Project, &[], false, true, true).unwrap();
 
-        // Should purge the Done pad
-        assert!(res.messages.iter().any(|m| m.content.contains("Purging 1")));
+        assert_purged(res, &["1 Complete Me"], 1, 0);
 
         // "Keep Me" (Planned) should still exist
         let listed = get::run(&store, Scope::Project, get::PadFilter::default(), &[]).unwrap();
@@ -546,8 +542,7 @@ mod tests {
         // Purge with include_done=false (default / notes mode)
         let res = run(&mut store, Scope::Project, &[], false, true, false).unwrap();
 
-        // No pads to purge (Done but not Deleted, and include_done is false)
-        assert!(res.messages[0].content.contains("No pads to purge"));
+        assert!(matches!(res, PurgeOutcome::Empty));
 
         // A still exists
         let listed = get::run(&store, Scope::Project, get::PadFilter::default(), &[]).unwrap();
@@ -609,7 +604,7 @@ mod tests {
         // Purge with include_done=true - should get both Done and Deleted
         let res = run(&mut store, Scope::Project, &[], false, true, true).unwrap();
 
-        assert!(res.messages.iter().any(|m| m.content.contains("Purging 2")));
+        assert_purged(res, &["2 Done Pad", "d1 Deleted Pad"], 2, 0);
 
         // Only "Active Pad" should remain
         let listed = get::run(&store, Scope::Project, get::PadFilter::default(), &[]).unwrap();

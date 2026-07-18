@@ -8,7 +8,7 @@
 //! Commands are where the real work happens:
 //! - Implement the actual logic for each operation
 //! - Operate on `Pad`, `Metadata`, and other domain types
-//! - Return structured `CmdResult` with affected pads and messages
+//! - Return structured `CmdResult` values or operation-specific semantic outcomes
 //! - Are completely UI-agnostic
 //!
 //! ## What Commands Do NOT Do
@@ -21,7 +21,7 @@
 //!
 //! ## Structured Returns
 //!
-//! Commands return [`CmdResult`], not strings. This struct carries:
+//! Most commands return [`CmdResult`], not strings. This struct carries:
 //! - `affected_pads`: Pads that were modified (as `DisplayPad` with post-operation index)
 //! - `listed_pads`: Pads to display (as `DisplayPad` with current index)
 //! - `messages`: Structured messages with levels (info, success, warning, error)
@@ -31,7 +31,9 @@
 //! with its canonical [`DisplayIndex`]. This ensures consistent representation
 //! throughout the API—clients always receive pads with their resolved indexes.
 //!
-//! The UI layer (CLI, web, etc.) then decides how to render this data.
+//! Initialization, doctor, purge, and artifact-producing commands use dedicated
+//! outcome types where a generic result would obscure the operation's facts. The
+//! UI layer (CLI, web, etc.) decides how to render every result.
 //!
 //! ## Testing Strategy
 //!

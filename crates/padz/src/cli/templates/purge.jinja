@@ -1,0 +1,12 @@
+{#- Human projection of PurgeResult; the core returns no progress or success prose. -#}
+{%- if status == "empty" -%}
+[info]No pads to purge.[/info]{{ "" | nl }}
+{%- else -%}
+[info]Purging {{ total_purged }} pad(s)...[/info]{{ "" | nl }}
+{%- for selected in selected_pads -%}
+[success]Purged: {{ selected.selector }} {{ selected.title }}[/success]{{ "" | nl }}
+{%- endfor -%}
+{%- if descendant_count > 0 -%}
+[success]And purged {{ descendant_count }} descendant(s)[/success]{{ "" | nl }}
+{%- endif -%}
+{%- endif -%}

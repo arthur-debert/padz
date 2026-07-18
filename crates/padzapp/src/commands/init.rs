@@ -1,34 +1,30 @@
-use crate::commands::{CmdMessage, CmdResult, PadzPaths};
+use crate::commands::PadzPaths;
 use crate::error::{PadzError, Result};
 use crate::init::create_bucket_layout;
 use crate::model::Scope;
 use std::fs;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
-pub fn run(paths: &PadzPaths, scope: Scope) -> Result<CmdResult> {
+/// Semantic result of explicit store initialization or link maintenance.
+///
+/// The reusable application layer reports only what happened. Shell-completion
+/// guidance, success wording, styles, and blank-line layout belong to clients.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum InitializationOutcome {
+    Initialized { scope: Scope, store_path: PathBuf },
+    Linked { target: PathBuf },
+    Unlinked,
+}
+
+pub fn run(paths: &PadzPaths, scope: Scope) -> Result<InitializationOutcome> {
     let dir = paths.scope_dir(scope)?;
 
     create_bucket_layout(&dir)?;
 
-    let mut result = CmdResult::default();
-    result.add_message(CmdMessage::success(format!(
-        "Initialized padz store at {}",
-        dir.display()
-    )));
-
-    // Add shell completion hint
-    result.add_message(CmdMessage::info(String::new())); // blank line
-    result.add_message(CmdMessage::info(
-        "Tip: Enable shell completions for padz:".to_string(),
-    ));
-    result.add_message(CmdMessage::info(
-        "  eval \"$(padz completions bash)\"  # add to ~/.bashrc".to_string(),
-    ));
-    result.add_message(CmdMessage::info(
-        "  eval \"$(padz completions zsh)\"   # add to ~/.zshrc".to_string(),
-    ));
-
-    Ok(result)
+    Ok(InitializationOutcome::Initialized {
+        scope,
+        store_path: dir,
+    })
 }
 
 /// Create a persistent link from the current project's `.padz/` to another project's data.
@@ -38,7 +34,7 @@ pub fn run(paths: &PadzPaths, scope: Scope) -> Result<CmdResult> {
 ///
 /// `local_padz` is the **pre-resolution** `.padz/` directory (i.e., the CWD-based one,
 /// before any existing link is followed).
-pub fn link(local_padz: &Path, target: &Path) -> Result<CmdResult> {
+pub fn link(local_padz: &Path, target: &Path) -> Result<InitializationOutcome> {
     // Canonicalize target
     let target = target.canonicalize().map_err(|_| {
         PadzError::Store(format!(
@@ -90,18 +86,15 @@ pub fn link(local_padz: &Path, target: &Path) -> Result<CmdResult> {
         target_root.to_string_lossy().as_bytes(),
     )?;
 
-    let mut result = CmdResult::default();
-    result.add_message(CmdMessage::success(format!(
-        "Linked to {}",
-        target_padz.display()
-    )));
-    Ok(result)
+    Ok(InitializationOutcome::Linked {
+        target: target_padz,
+    })
 }
 
 /// Remove an existing link file.
 ///
 /// `local_padz` is the **pre-resolution** `.padz/` directory.
-pub fn unlink(local_padz: &Path) -> Result<CmdResult> {
+pub fn unlink(local_padz: &Path) -> Result<InitializationOutcome> {
     let link_file = local_padz.join("link");
 
     if !link_file.exists() {
@@ -112,9 +105,7 @@ pub fn unlink(local_padz: &Path) -> Result<CmdResult> {
 
     fs::remove_file(&link_file)?;
 
-    let mut result = CmdResult::default();
-    result.add_message(CmdMessage::success("Unlinked.".to_string()));
-    Ok(result)
+    Ok(InitializationOutcome::Unlinked)
 }
 
 #[cfg(test)]
@@ -127,6 +118,28 @@ mod tests {
         fs::create_dir_all(dir.join("active")).unwrap();
         fs::create_dir_all(dir.join("archived")).unwrap();
         fs::create_dir_all(dir.join("deleted")).unwrap();
+    }
+
+    #[test]
+    fn initialization_returns_scope_and_store_path() {
+        let temp = TempDir::new().unwrap();
+        let project = temp.path().join("project").join(".padz");
+        let paths = PadzPaths {
+            project: Some(project.clone()),
+            global: temp.path().join("global"),
+            home: None,
+        };
+
+        let outcome = run(&paths, Scope::Project).unwrap();
+
+        assert_eq!(
+            outcome,
+            InitializationOutcome::Initialized {
+                scope: Scope::Project,
+                store_path: project.clone(),
+            }
+        );
+        assert!(project.join("active").is_dir());
     }
 
     #[test]
@@ -150,7 +163,12 @@ mod tests {
             PathBuf::from(link_content.trim()),
             target.canonicalize().unwrap()
         );
-        assert!(result.messages[0].content.contains("Linked to"));
+        assert_eq!(
+            result,
+            InitializationOutcome::Linked {
+                target: target.join(".padz").canonicalize().unwrap()
+            }
+        );
     }
 
     #[test]
@@ -234,7 +252,7 @@ mod tests {
         let result = unlink(&padz_dir).unwrap();
 
         assert!(!padz_dir.join("link").exists());
-        assert!(result.messages[0].content.contains("Unlinked"));
+        assert_eq!(result, InitializationOutcome::Unlinked);
     }
 
     #[test]

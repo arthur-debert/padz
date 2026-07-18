@@ -1,31 +1,33 @@
-use crate::commands::{CmdMessage, CmdResult};
 use crate::error::Result;
 use crate::model::Scope;
 use crate::store::DataStore;
 
-pub fn run<S: DataStore>(store: &mut S, scope: Scope) -> Result<CmdResult> {
+/// Semantic result of reconciling a store's index and content files.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum DoctorOutcome {
+    Clean {
+        missing_files: usize,
+        recovered_files: usize,
+    },
+    Repaired {
+        missing_files: usize,
+        recovered_files: usize,
+    },
+}
+
+pub fn run<S: DataStore>(store: &mut S, scope: Scope) -> Result<DoctorOutcome> {
     let report = store.doctor(scope)?;
-    let mut result = CmdResult::default();
-
     if report.fixed_missing_files == 0 && report.recovered_files == 0 {
-        result.add_message(CmdMessage::success("No inconsistencies found."));
+        Ok(DoctorOutcome::Clean {
+            missing_files: 0,
+            recovered_files: 0,
+        })
     } else {
-        result.add_message(CmdMessage::warning("Inconsistencies found and fixed:"));
-        if report.fixed_missing_files > 0 {
-            result.add_message(CmdMessage::info(format!(
-                "  - Removed {} pad(s) listed in DB but missing from disk.",
-                report.fixed_missing_files
-            )));
-        }
-        if report.recovered_files > 0 {
-            result.add_message(CmdMessage::success(format!(
-                "  - Recovered {} pad(s) found on disk but missing from DB.",
-                report.recovered_files
-            )));
-        }
+        Ok(DoctorOutcome::Repaired {
+            missing_files: report.fixed_missing_files,
+            recovered_files: report.recovered_files,
+        })
     }
-
-    Ok(result)
 }
 
 #[cfg(test)]
@@ -60,8 +62,13 @@ mod tests {
 
         let result = run(&mut store, Scope::Project).unwrap();
 
-        assert_eq!(result.messages.len(), 1);
-        assert!(result.messages[0].content.contains("No inconsistencies"));
+        assert_eq!(
+            result,
+            DoctorOutcome::Clean {
+                missing_files: 0,
+                recovered_files: 0
+            }
+        );
     }
 
     #[test]
@@ -77,14 +84,13 @@ mod tests {
         let mut store = bucketed_with_active(backend);
         let result = run(&mut store, Scope::Project).unwrap();
 
-        // Should report inconsistencies found
-        assert!(result.messages.len() >= 2);
-        assert!(result.messages[0].content.contains("Inconsistencies found"));
-        // Should report recovered files
-        assert!(result
-            .messages
-            .iter()
-            .any(|m| m.content.contains("Recovered") && m.content.contains("1")));
+        assert_eq!(
+            result,
+            DoctorOutcome::Repaired {
+                missing_files: 0,
+                recovered_files: 1
+            }
+        );
     }
 
     #[test]
@@ -114,14 +120,13 @@ mod tests {
         let mut store = bucketed_with_active(backend);
         let result = run(&mut store, Scope::Project).unwrap();
 
-        // Should report inconsistencies found
-        assert!(result.messages.len() >= 2);
-        assert!(result.messages[0].content.contains("Inconsistencies found"));
-        // Should report removed entries
-        assert!(result
-            .messages
-            .iter()
-            .any(|m| m.content.contains("Removed") && m.content.contains("1")));
+        assert_eq!(
+            result,
+            DoctorOutcome::Repaired {
+                missing_files: 1,
+                recovered_files: 0
+            }
+        );
     }
 
     #[test]
@@ -157,16 +162,12 @@ mod tests {
         let mut store = bucketed_with_active(backend);
         let result = run(&mut store, Scope::Project).unwrap();
 
-        // Should have warning + both issue types
-        assert!(result.messages.len() >= 3);
-        assert!(result.messages[0].content.contains("Inconsistencies found"));
-        assert!(result
-            .messages
-            .iter()
-            .any(|m| m.content.contains("Removed")));
-        assert!(result
-            .messages
-            .iter()
-            .any(|m| m.content.contains("Recovered")));
+        assert_eq!(
+            result,
+            DoctorOutcome::Repaired {
+                missing_files: 1,
+                recovered_files: 1
+            }
+        );
     }
 }
