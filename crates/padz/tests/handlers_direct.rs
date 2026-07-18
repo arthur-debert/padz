@@ -1085,6 +1085,23 @@ fn create_with_an_empty_pipe_aborts_without_creating_a_pad() {
     };
     assert_eq!(abort.kind, CreateAbortKindResult::Aborted);
     assert_eq!(abort.reason, CreateAbortReasonResult::EmptyContent);
+
+    let listed = rendered(handlers::list(
+        &ctx,
+        vec![],
+        None,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        vec![],
+        false,
+        false,
+    ));
+    assert!(listed.pads.is_empty());
 }
 
 #[test]

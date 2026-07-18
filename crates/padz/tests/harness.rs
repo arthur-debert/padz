@@ -210,6 +210,11 @@ fn a_naked_invocation_with_an_empty_pipe_aborts_create() {
     ))
     .unwrap();
     assert_eq!(actual, expected);
+    drop(result);
+
+    let (app, cmd) = fx.read_app();
+    let listed = TestHarness::new().run(&app, cmd, fx.argv(&["list", "--output", "json"]));
+    assert_eq!(pads(listed.stdout()), vec![]);
 }
 
 #[test]
@@ -1504,6 +1509,11 @@ fn whitespace_only_pipe_aborts() {
     .unwrap();
     assert_eq!(actual, expected);
     assert!(clipboard.writes().is_empty());
+    drop(result);
+
+    let (app, cmd) = fx.read_app();
+    let listed = TestHarness::new().run(&app, cmd, fx.argv(&["list", "--output", "json"]));
+    assert_eq!(pads(listed.stdout()), vec![]);
 }
 
 #[test]

@@ -501,7 +501,7 @@ pub enum Commands {
         indented: bool,
     },
 
-    /// Copy one or more pads to the clipboard (without printing)
+    /// Copy one or more pads to the clipboard without printing their contents
     #[command(alias = "cp", display_order = 10)]
     #[dispatch(pure, template = "copy")]
     Copy {
