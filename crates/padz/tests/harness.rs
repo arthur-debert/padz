@@ -2125,12 +2125,13 @@ fn uuid_preserves_its_array_contract_in_every_structured_mode() {
             }
             "xml" => {
                 let mut reader = quick_xml::Reader::from_str(result.stdout());
+                reader.config_mut().trim_text(true);
                 let mut in_uuid = false;
                 let mut uuid = None;
                 loop {
                     match reader.read_event() {
-                        Ok(quick_xml::events::Event::Start(e)) => {
-                            in_uuid = e.name().as_ref() == b"uuids";
+                        Ok(quick_xml::events::Event::Start(e)) if e.name().as_ref() == b"uuids" => {
+                            in_uuid = true;
                         }
                         Ok(quick_xml::events::Event::Text(e)) if in_uuid => {
                             uuid = Some(e.unescape().expect("UUID XML text").into_owned());
