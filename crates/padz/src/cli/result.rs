@@ -10,8 +10,8 @@
 //!
 //! These are CLI-only adapter types: they exist purely to establish the shell's
 //! result contract, so they live in the binary rather than in `padzapp`. The data
-//! they carry (`DisplayPad`, `CmdMessage`, `PeekResult`) is reusable domain data and
-//! stays in `padzapp`.
+//! they carry (`DisplayPad`, `CmdMessage`, `PeekResult`, semantic tag outcomes) is
+//! reusable domain data and stays in `padzapp`.
 //!
 //! ## Presentation is not in here
 //!
@@ -198,6 +198,144 @@ impl From<UpdateKind> for UpdateKindResult {
             UpdateKind::Structured => Self::Structured,
             UpdateKind::Content => Self::Content,
             UpdateKind::Refresh => Self::Refresh,
+        }
+    }
+}
+
+/// CLI projection of an ordered tag catalog with an explicit empty state.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "status", rename_all = "snake_case")]
+pub enum TagCatalogResult {
+    Empty { tags: Vec<String> },
+    Listed { tags: Vec<String> },
+}
+
+impl From<padzapp::commands::tags::TagCatalogOutcome> for TagCatalogResult {
+    fn from(outcome: padzapp::commands::tags::TagCatalogOutcome) -> Self {
+        use padzapp::commands::tags::TagCatalogOutcome;
+
+        match outcome {
+            TagCatalogOutcome::Empty => Self::Empty { tags: Vec::new() },
+            TagCatalogOutcome::Listed { tags } => Self::Listed { tags },
+        }
+    }
+}
+
+/// CLI projection of a tag-registry mutation.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "action", rename_all = "snake_case")]
+pub enum TagRegistryResult {
+    Created {
+        name: String,
+        affected_pads: usize,
+    },
+    Deleted {
+        name: String,
+        affected_pads: usize,
+    },
+    Renamed {
+        old_name: String,
+        new_name: String,
+        affected_pads: usize,
+    },
+}
+
+impl From<padzapp::commands::tags::TagRegistryOutcome> for TagRegistryResult {
+    fn from(outcome: padzapp::commands::tags::TagRegistryOutcome) -> Self {
+        use padzapp::commands::tags::TagRegistryOutcome;
+
+        match outcome {
+            TagRegistryOutcome::Created {
+                name,
+                affected_pads,
+            } => Self::Created {
+                name,
+                affected_pads,
+            },
+            TagRegistryOutcome::Deleted {
+                name,
+                affected_pads,
+            } => Self::Deleted {
+                name,
+                affected_pads,
+            },
+            TagRegistryOutcome::Renamed {
+                old_name,
+                new_name,
+                affected_pads,
+            } => Self::Renamed {
+                old_name,
+                new_name,
+                affected_pads,
+            },
+        }
+    }
+}
+
+/// CLI projection of a per-pad tag mutation or its explicit no-op.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(tag = "action", rename_all = "snake_case")]
+pub enum TaggingResult {
+    Assigned {
+        requested_tags: Vec<String>,
+        modified_pads: usize,
+        pads: Vec<DisplayPad>,
+    },
+    AllAlreadyPresent {
+        requested_tags: Vec<String>,
+        modified_pads: usize,
+        pads: Vec<DisplayPad>,
+    },
+    Removed {
+        requested_tags: Vec<String>,
+        modified_pads: usize,
+        pads: Vec<DisplayPad>,
+    },
+    NonePresent {
+        requested_tags: Vec<String>,
+        modified_pads: usize,
+        pads: Vec<DisplayPad>,
+    },
+}
+
+impl From<padzapp::commands::tagging::TaggingResult> for TaggingResult {
+    fn from(result: padzapp::commands::tagging::TaggingResult) -> Self {
+        use padzapp::commands::tagging::TaggingOutcome;
+
+        let pads = result.affected_pads;
+        match result.outcome {
+            TaggingOutcome::Assigned {
+                requested_tags,
+                modified_pads,
+            } => Self::Assigned {
+                requested_tags,
+                modified_pads,
+                pads,
+            },
+            TaggingOutcome::AllAlreadyPresent {
+                requested_tags,
+                modified_pads,
+            } => Self::AllAlreadyPresent {
+                requested_tags,
+                modified_pads,
+                pads,
+            },
+            TaggingOutcome::Removed {
+                requested_tags,
+                modified_pads,
+            } => Self::Removed {
+                requested_tags,
+                modified_pads,
+                pads,
+            },
+            TaggingOutcome::NonePresent {
+                requested_tags,
+                modified_pads,
+            } => Self::NonePresent {
+                requested_tags,
+                modified_pads,
+                pads,
+            },
         }
     }
 }

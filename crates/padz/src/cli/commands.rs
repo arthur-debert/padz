@@ -18,8 +18,8 @@
 
 use super::handlers::AppState;
 use super::render::{
-    list_view_provider, modification_view_provider, terminal_provider, LIST_VIEW,
-    MODIFICATION_VIEW, TERMINAL,
+    list_view_provider, modification_view_provider, tagging_view_provider, terminal_provider,
+    LIST_VIEW, MODIFICATION_VIEW, TAGGING_VIEW, TERMINAL,
 };
 use super::setup::{
     build_command, invocation_default_command, parse_cli, Cli, Commands, CompletionAction,
@@ -93,6 +93,7 @@ pub fn build_dispatch_app(app_state: AppState) -> App {
         .context_fn(TERMINAL, terminal_provider)
         .context_fn(LIST_VIEW, list_view_provider)
         .context_fn(MODIFICATION_VIEW, modification_view_provider)
+        .context_fn(TAGGING_VIEW, tagging_view_provider)
         .commands(Commands::dispatch_config())
         .expect("Failed to configure commands")
         .command_with("create", super::handlers::create__handler, |config| {
