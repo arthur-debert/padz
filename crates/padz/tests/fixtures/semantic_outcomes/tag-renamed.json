@@ -1,0 +1,6 @@
+{
+  "action": "renamed",
+  "old_name": "old",
+  "new_name": "new",
+  "affected_pads": 1
+}

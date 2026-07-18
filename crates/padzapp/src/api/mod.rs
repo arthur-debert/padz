@@ -82,6 +82,8 @@ pub use commands::doctor::DoctorOutcome;
 pub use commands::get::{PadFilter, PadStatusFilter};
 pub use commands::init::InitializationOutcome;
 pub use commands::purge::PurgeOutcome;
+pub use commands::tagging::{TaggingOutcome, TaggingResult};
+pub use commands::tags::{TagCatalogOutcome, TagRegistryOutcome};
 pub use commands::{CmdMessage, CmdResult, MessageLevel, PadUpdate, PadzPaths};
 
 #[cfg(test)]

@@ -29,7 +29,7 @@
 //! │  API Layer (api.rs)                                         │
 //! │  - Thin facade over commands                                │
 //! │  - Normalizes inputs (indexes → UUIDs)                      │
-//! │  - Returns structured Result<CmdResult>                     │
+//! │  - Returns structured results and semantic outcomes         │
 //! └─────────────────────────────────────────────────────────────┘
 //!                              │
 //!                              ▼
@@ -52,7 +52,7 @@
 //!
 //! From `api.rs` inward, code:
 //! - Takes regular Rust function arguments
-//! - Returns regular Rust types (`Result<CmdResult>`)
+//! - Returns regular Rust types (`Result<CmdResult>` or dedicated outcomes)
 //! - **Never** writes to stdout/stderr
 //! - **Never** calls `std::process::exit`
 //! - **Never** assumes a terminal environment
@@ -70,8 +70,8 @@
 //! 1. **CLI**: `clap` parses `1`. `handle_delete` receives `vec!["1"]`.
 //! 2. **API**: `parse_selectors` maps `"1"` → `PadSelector::Index(Regular(1))`.
 //! 3. **Command**: Resolves to UUID, checks protection, marks as deleted.
-//! 4. **Return**: `CmdResult` with message "Deleted 1 pad".
-//! 5. **CLI**: Renders the message to terminal.
+//! 4. **Return**: A structured result containing the affected pad.
+//! 5. **CLI**: Renders compatible human feedback or serializes the facts.
 //!
 //! ## Testing Strategy
 //!

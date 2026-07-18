@@ -1,0 +1,14 @@
+{#- Human wording for semantic tag-registry mutations. -#}
+{%- if action == "created" -%}
+[success]Created tag '{{ name }}'[/success]{{ "" | nl }}
+{%- elif action == "deleted" -%}
+[success]Deleted tag '{{ name }}'[/success]{{ "" | nl }}
+{%- if affected_pads > 0 -%}
+[info]Removed from {{ affected_pads }} {{ "pad" if affected_pads == 1 else "pads" }}[/info]{{ "" | nl }}
+{%- endif -%}
+{%- elif action == "renamed" -%}
+[success]Renamed tag '{{ old_name }}' to '{{ new_name }}'[/success]{{ "" | nl }}
+{%- if affected_pads > 0 -%}
+[info]Updated {{ affected_pads }} {{ "pad" if affected_pads == 1 else "pads" }}[/info]{{ "" | nl }}
+{%- endif -%}
+{%- endif -%}

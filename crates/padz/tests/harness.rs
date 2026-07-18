@@ -595,6 +595,343 @@ fn empty_delete_completed_preserves_text_and_exposes_a_typed_no_op() {
     assert!(value["messages"].as_array().is_some_and(Vec::is_empty));
 }
 
+// =============================================================================
+// Semantic tag catalog and mutation outcomes
+// =============================================================================
+
+#[test]
+#[serial]
+fn tag_catalog_preserves_empty_and_ordered_human_and_structured_results() {
+    let empty_fx = Fixture::new();
+    let (app, cmd) = empty_fx.read_app();
+    let text = TestHarness::new().no_color().run(
+        &app,
+        cmd.clone(),
+        empty_fx.argv(&["tag", "list", "--output", "text"]),
+    );
+    text.assert_success();
+    assert_eq!(text.stdout(), "No tags defined\n");
+    drop(text);
+
+    let json = TestHarness::new().run(
+        &app,
+        cmd,
+        empty_fx.argv(&["tag", "list", "--output", "json"]),
+    );
+    json.assert_success();
+    let expected: serde_json::Value = serde_json::from_str(include_str!(
+        "fixtures/semantic_outcomes/tag-catalog-empty.json"
+    ))
+    .unwrap();
+    assert_eq!(
+        serde_json::from_str::<serde_json::Value>(json.stdout()).unwrap(),
+        expected
+    );
+    drop(json);
+
+    let listed_fx = Fixture::new();
+    let state = listed_fx.app_state();
+    state
+        .with_api(|api| api.create_tag(state.scope, "work"))
+        .unwrap();
+    state
+        .with_api(|api| api.create_tag(state.scope, "rust"))
+        .unwrap();
+    drop(state);
+    let (app, cmd) = listed_fx.read_app();
+    let debug = TestHarness::new().run(
+        &app,
+        cmd.clone(),
+        listed_fx.argv(&["tag", "list", "--output", "term-debug"]),
+    );
+    debug.assert_success();
+    assert_eq!(debug.stdout(), "[info]work[/info]\n[info]rust[/info]\n");
+    drop(debug);
+
+    let json = TestHarness::new().run(
+        &app,
+        cmd,
+        listed_fx.argv(&["tag", "list", "--output", "json"]),
+    );
+    json.assert_success();
+    let expected: serde_json::Value = serde_json::from_str(include_str!(
+        "fixtures/semantic_outcomes/tag-catalog-listed.json"
+    ))
+    .unwrap();
+    assert_eq!(
+        serde_json::from_str::<serde_json::Value>(json.stdout()).unwrap(),
+        expected
+    );
+    drop(json);
+
+    let singleton_fx = Fixture::new();
+    let state = singleton_fx.app_state();
+    singleton_fx.seed_pad(&state, "target", "");
+    state
+        .with_api(|api| api.add_tags_to_pads(state.scope, &["1"], &["work".into()]))
+        .unwrap();
+    drop(state);
+    let (app, cmd) = singleton_fx.read_app();
+    let text = TestHarness::new().no_color().run(
+        &app,
+        cmd.clone(),
+        singleton_fx.argv(&["tag", "list", "1", "--output", "text"]),
+    );
+    text.assert_success();
+    assert_eq!(text.stdout(), "work\n");
+    drop(text);
+
+    let json = TestHarness::new().run(
+        &app,
+        cmd,
+        singleton_fx.argv(&["tag", "list", "1", "--output", "json"]),
+    );
+    json.assert_success();
+    let expected: serde_json::Value = serde_json::from_str(include_str!(
+        "fixtures/semantic_outcomes/tag-catalog-singleton.json"
+    ))
+    .unwrap();
+    assert_eq!(
+        serde_json::from_str::<serde_json::Value>(json.stdout()).unwrap(),
+        expected
+    );
+}
+
+#[test]
+#[serial]
+fn tag_assignment_preserves_wording_styles_counts_and_no_op_kind() {
+    let fx = Fixture::new();
+    let state = fx.app_state();
+    fx.seed_pad(&state, "one", "");
+    fx.seed_pad(&state, "two", "");
+    drop(state);
+    let (app, cmd) = fx.read_app();
+
+    let debug = TestHarness::new().run(
+        &app,
+        cmd.clone(),
+        fx.argv(&[
+            "tag",
+            "add",
+            "1",
+            "2",
+            "work",
+            "rust",
+            "--output",
+            "term-debug",
+        ]),
+    );
+    debug.assert_success();
+    debug.assert_stdout_contains("[info]Tagged 2 pads...[/info]");
+    debug.assert_stdout_contains("[success]Added tags [work, rust] to 2 pads[/success]");
+    drop(debug);
+
+    let no_op = TestHarness::new().no_color().run(
+        &app,
+        cmd.clone(),
+        fx.argv(&["tag", "add", "1", "2", "work", "rust", "--output", "text"]),
+    );
+    no_op.assert_success();
+    no_op.assert_stdout_contains("Tagged 2 pads...");
+    no_op.assert_stdout_contains("All pads already have tags [work, rust]");
+    drop(no_op);
+
+    let json = TestHarness::new().run(
+        &app,
+        cmd,
+        fx.argv(&["tag", "add", "1", "2", "work", "rust", "--output", "json"]),
+    );
+    json.assert_success();
+    let value: serde_json::Value = serde_json::from_str(json.stdout()).unwrap();
+    let expected: serde_json::Value = serde_json::from_str(include_str!(
+        "fixtures/semantic_outcomes/tag-all-already-present.json"
+    ))
+    .unwrap();
+    assert_eq!(
+        serde_json::json!({
+            "action": value["action"].clone(),
+            "requested_tags": value["requested_tags"].clone(),
+            "modified_pads": value["modified_pads"].clone(),
+        }),
+        expected
+    );
+    assert_eq!(value["pads"].as_array().map(Vec::len), Some(2));
+    drop(json);
+
+    let changed_fx = Fixture::new();
+    let state = changed_fx.app_state();
+    changed_fx.seed_pad(&state, "one", "");
+    changed_fx.seed_pad(&state, "two", "");
+    drop(state);
+    let (app, cmd) = changed_fx.read_app();
+    let json = TestHarness::new().run(
+        &app,
+        cmd,
+        changed_fx.argv(&["tag", "add", "1", "2", "work", "rust", "--output", "json"]),
+    );
+    json.assert_success();
+    let value: serde_json::Value = serde_json::from_str(json.stdout()).unwrap();
+    let expected: serde_json::Value =
+        serde_json::from_str(include_str!("fixtures/semantic_outcomes/tag-assigned.json")).unwrap();
+    assert_eq!(
+        serde_json::json!({
+            "action": value["action"].clone(),
+            "requested_tags": value["requested_tags"].clone(),
+            "modified_pads": value["modified_pads"].clone(),
+        }),
+        expected
+    );
+}
+
+#[test]
+#[serial]
+fn tag_removal_preserves_wording_counts_and_none_present_no_op() {
+    let fx = Fixture::new();
+    let state = fx.app_state();
+    fx.seed_pad(&state, "target", "");
+    state
+        .with_api(|api| api.add_tags_to_pads(state.scope, &["1"], &["work".into(), "rust".into()]))
+        .unwrap();
+    drop(state);
+    let (app, cmd) = fx.read_app();
+
+    let text = TestHarness::new().no_color().run(
+        &app,
+        cmd.clone(),
+        fx.argv(&["tag", "remove", "1", "work", "rust", "--output", "text"]),
+    );
+    text.assert_success();
+    text.assert_stdout_contains("Untagged 1 pad...");
+    text.assert_stdout_contains("Removed tags [work, rust] from 1 pad");
+    drop(text);
+
+    let no_op = TestHarness::new().no_color().run(
+        &app,
+        cmd.clone(),
+        fx.argv(&["tag", "remove", "1", "work", "rust", "--output", "text"]),
+    );
+    no_op.assert_success();
+    no_op.assert_stdout_contains("No pads had tags [work, rust]");
+    drop(no_op);
+
+    let json = TestHarness::new().run(
+        &app,
+        cmd,
+        fx.argv(&["tag", "remove", "1", "work", "rust", "--output", "json"]),
+    );
+    json.assert_success();
+    let value: serde_json::Value = serde_json::from_str(json.stdout()).unwrap();
+    let expected: serde_json::Value = serde_json::from_str(include_str!(
+        "fixtures/semantic_outcomes/tag-none-present.json"
+    ))
+    .unwrap();
+    assert_eq!(
+        serde_json::json!({
+            "action": value["action"].clone(),
+            "requested_tags": value["requested_tags"].clone(),
+            "modified_pads": value["modified_pads"].clone(),
+        }),
+        expected
+    );
+    drop(json);
+
+    let changed_fx = Fixture::new();
+    let state = changed_fx.app_state();
+    changed_fx.seed_pad(&state, "target", "");
+    state
+        .with_api(|api| api.add_tags_to_pads(state.scope, &["1"], &["work".into(), "rust".into()]))
+        .unwrap();
+    drop(state);
+    let (app, cmd) = changed_fx.read_app();
+    let json = TestHarness::new().run(
+        &app,
+        cmd,
+        changed_fx.argv(&["tag", "remove", "1", "work", "rust", "--output", "json"]),
+    );
+    json.assert_success();
+    let value: serde_json::Value = serde_json::from_str(json.stdout()).unwrap();
+    let expected: serde_json::Value =
+        serde_json::from_str(include_str!("fixtures/semantic_outcomes/tag-removed.json")).unwrap();
+    assert_eq!(
+        serde_json::json!({
+            "action": value["action"].clone(),
+            "requested_tags": value["requested_tags"].clone(),
+            "modified_pads": value["modified_pads"].clone(),
+        }),
+        expected
+    );
+}
+
+#[test]
+#[serial]
+fn tag_registry_mutations_preserve_names_counts_and_human_wording() {
+    let fx = Fixture::new();
+    let state = fx.app_state();
+    fx.seed_pad(&state, "target", "");
+    state
+        .with_api(|api| api.add_tags_to_pads(state.scope, &["1"], &["old".into()]))
+        .unwrap();
+    drop(state);
+    let (app, cmd) = fx.read_app();
+
+    let rename = TestHarness::new().no_color().run(
+        &app,
+        cmd.clone(),
+        fx.argv(&["tag", "rename", "old", "new", "--output", "text"]),
+    );
+    rename.assert_success();
+    assert_eq!(
+        rename.stdout(),
+        "Renamed tag 'old' to 'new'\nUpdated 1 pad\n"
+    );
+    drop(rename);
+
+    let delete = TestHarness::new().no_color().run(
+        &app,
+        cmd,
+        fx.argv(&["tag", "delete", "new", "--output", "text"]),
+    );
+    delete.assert_success();
+    assert_eq!(delete.stdout(), "Deleted tag 'new'\nRemoved from 1 pad\n");
+    drop(delete);
+
+    let structured_fx = Fixture::new();
+    let state = structured_fx.app_state();
+    structured_fx.seed_pad(&state, "target", "");
+    state
+        .with_api(|api| api.add_tags_to_pads(state.scope, &["1"], &["old".into()]))
+        .unwrap();
+    drop(state);
+    let (app, cmd) = structured_fx.read_app();
+
+    let rename = TestHarness::new().run(
+        &app,
+        cmd.clone(),
+        structured_fx.argv(&["tag", "rename", "old", "new", "--output", "json"]),
+    );
+    rename.assert_success();
+    let expected: serde_json::Value =
+        serde_json::from_str(include_str!("fixtures/semantic_outcomes/tag-renamed.json")).unwrap();
+    assert_eq!(
+        serde_json::from_str::<serde_json::Value>(rename.stdout()).unwrap(),
+        expected
+    );
+    drop(rename);
+
+    let delete = TestHarness::new().run(
+        &app,
+        cmd,
+        structured_fx.argv(&["tag", "delete", "new", "--output", "json"]),
+    );
+    delete.assert_success();
+    let expected: serde_json::Value =
+        serde_json::from_str(include_str!("fixtures/semantic_outcomes/tag-deleted.json")).unwrap();
+    assert_eq!(
+        serde_json::from_str::<serde_json::Value>(delete.stdout()).unwrap(),
+        expected
+    );
+}
+
 #[test]
 #[serial]
 fn uuid_flag_reaches_the_view_handler() {

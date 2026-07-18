@@ -832,7 +832,7 @@ pub enum ConfigSubcommand {
 pub enum TagCommands {
     /// Add tags to pads (auto-creates tags if needed)
     #[command(display_order = 25)]
-    #[dispatch(pure, template = "modification_result")]
+    #[dispatch(pure, template = "tagging")]
     Add {
         /// Pad selectors followed by tag names (e.g. 1 2 feature work)
         #[arg(required = true, num_args = 1..)]
@@ -841,7 +841,7 @@ pub enum TagCommands {
 
     /// Remove tags from pads
     #[command(display_order = 26)]
-    #[dispatch(pure, template = "modification_result")]
+    #[dispatch(pure, template = "tagging")]
     Remove {
         /// Pad selectors followed by tag names (e.g. 1 2 feature work)
         #[arg(required = true, num_args = 1..)]
@@ -850,7 +850,7 @@ pub enum TagCommands {
 
     /// Rename a tag (updates all pads)
     #[command(alias = "mv", display_order = 27)]
-    #[dispatch(pure, template = "messages")]
+    #[dispatch(pure, template = "tag_registry")]
     Rename {
         /// Current name of the tag
         old_name: String,
@@ -860,7 +860,7 @@ pub enum TagCommands {
 
     /// Delete a tag (removes from all pads)
     #[command(alias = "rm", display_order = 28)]
-    #[dispatch(pure, template = "messages")]
+    #[dispatch(pure, template = "tag_registry")]
     Delete {
         /// Name of the tag to delete
         name: String,
@@ -868,7 +868,7 @@ pub enum TagCommands {
 
     /// List all defined tags, or tags for specific pads
     #[command(alias = "ls", display_order = 29)]
-    #[dispatch(pure, template = "messages")]
+    #[dispatch(pure, template = "tag_catalog")]
     List {
         /// Pad IDs to show tags for (e.g. 1, 2 3, 1-3). If omitted, lists all tags.
         #[arg(num_args = 0..)]

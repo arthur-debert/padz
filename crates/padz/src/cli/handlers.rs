@@ -30,7 +30,7 @@ use std::cell::RefCell;
 use super::result::{
     DoctorResult, ExportReportResult, InitializationResult, ListRequest, MessagesResult,
     ModificationRequest, ModificationResult, PadContent, PadContentResult, PadListResult,
-    PathResult, PurgeResult, UuidResult,
+    PathResult, PurgeResult, TagCatalogResult, TagRegistryResult, TaggingResult, UuidResult,
 };
 
 // =============================================================================
@@ -370,23 +370,23 @@ impl<'a> ScopedApi<'a> {
 
     // --- Tags subcommand operations ---
 
-    pub fn list_tags(&self) -> Result<Output<MessagesResult>, anyhow::Error> {
-        let result = self.call(|api, scope| api.list_tags(scope))?;
-        self.messages(result)
+    pub fn list_tags(&self) -> Result<Output<TagCatalogResult>, anyhow::Error> {
+        let outcome = self.call(|api, scope| api.list_tags(scope))?;
+        Ok(Output::Render(outcome.into()))
     }
 
-    pub fn delete_tag(&self, name: &str) -> Result<Output<MessagesResult>, anyhow::Error> {
-        let result = self.call(|api, scope| api.delete_tag(scope, name))?;
-        self.messages(result)
+    pub fn delete_tag(&self, name: &str) -> Result<Output<TagRegistryResult>, anyhow::Error> {
+        let outcome = self.call(|api, scope| api.delete_tag(scope, name))?;
+        Ok(Output::Render(outcome.into()))
     }
 
     pub fn rename_tag(
         &self,
         old_name: &str,
         new_name: &str,
-    ) -> Result<Output<MessagesResult>, anyhow::Error> {
-        let result = self.call(|api, scope| api.rename_tag(scope, old_name, new_name))?;
-        self.messages(result)
+    ) -> Result<Output<TagRegistryResult>, anyhow::Error> {
+        let outcome = self.call(|api, scope| api.rename_tag(scope, old_name, new_name))?;
+        Ok(Output::Render(outcome.into()))
     }
 
     // --- List operations ---
@@ -1285,32 +1285,28 @@ pub mod tag {
     pub fn add(
         #[ctx] ctx: &CommandContext,
         #[arg] args: Vec<String>,
-    ) -> Result<Output<ModificationResult>, anyhow::Error> {
+    ) -> Result<Output<TaggingResult>, anyhow::Error> {
         let (indexes, tags) = split_indexes_and_tags(&args)?;
         let state = get_state(ctx);
         let result = state.with_api(|api| {
             api.add_tags_to_pads(state.scope, &indexes, &tags)
                 .map_err(to_anyhow)
         })?;
-        Ok(Output::Render(
-            api(ctx).modification_result("Tagged", result, false),
-        ))
+        Ok(Output::Render(result.into()))
     }
 
     #[handler]
     pub fn remove(
         #[ctx] ctx: &CommandContext,
         #[arg] args: Vec<String>,
-    ) -> Result<Output<ModificationResult>, anyhow::Error> {
+    ) -> Result<Output<TaggingResult>, anyhow::Error> {
         let (indexes, tags) = split_indexes_and_tags(&args)?;
         let state = get_state(ctx);
         let result = state.with_api(|api| {
             api.remove_tags_from_pads(state.scope, &indexes, &tags)
                 .map_err(to_anyhow)
         })?;
-        Ok(Output::Render(
-            api(ctx).modification_result("Untagged", result, false),
-        ))
+        Ok(Output::Render(result.into()))
     }
 
     #[handler]
@@ -1318,7 +1314,7 @@ pub mod tag {
         #[ctx] ctx: &CommandContext,
         #[arg(name = "old_name")] old_name: String,
         #[arg(name = "new_name")] new_name: String,
-    ) -> Result<Output<MessagesResult>, anyhow::Error> {
+    ) -> Result<Output<TagRegistryResult>, anyhow::Error> {
         api(ctx).rename_tag(&old_name, &new_name)
     }
 
@@ -1326,7 +1322,7 @@ pub mod tag {
     pub fn delete(
         #[ctx] ctx: &CommandContext,
         #[arg] name: String,
-    ) -> Result<Output<MessagesResult>, anyhow::Error> {
+    ) -> Result<Output<TagRegistryResult>, anyhow::Error> {
         api(ctx).delete_tag(&name)
     }
 
@@ -1334,14 +1330,14 @@ pub mod tag {
     pub fn list(
         #[ctx] ctx: &CommandContext,
         #[arg] ids: Vec<String>,
-    ) -> Result<Output<MessagesResult>, anyhow::Error> {
+    ) -> Result<Output<TagCatalogResult>, anyhow::Error> {
         if ids.is_empty() {
             api(ctx).list_tags()
         } else {
             let state = get_state(ctx);
-            let result =
+            let outcome =
                 state.with_api(|api| api.list_pad_tags(state.scope, &ids).map_err(to_anyhow))?;
-            Ok(Output::Render(MessagesResult::new(result.messages)))
+            Ok(Output::Render(outcome.into()))
         }
     }
 }

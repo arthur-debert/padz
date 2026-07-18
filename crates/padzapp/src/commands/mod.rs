@@ -31,11 +31,11 @@
 //! with its canonical [`DisplayIndex`]. This ensures consistent representation
 //! throughout the API—clients always receive pads with their resolved indexes.
 //!
-//! Initialization, doctor, purge, and artifact-producing commands use dedicated
-//! outcome types where a generic result would obscure the operation's facts. Pad
-//! mutations that still use [`CmdResult`] attach presentation-free [`CmdOutcome`]
-//! and [`CmdNotice`] facts. The UI layer (CLI, web, etc.) decides how to render
-//! every result.
+//! Initialization, doctor, purge, tag catalog/mutation, and artifact-producing
+//! commands use dedicated outcome types where a generic result would obscure the
+//! operation's facts. Pad mutations that still use [`CmdResult`] attach
+//! presentation-free [`CmdOutcome`] and [`CmdNotice`] facts. The UI layer (CLI,
+//! web, etc.) decides how to render every result.
 //!
 //! ## Testing Strategy
 //!
@@ -62,6 +62,8 @@
 //! - [`paths`]: Get filesystem paths to pads
 //! - [`init`]: Initialize scope directories
 //! - [`doctor`]: Verify and fix data consistency
+//! - [`tags`]: List and mutate the tag registry
+//! - [`tagging`]: Assign and remove tags on selected pads
 //! - [`helpers`]: Shared utilities (index resolution, etc.)
 
 use crate::error::{PadzError, Result};

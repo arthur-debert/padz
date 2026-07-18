@@ -28,7 +28,8 @@ use padz::cli::input::{RequestContent, CREATE_CONTENT, EDIT_CONTENT};
 use padz::cli::result::{
     DoctorResult, ExportFormat, ExportStatus, ExportWarning, InitializationResult,
     ModificationNoticeResult, ModificationResult, MutationOutcomeResult, MutationStatusResult,
-    PadContentResult, PadListResult, PathResult, PurgeResult, UpdateKindResult, UuidResult,
+    PadContentResult, PadListResult, PathResult, PurgeResult, TagCatalogResult, TagRegistryResult,
+    TaggingResult, UpdateKindResult, UuidResult,
 };
 use padzapp::commands::NestingMode;
 use standout::cli::Output;
@@ -520,6 +521,154 @@ fn empty_delete_completed_maps_the_core_no_op() {
     assert_eq!(
         result.notices,
         vec![ModificationNoticeResult::NoCompletedPads]
+    );
+}
+
+// =============================================================================
+// Tag catalog and mutation outcomes
+// =============================================================================
+
+#[test]
+fn tag_list_maps_empty_and_ordered_catalog_states() {
+    let empty = Fixture::new();
+    let result = rendered(handlers::tag::list(&empty.ctx(), vec![]));
+    assert_eq!(result, TagCatalogResult::Empty { tags: vec![] });
+
+    let fx = Fixture::new();
+    let state = fx.app_state();
+    state
+        .with_api(|api| api.create_tag(state.scope, "work"))
+        .unwrap();
+    state
+        .with_api(|api| api.create_tag(state.scope, "rust"))
+        .unwrap();
+    let ctx = support::ctx_with_state(state);
+
+    let result = rendered(handlers::tag::list(&ctx, vec![]));
+    assert_eq!(
+        result,
+        TagCatalogResult::Listed {
+            tags: vec!["work".into(), "rust".into()]
+        }
+    );
+}
+
+#[test]
+fn tag_list_maps_selected_pad_tags_to_a_singleton_catalog() {
+    let fx = Fixture::new();
+    let state = fx.app_state();
+    fx.seed_pad(&state, "target", "");
+    state
+        .with_api(|api| api.add_tags_to_pads(state.scope, &["1"], &["work".into()]))
+        .unwrap();
+    let ctx = support::ctx_with_state(state);
+
+    let result = rendered(handlers::tag::list(&ctx, vec!["1".into()]));
+    assert_eq!(
+        result,
+        TagCatalogResult::Listed {
+            tags: vec!["work".into()]
+        }
+    );
+}
+
+#[test]
+fn tag_assignment_maps_requested_tags_counts_and_no_op_kind() {
+    let fx = Fixture::new();
+    let state = fx.app_state();
+    fx.seed_pad(&state, "target", "");
+    let ctx = support::ctx_with_state(state);
+    let args = vec!["1".into(), "work".into(), "rust".into()];
+
+    let changed = rendered(handlers::tag::add(&ctx, args.clone()));
+    match changed {
+        TaggingResult::Assigned {
+            requested_tags,
+            modified_pads,
+            pads,
+        } => {
+            assert_eq!(requested_tags, vec!["work", "rust"]);
+            assert_eq!(modified_pads, 1);
+            assert_eq!(pads.len(), 1);
+        }
+        other => panic!("expected assigned outcome, got {other:?}"),
+    }
+
+    let no_op = rendered(handlers::tag::add(&ctx, args));
+    match no_op {
+        TaggingResult::AllAlreadyPresent {
+            requested_tags,
+            modified_pads,
+            pads,
+        } => {
+            assert_eq!(requested_tags, vec!["work", "rust"]);
+            assert_eq!(modified_pads, 0);
+            assert_eq!(pads.len(), 1);
+        }
+        other => panic!("expected all-already-present outcome, got {other:?}"),
+    }
+}
+
+#[test]
+fn tag_removal_maps_requested_tags_counts_and_no_op_kind() {
+    let fx = Fixture::new();
+    let state = fx.app_state();
+    fx.seed_pad(&state, "target", "");
+    let ctx = support::ctx_with_state(state);
+    let args = vec!["1".into(), "work".into()];
+    rendered(handlers::tag::add(&ctx, args.clone()));
+
+    let changed = rendered(handlers::tag::remove(&ctx, args.clone()));
+    assert!(matches!(
+        changed,
+        TaggingResult::Removed {
+            requested_tags,
+            modified_pads: 1,
+            ..
+        } if requested_tags == vec!["work"]
+    ));
+
+    let no_op = rendered(handlers::tag::remove(&ctx, args));
+    assert!(matches!(
+        no_op,
+        TaggingResult::NonePresent {
+            requested_tags,
+            modified_pads: 0,
+            ..
+        } if requested_tags == vec!["work"]
+    ));
+}
+
+#[test]
+fn tag_registry_handlers_map_names_and_affected_pad_counts() {
+    let fx = Fixture::new();
+    let state = fx.app_state();
+    fx.seed_pad(&state, "target", "");
+    state
+        .with_api(|api| api.create_tag(state.scope, "old"))
+        .unwrap();
+    state
+        .with_api(|api| api.add_tags_to_pads(state.scope, &["1"], &["old".into()]))
+        .unwrap();
+    let ctx = support::ctx_with_state(state);
+
+    let renamed = rendered(handlers::tag::rename(&ctx, "old".into(), "new".into()));
+    assert_eq!(
+        renamed,
+        TagRegistryResult::Renamed {
+            old_name: "old".into(),
+            new_name: "new".into(),
+            affected_pads: 1,
+        }
+    );
+
+    let deleted = rendered(handlers::tag::delete(&ctx, "new".into()));
+    assert_eq!(
+        deleted,
+        TagRegistryResult::Deleted {
+            name: "new".into(),
+            affected_pads: 1,
+        }
     );
 }
 
