@@ -32,8 +32,10 @@
 //! throughout the API—clients always receive pads with their resolved indexes.
 //!
 //! Initialization, doctor, purge, and artifact-producing commands use dedicated
-//! outcome types where a generic result would obscure the operation's facts. The
-//! UI layer (CLI, web, etc.) decides how to render every result.
+//! outcome types where a generic result would obscure the operation's facts. Pad
+//! mutations that still use [`CmdResult`] attach presentation-free [`CmdOutcome`]
+//! and [`CmdNotice`] facts. The UI layer (CLI, web, etc.) decides how to render
+//! every result.
 //!
 //! ## Testing Strategy
 //!
@@ -94,6 +96,49 @@ pub enum CmdNotice {
     },
     AlreadyUnpinned {
         path: Vec<crate::index::DisplayIndex>,
+    },
+    /// A move request found the pad under the requested parent already.
+    AlreadyAtDestination {
+        path: Vec<crate::index::DisplayIndex>,
+    },
+    /// A status request found the pad in the requested state already.
+    AlreadyInStatus {
+        path: Vec<crate::index::DisplayIndex>,
+        status: crate::model::TodoStatus,
+    },
+    /// A completed-pad deletion request found no completed pads.
+    NoCompletedPads,
+}
+
+/// How a pad's content reached the update command.
+///
+/// The distinction preserves the compatible human result while structured
+/// clients can identify the operation without parsing its sentence.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum UpdateKind {
+    /// A typed [`PadUpdate`] changed explicit pad fields.
+    Structured,
+    /// Raw content was parsed and applied to one or more pads.
+    Content,
+    /// The store refreshed a pad after its backing file changed externally.
+    Refresh,
+}
+
+/// A semantic, presentation-free fact about a completed pad mutation.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum CmdOutcome {
+    /// A pad's title/content/status fields were updated.
+    Updated {
+        path: Vec<crate::index::DisplayIndex>,
+        title: String,
+        update_kind: UpdateKind,
+    },
+    /// A pad changed to the requested todo status.
+    StatusChanged {
+        path: Vec<crate::index::DisplayIndex>,
+        status: crate::model::TodoStatus,
     },
 }
 
@@ -207,6 +252,8 @@ pub struct CmdResult {
     pub messages: Vec<CmdMessage>,
     /// Semantic notices that clients render or inspect without parsing English.
     pub notices: Vec<CmdNotice>,
+    /// Semantic successful outcomes that clients inspect without parsing English.
+    pub outcomes: Vec<CmdOutcome>,
     /// The nesting mode used to produce listed_pads.
     pub nesting: NestingMode,
 }

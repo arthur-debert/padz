@@ -1,0 +1,11 @@
+[
+  {
+    "kind": "updated",
+    "path": [
+      { "type": "Regular", "value": 1 },
+      { "type": "Regular", "value": 1 }
+    ],
+    "title": "Edited child",
+    "update_kind": "content"
+  }
+]

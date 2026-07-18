@@ -45,12 +45,14 @@
 //!
 //! Everything a template can decide, a template decides.
 
-use super::result::{ModificationResult, PadListResult};
+use super::result::{
+    ModificationNoticeResult, ModificationResult, MutationOutcomeResult, MutationStatusResult,
+    PadListResult, UpdateKindResult,
+};
 use super::setup::get_grouped_help;
 use chrono::{DateTime, Utc};
 use minijinja::Value;
 use padzapp::api::CmdMessage;
-use padzapp::commands::CmdNotice;
 use padzapp::index::{DisplayIndex, DisplayPad, SearchMatch};
 use padzapp::model::TodoStatus;
 use padzapp::peek::{format_as_peek, PeekResult};
@@ -218,6 +220,8 @@ pub struct ModificationView {
     pub messages: Vec<CmdMessage>,
     /// Presentation-ready projections of semantic core notices.
     pub notices: Vec<ModificationNoticeView>,
+    /// Presentation-ready projections of semantic successful outcomes.
+    pub outcomes: Vec<MutationOutcomeView>,
 }
 
 /// The small amount of display shaping a semantic modification notice needs.
@@ -225,6 +229,16 @@ pub struct ModificationView {
 pub struct ModificationNoticeView {
     pub kind: &'static str,
     pub index: String,
+    pub status: &'static str,
+}
+
+/// The small amount of display shaping a semantic update outcome needs.
+#[derive(Debug, Clone, Serialize)]
+pub struct MutationOutcomeView {
+    pub kind: &'static str,
+    pub index: String,
+    pub title: String,
+    pub update_kind: &'static str,
 }
 
 // =============================================================================
@@ -306,13 +320,37 @@ pub fn build_modification_view(result: &ModificationResult) -> ModificationView 
         show_status: result.request.status,
         messages: result.messages.clone(),
         notices: result.notices.iter().map(modification_notice).collect(),
+        outcomes: result
+            .outcomes
+            .iter()
+            .filter_map(mutation_outcome)
+            .collect(),
     }
 }
 
-fn modification_notice(notice: &CmdNotice) -> ModificationNoticeView {
-    let (kind, path) = match notice {
-        CmdNotice::AlreadyPinned { path } => ("already_pinned", path),
-        CmdNotice::AlreadyUnpinned { path } => ("already_unpinned", path),
+fn modification_notice(notice: &ModificationNoticeResult) -> ModificationNoticeView {
+    let (kind, path, status) = match notice {
+        ModificationNoticeResult::AlreadyPinned { path } => ("already_pinned", path, ""),
+        ModificationNoticeResult::AlreadyUnpinned { path } => ("already_unpinned", path, ""),
+        ModificationNoticeResult::AlreadyAtDestination { path } => {
+            ("already_at_destination", path, "")
+        }
+        ModificationNoticeResult::AlreadyInStatus { path, status } => (
+            "already_in_status",
+            path,
+            match status {
+                MutationStatusResult::Planned => "planned",
+                MutationStatusResult::InProgress => "in progress",
+                MutationStatusResult::Done => "done",
+            },
+        ),
+        ModificationNoticeResult::NoCompletedPads => {
+            return ModificationNoticeView {
+                kind: "no_completed_pads",
+                index: String::new(),
+                status: "",
+            };
+        }
     };
     ModificationNoticeView {
         kind,
@@ -321,6 +359,31 @@ fn modification_notice(notice: &CmdNotice) -> ModificationNoticeView {
             .map(ToString::to_string)
             .collect::<Vec<_>>()
             .join("."),
+        status,
+    }
+}
+
+fn mutation_outcome(outcome: &MutationOutcomeResult) -> Option<MutationOutcomeView> {
+    match outcome {
+        MutationOutcomeResult::Updated {
+            path,
+            title,
+            update_kind,
+        } => Some(MutationOutcomeView {
+            kind: "updated",
+            index: path
+                .iter()
+                .map(ToString::to_string)
+                .collect::<Vec<_>>()
+                .join("."),
+            title: title.clone(),
+            update_kind: match update_kind {
+                UpdateKindResult::Structured => "structured",
+                UpdateKindResult::Content => "content",
+                UpdateKindResult::Refresh => "refresh",
+            },
+        }),
+        MutationOutcomeResult::StatusChanged { .. } => None,
     }
 }
 
@@ -617,6 +680,7 @@ mod tests {
             )],
             messages: vec![],
             notices: vec![],
+            outcomes: vec![],
             request: ModificationRequest { status: true },
         };
         let view = build_modification_view(&result);

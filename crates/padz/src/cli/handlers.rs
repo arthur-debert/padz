@@ -18,7 +18,7 @@ use crate::cli::clipboard::{copy_to_clipboard, format_for_clipboard};
 use crate::cli::errors::to_anyhow;
 use crate::cli::input::{RequestContent, CREATE_CONTENT, EDIT_CONTENT};
 use padzapp::api::{CmdMessage, PadFilter, PadStatusFilter, PadzApi, TodoStatus};
-use padzapp::commands::{CmdResult, NestingMode};
+use padzapp::commands::{CmdOutcome, CmdResult, NestingMode, UpdateKind};
 use padzapp::config::PadzMode;
 use padzapp::error::PadzError;
 use padzapp::model::{extract_title_and_body, Scope};
@@ -163,7 +163,8 @@ impl<'a> ScopedApi<'a> {
             action: action.to_string(),
             pads: result.affected_pads,
             messages: result.messages,
-            notices: result.notices,
+            notices: result.notices.into_iter().map(Into::into).collect(),
+            outcomes: result.outcomes.into_iter().map(Into::into).collect(),
             request: ModificationRequest {
                 status: self.state.wants_status(force_show_status),
             },
@@ -202,14 +203,7 @@ impl<'a> ScopedApi<'a> {
     }
 
     pub fn delete_completed_pads(&self) -> Result<Output<ModificationResult>, anyhow::Error> {
-        let mut result = self.call(|api, scope| api.delete_completed_pads(scope))?;
-
-        if result.affected_pads.is_empty() {
-            result
-                .messages
-                .push(CmdMessage::info("No completed pads to delete."));
-        }
-
+        let result = self.call(|api, scope| api.delete_completed_pads(scope))?;
         self.modification("Deleted", result, false)
     }
 
@@ -774,6 +768,7 @@ fn aborted_create() -> ModificationResult {
         pads: Vec::new(),
         messages: vec![CmdMessage::warning("Aborted: empty content")],
         notices: Vec::new(),
+        outcomes: Vec::new(),
         request: ModificationRequest::default(),
     }
 }
@@ -989,6 +984,10 @@ pub fn edit(
         .ok_or_else(|| anyhow::anyhow!("No pad found"))?;
     let pad_id = pad.pad.metadata.id;
     let display_index = pad.index.clone();
+    let display_path = state.with_api(|api| {
+        api.display_path_by_id(state.scope, pad_id)
+            .map_err(to_anyhow)
+    })?;
 
     let pad_path =
         state.with_api(|api| api.get_path_by_id(state.scope, pad_id).map_err(to_anyhow))?;
@@ -1000,6 +999,7 @@ pub fn edit(
     match state.with_api(|api| api.refresh_pad(state.scope, &pad_id).map_err(to_anyhow))? {
         Some(pad) => {
             copy_content_to_clipboard(&pad.content);
+            let title = pad.metadata.title.clone();
 
             let display_pad = padzapp::index::DisplayPad {
                 pad,
@@ -1009,6 +1009,11 @@ pub fn edit(
             };
             let result = CmdResult {
                 affected_pads: vec![display_pad],
+                outcomes: vec![CmdOutcome::Updated {
+                    path: display_path,
+                    title,
+                    update_kind: UpdateKind::Refresh,
+                }],
                 ..Default::default()
             };
             Ok(Output::Render(
@@ -1631,15 +1636,18 @@ mod tests {
     }
 
     #[test]
-    fn delete_completed_with_nothing_to_delete_reports_a_message() {
+    fn delete_completed_with_nothing_to_delete_reports_a_semantic_no_op() {
         let app = TestApp::new(PadzMode::Todos);
         app.seed("Still open", "body");
 
         let result = rendered(delete(&app.ctx, vec![], true).unwrap());
 
         assert!(result.pads.is_empty());
-        assert_eq!(result.messages.len(), 1);
-        assert!(result.messages[0].content.contains("No completed pads"));
+        assert!(result.messages.is_empty());
+        assert_eq!(
+            result.notices,
+            vec![super::super::result::ModificationNoticeResult::NoCompletedPads]
+        );
     }
 
     // --- path / uuid ----------------------------------------------------------

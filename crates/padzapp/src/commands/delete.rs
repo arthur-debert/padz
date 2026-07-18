@@ -1,4 +1,4 @@
-use crate::commands::CmdResult;
+use crate::commands::{CmdNotice, CmdResult};
 use crate::error::Result;
 use crate::index::{DisplayPad, PadSelector};
 use crate::model::{Scope, TodoStatus};
@@ -75,7 +75,10 @@ pub fn run_completed<S: DataStore>(store: &mut S, scope: Scope) -> Result<CmdRes
         .collect();
 
     if done_ids.is_empty() {
-        return Ok(CmdResult::default());
+        return Ok(CmdResult {
+            notices: vec![CmdNotice::NoCompletedPads],
+            ..Default::default()
+        });
     }
 
     let selectors: Vec<PadSelector> = done_ids.iter().map(|id| PadSelector::Uuid(*id)).collect();
@@ -367,6 +370,8 @@ mod tests {
 
         let result = run_completed(&mut store, Scope::Project).unwrap();
         assert!(result.affected_pads.is_empty());
+        assert!(result.messages.is_empty());
+        assert_eq!(result.notices, vec![CmdNotice::NoCompletedPads]);
 
         // Pad should still be active
         let active = get::run(&store, Scope::Project, get::PadFilter::default(), &[]).unwrap();

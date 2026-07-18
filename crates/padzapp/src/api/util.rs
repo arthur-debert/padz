@@ -2,6 +2,7 @@
 
 use crate::commands;
 use crate::error::Result;
+use crate::index::{DisplayIndex, PadSelector};
 use crate::model::{Pad, Scope};
 use crate::store::DataStore;
 
@@ -35,6 +36,18 @@ impl<S: DataStore> PadzApi<S> {
     pub fn get_path_by_id(&self, scope: Scope, id: uuid::Uuid) -> Result<std::path::PathBuf> {
         use crate::store::Bucket;
         self.store.get_pad_path(&id, scope, Bucket::Active)
+    }
+
+    /// Resolves an active pad's canonical display path from its durable identity.
+    pub fn display_path_by_id(&self, scope: Scope, id: uuid::Uuid) -> Result<Vec<DisplayIndex>> {
+        let mut resolved = commands::helpers::resolve_selectors(
+            &self.store,
+            scope,
+            &[PadSelector::Uuid(id)],
+            false,
+            commands::helpers::TitleBucket::Active,
+        )?;
+        Ok(resolved.remove(0).0)
     }
 
     /// Re-reads a pad from disk and syncs metadata (title, updated_at).

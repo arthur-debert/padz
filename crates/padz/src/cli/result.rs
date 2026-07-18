@@ -27,8 +27,9 @@
 //! it is part of the result and visible in structured output.
 
 use padzapp::api::CmdMessage;
-use padzapp::commands::{CmdNotice, NestingMode};
-use padzapp::index::DisplayPad;
+use padzapp::commands::{CmdNotice, CmdOutcome, NestingMode, UpdateKind};
+use padzapp::index::{DisplayIndex, DisplayPad};
+use padzapp::model::TodoStatus;
 use serde::{Deserialize, Serialize};
 
 /// What the user asked a listing to show.
@@ -83,8 +84,122 @@ pub struct ModificationResult {
     pub messages: Vec<CmdMessage>,
     /// Machine-readable facts emitted by the core; templates own their prose.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub notices: Vec<CmdNotice>,
+    pub notices: Vec<ModificationNoticeResult>,
+    /// Machine-readable successful outcomes emitted by the core.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub outcomes: Vec<MutationOutcomeResult>,
     pub request: ModificationRequest,
+}
+
+/// CLI projection of a semantic mutation no-op.
+///
+/// This keeps the shell's structured schema independent from the core enum while
+/// retaining the `kind` and canonical display-path shape established for pinning.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum ModificationNoticeResult {
+    AlreadyPinned {
+        path: Vec<DisplayIndex>,
+    },
+    AlreadyUnpinned {
+        path: Vec<DisplayIndex>,
+    },
+    AlreadyAtDestination {
+        path: Vec<DisplayIndex>,
+    },
+    AlreadyInStatus {
+        path: Vec<DisplayIndex>,
+        status: MutationStatusResult,
+    },
+    NoCompletedPads,
+}
+
+impl From<CmdNotice> for ModificationNoticeResult {
+    fn from(notice: CmdNotice) -> Self {
+        match notice {
+            CmdNotice::AlreadyPinned { path } => Self::AlreadyPinned { path },
+            CmdNotice::AlreadyUnpinned { path } => Self::AlreadyUnpinned { path },
+            CmdNotice::AlreadyAtDestination { path } => Self::AlreadyAtDestination { path },
+            CmdNotice::AlreadyInStatus { path, status } => Self::AlreadyInStatus {
+                path,
+                status: status.into(),
+            },
+            CmdNotice::NoCompletedPads => Self::NoCompletedPads,
+        }
+    }
+}
+
+/// Requested status exposed by a semantic no-op.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum MutationStatusResult {
+    Planned,
+    InProgress,
+    Done,
+}
+
+impl From<TodoStatus> for MutationStatusResult {
+    fn from(status: TodoStatus) -> Self {
+        match status {
+            TodoStatus::Planned => Self::Planned,
+            TodoStatus::InProgress => Self::InProgress,
+            TodoStatus::Done => Self::Done,
+        }
+    }
+}
+
+/// CLI projection of a successful semantic pad mutation.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum MutationOutcomeResult {
+    Updated {
+        path: Vec<DisplayIndex>,
+        title: String,
+        update_kind: UpdateKindResult,
+    },
+    StatusChanged {
+        path: Vec<DisplayIndex>,
+        status: MutationStatusResult,
+    },
+}
+
+impl From<CmdOutcome> for MutationOutcomeResult {
+    fn from(outcome: CmdOutcome) -> Self {
+        match outcome {
+            CmdOutcome::Updated {
+                path,
+                title,
+                update_kind,
+            } => Self::Updated {
+                path,
+                title,
+                update_kind: update_kind.into(),
+            },
+            CmdOutcome::StatusChanged { path, status } => Self::StatusChanged {
+                path,
+                status: status.into(),
+            },
+        }
+    }
+}
+
+/// How an update reached the core, as part of the shell's public result schema.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum UpdateKindResult {
+    Structured,
+    Content,
+    Refresh,
+}
+
+impl From<UpdateKind> for UpdateKindResult {
+    fn from(kind: UpdateKind) -> Self {
+        match kind {
+            UpdateKind::Structured => Self::Structured,
+            UpdateKind::Content => Self::Content,
+            UpdateKind::Refresh => Self::Refresh,
+        }
+    }
 }
 
 /// A command whose whole result is user-facing messages.

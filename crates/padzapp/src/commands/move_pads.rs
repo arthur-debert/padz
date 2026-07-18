@@ -1,4 +1,6 @@
-use crate::commands::{CmdMessage, CmdResult, DisplayPad};
+//! Hierarchy-preserving pad moves with semantic no-op reporting.
+
+use crate::commands::{CmdNotice, CmdResult, DisplayPad};
 use crate::error::{PadzError, Result};
 use crate::index::{DisplayIndex, PadSelector};
 use crate::model::Scope;
@@ -87,10 +89,9 @@ pub fn run<S: DataStore>(
 
         // Skip if already there
         if pad.metadata.parent_id == dest_uuid {
-            result.add_message(CmdMessage::info(format!(
-                "Pad '{}' is already at destination",
-                fmt_path(&display_index)
-            )));
+            result.notices.push(CmdNotice::AlreadyAtDestination {
+                path: display_index,
+            });
             continue;
         }
 
@@ -287,5 +288,26 @@ mod tests {
         // Depending on exact impl, fetching "1.1" might fail if it uses get_pad_at_path and relies on index which might shift?
         // But here the structure exists.
         assert!(res.unwrap_err().to_string().contains("descendant"));
+    }
+
+    #[test]
+    fn moving_a_nested_pad_to_its_current_parent_is_a_semantic_no_op() {
+        let (mut store, _root_id, _child_id) = setup_store();
+        let path = vec![DisplayIndex::Regular(1), DisplayIndex::Regular(1)];
+
+        let result = run(
+            &mut store,
+            Scope::Project,
+            &[PadSelector::Path(path.clone())],
+            Some(&PadSelector::Path(vec![DisplayIndex::Regular(1)])),
+        )
+        .unwrap();
+
+        assert!(result.affected_pads.is_empty());
+        assert!(result.messages.is_empty());
+        assert_eq!(
+            result.notices,
+            vec![CmdNotice::AlreadyAtDestination { path }]
+        );
     }
 }
