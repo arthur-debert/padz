@@ -713,7 +713,7 @@ pub enum Commands {
 
     /// Import files as pads
     #[command(display_order = 22)]
-    #[dispatch(pure, template = "messages")]
+    #[dispatch(pure, template = "import")]
     Import {
         /// Paths to files or directories to import
         #[arg(required = true, num_args = 1..)]

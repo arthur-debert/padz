@@ -28,9 +28,10 @@ use standout_macros::handler;
 use std::cell::RefCell;
 
 use super::result::{
-    DoctorResult, ExportReportResult, InitializationResult, ListRequest, MessagesResult,
-    ModificationRequest, ModificationResult, PadContent, PadContentResult, PadListResult,
-    PathResult, PurgeResult, TagCatalogResult, TagRegistryResult, TaggingResult, UuidResult,
+    DoctorResult, ExportReportResult, ImportResult, InitializationResult, ListRequest,
+    MessagesResult, ModificationRequest, ModificationResult, PadContent, PadContentResult,
+    PadListResult, PathResult, PurgeResult, TagCatalogResult, TagRegistryResult, TaggingResult,
+    UuidResult,
 };
 
 // =============================================================================
@@ -334,13 +335,14 @@ impl<'a> ScopedApi<'a> {
         })
     }
 
+    /// Project the core semantic import report into the CLI's public DTO.
     pub fn import_pads(
         &self,
         paths: Vec<std::path::PathBuf>,
-    ) -> Result<Output<MessagesResult>, anyhow::Error> {
+    ) -> Result<Output<ImportResult>, anyhow::Error> {
         let extensions = &self.state.import_extensions.0;
-        let result = self.call(|api, scope| api.import_pads(scope, paths.clone(), extensions))?;
-        self.messages(result)
+        let report = self.call(|api, scope| api.import_pads(scope, paths.clone(), extensions))?;
+        Ok(Output::Render(report.into()))
     }
 
     pub fn transfer_pads(
@@ -1174,11 +1176,12 @@ pub fn export(
     )
 }
 
+/// Import requested paths and return mode-independent semantic facts.
 #[handler]
 pub fn import(
     #[ctx] ctx: &CommandContext,
     #[arg] paths: Vec<String>,
-) -> Result<Output<MessagesResult>, anyhow::Error> {
+) -> Result<Output<ImportResult>, anyhow::Error> {
     let paths: Vec<std::path::PathBuf> = paths.into_iter().map(std::path::PathBuf::from).collect();
     api(ctx).import_pads(paths)
 }

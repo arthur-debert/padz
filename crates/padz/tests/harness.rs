@@ -401,6 +401,103 @@ fn empty_purge_is_distinct_in_text_and_structured_output() {
     );
 }
 
+#[test]
+#[serial]
+fn import_preserves_warning_text_and_exposes_partial_success_facts() {
+    let text_fx = Fixture::new();
+    let source = text_fx.root().join("bad.md");
+    std::fs::write(
+        &source,
+        "---\npadz.status: NotAThing\n---\n\nImported title\n\nBody",
+    )
+    .unwrap();
+    let source_text = source.display().to_string();
+    let (app, cmd) = text_fx.app(&["import", &source_text]);
+    let text = TestHarness::new().no_color().run(
+        &app,
+        cmd,
+        text_fx.argv(&["import", &source_text, "--output", "text"]),
+    );
+    text.assert_success();
+    assert_eq!(
+        text.stdout(),
+        format!(
+            "Imported: {source_text}\n{source_text}: applied inline metadata\n\
+             {source_text}: invalid status\nTotal imported: 1\n"
+        )
+    );
+    drop(text);
+
+    let json_fx = Fixture::new();
+    let source = json_fx.root().join("bad.md");
+    std::fs::write(
+        &source,
+        "---\npadz.status: NotAThing\n---\n\nImported title\n\nBody",
+    )
+    .unwrap();
+    let source_text = source.display().to_string();
+    let (app, cmd) = json_fx.app(&["import", &source_text]);
+    let json = TestHarness::new().run(
+        &app,
+        cmd,
+        json_fx.argv(&["import", &source_text, "--output", "json"]),
+    );
+    json.assert_success();
+    let mut value: serde_json::Value = serde_json::from_str(json.stdout()).unwrap();
+    value["sources"][0]["source"] = serde_json::json!("<SOURCE>");
+    value["sources"][0]["processed_files"][0] = serde_json::json!("<SOURCE>");
+    value["sources"][0]["diagnostics"][0]["source_label"] = serde_json::json!("<SOURCE>");
+    value["sources"][0]["diagnostics"][1]["warning"]["source_label"] =
+        serde_json::json!("<SOURCE>");
+    let fixture: serde_json::Value = serde_json::from_str(include_str!(
+        "fixtures/semantic_outcomes/import-partial.json"
+    ))
+    .unwrap();
+    assert_eq!(value, fixture);
+    assert!(value.get("messages").is_none());
+}
+
+#[test]
+#[serial]
+fn import_report_serializes_in_every_structured_mode() {
+    for mode in ["json", "yaml", "xml", "csv"] {
+        let fx = Fixture::new();
+        let source = fx.root().join("plain.md");
+        std::fs::write(&source, "Imported title\n\nBody").unwrap();
+        let source = source.display().to_string();
+        let (app, cmd) = fx.app(&["import", &source]);
+        let result =
+            TestHarness::new().run(&app, cmd, fx.argv(&["import", &source, "--output", mode]));
+        result.assert_success();
+        match mode {
+            "json" => {
+                serde_json::from_str::<serde_json::Value>(result.stdout()).unwrap();
+            }
+            "yaml" => {
+                serde_yaml::from_str::<serde_yaml::Value>(result.stdout()).unwrap();
+            }
+            "xml" => {
+                let mut reader = quick_xml::Reader::from_str(result.stdout());
+                loop {
+                    match reader.read_event() {
+                        Ok(quick_xml::events::Event::Eof) => break,
+                        Ok(_) => {}
+                        Err(error) => panic!("invalid import XML: {error}\n{}", result.stdout()),
+                    }
+                }
+            }
+            "csv" => {
+                let mut reader = csv::Reader::from_reader(result.stdout().as_bytes());
+                reader.headers().unwrap();
+                for row in reader.records() {
+                    row.unwrap();
+                }
+            }
+            _ => unreachable!(),
+        }
+    }
+}
+
 // =============================================================================
 // Semantic pad mutation outcomes
 // =============================================================================

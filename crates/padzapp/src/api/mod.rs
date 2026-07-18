@@ -80,6 +80,7 @@ impl<S: DataStore> PadzApi<S> {
 pub use crate::model::TodoStatus;
 pub use commands::doctor::DoctorOutcome;
 pub use commands::get::{PadFilter, PadStatusFilter};
+pub use commands::import::ImportReport;
 pub use commands::init::InitializationOutcome;
 pub use commands::purge::PurgeOutcome;
 pub use commands::tagging::{TaggingOutcome, TaggingResult};

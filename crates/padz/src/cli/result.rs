@@ -340,6 +340,341 @@ impl From<padzapp::commands::tagging::TaggingResult> for TaggingResult {
     }
 }
 
+/// CLI projection of a semantic import report.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ImportResult {
+    pub status: ImportStatusResult,
+    pub total_imported: usize,
+    pub sources: Vec<ImportSourceResult>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ImportStatusResult {
+    FullSuccess,
+    PartialSuccess,
+    NoImports,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ImportSourceKindResult {
+    File,
+    Directory,
+    JsonArchive,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ImportSourceStatusResult {
+    Imported,
+    Skipped,
+    Missing,
+    Unreadable,
+    Invalid,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ImportSourceResult {
+    pub source: String,
+    pub source_kind: ImportSourceKindResult,
+    pub status: ImportSourceStatusResult,
+    pub imported: usize,
+    pub processed_files: Vec<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub detail: Option<String>,
+    pub diagnostics: Vec<ImportDiagnosticResult>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ImportBucketResult {
+    Active,
+    Archived,
+    Deleted,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum MetadataWarningSeverityResult {
+    Info,
+    Warning,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum MetadataWarningCategoryResult {
+    Metadata,
+    Field,
+    Tags,
+    Parent,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum MetadataWarningReasonResult {
+    NotAnObject,
+    InvalidValue,
+    NonStringEntries,
+    OutsideImportSet,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct MetadataWarningResult {
+    pub source_label: String,
+    pub category: MetadataWarningCategoryResult,
+    pub reason: MetadataWarningReasonResult,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub field: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub count: Option<usize>,
+    pub severity: MetadataWarningSeverityResult,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ArchiveEntrySkipReasonResult {
+    MissingFile,
+    InvalidEncoding,
+    EmptyContent,
+    StoreFailure,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum DirectoryEntrySkipReasonResult {
+    ReadEntry,
+    InspectEntry,
+    ImportFile,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum TagRegistryMergeStatusResult {
+    Merged,
+    Failed,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum ImportDiagnosticResult {
+    InlineMetadataApplied {
+        source_label: String,
+        bucket: ImportBucketResult,
+        warning_count: usize,
+    },
+    ArchiveMetadataSummary {
+        pad_id: String,
+        warning_count: usize,
+    },
+    MetadataWarning {
+        warning: MetadataWarningResult,
+    },
+    ArchiveEntrySkipped {
+        entry: String,
+        reason: ArchiveEntrySkipReasonResult,
+        detail: String,
+    },
+    DirectoryEntrySkipped {
+        #[serde(skip_serializing_if = "Option::is_none")]
+        entry: Option<String>,
+        reason: DirectoryEntrySkipReasonResult,
+        detail: String,
+    },
+    TagRegistryMerge {
+        status: TagRegistryMergeStatusResult,
+        /// Number of registry entries successfully persisted by this merge.
+        /// Failed merges always report zero.
+        added: usize,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        detail: Option<String>,
+    },
+}
+
+impl From<padzapp::commands::import::ImportReport> for ImportResult {
+    fn from(report: padzapp::commands::import::ImportReport) -> Self {
+        Self {
+            status: report.status.into(),
+            total_imported: report.total_imported,
+            sources: report.sources.into_iter().map(Into::into).collect(),
+        }
+    }
+}
+
+impl From<padzapp::commands::import::ImportStatus> for ImportStatusResult {
+    fn from(status: padzapp::commands::import::ImportStatus) -> Self {
+        use padzapp::commands::import::ImportStatus;
+        match status {
+            ImportStatus::FullSuccess => Self::FullSuccess,
+            ImportStatus::PartialSuccess => Self::PartialSuccess,
+            ImportStatus::NoImports => Self::NoImports,
+        }
+    }
+}
+
+impl From<padzapp::commands::import::ImportSourceReport> for ImportSourceResult {
+    fn from(source: padzapp::commands::import::ImportSourceReport) -> Self {
+        Self {
+            source: source.source.display().to_string(),
+            source_kind: match source.source_kind {
+                padzapp::commands::import::ImportSourceKind::File => ImportSourceKindResult::File,
+                padzapp::commands::import::ImportSourceKind::Directory => {
+                    ImportSourceKindResult::Directory
+                }
+                padzapp::commands::import::ImportSourceKind::JsonArchive => {
+                    ImportSourceKindResult::JsonArchive
+                }
+            },
+            status: match source.status {
+                padzapp::commands::import::ImportSourceStatus::Imported => {
+                    ImportSourceStatusResult::Imported
+                }
+                padzapp::commands::import::ImportSourceStatus::Skipped => {
+                    ImportSourceStatusResult::Skipped
+                }
+                padzapp::commands::import::ImportSourceStatus::Missing => {
+                    ImportSourceStatusResult::Missing
+                }
+                padzapp::commands::import::ImportSourceStatus::Unreadable => {
+                    ImportSourceStatusResult::Unreadable
+                }
+                padzapp::commands::import::ImportSourceStatus::Invalid => {
+                    ImportSourceStatusResult::Invalid
+                }
+            },
+            imported: source.imported,
+            processed_files: source
+                .processed_files
+                .into_iter()
+                .map(|path| path.display().to_string())
+                .collect(),
+            detail: source.detail,
+            diagnostics: source.diagnostics.into_iter().map(Into::into).collect(),
+        }
+    }
+}
+
+impl From<padzapp::commands::import::ImportDiagnostic> for ImportDiagnosticResult {
+    fn from(diagnostic: padzapp::commands::import::ImportDiagnostic) -> Self {
+        use padzapp::commands::import::ImportDiagnostic;
+        match diagnostic {
+            ImportDiagnostic::InlineMetadataApplied {
+                source_label,
+                bucket,
+                warning_count,
+            } => Self::InlineMetadataApplied {
+                source_label,
+                bucket: match bucket {
+                    padzapp::store::Bucket::Active => ImportBucketResult::Active,
+                    padzapp::store::Bucket::Archived => ImportBucketResult::Archived,
+                    padzapp::store::Bucket::Deleted => ImportBucketResult::Deleted,
+                },
+                warning_count,
+            },
+            ImportDiagnostic::ArchiveMetadataSummary {
+                pad_id,
+                warning_count,
+            } => Self::ArchiveMetadataSummary {
+                pad_id: pad_id.to_string(),
+                warning_count,
+            },
+            ImportDiagnostic::MetadataWarning { warning } => Self::MetadataWarning {
+                warning: warning.into(),
+            },
+            ImportDiagnostic::ArchiveEntrySkipped {
+                entry,
+                reason,
+                detail,
+            } => Self::ArchiveEntrySkipped {
+                entry,
+                reason: match reason {
+                    padzapp::commands::import::ArchiveEntrySkipReason::MissingFile => {
+                        ArchiveEntrySkipReasonResult::MissingFile
+                    }
+                    padzapp::commands::import::ArchiveEntrySkipReason::InvalidEncoding => {
+                        ArchiveEntrySkipReasonResult::InvalidEncoding
+                    }
+                    padzapp::commands::import::ArchiveEntrySkipReason::EmptyContent => {
+                        ArchiveEntrySkipReasonResult::EmptyContent
+                    }
+                    padzapp::commands::import::ArchiveEntrySkipReason::StoreFailure => {
+                        ArchiveEntrySkipReasonResult::StoreFailure
+                    }
+                },
+                detail,
+            },
+            ImportDiagnostic::DirectoryEntrySkipped {
+                entry,
+                reason,
+                detail,
+            } => Self::DirectoryEntrySkipped {
+                entry: entry.map(|path| path.display().to_string()),
+                reason: match reason {
+                    padzapp::commands::import::DirectoryEntrySkipReason::ReadEntry => {
+                        DirectoryEntrySkipReasonResult::ReadEntry
+                    }
+                    padzapp::commands::import::DirectoryEntrySkipReason::InspectEntry => {
+                        DirectoryEntrySkipReasonResult::InspectEntry
+                    }
+                    padzapp::commands::import::DirectoryEntrySkipReason::ImportFile => {
+                        DirectoryEntrySkipReasonResult::ImportFile
+                    }
+                },
+                detail,
+            },
+            ImportDiagnostic::TagRegistryMerge {
+                status,
+                added,
+                detail,
+            } => Self::TagRegistryMerge {
+                status: match status {
+                    padzapp::commands::import::TagRegistryMergeStatus::Merged => {
+                        TagRegistryMergeStatusResult::Merged
+                    }
+                    padzapp::commands::import::TagRegistryMergeStatus::Failed => {
+                        TagRegistryMergeStatusResult::Failed
+                    }
+                },
+                added,
+                detail,
+            },
+        }
+    }
+}
+
+impl From<padzapp::commands::metadata_apply::MetadataApplicationWarning> for MetadataWarningResult {
+    fn from(warning: padzapp::commands::metadata_apply::MetadataApplicationWarning) -> Self {
+        use padzapp::commands::metadata_apply::{
+            MetadataWarningCategory, MetadataWarningReason, MetadataWarningSeverity,
+        };
+        Self {
+            source_label: warning.source_label,
+            category: match warning.category {
+                MetadataWarningCategory::Metadata => MetadataWarningCategoryResult::Metadata,
+                MetadataWarningCategory::Field => MetadataWarningCategoryResult::Field,
+                MetadataWarningCategory::Tags => MetadataWarningCategoryResult::Tags,
+                MetadataWarningCategory::Parent => MetadataWarningCategoryResult::Parent,
+            },
+            reason: match warning.reason {
+                MetadataWarningReason::NotAnObject => MetadataWarningReasonResult::NotAnObject,
+                MetadataWarningReason::InvalidValue => MetadataWarningReasonResult::InvalidValue,
+                MetadataWarningReason::NonStringEntries => {
+                    MetadataWarningReasonResult::NonStringEntries
+                }
+                MetadataWarningReason::OutsideImportSet => {
+                    MetadataWarningReasonResult::OutsideImportSet
+                }
+            },
+            field: warning.field,
+            count: warning.count,
+            severity: match warning.severity {
+                MetadataWarningSeverity::Info => MetadataWarningSeverityResult::Info,
+                MetadataWarningSeverity::Warning => MetadataWarningSeverityResult::Warning,
+            },
+        }
+    }
+}
+
 /// A command whose whole result is user-facing messages.
 ///
 /// Rendered by `messages.jinja`, which reads `CmdMessage` directly — no view
