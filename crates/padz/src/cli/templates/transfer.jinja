@@ -1,0 +1,28 @@
+{#- Semantic cross-store facts rendered with the historical wording/order. -#}
+{% for diagnostic in diagnostics -%}
+{% if diagnostic.kind == "destination_bucket_enumeration_failed" -%}
+{% if diagnostic.bucket == "active" -%}
+{% set bucket = "Active" -%}
+{% elif diagnostic.bucket == "archived" -%}
+{% set bucket = "Archived" -%}
+{% else -%}
+{% set bucket = "Deleted" -%}
+{% endif -%}
+[warning]Could not enumerate destination bucket {{ bucket }}: {{ diagnostic.detail }}. Parent relationships that cross this bucket may be orphaned.[/warning]
+{% elif diagnostic.kind == "parent_orphaned" -%}
+[info]Pad {{ diagnostic.pad_id }}: parent not in move set, orphaned to root[/info]
+{% elif diagnostic.kind == "copy_failed" -%}
+[warning]Failed to {{ operation }} pad {{ diagnostic.pad_id }}: {{ diagnostic.detail }}[/warning]
+{% elif diagnostic.kind == "tag_registry_merge_failed" -%}
+[warning]Tag registry merge failed: {{ diagnostic.detail }}[/warning]
+{% else -%}
+[warning]Copied but failed to remove from source, pad {{ diagnostic.pad_id }}: {{ diagnostic.detail }}[/warning]
+{% endif -%}
+{% endfor -%}
+{% if status == "empty" -%}
+[info]No pads to transfer.[/info]
+{% elif status == "no_copies" -%}
+[warning]No pads were {{ "cloned" if operation == "clone" else "migrated" }} to {{ peer_store }}[/warning]
+{% else -%}
+[success]{{ "Cloned" if operation == "clone" else "Migrated" }} {{ copied_count }} pad(s) to {{ peer_store }}[/success]
+{% endif %}

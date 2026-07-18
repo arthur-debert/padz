@@ -30,7 +30,9 @@ use padz::cli::result::{
     ImportSourceKindResult, ImportSourceStatusResult, ImportStatusResult, InitializationResult,
     MetadataWarningReasonResult, ModificationNoticeResult, ModificationResult,
     MutationOutcomeResult, MutationStatusResult, PadContentResult, PadListResult, PathResult,
-    PurgeResult, TagCatalogResult, TagRegistryResult, TaggingResult, UpdateKindResult, UuidResult,
+    PurgeResult, TagCatalogResult, TagRegistryResult, TaggingResult, TransferDirectionResult,
+    TransferOperationResult, TransferResult, TransferSelectionResult, TransferStatusResult,
+    UpdateKindResult, UuidResult,
 };
 use padzapp::commands::NestingMode;
 use standout::cli::Output;
@@ -803,6 +805,49 @@ fn import_maps_core_source_and_metadata_warning_facts() {
                 if warning.reason == MetadataWarningReasonResult::InvalidValue
                     && warning.field.as_deref() == Some("status")
         )));
+}
+
+// =============================================================================
+// Cross-store transfer reports
+// =============================================================================
+
+#[test]
+fn clone_maps_operation_direction_peer_selection_and_copied_ids() {
+    let source = Fixture::new();
+    let peer = Fixture::new();
+    let state = source.app_state();
+    source.seed_pad(&state, "transfer me", "body");
+    let ctx = support::ctx_with_state(state);
+
+    let result: TransferResult = rendered(handlers::clone(
+        &ctx,
+        vec!["1".to_string()],
+        Some(peer.project().display().to_string()),
+        None,
+    ));
+
+    assert_eq!(result.status, TransferStatusResult::FullSuccess);
+    assert_eq!(result.operation, TransferOperationResult::Clone);
+    assert_eq!(result.direction, TransferDirectionResult::To);
+    assert_eq!(
+        result.peer_store,
+        peer.project()
+            .join(".padz")
+            .canonicalize()
+            .unwrap()
+            .display()
+            .to_string()
+    );
+    assert_eq!(
+        result.requested_selection,
+        TransferSelectionResult::Explicit {
+            selectors: vec!["1".to_string()]
+        }
+    );
+    assert_eq!(result.copied_count, 1);
+    assert_eq!(result.copied_pad_ids.len(), 1);
+    assert!(uuid::Uuid::parse_str(&result.copied_pad_ids[0]).is_ok());
+    assert!(result.diagnostics.is_empty());
 }
 
 // =============================================================================

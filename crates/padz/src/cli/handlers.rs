@@ -31,7 +31,7 @@ use super::result::{
     DoctorResult, ExportReportResult, ImportResult, InitializationResult, ListRequest,
     MessagesResult, ModificationRequest, ModificationResult, PadContent, PadContentResult,
     PadListResult, PathResult, PurgeResult, TagCatalogResult, TagRegistryResult, TaggingResult,
-    UuidResult,
+    TransferResult, UuidResult,
 };
 
 // =============================================================================
@@ -170,11 +170,6 @@ impl<'a> ScopedApi<'a> {
                 status: self.state.wants_status(force_show_status),
             },
         }
-    }
-
-    /// Map a CmdResult (messages only) into the typed messages result
-    fn messages(&self, result: CmdResult) -> Result<Output<MessagesResult>, anyhow::Error> {
-        Ok(Output::Render(MessagesResult::new(result.messages)))
     }
 
     // --- Modification operations ---
@@ -351,19 +346,19 @@ impl<'a> ScopedApi<'a> {
         to: Option<&str>,
         from: Option<&str>,
         mode: padzapp::commands::transfer::TransferMode,
-    ) -> Result<Output<MessagesResult>, anyhow::Error> {
+    ) -> Result<Output<TransferResult>, anyhow::Error> {
         match (to, from) {
             (Some(dest), None) => {
                 let path = std::path::PathBuf::from(dest);
                 let result =
                     self.call(|api, scope| api.transfer_pads_to(scope, indexes, &path, mode))?;
-                self.messages(result)
+                Ok(Output::Render(result.into()))
             }
             (None, Some(src)) => {
                 let path = std::path::PathBuf::from(src);
                 let result =
                     self.call(|api, scope| api.transfer_pads_from(scope, indexes, &path, mode))?;
-                self.messages(result)
+                Ok(Output::Render(result.into()))
             }
             (Some(_), Some(_)) => Err(anyhow::anyhow!("--to and --from are mutually exclusive")),
             (None, None) => Err(anyhow::anyhow!("exactly one of --to or --from is required")),
@@ -1192,7 +1187,7 @@ pub fn clone(
     #[arg] indexes: Vec<String>,
     #[arg] to: Option<String>,
     #[arg] from: Option<String>,
-) -> Result<Output<MessagesResult>, anyhow::Error> {
+) -> Result<Output<TransferResult>, anyhow::Error> {
     api(ctx).transfer_pads(
         &indexes,
         to.as_deref(),
@@ -1207,7 +1202,7 @@ pub fn migrate(
     #[arg] indexes: Vec<String>,
     #[arg] to: Option<String>,
     #[arg] from: Option<String>,
-) -> Result<Output<MessagesResult>, anyhow::Error> {
+) -> Result<Output<TransferResult>, anyhow::Error> {
     api(ctx).transfer_pads(
         &indexes,
         to.as_deref(),

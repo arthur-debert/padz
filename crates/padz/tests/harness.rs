@@ -499,6 +499,199 @@ fn import_report_serializes_in_every_structured_mode() {
 }
 
 // =============================================================================
+// Semantic cross-store transfer outcomes
+// =============================================================================
+
+#[test]
+#[serial]
+fn clone_preserves_text_and_exposes_transfer_facts() {
+    let text_source = Fixture::new();
+    let text_peer = Fixture::new();
+    let state = text_source.app_state();
+    text_source.seed_pad(&state, "Alpha", "body");
+    drop(state);
+    let peer_arg = text_peer.project().display().to_string();
+    let peer_store = text_peer
+        .project()
+        .join(".padz")
+        .canonicalize()
+        .unwrap()
+        .display()
+        .to_string();
+    let (app, cmd) = text_source.app(&["clone", "1", "--to", &peer_arg]);
+    let text = TestHarness::new().no_color().run(
+        &app,
+        cmd,
+        text_source.argv(&["clone", "1", "--to", &peer_arg, "--output", "text"]),
+    );
+    text.assert_success();
+    assert_eq!(text.stdout(), format!("Cloned 1 pad(s) to {peer_store}\n"));
+    drop(text);
+
+    let (app, cmd) = text_source.app(&["clone", "1", "--to", &peer_arg]);
+    let styled = TestHarness::new().run(
+        &app,
+        cmd,
+        text_source.argv(&["clone", "1", "--to", &peer_arg, "--output", "term-debug"]),
+    );
+    styled.assert_success();
+    assert_eq!(
+        styled.stdout(),
+        format!("[success]Cloned 1 pad(s) to {peer_store}[/success]\n")
+    );
+    drop(styled);
+
+    let json_source = Fixture::new();
+    let json_peer = Fixture::new();
+    let state = json_source.app_state();
+    json_source.seed_pad(&state, "Alpha", "body");
+    drop(state);
+    let peer_arg = json_peer.project().display().to_string();
+    let (app, cmd) = json_source.app(&["clone", "1", "--to", &peer_arg]);
+    let json = TestHarness::new().run(
+        &app,
+        cmd,
+        json_source.argv(&["clone", "1", "--to", &peer_arg, "--output", "json"]),
+    );
+    json.assert_success();
+    let mut value: serde_json::Value = serde_json::from_str(json.stdout()).unwrap();
+    value["peer_store"] = serde_json::json!("<PEER_STORE>");
+    value["copied_pad_ids"][0] = serde_json::json!("<PAD_ID>");
+    let expected: serde_json::Value = serde_json::from_str(include_str!(
+        "fixtures/semantic_outcomes/clone-success.json"
+    ))
+    .unwrap();
+    assert_eq!(value, expected);
+    assert!(value.get("messages").is_none());
+}
+
+#[test]
+#[serial]
+fn clone_empty_and_parent_orphaning_are_explicit_states() {
+    let empty_source = Fixture::new();
+    let empty_peer = Fixture::new();
+    let peer_arg = empty_peer.project().display().to_string();
+    let (app, cmd) = empty_source.app(&["clone", "--to", &peer_arg]);
+    let empty = TestHarness::new().run(
+        &app,
+        cmd,
+        empty_source.argv(&["clone", "--to", &peer_arg, "--output", "json"]),
+    );
+    empty.assert_success();
+    let empty_value: serde_json::Value = serde_json::from_str(empty.stdout()).unwrap();
+    assert_eq!(empty_value["status"], "empty");
+    assert_eq!(
+        empty_value["requested_selection"]["kind"],
+        "all_non_deleted"
+    );
+    assert_eq!(empty_value["copied_count"], 0);
+    assert_eq!(empty_value["diagnostics"], serde_json::json!([]));
+    drop(empty);
+
+    let source = Fixture::new();
+    let peer = Fixture::new();
+    let state = source.app_state();
+    source.seed_pad(&state, "Parent", "");
+    source.seed_child(&state, "1", "Child", "");
+    drop(state);
+    let peer_arg = peer.project().display().to_string();
+    let (app, cmd) = source.app(&["clone", "1.1", "--to", &peer_arg]);
+    let orphaned = TestHarness::new().run(
+        &app,
+        cmd,
+        source.argv(&["clone", "1.1", "--to", &peer_arg, "--output", "json"]),
+    );
+    orphaned.assert_success();
+    let value: serde_json::Value = serde_json::from_str(orphaned.stdout()).unwrap();
+    assert_eq!(value["status"], "partial_success");
+    assert_eq!(value["copied_count"], 1);
+    assert_eq!(value["diagnostics"][0]["kind"], "parent_orphaned");
+    assert_eq!(
+        value["diagnostics"][0]["pad_id"],
+        value["copied_pad_ids"][0]
+    );
+    assert!(value["diagnostics"][0]["parent_id"].is_string());
+    drop(orphaned);
+
+    let styled_peer = Fixture::new();
+    let styled_peer_arg = styled_peer.project().display().to_string();
+    let (app, cmd) = source.app(&["clone", "1.1", "--to", &styled_peer_arg]);
+    let styled = TestHarness::new().run(
+        &app,
+        cmd,
+        source.argv(&[
+            "clone",
+            "1.1",
+            "--to",
+            &styled_peer_arg,
+            "--output",
+            "term-debug",
+        ]),
+    );
+    styled.assert_success();
+    let orphan_position = styled
+        .stdout()
+        .find("[info]Pad ")
+        .expect("orphan info style");
+    let summary_position = styled
+        .stdout()
+        .find("[success]Cloned 1 pad(s)")
+        .expect("success summary style");
+    assert!(orphan_position < summary_position);
+    assert!(styled
+        .stdout()
+        .contains("parent not in move set, orphaned to root[/info]"));
+}
+
+#[test]
+#[serial]
+fn transfer_report_serializes_in_every_structured_mode() {
+    for mode in ["json", "yaml", "xml", "csv"] {
+        let source = Fixture::new();
+        let peer = Fixture::new();
+        let state = source.app_state();
+        source.seed_pad(&state, "Alpha", "body");
+        drop(state);
+        let peer_arg = peer.project().display().to_string();
+        let (app, cmd) = source.app(&["clone", "1", "--to", &peer_arg]);
+        let result = TestHarness::new().run(
+            &app,
+            cmd,
+            source.argv(&["clone", "1", "--to", &peer_arg, "--output", mode]),
+        );
+        result.assert_success();
+        match mode {
+            "json" => {
+                serde_json::from_str::<serde_json::Value>(result.stdout()).unwrap();
+            }
+            "yaml" => {
+                serde_yaml::from_str::<serde_yaml::Value>(result.stdout()).unwrap();
+            }
+            "xml" => {
+                let mut reader = quick_xml::Reader::from_str(result.stdout());
+                loop {
+                    match reader.read_event() {
+                        Ok(quick_xml::events::Event::Eof) => break,
+                        Ok(_) => {}
+                        Err(error) => {
+                            panic!("invalid transfer XML: {error}\n{}", result.stdout())
+                        }
+                    }
+                }
+            }
+            "csv" => {
+                let mut reader = csv::Reader::from_reader(result.stdout().as_bytes());
+                reader.headers().unwrap();
+                for row in reader.records() {
+                    row.unwrap();
+                }
+            }
+            _ => unreachable!(),
+        }
+    }
+}
+
+// =============================================================================
 // Semantic pad mutation outcomes
 // =============================================================================
 
