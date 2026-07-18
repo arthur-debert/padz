@@ -1095,5 +1095,6 @@ pub struct PathResult {
 /// UUIDs of the selected pads, one per selector match.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct UuidResult {
+    /// Canonical UUID strings in selector order, with ranges in display order.
     pub uuids: Vec<String>,
 }

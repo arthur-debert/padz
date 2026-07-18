@@ -1105,7 +1105,7 @@ pub fn path(
     }))
 }
 
-/// Returns the UUID of each selected pad.
+/// Maps each selected domain UUID into the CLI's stable textual UUID result.
 #[handler]
 pub fn uuid(
     #[ctx] ctx: &CommandContext,
@@ -1115,7 +1115,7 @@ pub fn uuid(
     let result = state.with_api(|api| api.pad_uuids(state.scope, &indexes).map_err(to_anyhow))?;
 
     Ok(Output::Render(UuidResult {
-        uuids: result.messages.iter().map(|m| m.content.clone()).collect(),
+        uuids: result.into_iter().map(|uuid| uuid.to_string()).collect(),
     }))
 }
 

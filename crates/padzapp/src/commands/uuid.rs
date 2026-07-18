@@ -1,22 +1,21 @@
-use crate::commands::CmdResult;
+//! Resolve pad selectors to their durable UUIDs.
+//!
+//! Selector parsing and canonical display ordering remain application concerns;
+//! presentation clients decide how to render or serialize the resolved values.
+
 use crate::error::Result;
 use crate::index::PadSelector;
 use crate::model::Scope;
 use crate::store::DataStore;
+use uuid::Uuid;
 
 use super::helpers::{resolve_selectors, TitleBucket};
 
-pub fn run<S: DataStore>(store: &S, scope: Scope, selectors: &[PadSelector]) -> Result<CmdResult> {
+/// Return the selected UUIDs in selector order, expanding ranges in canonical
+/// display order.
+pub fn run<S: DataStore>(store: &S, scope: Scope, selectors: &[PadSelector]) -> Result<Vec<Uuid>> {
     let resolved = resolve_selectors(store, scope, selectors, false, TitleBucket::Active)?;
-    let mut result = CmdResult::default();
-
-    for (_, uuid) in resolved {
-        result
-            .messages
-            .push(super::CmdMessage::info(uuid.to_string()));
-    }
-
-    Ok(result)
+    Ok(resolved.into_iter().map(|(_, uuid)| uuid).collect())
 }
 
 #[cfg(test)]
@@ -47,8 +46,7 @@ mod tests {
         )
         .unwrap();
 
-        assert_eq!(result.messages.len(), 1);
-        assert_eq!(result.messages[0].content, expected_uuid.to_string());
+        assert_eq!(result, vec![expected_uuid]);
     }
 
     #[test]
@@ -59,20 +57,30 @@ mod tests {
             MemBackend::new(),
             MemBackend::new(),
         );
-        create::run(&mut store, Scope::Project, "Pad A".into(), "".into(), None).unwrap();
-        create::run(&mut store, Scope::Project, "Pad B".into(), "".into(), None).unwrap();
+        let first = create::run(&mut store, Scope::Project, "Pad A".into(), "".into(), None)
+            .unwrap()
+            .affected_pads[0]
+            .pad
+            .metadata
+            .id;
+        let second = create::run(&mut store, Scope::Project, "Pad B".into(), "".into(), None)
+            .unwrap()
+            .affected_pads[0]
+            .pad
+            .metadata
+            .id;
 
         let result = run(
             &store,
             Scope::Project,
             &[
-                PadSelector::Path(vec![DisplayIndex::Regular(1)]),
                 PadSelector::Path(vec![DisplayIndex::Regular(2)]),
+                PadSelector::Path(vec![DisplayIndex::Regular(1)]),
             ],
         )
         .unwrap();
 
-        assert_eq!(result.messages.len(), 2);
+        assert_eq!(result, vec![first, second]);
     }
 
     #[test]
@@ -83,9 +91,24 @@ mod tests {
             MemBackend::new(),
             MemBackend::new(),
         );
-        create::run(&mut store, Scope::Project, "Pad A".into(), "".into(), None).unwrap();
-        create::run(&mut store, Scope::Project, "Pad B".into(), "".into(), None).unwrap();
-        create::run(&mut store, Scope::Project, "Pad C".into(), "".into(), None).unwrap();
+        let first = create::run(&mut store, Scope::Project, "Pad A".into(), "".into(), None)
+            .unwrap()
+            .affected_pads[0]
+            .pad
+            .metadata
+            .id;
+        let second = create::run(&mut store, Scope::Project, "Pad B".into(), "".into(), None)
+            .unwrap()
+            .affected_pads[0]
+            .pad
+            .metadata
+            .id;
+        let third = create::run(&mut store, Scope::Project, "Pad C".into(), "".into(), None)
+            .unwrap()
+            .affected_pads[0]
+            .pad
+            .metadata
+            .id;
 
         let result = run(
             &store,
@@ -97,6 +120,6 @@ mod tests {
         )
         .unwrap();
 
-        assert_eq!(result.messages.len(), 3);
+        assert_eq!(result, vec![third, second, first]);
     }
 }

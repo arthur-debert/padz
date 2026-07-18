@@ -24,11 +24,9 @@ impl<S: DataStore> PadzApi<S> {
         commands::paths::run(&self.store, scope, &selectors)
     }
 
-    pub fn pad_uuids<I: AsRef<str>>(
-        &self,
-        scope: Scope,
-        indexes: &[I],
-    ) -> Result<commands::CmdResult> {
+    /// Resolves selectors to UUIDs in selector order, with ranges expanded in
+    /// canonical display order.
+    pub fn pad_uuids<I: AsRef<str>>(&self, scope: Scope, indexes: &[I]) -> Result<Vec<uuid::Uuid>> {
         let selectors = parse_selectors(indexes)?;
         commands::uuid::run(&self.store, scope, &selectors)
     }
@@ -104,6 +102,29 @@ mod tests {
 
         assert_eq!(paths.project, Some(PathBuf::from("/tmp/test")));
         assert_eq!(paths.global, PathBuf::from("/tmp/global"));
+    }
+
+    #[test]
+    fn test_api_pad_uuids_returns_values_in_selector_order() {
+        let mut api = make_api();
+        let first = api
+            .create_pad(Scope::Project, "first".into(), "".into(), None)
+            .unwrap()
+            .affected_pads[0]
+            .pad
+            .metadata
+            .id;
+        let second = api
+            .create_pad(Scope::Project, "second".into(), "".into(), None)
+            .unwrap()
+            .affected_pads[0]
+            .pad
+            .metadata
+            .id;
+
+        let uuids = api.pad_uuids(Scope::Project, &["2", "1"]).unwrap();
+
+        assert_eq!(uuids, vec![first, second]);
     }
 
     #[test]
