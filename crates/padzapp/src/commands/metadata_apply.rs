@@ -144,12 +144,20 @@ mod tests {
         );
 
         assert_eq!(warnings.len(), 2);
-        assert_eq!(warnings[0].source_label, "entry.lex");
-        assert_eq!(warnings[0].category, MetadataWarningCategory::Field);
-        assert_eq!(warnings[0].reason, MetadataWarningReason::InvalidValue);
-        assert_eq!(warnings[0].field.as_deref(), Some("status"));
-        assert_eq!(warnings[0].severity, MetadataWarningSeverity::Warning);
-        assert_eq!(warnings[1].category, MetadataWarningCategory::Tags);
-        assert_eq!(warnings[1].count, Some(1));
+        assert!(warnings.iter().all(|warning| {
+            warning.source_label == "entry.lex"
+                && warning.severity == MetadataWarningSeverity::Warning
+        }));
+        assert!(warnings.iter().any(|warning| {
+            warning.category == MetadataWarningCategory::Field
+                && warning.reason == MetadataWarningReason::InvalidValue
+                && warning.field.as_deref() == Some("status")
+        }));
+        assert!(warnings.iter().any(|warning| {
+            warning.category == MetadataWarningCategory::Tags
+                && warning.reason == MetadataWarningReason::NonStringEntries
+                && warning.field.as_deref() == Some("tags")
+                && warning.count == Some(1)
+        }));
     }
 }

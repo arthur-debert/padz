@@ -61,6 +61,14 @@ pub enum ArchiveEntrySkipReason {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
+pub enum DirectoryEntrySkipReason {
+    ReadEntry,
+    InspectEntry,
+    ImportFile,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
 pub enum TagRegistryMergeStatus {
     Merged,
     Failed,
@@ -87,8 +95,16 @@ pub enum ImportDiagnostic {
         reason: ArchiveEntrySkipReason,
         detail: String,
     },
+    DirectoryEntrySkipped {
+        #[serde(skip_serializing_if = "Option::is_none")]
+        entry: Option<PathBuf>,
+        reason: DirectoryEntrySkipReason,
+        detail: String,
+    },
     TagRegistryMerge {
         status: TagRegistryMergeStatus,
+        /// Number of registry entries successfully persisted by this merge.
+        /// Failed merges always report zero.
         added: usize,
         #[serde(skip_serializing_if = "Option::is_none")]
         detail: Option<String>,
@@ -119,6 +135,10 @@ pub struct ImportReport {
 }
 
 /// Import every requested path and return one presentation-free report.
+///
+/// Recoverable directory-entry inspection and file-import failures are
+/// retained as diagnostics so a partly imported directory cannot appear fully
+/// successful.
 pub fn run<S: DataStore>(
     store: &mut S,
     scope: Scope,
@@ -160,49 +180,28 @@ pub fn run<S: DataStore>(
             let entries = match fs::read_dir(&path) {
                 Ok(entries) => entries,
                 Err(error) => {
-                    sources.push(ImportSourceReport {
-                        source: path,
-                        source_kind: ImportSourceKind::Directory,
-                        status: source_error_status(&PadzError::Io(error)),
-                        imported: 0,
-                        processed_files: Vec::new(),
-                        detail: Some("directory could not be read".to_string()),
-                        diagnostics: Vec::new(),
-                    });
+                    sources.push(unreadable_directory_report(path, error));
                     continue;
                 }
             };
-            let mut imported = 0;
-            let mut processed_files = Vec::new();
-            let mut diagnostics = Vec::new();
-            for entry in entries {
-                let Ok(entry) = entry else { continue };
-                let sub_path = entry.path();
-                if sub_path.is_file() {
-                    if let Some(ext) = sub_path.extension() {
-                        let ext_str = format!(".{}", ext.to_string_lossy());
-                        if import_exts.contains(&ext_str) {
-                            if let Ok(res) = import_file(store, scope, &sub_path) {
-                                imported += res.imported;
-                                processed_files.push(sub_path);
-                                diagnostics.extend(res.diagnostics());
-                            }
-                        }
-                    }
-                }
-            }
+            let directory = import_directory_entries(
+                store,
+                scope,
+                entries.map(|entry| entry.map(|entry| entry.path())),
+                import_exts,
+            );
             sources.push(ImportSourceReport {
                 source: path,
                 source_kind: ImportSourceKind::Directory,
-                status: if imported > 0 {
+                status: if directory.imported > 0 {
                     ImportSourceStatus::Imported
                 } else {
                     ImportSourceStatus::Skipped
                 },
-                imported,
-                processed_files,
+                imported: directory.imported,
+                processed_files: directory.processed_files,
                 detail: None,
-                diagnostics,
+                diagnostics: directory.diagnostics,
             });
         } else if path.is_file() {
             sources.push(match import_file(store, scope, &path) {
@@ -260,6 +259,94 @@ pub fn run<S: DataStore>(
     })
 }
 
+fn unreadable_directory_report(path: PathBuf, error: std::io::Error) -> ImportSourceReport {
+    let detail = error.to_string();
+    let status = source_error_status(&PadzError::Io(error));
+    ImportSourceReport {
+        source: path,
+        source_kind: ImportSourceKind::Directory,
+        status,
+        imported: 0,
+        processed_files: Vec::new(),
+        detail: Some(detail),
+        diagnostics: Vec::new(),
+    }
+}
+
+struct DirectoryImportResult {
+    imported: usize,
+    processed_files: Vec<PathBuf>,
+    diagnostics: Vec<ImportDiagnostic>,
+}
+
+/// Import matching directory entries while retaining every recoverable entry
+/// failure as an ordered diagnostic.
+fn import_directory_entries<S, I>(
+    store: &mut S,
+    scope: Scope,
+    entries: I,
+    import_exts: &[String],
+) -> DirectoryImportResult
+where
+    S: DataStore,
+    I: IntoIterator<Item = std::io::Result<PathBuf>>,
+{
+    let mut imported = 0;
+    let mut processed_files = Vec::new();
+    let mut diagnostics = Vec::new();
+
+    for entry in entries {
+        let sub_path = match entry {
+            Ok(path) => path,
+            Err(error) => {
+                diagnostics.push(ImportDiagnostic::DirectoryEntrySkipped {
+                    entry: None,
+                    reason: DirectoryEntrySkipReason::ReadEntry,
+                    detail: error.to_string(),
+                });
+                continue;
+            }
+        };
+        let Some(ext) = sub_path.extension() else {
+            continue;
+        };
+        let ext = format!(".{}", ext.to_string_lossy());
+        if !import_exts.contains(&ext) {
+            continue;
+        }
+        match fs::metadata(&sub_path) {
+            Ok(metadata) if metadata.is_file() => {}
+            Ok(_) => continue,
+            Err(error) => {
+                diagnostics.push(ImportDiagnostic::DirectoryEntrySkipped {
+                    entry: Some(sub_path),
+                    reason: DirectoryEntrySkipReason::InspectEntry,
+                    detail: error.to_string(),
+                });
+                continue;
+            }
+        }
+        match import_file(store, scope, &sub_path) {
+            Ok(result) => {
+                imported += result.imported;
+                processed_files.push(sub_path);
+                diagnostics.extend(result.diagnostics());
+            }
+            Err(error) => diagnostics.push(ImportDiagnostic::DirectoryEntrySkipped {
+                entry: Some(sub_path),
+                reason: DirectoryEntrySkipReason::ImportFile,
+                detail: error.to_string(),
+            }),
+        }
+    }
+
+    DirectoryImportResult {
+        imported,
+        processed_files,
+        diagnostics,
+    }
+}
+
 fn source_error_status(error: &PadzError) -> ImportSourceStatus {
     match error {
         PadzError::Io(error) if error.kind() != std::io::ErrorKind::InvalidData => {
@@ -280,7 +367,8 @@ fn source_is_partial(source: &ImportSourceReport) -> bool {
             ImportDiagnostic::MetadataWarning { warning } => {
                 warning.severity == MetadataWarningSeverity::Warning
             }
-            ImportDiagnostic::ArchiveEntrySkipped { .. } => true,
+            ImportDiagnostic::ArchiveEntrySkipped { .. }
+            | ImportDiagnostic::DirectoryEntrySkipped { .. } => true,
             ImportDiagnostic::TagRegistryMerge { status, .. } => {
                 *status == TagRegistryMergeStatus::Failed
             }
@@ -498,7 +586,7 @@ fn import_json_archive<S: DataStore>(
             if !archive.tags.is_empty() {
                 diagnostics.push(ImportDiagnostic::TagRegistryMerge {
                     status: TagRegistryMergeStatus::Failed,
-                    added: archive.tags.len(),
+                    added: 0,
                     detail: Some(error.to_string()),
                 });
             }
@@ -523,7 +611,7 @@ fn import_json_archive<S: DataStore>(
         if let Err(e) = store.save_tags(scope, &new_tags) {
             diagnostics.push(ImportDiagnostic::TagRegistryMerge {
                 status: TagRegistryMergeStatus::Failed,
-                added: added_tags,
+                added: 0,
                 detail: Some(e.to_string()),
             });
         } else {
@@ -719,6 +807,82 @@ mod tests {
         assert_eq!(pads.len(), 2);
         assert!(pads.iter().any(|p| p.metadata.title == "# Note 1"));
         assert!(pads.iter().any(|p| p.metadata.title == "Note 2"));
+    }
+
+    #[test]
+    fn unreadable_directory_report_retains_io_error_detail() {
+        let report = unreadable_directory_report(
+            PathBuf::from("locked"),
+            std::io::Error::new(
+                std::io::ErrorKind::PermissionDenied,
+                "permission denied while listing",
+            ),
+        );
+
+        assert_eq!(report.status, ImportSourceStatus::Unreadable);
+        assert_eq!(
+            report.detail.as_deref(),
+            Some("permission denied while listing")
+        );
+    }
+
+    #[test]
+    fn directory_entry_failures_are_typed_and_make_import_partial() {
+        let mut store = new_store();
+        let temp_dir = tempfile::tempdir().unwrap();
+        let imported_path = temp_dir.path().join("imported.md");
+        let invalid_path = temp_dir.path().join("invalid.md");
+        let vanished_path = temp_dir.path().join("vanished.md");
+        std::fs::write(&imported_path, "Imported\n\nBody").unwrap();
+        std::fs::write(&invalid_path, [0xff, 0xfe]).unwrap();
+
+        let directory = import_directory_entries(
+            &mut store,
+            Scope::Project,
+            vec![
+                Ok(imported_path.clone()),
+                Ok(invalid_path.clone()),
+                Ok(vanished_path.clone()),
+                Err(std::io::Error::other("entry vanished while listing")),
+            ],
+            &[".md".to_string()],
+        );
+
+        assert_eq!(directory.imported, 1);
+        assert_eq!(directory.processed_files, vec![imported_path]);
+        assert!(directory.diagnostics.iter().any(|diagnostic| matches!(
+            diagnostic,
+            ImportDiagnostic::DirectoryEntrySkipped {
+                entry: Some(entry),
+                reason: DirectoryEntrySkipReason::ImportFile,
+                ..
+            } if entry == &invalid_path
+        )));
+        assert!(directory.diagnostics.iter().any(|diagnostic| matches!(
+            diagnostic,
+            ImportDiagnostic::DirectoryEntrySkipped {
+                entry: Some(entry),
+                reason: DirectoryEntrySkipReason::InspectEntry,
+                ..
+            } if entry == &vanished_path
+        )));
+        assert!(directory.diagnostics.iter().any(|diagnostic| matches!(
+            diagnostic,
+            ImportDiagnostic::DirectoryEntrySkipped {
+                entry: None,
+                reason: DirectoryEntrySkipReason::ReadEntry,
+                ..
+            }
+        )));
+        assert!(source_is_partial(&ImportSourceReport {
+            source: temp_dir.path().to_path_buf(),
+            source_kind: ImportSourceKind::Directory,
+            status: ImportSourceStatus::Imported,
+            imported: directory.imported,
+            processed_files: directory.processed_files,
+            detail: None,
+            diagnostics: directory.diagnostics,
+        }));
     }
 
     #[test]
@@ -1193,7 +1357,7 @@ mod tests {
                 diagnostic,
                 ImportDiagnostic::TagRegistryMerge {
                     status: TagRegistryMergeStatus::Failed,
-                    added: 1,
+                    added: 0,
                     ..
                 }
             )));

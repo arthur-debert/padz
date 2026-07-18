@@ -442,6 +442,14 @@ pub enum ArchiveEntrySkipReasonResult {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
+pub enum DirectoryEntrySkipReasonResult {
+    ReadEntry,
+    InspectEntry,
+    ImportFile,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
 pub enum TagRegistryMergeStatusResult {
     Merged,
     Failed,
@@ -467,8 +475,16 @@ pub enum ImportDiagnosticResult {
         reason: ArchiveEntrySkipReasonResult,
         detail: String,
     },
+    DirectoryEntrySkipped {
+        #[serde(skip_serializing_if = "Option::is_none")]
+        entry: Option<String>,
+        reason: DirectoryEntrySkipReasonResult,
+        detail: String,
+    },
     TagRegistryMerge {
         status: TagRegistryMergeStatusResult,
+        /// Number of registry entries successfully persisted by this merge.
+        /// Failed merges always report zero.
         added: usize,
         #[serde(skip_serializing_if = "Option::is_none")]
         detail: Option<String>,
@@ -583,6 +599,25 @@ impl From<padzapp::commands::import::ImportDiagnostic> for ImportDiagnosticResul
                     }
                     padzapp::commands::import::ArchiveEntrySkipReason::StoreFailure => {
                         ArchiveEntrySkipReasonResult::StoreFailure
+                    }
+                },
+                detail,
+            },
+            ImportDiagnostic::DirectoryEntrySkipped {
+                entry,
+                reason,
+                detail,
+            } => Self::DirectoryEntrySkipped {
+                entry: entry.map(|path| path.display().to_string()),
+                reason: match reason {
+                    padzapp::commands::import::DirectoryEntrySkipReason::ReadEntry => {
+                        DirectoryEntrySkipReasonResult::ReadEntry
+                    }
+                    padzapp::commands::import::DirectoryEntrySkipReason::InspectEntry => {
+                        DirectoryEntrySkipReasonResult::InspectEntry
+                    }
+                    padzapp::commands::import::DirectoryEntrySkipReason::ImportFile => {
+                        DirectoryEntrySkipReasonResult::ImportFile
                     }
                 },
                 detail,

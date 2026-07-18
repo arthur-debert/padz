@@ -37,6 +37,10 @@
 {{ message | style_as(warning.severity) }}
 {% elif diagnostic.kind == "archive_entry_skipped" -%}
 [warning]Skipping pad entry {{ diagnostic.entry }}: {{ diagnostic.detail }}[/warning]
+{% elif diagnostic.kind == "directory_entry_skipped" and diagnostic.entry -%}
+[warning]Skipping directory entry {{ diagnostic.entry }}: {{ diagnostic.detail }}[/warning]
+{% elif diagnostic.kind == "directory_entry_skipped" -%}
+[warning]Skipping unreadable directory entry: {{ diagnostic.detail }}[/warning]
 {% elif diagnostic.kind == "tag_registry_merge" and diagnostic.status == "failed" -%}
 [warning]Failed to merge tag registry: {{ diagnostic.detail }}[/warning]
 {% elif diagnostic.kind == "tag_registry_merge" and diagnostic.added > 0 -%}
