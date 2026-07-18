@@ -14,10 +14,10 @@
 // Allow non_snake_case for macro-generated __handler wrapper functions
 #![allow(non_snake_case)]
 
-use crate::cli::clipboard::{copy_to_clipboard, format_for_clipboard};
+use crate::cli::clipboard::{format_for_clipboard, ClipboardWriter, SystemClipboardWriter};
 use crate::cli::errors::to_anyhow;
 use crate::cli::input::{RequestContent, CREATE_CONTENT, EDIT_CONTENT};
-use padzapp::api::{CmdMessage, PadFilter, PadStatusFilter, PadzApi, TodoStatus};
+use padzapp::api::{PadFilter, PadStatusFilter, PadzApi, TodoStatus};
 use padzapp::commands::{CmdOutcome, CmdResult, NestingMode, UpdateKind};
 use padzapp::config::PadzMode;
 use padzapp::error::PadzError;
@@ -26,12 +26,14 @@ use padzapp::store::fs::FileStore;
 use standout::cli::{Artifact, CommandContext, CommandContextInput, Output};
 use standout_macros::handler;
 use std::cell::RefCell;
+use std::rc::Rc;
 
 use super::result::{
+    CopyResult, CreateAbortKindResult, CreateAbortReasonResult, CreateAbortResult, CreateResult,
     DoctorResult, ExportReportResult, ImportResult, InitializationResult, ListRequest,
-    MessagesResult, ModificationRequest, ModificationResult, PadContent, PadContentResult,
-    PadListResult, PathResult, PurgeResult, TagCatalogResult, TagRegistryResult, TaggingResult,
-    TransferResult, UuidResult,
+    ModificationRequest, ModificationResult, PadContent, PadContentResult, PadListResult,
+    PathResult, PurgeResult, TagCatalogResult, TagRegistryResult, TaggingResult, TransferResult,
+    UuidResult,
 };
 
 // =============================================================================
@@ -42,14 +44,17 @@ use super::result::{
 #[derive(Clone)]
 pub struct ImportExtensions(pub Vec<String>);
 
-/// Shared application state injected via app_state
-/// Contains the API instance wrapped in RefCell for interior mutability
+/// Shared application state injected via app_state.
+///
+/// Contains the API instance wrapped in `RefCell` for interior mutability and
+/// the CLI-owned clipboard destination used for best-effort final writes.
 ///
 /// State is deliberately free of `OutputMode`: handlers return one typed result
 /// regardless of `--output`, and the output mode is resolved at the app-execution
 /// boundary (see [`super::commands`]).
 pub struct AppState {
     api: RefCell<PadzApi<FileStore>>,
+    clipboard: Rc<dyn ClipboardWriter>,
     pub scope: Scope,
     pub import_extensions: ImportExtensions,
     pub mode: PadzMode,
@@ -67,11 +72,27 @@ impl AppState {
     ) -> Self {
         Self {
             api: RefCell::new(api),
+            clipboard: Rc::new(SystemClipboardWriter),
             scope,
             import_extensions: ImportExtensions(import_extensions),
             mode,
             local_padz_dir,
         }
+    }
+
+    /// Replace the platform clipboard destination.
+    ///
+    /// Production assembly keeps the default system writer. In-process CLI tests
+    /// supply a recording writer so they can prove one ordered write from semantic
+    /// pad data without invoking an OS clipboard command.
+    pub fn with_clipboard_writer(mut self, clipboard: Rc<dyn ClipboardWriter>) -> Self {
+        self.clipboard = clipboard;
+        self
+    }
+
+    /// Best-effort clipboard write, preserving Padz's established failure semantics.
+    fn copy_to_clipboard(&self, text: &str) {
+        let _ = self.clipboard.write(text);
     }
 
     /// Whether todo status icons are part of this invocation's request.
@@ -455,7 +476,7 @@ impl<'a> ScopedApi<'a> {
         // clipboard source.
         let clipboard_text = view_clipboard_text(&view);
         if !clipboard_text.is_empty() {
-            let _ = copy_to_clipboard(&clipboard_text);
+            self.state.copy_to_clipboard(&clipboard_text);
         }
 
         Ok(Output::Render(view))
@@ -467,7 +488,7 @@ impl<'a> ScopedApi<'a> {
         &self,
         indexes: &[String],
         nesting: NestingMode,
-    ) -> Result<Output<MessagesResult>, anyhow::Error> {
+    ) -> Result<Output<CopyResult>, anyhow::Error> {
         let result = self.call(|api, scope| api.view_pads(scope, indexes, nesting))?;
 
         let indent_per_level: usize = match nesting {
@@ -501,28 +522,23 @@ impl<'a> ScopedApi<'a> {
             }
         }
 
-        let _ = copy_to_clipboard(&clipboard_text);
+        self.state.copy_to_clipboard(&clipboard_text);
 
-        // Report using only the root-level (depth 0) pad titles
-        let root_titles: Vec<&str> = result
+        // Report using only the root-level (depth 0) pad titles. These are the
+        // selected roots; descendants belong in the nested payload but are not
+        // additional selections.
+        let titles: Vec<String> = result
             .listed_pads
             .iter()
             .enumerate()
             .filter(|(i, _)| result.listed_depths.get(*i).copied().unwrap_or(0) == 0)
-            .map(|(_, dp)| dp.pad.metadata.title.as_str())
+            .map(|(_, dp)| dp.pad.metadata.title.clone())
             .collect();
-        let count = root_titles.len();
-        let label = if count == 1 { "pad" } else { "pads" };
-        let msg = format!(
-            "Copied {} {} to clipboard: {}",
-            count,
-            label,
-            root_titles.join(", ")
-        );
 
-        Ok(Output::Render(MessagesResult::new(vec![CmdMessage::info(
-            msg,
-        )])))
+        Ok(Output::Render(CopyResult {
+            root_pad_count: titles.len(),
+            titles,
+        }))
     }
 }
 
@@ -561,10 +577,10 @@ fn parse_nesting_mode(flat: bool, _tree: bool, indented: bool) -> NestingMode {
 }
 
 /// Helper to copy pad content to clipboard (from content string)
-fn copy_content_to_clipboard(content: &str) {
+fn copy_content_to_clipboard(state: &AppState, content: &str) {
     if let Some((title, body)) = extract_title_and_body(content) {
         let clipboard_text = format_for_clipboard(&title, &body);
-        let _ = copy_to_clipboard(&clipboard_text);
+        state.copy_to_clipboard(&clipboard_text);
     }
 }
 
@@ -626,14 +642,15 @@ pub(crate) fn split_indexes_and_content(args: &[String]) -> (Vec<String>, Vec<St
 /// decided here: `cli::input`'s chain resolves it before dispatch and this
 /// handler matches on the resulting [`RequestContent`]. The `editor` /
 /// `no_editor` flags are part of that chain's availability rules, so they are
-/// not read here either.
+/// not read here either. Successful creates preserve the modification schema;
+/// empty piped/editor content returns a typed [`CreateResult::Aborted`] outcome.
 #[handler]
 pub fn create(
     #[ctx] ctx: &CommandContext,
     #[arg] inside: Option<String>,
     #[arg] format: Option<String>,
     #[arg] title: Vec<String>,
-) -> Result<Output<ModificationResult>, anyhow::Error> {
+) -> Result<Output<CreateResult>, anyhow::Error> {
     let state = get_state(ctx);
     let content = ctx.input::<RequestContent>(CREATE_CONTENT)?;
     let title_arg = if title.is_empty() {
@@ -675,7 +692,7 @@ pub fn create(
             state.with_api(|api| api.propagate_status(state.scope, parent_id))?;
             // Copy to clipboard
             let clipboard_text = format_for_clipboard(&title, &body);
-            let _ = copy_to_clipboard(&clipboard_text);
+            state.copy_to_clipboard(&clipboard_text);
             result
         }
 
@@ -693,7 +710,7 @@ pub fn create(
             let parent_id = result.affected_pads[0].pad.metadata.parent_id;
             state.with_api(|api| api.propagate_status(state.scope, parent_id))?;
             // Copy to clipboard
-            copy_content_to_clipboard(raw);
+            copy_content_to_clipboard(state, raw);
             result
         }
 
@@ -730,7 +747,7 @@ pub fn create(
                             .map_err(to_anyhow)
                     })?;
                     // Copy to clipboard
-                    copy_content_to_clipboard(&pad.content);
+                    copy_content_to_clipboard(state, &pad.content);
                     // Build result
                     let display_pad = padzapp::index::DisplayPad {
                         pad,
@@ -751,23 +768,19 @@ pub fn create(
         }
     };
 
-    Ok(Output::Render(
+    Ok(Output::Render(CreateResult::Created(
         api(ctx).modification_result("Created", result, false),
-    ))
+    )))
 }
 
 /// The result of a `create` the user abandoned by supplying no content.
 ///
-/// No pad was created, so there is nothing to report but the warning.
-fn aborted_create() -> ModificationResult {
-    ModificationResult {
-        action: "Created".to_string(),
-        pads: Vec::new(),
-        messages: vec![CmdMessage::warning("Aborted: empty content")],
-        notices: Vec::new(),
-        outcomes: Vec::new(),
-        request: ModificationRequest::default(),
-    }
+/// No pad was created, so the result carries only the semantic abort facts.
+fn aborted_create() -> CreateResult {
+    CreateResult::Aborted(CreateAbortResult {
+        kind: CreateAbortKindResult::Aborted,
+        reason: CreateAbortReasonResult::EmptyContent,
+    })
 }
 
 /// List all pads with optional filtering.
@@ -894,6 +907,7 @@ pub fn view(
     api(ctx).view_pads(&indexes, uuid, nesting)
 }
 
+/// Copy selected pads to one ordered clipboard payload and return root-selection facts.
 #[handler]
 pub fn copy(
     #[ctx] ctx: &CommandContext,
@@ -902,7 +916,7 @@ pub fn copy(
     #[flag] flat: bool,
     #[flag] tree: bool,
     #[flag] indented: bool,
-) -> Result<Output<MessagesResult>, anyhow::Error> {
+) -> Result<Output<CopyResult>, anyhow::Error> {
     let nesting = parse_nesting_mode(flat, tree, indented);
     api(ctx).copy_pads(&indexes, nesting)
 }
@@ -942,7 +956,7 @@ pub fn edit(
         // Quick-edit (todos mode, inline words): the raw text is copied as typed.
         RequestContent::Direct(raw) => {
             let result = update(raw)?;
-            let _ = copy_to_clipboard(raw);
+            state.copy_to_clipboard(raw);
             return Ok(Output::Render(
                 api(ctx).modification_result("Updated", result, false),
             ));
@@ -951,7 +965,7 @@ pub fn edit(
         // Piped content is copied in the pad's title/body shape.
         RequestContent::Piped(raw) => {
             let result = update(raw)?;
-            copy_content_to_clipboard(raw);
+            copy_content_to_clipboard(state, raw);
             return Ok(Output::Render(
                 api(ctx).modification_result("Updated", result, false),
             ));
@@ -995,7 +1009,7 @@ pub fn edit(
     // Refresh pad from disk (re-reads content, updates title)
     match state.with_api(|api| api.refresh_pad(state.scope, &pad_id).map_err(to_anyhow))? {
         Some(pad) => {
-            copy_content_to_clipboard(&pad.content);
+            copy_content_to_clipboard(state, &pad.content);
             let title = pad.metadata.title.clone();
 
             let display_pad = padzapp::index::DisplayPad {

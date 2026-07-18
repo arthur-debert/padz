@@ -1,5 +1,9 @@
 {#- Unified rendering for modification commands. `modification_view` is derived at -#}
 {#- render time from the handler's ModificationResult; see cli::render. -#}
+{#- An empty piped/editor create is a typed abort, not a modification. -#}
+{%- if kind == "aborted" and reason == "empty_content" -%}
+[warning]Aborted: empty content[/warning]{{ "" | nl }}
+{%- else -%}
 {%- set view = modification_view -%}
 {%- set show_status = view.show_status -%}
 {%- set peek_mode = false -%}
@@ -43,3 +47,4 @@
 [info]No completed pads to delete.[/info]{{ "" | nl }}
 {%- endif -%}
 {%- endfor -%}
+{%- endif -%}

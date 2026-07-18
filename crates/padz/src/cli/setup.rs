@@ -503,7 +503,7 @@ pub enum Commands {
 
     /// Copy one or more pads to the clipboard (without printing)
     #[command(alias = "cp", display_order = 10)]
-    #[dispatch(pure, template = "messages")]
+    #[dispatch(pure, template = "copy")]
     Copy {
         /// Indexes of the pads (e.g. 1 p1 d1)
         #[arg(required = true, num_args = 1.., add = all_pads_completer())]

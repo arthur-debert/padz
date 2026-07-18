@@ -108,19 +108,6 @@ fn shape_of(v: &serde_json::Value) -> Shape {
     shape
 }
 
-/// The message strings a JSON result carries.
-fn messages(json: &str) -> Vec<String> {
-    let v: serde_json::Value = serde_json::from_str(json).unwrap();
-    v["messages"]
-        .as_array()
-        .map(|ms| {
-            ms.iter()
-                .map(|m| m["content"].as_str().unwrap_or_default().to_string())
-                .collect()
-        })
-        .unwrap_or_default()
-}
-
 // =============================================================================
 // Command wiring — argv reaches the right handler with the right arguments
 // =============================================================================
@@ -217,10 +204,12 @@ fn a_naked_invocation_with_an_empty_pipe_aborts_create() {
         .run(&app, cmd, fx.argv(&["--output", "json"]));
 
     result.assert_success();
-    assert_eq!(pads(result.stdout()), Vec::<(String, String)>::new());
-    assert!(messages(result.stdout())
-        .iter()
-        .any(|message| message.contains("Aborted: empty content")));
+    let actual: serde_json::Value = serde_json::from_str(result.stdout()).unwrap();
+    let expected: serde_json::Value = serde_json::from_str(include_str!(
+        "fixtures/semantic_outcomes/create-aborted.json"
+    ))
+    .unwrap();
+    assert_eq!(actual, expected);
 }
 
 #[test]
@@ -1246,6 +1235,112 @@ fn uuid_flag_reaches_the_view_handler() {
 }
 
 // =============================================================================
+// Copy — semantic result plus application-owned clipboard destination
+// =============================================================================
+
+#[test]
+#[serial]
+fn singleton_copy_reports_typed_facts_and_writes_once() {
+    let fx = Fixture::new();
+    let state = fx.app_state();
+    fx.seed_pad(&state, "single", "body");
+    drop(state);
+
+    let (app, cmd, clipboard) = fx.app_with_recording_clipboard(&["copy", "1"]);
+    let result = TestHarness::new().run(&app, cmd, fx.argv(&["copy", "1", "--output", "json"]));
+
+    result.assert_success();
+    let actual: serde_json::Value = serde_json::from_str(result.stdout()).unwrap();
+    let expected: serde_json::Value = serde_json::from_str(include_str!(
+        "fixtures/semantic_outcomes/copy-singleton.json"
+    ))
+    .unwrap();
+    assert_eq!(actual, expected);
+    assert_eq!(clipboard.writes(), vec!["single\n\nbody"]);
+}
+
+#[test]
+#[serial]
+fn multiple_copy_preserves_root_order_in_facts_and_one_payload() {
+    let fx = Fixture::new();
+    let state = fx.app_state();
+    fx.seed_pad(&state, "first", "one");
+    fx.seed_pad(&state, "second", "two");
+    drop(state);
+
+    let (app, cmd, clipboard) = fx.app_with_recording_clipboard(&["copy", "1", "2"]);
+    let result =
+        TestHarness::new().run(&app, cmd, fx.argv(&["copy", "1", "2", "--output", "json"]));
+
+    result.assert_success();
+    let actual: serde_json::Value = serde_json::from_str(result.stdout()).unwrap();
+    let expected: serde_json::Value = serde_json::from_str(include_str!(
+        "fixtures/semantic_outcomes/copy-multiple.json"
+    ))
+    .unwrap();
+    assert_eq!(actual, expected);
+    assert_eq!(
+        clipboard.writes(),
+        vec!["second\n\ntwo\n---\n\nfirst\n\none"]
+    );
+}
+
+#[test]
+#[serial]
+fn nested_copy_keeps_descendants_in_one_payload_but_reports_one_root() {
+    let fx = Fixture::new();
+    let state = fx.app_state();
+    fx.seed_pad(&state, "parent", "parent body");
+    fx.seed_child(&state, "1", "child", "child body");
+    drop(state);
+
+    let (app, cmd, clipboard) = fx.app_with_recording_clipboard(&["copy", "1"]);
+    let result = TestHarness::new().run(&app, cmd, fx.argv(&["copy", "1", "--output", "json"]));
+
+    result.assert_success();
+    let actual: serde_json::Value = serde_json::from_str(result.stdout()).unwrap();
+    let expected: serde_json::Value =
+        serde_json::from_str(include_str!("fixtures/semantic_outcomes/copy-nested.json")).unwrap();
+    assert_eq!(actual, expected);
+    assert_eq!(
+        clipboard.writes(),
+        vec!["parent\n\nparent body\n\nchild\n\nchild body"]
+    );
+}
+
+#[test]
+#[serial]
+fn copy_template_preserves_human_wording_and_pluralization() {
+    let fx = Fixture::new();
+    let state = fx.app_state();
+    fx.seed_pad(&state, "single", "body");
+    drop(state);
+
+    let (app, cmd, _clipboard) = fx.app_with_recording_clipboard(&["copy", "1"]);
+    TestHarness::new()
+        .no_color()
+        .text_output()
+        .run(&app, cmd, fx.argv(&["copy", "1"]))
+        .assert_stdout_contains("Copied 1 pad to clipboard: single");
+
+    let fx = Fixture::new();
+    let state = fx.app_state();
+    fx.seed_pad(&state, "first", "one");
+    fx.seed_pad(&state, "second", "two");
+    drop(state);
+
+    let (app, cmd, _clipboard) = fx.app_with_recording_clipboard(&["copy", "1", "2"]);
+    let result =
+        TestHarness::new()
+            .no_color()
+            .text_output()
+            .run(&app, cmd, fx.argv(&["copy", "1", "2"]));
+
+    result.assert_success();
+    result.assert_stdout_contains("Copied 2 pads to clipboard: second, first");
+}
+
+// =============================================================================
 // Input chain — the pre-dispatch hooks, driven through real argv and stdin
 // =============================================================================
 //
@@ -1361,22 +1456,23 @@ fn title_arg_overrides_the_piped_title() {
 #[serial]
 fn empty_pipe_aborts_and_creates_no_pad() {
     let fx = Fixture::new();
-    let (app, cmd) = fx.app(&["create"]);
+    let (app, cmd, clipboard) = fx.app_with_recording_clipboard(&["create"]);
 
-    let result = TestHarness::new().no_color().piped_stdin("").run(
-        &app,
-        cmd,
-        fx.argv(&["create", "--output", "json"]),
-    );
+    let result = TestHarness::new()
+        .no_color()
+        .piped_stdin("")
+        .env("EDITOR", "/usr/bin/false")
+        .run(&app, cmd, fx.argv(&["create", "--output", "json"]));
 
-    assert_eq!(pads(result.stdout()), vec![]);
-    assert!(
-        messages(result.stdout())
-            .iter()
-            .any(|m| m.contains("Aborted: empty content")),
-        "expected an abort warning, got: {}",
-        result.stdout()
-    );
+    result.assert_success();
+    result.assert_exit_status(ExitStatus::SUCCESS);
+    let actual: serde_json::Value = serde_json::from_str(result.stdout()).unwrap();
+    let expected: serde_json::Value = serde_json::from_str(include_str!(
+        "fixtures/semantic_outcomes/create-aborted.json"
+    ))
+    .unwrap();
+    assert_eq!(actual, expected);
+    assert!(clipboard.writes().is_empty());
     drop(result);
 
     // The store must stay empty — the abort is not a create that rendered oddly.
@@ -1392,18 +1488,22 @@ fn empty_pipe_aborts_and_creates_no_pad() {
 #[serial]
 fn whitespace_only_pipe_aborts() {
     let fx = Fixture::new();
-    let (app, cmd) = fx.app(&["create"]);
+    let (app, cmd, clipboard) = fx.app_with_recording_clipboard(&["create"]);
 
-    let result = TestHarness::new().no_color().piped_stdin("   \n  \n").run(
-        &app,
-        cmd,
-        fx.argv(&["create", "--output", "json"]),
-    );
+    let result = TestHarness::new()
+        .no_color()
+        .piped_stdin("   \n  \n")
+        .env("EDITOR", "/usr/bin/false")
+        .run(&app, cmd, fx.argv(&["create", "--output", "json"]));
 
-    assert_eq!(pads(result.stdout()), vec![]);
-    assert!(messages(result.stdout())
-        .iter()
-        .any(|m| m.contains("Aborted: empty content")));
+    result.assert_success();
+    let actual: serde_json::Value = serde_json::from_str(result.stdout()).unwrap();
+    let expected: serde_json::Value = serde_json::from_str(include_str!(
+        "fixtures/semantic_outcomes/create-aborted.json"
+    ))
+    .unwrap();
+    assert_eq!(actual, expected);
+    assert!(clipboard.writes().is_empty());
 }
 
 #[test]
@@ -1589,7 +1689,7 @@ fn a_terminal_stdin_routes_create_to_the_editor() {
     let result = TestHarness::new()
         .no_color()
         .interactive_stdin()
-        .env("EDITOR", "/bin/false")
+        .env("EDITOR", "/usr/bin/false")
         .run(&app, cmd, fx.argv(&["create", "--output", "json"]));
 
     assert!(
@@ -1615,6 +1715,55 @@ fn a_terminal_stdin_routes_create_to_the_editor() {
         vec![],
         "a failed editor create must roll the pad back"
     );
+}
+
+#[test]
+#[serial]
+fn an_editor_save_with_empty_content_returns_the_typed_abort() {
+    let fx = Fixture::new();
+    let (app, cmd, clipboard) = fx.app_with_recording_clipboard(&["create"]);
+
+    // `/usr/bin/true` accepts the scratch pad path and exits successfully without
+    // writing it, exactly like leaving the editor buffer empty and saving.
+    let result = TestHarness::new()
+        .no_color()
+        .interactive_stdin()
+        .env("EDITOR", "/usr/bin/true")
+        .run(&app, cmd, fx.argv(&["create", "--output", "json"]));
+
+    result.assert_success();
+    result.assert_exit_status(ExitStatus::SUCCESS);
+    let actual: serde_json::Value = serde_json::from_str(result.stdout()).unwrap();
+    let expected: serde_json::Value = serde_json::from_str(include_str!(
+        "fixtures/semantic_outcomes/create-aborted.json"
+    ))
+    .unwrap();
+    assert_eq!(actual, expected);
+    assert!(clipboard.writes().is_empty());
+    drop(result);
+
+    let (app, cmd) = fx.read_app();
+    let listed =
+        TestHarness::new()
+            .no_color()
+            .run(&app, cmd, fx.argv(&["list", "--output", "json"]));
+    assert_eq!(pads(listed.stdout()), vec![]);
+}
+
+#[test]
+#[serial]
+fn an_empty_create_abort_preserves_human_wording() {
+    let fx = Fixture::new();
+    let (app, cmd) = fx.app(&["create"]);
+
+    let result = TestHarness::new().no_color().piped_stdin("").run(
+        &app,
+        cmd,
+        fx.argv(&["create", "--output", "text"]),
+    );
+
+    result.assert_success();
+    result.assert_stdout_contains("Aborted: empty content");
 }
 
 // =============================================================================

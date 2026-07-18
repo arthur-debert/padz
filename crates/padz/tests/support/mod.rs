@@ -17,6 +17,7 @@
 #![allow(dead_code)] // Each test binary uses its own subset of these helpers.
 
 use clap::Parser;
+use padz::cli::clipboard::ClipboardWriter;
 use padz::cli::commands::{build_app_state, build_dispatch_app};
 use padz::cli::handlers::AppState;
 use padz::cli::input::RequestContent;
@@ -25,6 +26,7 @@ use padzapp::init::{create_bucket_layout, PadzEnv};
 use standout::cli::App;
 use standout::input::{InputSourceKind, Inputs, ResolvedInput};
 use standout_dispatch::{CommandContext, Extensions};
+use std::cell::RefCell;
 use std::path::{Path, PathBuf};
 use std::rc::Rc;
 use tempfile::TempDir;
@@ -37,6 +39,29 @@ pub struct Fixture {
     temp: TempDir,
     project: PathBuf,
     env: PadzEnv,
+}
+
+/// A CLI clipboard destination that records every complete payload.
+///
+/// Copy tests inspect the vector to prove both write count and byte ordering. It
+/// implements Padz's application-owned write seam because Standout's harness
+/// clipboard override is intentionally an input reader, not an output sink.
+#[derive(Clone, Default)]
+pub struct RecordingClipboard {
+    writes: Rc<RefCell<Vec<String>>>,
+}
+
+impl RecordingClipboard {
+    pub fn writes(&self) -> Vec<String> {
+        self.writes.borrow().clone()
+    }
+}
+
+impl ClipboardWriter for RecordingClipboard {
+    fn write(&self, text: &str) -> padzapp::error::Result<()> {
+        self.writes.borrow_mut().push(text.to_string());
+        Ok(())
+    }
 }
 
 impl Fixture {
@@ -130,6 +155,18 @@ impl Fixture {
         build_app_state(&cli, &self.env, &self.project).expect("failed to build app state")
     }
 
+    /// App state with an observable CLI clipboard destination.
+    pub fn app_state_with_recording_clipboard_for(
+        &self,
+        args: &[&str],
+    ) -> (AppState, RecordingClipboard) {
+        let clipboard = RecordingClipboard::default();
+        let state = self
+            .app_state_for(args)
+            .with_clipboard_writer(Rc::new(clipboard.clone()));
+        (state, clipboard)
+    }
+
     /// The real dispatch app (templates, styles, dispatch table) bound to this
     /// fixture's store, paired with the clap command — the two arguments
     /// `TestHarness::run` wants.
@@ -141,6 +178,15 @@ impl Fixture {
             build_dispatch_app(self.app_state_for(args)),
             build_command(),
         )
+    }
+
+    /// The real dispatch app with an observable CLI clipboard destination.
+    pub fn app_with_recording_clipboard(
+        &self,
+        args: &[&str],
+    ) -> (App, clap::Command, RecordingClipboard) {
+        let (state, clipboard) = self.app_state_with_recording_clipboard_for(args);
+        (build_dispatch_app(state), build_command(), clipboard)
     }
 
     /// The dispatch app for an ordinary read/modify command. See [`app_state`](Self::app_state).
