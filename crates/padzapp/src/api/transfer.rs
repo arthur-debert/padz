@@ -41,12 +41,14 @@ impl<S: DataStore> PadzApi<S> {
         commands::export::run_json(&self.store, scope, &selectors, nesting)
     }
 
+    /// Import independent filesystem sources into `scope` and retain partial
+    /// success, metadata, archive-entry, and tag-registry facts in one report.
     pub fn import_pads(
         &mut self,
         scope: Scope,
         paths: Vec<std::path::PathBuf>,
         import_exts: &[String],
-    ) -> Result<commands::CmdResult> {
+    ) -> Result<commands::import::ImportReport> {
         commands::import::run(&mut self.store, scope, paths, import_exts)
     }
 
@@ -159,10 +161,8 @@ mod tests {
             .import_pads(Scope::Project, vec![file_path], &[".md".to_string()])
             .unwrap();
 
-        assert!(result
-            .messages
-            .iter()
-            .any(|m| m.content.contains("Total imported: 1")));
+        assert_eq!(result.total_imported, 1);
+        assert_eq!(result.status, commands::import::ImportStatus::FullSuccess);
     }
 
     // ------------------------------------------------------------------------

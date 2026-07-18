@@ -1,0 +1,31 @@
+{
+  "status": "partial_success",
+  "total_imported": 1,
+  "sources": [
+    {
+      "source": "<SOURCE>",
+      "source_kind": "file",
+      "status": "imported",
+      "imported": 1,
+      "processed_files": ["<SOURCE>"],
+      "diagnostics": [
+        {
+          "kind": "inline_metadata_applied",
+          "source_label": "<SOURCE>",
+          "bucket": "active",
+          "warning_count": 1
+        },
+        {
+          "kind": "metadata_warning",
+          "warning": {
+            "source_label": "<SOURCE>",
+            "category": "field",
+            "reason": "invalid_value",
+            "field": "status",
+            "severity": "warning"
+          }
+        }
+      ]
+    }
+  ]
+}

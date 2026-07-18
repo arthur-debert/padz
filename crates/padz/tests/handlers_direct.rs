@@ -26,10 +26,11 @@ mod support;
 use padz::cli::handlers;
 use padz::cli::input::{RequestContent, CREATE_CONTENT, EDIT_CONTENT};
 use padz::cli::result::{
-    DoctorResult, ExportFormat, ExportStatus, ExportWarning, InitializationResult,
-    ModificationNoticeResult, ModificationResult, MutationOutcomeResult, MutationStatusResult,
-    PadContentResult, PadListResult, PathResult, PurgeResult, TagCatalogResult, TagRegistryResult,
-    TaggingResult, UpdateKindResult, UuidResult,
+    DoctorResult, ExportFormat, ExportStatus, ExportWarning, ImportDiagnosticResult, ImportResult,
+    ImportSourceKindResult, ImportSourceStatusResult, ImportStatusResult, InitializationResult,
+    MetadataWarningReasonResult, ModificationNoticeResult, ModificationResult,
+    MutationOutcomeResult, MutationStatusResult, PadContentResult, PadListResult, PathResult,
+    PurgeResult, TagCatalogResult, TagRegistryResult, TaggingResult, UpdateKindResult, UuidResult,
 };
 use padzapp::commands::NestingMode;
 use standout::cli::Output;
@@ -768,6 +769,40 @@ fn empty_export_stays_a_non_artifact_result() {
     assert_eq!(report.status, ExportStatus::Empty);
     assert_eq!(report.format, ExportFormat::Archive);
     assert_eq!(report.exported, 0);
+}
+
+// =============================================================================
+// Semantic import reports
+// =============================================================================
+
+#[test]
+fn import_maps_core_source_and_metadata_warning_facts() {
+    let fx = Fixture::new();
+    let source = fx.root().join("bad.md");
+    std::fs::write(
+        &source,
+        "---\npadz.status: NotAThing\n---\n\nImported title\n\nBody",
+    )
+    .unwrap();
+    let state = fx.app_state_for(&["import", source.to_str().unwrap()]);
+    let ctx = support::ctx_with_state(state);
+
+    let result: ImportResult = rendered(handlers::import(&ctx, vec![source.display().to_string()]));
+
+    assert_eq!(result.status, ImportStatusResult::PartialSuccess);
+    assert_eq!(result.total_imported, 1);
+    assert_eq!(result.sources[0].source, source.display().to_string());
+    assert_eq!(result.sources[0].source_kind, ImportSourceKindResult::File);
+    assert_eq!(result.sources[0].status, ImportSourceStatusResult::Imported);
+    assert!(result.sources[0]
+        .diagnostics
+        .iter()
+        .any(|diagnostic| matches!(
+            diagnostic,
+            ImportDiagnosticResult::MetadataWarning { warning }
+                if warning.reason == MetadataWarningReasonResult::InvalidValue
+                    && warning.field.as_deref() == Some("status")
+        )));
 }
 
 // =============================================================================

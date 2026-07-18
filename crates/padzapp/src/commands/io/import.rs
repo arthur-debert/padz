@@ -1,14 +1,22 @@
+//! Semantic import pipeline for plain files, directories, inline metadata,
+//! and full-fidelity JSON archives.
+//!
+//! Every requested source produces one typed report. Recoverable source and
+//! archive-entry failures remain local so independent inputs continue, while
+//! metadata and tag-registry effects stay observable without authored prose.
+
 use crate::commands::inline_metadata::{parse_lex_metadata, parse_md_frontmatter};
 use crate::commands::metadata_apply::{
-    apply_metadata_defensively, parse_bucket_or_active, ParentPolicy,
+    apply_metadata_defensively, parse_bucket_or_active, MetadataApplicationWarning,
+    MetadataWarningSeverity, ParentPolicy,
 };
 use crate::commands::metadata_schema::{Archive, PadEntry};
-use crate::commands::{CmdMessage, CmdResult};
 use crate::error::{PadzError, Result};
 use crate::model::{parse_pad_content, Pad, Scope};
 use crate::store::{Bucket, DataStore};
 use crate::tags::TagEntry;
 use flate2::read::GzDecoder;
+use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
 use std::ffi::OsStr;
 use std::fs;
@@ -16,94 +24,269 @@ use std::io::Read;
 use std::path::{Path, PathBuf};
 use uuid::Uuid;
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ImportStatus {
+    FullSuccess,
+    PartialSuccess,
+    NoImports,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ImportSourceKind {
+    File,
+    Directory,
+    JsonArchive,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ImportSourceStatus {
+    Imported,
+    Skipped,
+    Missing,
+    Unreadable,
+    Invalid,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ArchiveEntrySkipReason {
+    MissingFile,
+    InvalidEncoding,
+    EmptyContent,
+    StoreFailure,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum TagRegistryMergeStatus {
+    Merged,
+    Failed,
+}
+
+/// Ordered, source-local facts emitted while importing.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum ImportDiagnostic {
+    InlineMetadataApplied {
+        source_label: String,
+        bucket: Bucket,
+        warning_count: usize,
+    },
+    ArchiveMetadataSummary {
+        pad_id: Uuid,
+        warning_count: usize,
+    },
+    MetadataWarning {
+        warning: MetadataApplicationWarning,
+    },
+    ArchiveEntrySkipped {
+        entry: String,
+        reason: ArchiveEntrySkipReason,
+        detail: String,
+    },
+    TagRegistryMerge {
+        status: TagRegistryMergeStatus,
+        added: usize,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        detail: Option<String>,
+    },
+}
+
+/// Report for one path explicitly requested by the caller.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ImportSourceReport {
+    pub source: PathBuf,
+    pub source_kind: ImportSourceKind,
+    pub status: ImportSourceStatus,
+    pub imported: usize,
+    /// Plain files successfully read from this source, even when empty content
+    /// caused the file to be skipped rather than imported.
+    pub processed_files: Vec<PathBuf>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub detail: Option<String>,
+    pub diagnostics: Vec<ImportDiagnostic>,
+}
+
+/// Complete semantic import report, independent of any presentation client.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ImportReport {
+    pub status: ImportStatus,
+    pub total_imported: usize,
+    pub sources: Vec<ImportSourceReport>,
+}
+
+/// Import every requested path and return one presentation-free report.
 pub fn run<S: DataStore>(
     store: &mut S,
     scope: Scope,
     paths: Vec<PathBuf>,
     import_exts: &[String],
-) -> Result<CmdResult> {
-    let mut result = CmdResult::default();
-    let mut imported_count = 0;
+) -> Result<ImportReport> {
+    let mut sources = Vec::with_capacity(paths.len());
 
     for path in paths {
         if is_json_archive(&path) {
-            match import_json_archive(store, scope, &path) {
-                Ok((count, messages)) => {
-                    imported_count += count;
-                    result.add_message(CmdMessage::info(format!(
-                        "Imported {} pads from {}",
-                        count,
-                        path.display()
-                    )));
-                    for m in messages {
-                        result.add_message(m);
-                    }
-                }
-                Err(e) => {
-                    result.add_message(CmdMessage::warning(format!(
-                        "Failed to import JSON archive {}: {}",
-                        path.display(),
-                        e
-                    )));
-                }
-            }
+            sources.push(match import_json_archive(store, scope, &path) {
+                Ok(archive) => ImportSourceReport {
+                    source: path,
+                    source_kind: ImportSourceKind::JsonArchive,
+                    status: if archive.imported > 0 {
+                        ImportSourceStatus::Imported
+                    } else {
+                        ImportSourceStatus::Skipped
+                    },
+                    imported: archive.imported,
+                    processed_files: Vec::new(),
+                    detail: None,
+                    diagnostics: archive.diagnostics,
+                },
+                Err(error) => ImportSourceReport {
+                    source: path,
+                    source_kind: ImportSourceKind::JsonArchive,
+                    status: source_error_status(&error),
+                    imported: 0,
+                    processed_files: Vec::new(),
+                    detail: Some(error.to_string()),
+                    diagnostics: Vec::new(),
+                },
+            });
             continue;
         }
 
         if path.is_dir() {
-            // Import directory of plain files
-            let entries = fs::read_dir(&path).map_err(PadzError::Io)?;
+            let entries = match fs::read_dir(&path) {
+                Ok(entries) => entries,
+                Err(error) => {
+                    sources.push(ImportSourceReport {
+                        source: path,
+                        source_kind: ImportSourceKind::Directory,
+                        status: source_error_status(&PadzError::Io(error)),
+                        imported: 0,
+                        processed_files: Vec::new(),
+                        detail: Some("directory could not be read".to_string()),
+                        diagnostics: Vec::new(),
+                    });
+                    continue;
+                }
+            };
+            let mut imported = 0;
+            let mut processed_files = Vec::new();
+            let mut diagnostics = Vec::new();
             for entry in entries {
-                let entry = entry.map_err(PadzError::Io)?;
+                let Ok(entry) = entry else { continue };
                 let sub_path = entry.path();
                 if sub_path.is_file() {
                     if let Some(ext) = sub_path.extension() {
                         let ext_str = format!(".{}", ext.to_string_lossy());
                         if import_exts.contains(&ext_str) {
                             if let Ok(res) = import_file(store, scope, &sub_path) {
-                                imported_count += res.imported;
-                                result.add_message(CmdMessage::info(format!(
-                                    "Imported: {}",
-                                    sub_path.display()
-                                )));
-                                for w in res.warnings {
-                                    result.add_message(w);
-                                }
+                                imported += res.imported;
+                                processed_files.push(sub_path);
+                                diagnostics.extend(res.diagnostics());
                             }
                         }
                     }
                 }
             }
+            sources.push(ImportSourceReport {
+                source: path,
+                source_kind: ImportSourceKind::Directory,
+                status: if imported > 0 {
+                    ImportSourceStatus::Imported
+                } else {
+                    ImportSourceStatus::Skipped
+                },
+                imported,
+                processed_files,
+                detail: None,
+                diagnostics,
+            });
         } else if path.is_file() {
-            // Import file directly (try as text)
-            match import_file(store, scope, &path) {
+            sources.push(match import_file(store, scope, &path) {
                 Ok(res) => {
-                    imported_count += res.imported;
-                    result.add_message(CmdMessage::info(format!("Imported: {}", path.display())));
-                    for w in res.warnings {
-                        result.add_message(w);
+                    let status = if res.imported > 0 {
+                        ImportSourceStatus::Imported
+                    } else {
+                        ImportSourceStatus::Skipped
+                    };
+                    ImportSourceReport {
+                        source: path.clone(),
+                        source_kind: ImportSourceKind::File,
+                        status,
+                        imported: res.imported,
+                        processed_files: vec![path],
+                        detail: None,
+                        diagnostics: res.diagnostics(),
                     }
                 }
-                Err(_) => {
-                    result.add_message(CmdMessage::warning(format!(
-                        "Failed to import: {}",
-                        path.display()
-                    )));
-                }
-            }
+                Err(error) => ImportSourceReport {
+                    source: path,
+                    source_kind: ImportSourceKind::File,
+                    status: source_error_status(&error),
+                    imported: 0,
+                    processed_files: Vec::new(),
+                    detail: Some(error.to_string()),
+                    diagnostics: Vec::new(),
+                },
+            });
         } else {
-            result.add_message(CmdMessage::warning(format!(
-                "Path not found: {}",
-                path.display()
-            )));
+            sources.push(ImportSourceReport {
+                source: path,
+                source_kind: ImportSourceKind::File,
+                status: ImportSourceStatus::Missing,
+                imported: 0,
+                processed_files: Vec::new(),
+                detail: None,
+                diagnostics: Vec::new(),
+            });
         }
     }
 
-    result.add_message(CmdMessage::success(format!(
-        "Total imported: {}",
-        imported_count
-    )));
-    Ok(result)
+    let total_imported = sources.iter().map(|source| source.imported).sum();
+    let status = if total_imported == 0 {
+        ImportStatus::NoImports
+    } else if sources.iter().any(source_is_partial) {
+        ImportStatus::PartialSuccess
+    } else {
+        ImportStatus::FullSuccess
+    };
+    Ok(ImportReport {
+        status,
+        total_imported,
+        sources,
+    })
+}
+
+fn source_error_status(error: &PadzError) -> ImportSourceStatus {
+    match error {
+        PadzError::Io(error) if error.kind() != std::io::ErrorKind::InvalidData => {
+            ImportSourceStatus::Unreadable
+        }
+        _ => ImportSourceStatus::Invalid,
+    }
+}
+
+fn source_is_partial(source: &ImportSourceReport) -> bool {
+    if source.status != ImportSourceStatus::Imported {
+        return true;
+    }
+    source
+        .diagnostics
+        .iter()
+        .any(|diagnostic| match diagnostic {
+            ImportDiagnostic::MetadataWarning { warning } => {
+                warning.severity == MetadataWarningSeverity::Warning
+            }
+            ImportDiagnostic::ArchiveEntrySkipped { .. } => true,
+            ImportDiagnostic::TagRegistryMerge { status, .. } => {
+                *status == TagRegistryMergeStatus::Failed
+            }
+            ImportDiagnostic::InlineMetadataApplied { .. }
+            | ImportDiagnostic::ArchiveMetadataSummary { .. } => false,
+        })
 }
 
 /// Heuristic: `.tar.gz` / `.tgz` files are candidates for JSON archive import.
@@ -123,7 +306,27 @@ fn is_json_archive(path: &Path) -> bool {
 /// Result of importing a single file: pads created + any per-field warnings.
 struct FileImportResult {
     imported: usize,
-    warnings: Vec<CmdMessage>,
+    warnings: Vec<MetadataApplicationWarning>,
+    inline_metadata: Option<(String, Bucket)>,
+}
+
+impl FileImportResult {
+    fn diagnostics(self) -> Vec<ImportDiagnostic> {
+        let mut diagnostics = Vec::new();
+        if let Some((source_label, bucket)) = self.inline_metadata {
+            diagnostics.push(ImportDiagnostic::InlineMetadataApplied {
+                source_label,
+                bucket,
+                warning_count: self.warnings.len(),
+            });
+        }
+        diagnostics.extend(
+            self.warnings
+                .into_iter()
+                .map(|warning| ImportDiagnostic::MetadataWarning { warning }),
+        );
+        diagnostics
+    }
 }
 
 fn import_file<S: DataStore>(store: &mut S, scope: Scope, path: &Path) -> Result<FileImportResult> {
@@ -157,11 +360,12 @@ fn import_content<S: DataStore>(
             return Ok(FileImportResult {
                 imported: 0,
                 warnings: Vec::new(),
+                inline_metadata: None,
             });
         };
 
         let mut pad = Pad::new(title.clone(), strip_title_from_body(&normalized, &title));
-        let mut warnings = apply_metadata_defensively(
+        let warnings = apply_metadata_defensively(
             &mut pad,
             &metadata_value,
             ParentPolicy::Trust,
@@ -181,16 +385,10 @@ fn import_content<S: DataStore>(
 
         store.save_pad(&pad, scope, bucket)?;
 
-        if !warnings.is_empty() {
-            warnings.insert(
-                0,
-                CmdMessage::info(format!("{}: applied inline metadata", source_label)),
-            );
-        }
-
         return Ok(FileImportResult {
             imported: 1,
             warnings,
+            inline_metadata: Some((source_label.to_string(), bucket)),
         });
     }
 
@@ -200,26 +398,26 @@ fn import_content<S: DataStore>(
         Ok(FileImportResult {
             imported: 1,
             warnings: Vec::new(),
+            inline_metadata: None,
         })
     } else {
         Ok(FileImportResult {
             imported: 0,
             warnings: Vec::new(),
+            inline_metadata: None,
         })
     }
 }
 
 /// Import a `.tar.gz` JSON archive.
 ///
-/// Returns `(imported_count, metadata_warnings)`. The function is optimistic:
-/// as long as the archive is readable, every pad file lands in the store.
-/// Metadata that fails to parse becomes a per-field warning; the pad itself
-/// always imports with at least a title and content.
+/// Returns imported counts and ordered semantic diagnostics. The function is
+/// optimistic: one bad entry does not prevent independent entries from landing.
 fn import_json_archive<S: DataStore>(
     store: &mut S,
     scope: Scope,
     archive_path: &Path,
-) -> Result<(usize, Vec<CmdMessage>)> {
+) -> Result<ArchiveImportResult> {
     let file = fs::File::open(archive_path).map_err(PadzError::Io)?;
     let decoder = GzDecoder::new(file);
     let mut tar = tar::Archive::new(decoder);
@@ -230,15 +428,21 @@ fn import_json_archive<S: DataStore>(
     // without meaningful savings. Keep everything keyed by archive-relative
     // path so we can cross-reference `db.json` against the pad files.
     let mut files: HashMap<String, Vec<u8>> = HashMap::new();
-    for entry in tar.entries().map_err(PadzError::Io)? {
-        let mut entry = entry.map_err(PadzError::Io)?;
+    for entry in tar
+        .entries()
+        .map_err(|error| PadzError::Api(format!("Invalid archive: {error}")))?
+    {
+        let mut entry =
+            entry.map_err(|error| PadzError::Api(format!("Invalid archive: {error}")))?;
         let archive_path = entry
             .path()
-            .map_err(PadzError::Io)?
+            .map_err(|error| PadzError::Api(format!("Invalid archive path: {error}")))?
             .to_string_lossy()
             .to_string();
         let mut buf = Vec::new();
-        entry.read_to_end(&mut buf).map_err(PadzError::Io)?;
+        entry
+            .read_to_end(&mut buf)
+            .map_err(|error| PadzError::Api(format!("Invalid archive entry: {error}")))?;
         files.insert(archive_path, buf);
     }
 
@@ -251,7 +455,7 @@ fn import_json_archive<S: DataStore>(
     let archive: Archive = serde_json::from_slice(db_bytes)
         .map_err(|e| PadzError::Api(format!("Invalid db.json: {}", e)))?;
 
-    let mut warnings: Vec<CmdMessage> = Vec::new();
+    let mut diagnostics = Vec::new();
     let mut imported = 0usize;
 
     // 3. Index of UUIDs present in this archive, for parent_id orphaning.
@@ -260,33 +464,50 @@ fn import_json_archive<S: DataStore>(
     // 4. Import each pad entry.
     for entry in &archive.pads {
         match import_pad_entry(store, scope, entry, &files, &archive_ids) {
-            Ok((id, mut entry_warnings)) => {
+            Ok((id, entry_warnings)) => {
                 imported += 1;
                 if !entry_warnings.is_empty() {
-                    warnings.push(CmdMessage::info(format!(
-                        "Pad {} imported; {} metadata warning(s)",
-                        id,
-                        entry_warnings.len()
-                    )));
-                    warnings.append(&mut entry_warnings);
+                    diagnostics.push(ImportDiagnostic::ArchiveMetadataSummary {
+                        pad_id: id,
+                        warning_count: entry_warnings.len(),
+                    });
+                    diagnostics.extend(
+                        entry_warnings
+                            .into_iter()
+                            .map(|warning| ImportDiagnostic::MetadataWarning { warning }),
+                    );
                 }
             }
             Err(e) => {
-                warnings.push(CmdMessage::warning(format!(
-                    "Skipping pad entry {}: {}",
-                    entry.file, e
-                )));
+                diagnostics.push(ImportDiagnostic::ArchiveEntrySkipped {
+                    entry: entry.file.clone(),
+                    reason: e.reason(),
+                    detail: e.to_string(),
+                });
             }
         }
     }
 
     // 5. Merge referenced tag registry entries (don't overwrite existing).
-    let existing_tags: HashMap<String, TagEntry> = store
-        .load_tags(scope)
-        .unwrap_or_default()
-        .into_iter()
-        .map(|t| (t.name.clone(), t))
-        .collect();
+    let existing_tags: HashMap<String, TagEntry> = match store.load_tags(scope) {
+        Ok(tags) => tags
+            .into_iter()
+            .map(|tag| (tag.name.clone(), tag))
+            .collect(),
+        Err(error) => {
+            if !archive.tags.is_empty() {
+                diagnostics.push(ImportDiagnostic::TagRegistryMerge {
+                    status: TagRegistryMergeStatus::Failed,
+                    added: archive.tags.len(),
+                    detail: Some(error.to_string()),
+                });
+            }
+            return Ok(ArchiveImportResult {
+                imported,
+                diagnostics,
+            });
+        }
+    };
     let mut new_tags: Vec<TagEntry> = existing_tags.values().cloned().collect();
     let mut added_tags = 0usize;
     for t in &archive.tags {
@@ -300,19 +521,35 @@ fn import_json_archive<S: DataStore>(
     }
     if added_tags > 0 {
         if let Err(e) = store.save_tags(scope, &new_tags) {
-            warnings.push(CmdMessage::warning(format!(
-                "Failed to merge tag registry: {}",
-                e
-            )));
+            diagnostics.push(ImportDiagnostic::TagRegistryMerge {
+                status: TagRegistryMergeStatus::Failed,
+                added: added_tags,
+                detail: Some(e.to_string()),
+            });
         } else {
-            warnings.push(CmdMessage::info(format!(
-                "Merged {} tag registry entry/entries",
-                added_tags
-            )));
+            diagnostics.push(ImportDiagnostic::TagRegistryMerge {
+                status: TagRegistryMergeStatus::Merged,
+                added: added_tags,
+                detail: None,
+            });
         }
+    } else if !archive.tags.is_empty() {
+        diagnostics.push(ImportDiagnostic::TagRegistryMerge {
+            status: TagRegistryMergeStatus::Merged,
+            added: 0,
+            detail: None,
+        });
     }
 
-    Ok((imported, warnings))
+    Ok(ArchiveImportResult {
+        imported,
+        diagnostics,
+    })
+}
+
+struct ArchiveImportResult {
+    imported: usize,
+    diagnostics: Vec<ImportDiagnostic>,
 }
 
 fn pad_id_from_entry(entry: &PadEntry) -> Option<Uuid> {
@@ -332,18 +569,17 @@ fn import_pad_entry<S: DataStore>(
     entry: &PadEntry,
     files: &HashMap<String, Vec<u8>>,
     archive_ids: &HashSet<Uuid>,
-) -> Result<(Uuid, Vec<CmdMessage>)> {
+) -> std::result::Result<(Uuid, Vec<MetadataApplicationWarning>), ArchiveEntryError> {
     // Resolve file: db.json uses relative paths ("pads/pad-<uuid>.lex"); tar
     // entries include the "padz/" prefix.
     let content_bytes = files
         .get(&format!("padz/{}", entry.file))
         .or_else(|| files.get(&entry.file))
-        .ok_or_else(|| PadzError::Api(format!("Missing file: {}", entry.file)))?;
+        .ok_or_else(|| ArchiveEntryError::MissingFile(entry.file.clone()))?;
 
     let raw = std::str::from_utf8(content_bytes)
-        .map_err(|e| PadzError::Api(format!("Non-UTF-8 content: {}", e)))?;
-    let (title, content) =
-        parse_pad_content(raw).ok_or_else(|| PadzError::Api("Empty pad content".to_string()))?;
+        .map_err(|error| ArchiveEntryError::InvalidEncoding(error.to_string()))?;
+    let (title, content) = parse_pad_content(raw).ok_or(ArchiveEntryError::EmptyContent)?;
 
     // Start from a fresh Pad so we have a valid baseline, then overlay fields.
     let mut pad = Pad::new(title.clone(), strip_title_from_body(&content, &title));
@@ -362,9 +598,34 @@ fn import_pad_entry<S: DataStore>(
     }
 
     let bucket = parse_bucket_or_active(&entry.bucket);
-    store.save_pad(&pad, scope, bucket)?;
+    store
+        .save_pad(&pad, scope, bucket)
+        .map_err(|error| ArchiveEntryError::StoreFailure(error.to_string()))?;
 
     Ok((pad.metadata.id, warnings))
+}
+
+#[derive(Debug, thiserror::Error)]
+enum ArchiveEntryError {
+    #[error("Missing file: {0}")]
+    MissingFile(String),
+    #[error("Non-UTF-8 content: {0}")]
+    InvalidEncoding(String),
+    #[error("Empty pad content")]
+    EmptyContent,
+    #[error("{0}")]
+    StoreFailure(String),
+}
+
+impl ArchiveEntryError {
+    fn reason(&self) -> ArchiveEntrySkipReason {
+        match self {
+            Self::MissingFile(_) => ArchiveEntrySkipReason::MissingFile,
+            Self::InvalidEncoding(_) => ArchiveEntrySkipReason::InvalidEncoding,
+            Self::EmptyContent => ArchiveEntrySkipReason::EmptyContent,
+            Self::StoreFailure(_) => ArchiveEntrySkipReason::StoreFailure,
+        }
+    }
 }
 
 /// `parse_pad_content` returns `(title, "title\n\nbody")`. `Pad::new` expects
@@ -447,17 +708,10 @@ mod tests {
         )
         .unwrap();
 
-        assert_eq!(
-            res.messages
-                .iter()
-                .filter(|m| m.content.contains("Imported:"))
-                .count(),
-            2
-        );
-        assert!(res
-            .messages
-            .iter()
-            .any(|m| m.content.contains("Total imported: 2")));
+        assert_eq!(res.status, ImportStatus::FullSuccess);
+        assert_eq!(res.total_imported, 2);
+        assert_eq!(res.sources[0].source_kind, ImportSourceKind::Directory);
+        assert_eq!(res.sources[0].processed_files.len(), 2);
 
         let pads = store
             .list_pads(Scope::Project, crate::store::Bucket::Active)
@@ -482,11 +736,9 @@ mod tests {
         )
         .unwrap();
 
-        assert!(res.messages[0].content.contains("Imported:"));
-        assert!(res
-            .messages
-            .iter()
-            .any(|m| m.content.contains("Total imported: 1")));
+        assert_eq!(res.status, ImportStatus::FullSuccess);
+        assert_eq!(res.total_imported, 1);
+        assert_eq!(res.sources[0].status, ImportSourceStatus::Imported);
 
         let pads = store
             .list_pads(Scope::Project, crate::store::Bucket::Active)
@@ -509,7 +761,8 @@ mod tests {
         )
         .unwrap();
 
-        assert!(res.messages[0].content.contains("Path not found"));
+        assert_eq!(res.status, ImportStatus::NoImports);
+        assert_eq!(res.sources[0].status, ImportSourceStatus::Missing);
     }
 
     #[test]
@@ -540,11 +793,8 @@ mod tests {
         )
         .unwrap();
 
-        assert!(res.messages[0].content.contains("Failed to import"));
-        assert!(res
-            .messages
-            .iter()
-            .any(|m| m.content.contains("Total imported: 0")));
+        assert_eq!(res.status, ImportStatus::NoImports);
+        assert_eq!(res.sources[0].status, ImportSourceStatus::Invalid);
     }
 
     #[test]
@@ -563,10 +813,8 @@ mod tests {
         )
         .unwrap();
 
-        assert!(res
-            .messages
-            .iter()
-            .any(|m| m.content.contains("Total imported: 0")));
+        assert_eq!(res.status, ImportStatus::NoImports);
+        assert_eq!(res.sources[0].status, ImportSourceStatus::Skipped);
         let pads = store
             .list_pads(Scope::Project, crate::store::Bucket::Active)
             .unwrap();
@@ -579,10 +827,8 @@ mod tests {
 
         let res = run(&mut store, Scope::Project, vec![], &[".md".to_string()]).unwrap();
 
-        assert!(res
-            .messages
-            .iter()
-            .any(|m| m.content.contains("Total imported: 0")));
+        assert_eq!(res.status, ImportStatus::NoImports);
+        assert!(res.sources.is_empty());
         let pads = store
             .list_pads(Scope::Project, crate::store::Bucket::Active)
             .unwrap();
@@ -607,15 +853,10 @@ mod tests {
         )
         .unwrap();
 
-        assert!(res
-            .messages
-            .iter()
-            .any(|m| m.content.contains("Total imported: 1")));
-        assert!(res
-            .messages
-            .iter()
-            .any(|m| m.content.contains("Path not found")));
-        assert!(res.messages.iter().any(|m| m.content.contains("Imported:")));
+        assert_eq!(res.status, ImportStatus::PartialSuccess);
+        assert_eq!(res.total_imported, 1);
+        assert_eq!(res.sources[0].status, ImportSourceStatus::Imported);
+        assert_eq!(res.sources[1].status, ImportSourceStatus::Missing);
 
         let pads = store
             .list_pads(Scope::Project, crate::store::Bucket::Active)
@@ -642,10 +883,7 @@ mod tests {
         )
         .unwrap();
 
-        assert!(res
-            .messages
-            .iter()
-            .any(|m| m.content.contains("Total imported: 1")));
+        assert_eq!(res.total_imported, 1);
 
         let pads = store
             .list_pads(Scope::Project, crate::store::Bucket::Active)
@@ -671,10 +909,7 @@ mod tests {
         )
         .unwrap();
 
-        assert!(res
-            .messages
-            .iter()
-            .any(|m| m.content.contains("Total imported: 1")));
+        assert_eq!(res.total_imported, 1);
 
         let pads = store
             .list_pads(Scope::Project, crate::store::Bucket::Active)
@@ -710,10 +945,11 @@ mod tests {
         std::fs::write(&path, body).unwrap();
 
         let res = run(&mut store, Scope::Project, vec![path], &[".md".into()]).unwrap();
-        assert!(res
-            .messages
-            .iter()
-            .any(|m| m.content.contains("Total imported: 1")));
+        assert_eq!(res.total_imported, 1);
+        assert!(matches!(
+            res.sources[0].diagnostics[0],
+            ImportDiagnostic::InlineMetadataApplied { .. }
+        ));
 
         let pads = store.list_pads(Scope::Project, Bucket::Active).unwrap();
         assert_eq!(pads.len(), 1);
@@ -746,10 +982,11 @@ mod tests {
         std::fs::write(&path, body).unwrap();
 
         let res = run(&mut store, Scope::Project, vec![path], &[".lex".into()]).unwrap();
-        assert!(res
-            .messages
-            .iter()
-            .any(|m| m.content.contains("Total imported: 1")));
+        assert_eq!(res.total_imported, 1);
+        assert!(matches!(
+            res.sources[0].diagnostics[0],
+            ImportDiagnostic::InlineMetadataApplied { .. }
+        ));
 
         let pads = store.list_pads(Scope::Project, Bucket::Active).unwrap();
         assert_eq!(pads.len(), 1);
@@ -808,10 +1045,12 @@ mod tests {
 
         let res = run(&mut store, Scope::Project, vec![path], &[".md".into()]).unwrap();
 
-        assert!(res
-            .messages
-            .iter()
-            .any(|m| m.content.contains("invalid status")));
+        assert_eq!(res.status, ImportStatus::PartialSuccess);
+        assert!(res.sources[0].diagnostics.iter().any(|diagnostic| matches!(
+            diagnostic,
+            ImportDiagnostic::MetadataWarning { warning }
+                if warning.field.as_deref() == Some("status")
+        )));
 
         let pads = store.list_pads(Scope::Project, Bucket::Active).unwrap();
         assert_eq!(pads.len(), 1);
@@ -855,6 +1094,112 @@ mod tests {
         path
     }
 
+    fn handcrafted_archive(db: serde_json::Value, files: &[(&str, &[u8])]) -> std::path::PathBuf {
+        let temp = tempfile::NamedTempFile::with_suffix(".tar.gz").unwrap();
+        let (file, path) = temp.keep().unwrap();
+        let encoder = flate2::write::GzEncoder::new(file, flate2::Compression::default());
+        let mut tar = tar::Builder::new(encoder);
+        for (path, content) in files {
+            let mut header = tar::Header::new_gnu();
+            header.set_size(content.len() as u64);
+            header.set_mode(0o644);
+            header.set_cksum();
+            tar.append_data(&mut header, format!("padz/{path}"), *content)
+                .unwrap();
+        }
+        let db = serde_json::to_vec(&db).unwrap();
+        let mut header = tar::Header::new_gnu();
+        header.set_size(db.len() as u64);
+        header.set_mode(0o644);
+        header.set_cksum();
+        tar.append_data(&mut header, "padz/db.json", db.as_slice())
+            .unwrap();
+        tar.into_inner().unwrap().finish().unwrap();
+        path
+    }
+
+    #[test]
+    fn archive_entry_skip_is_typed_and_other_entries_continue() {
+        let good_id = Uuid::new_v4();
+        let missing_id = Uuid::new_v4();
+        let good_file = format!("pads/pad-{good_id}.txt");
+        let missing_file = format!("pads/pad-{missing_id}.txt");
+        let db = serde_json::json!({
+            "schema_version": 1,
+            "exported_at": "2026-04-22T00:00:00Z",
+            "padz_version": "1.9.0",
+            "pads": [
+                {"file": good_file.clone(), "metadata": {"id": good_id.to_string()}},
+                {"file": missing_file.clone(), "metadata": {"id": missing_id.to_string()}}
+            ],
+            "tags": []
+        });
+        let archive = handcrafted_archive(db, &[(good_file.as_str(), b"Good\n\nBody")]);
+        let mut store = new_store();
+
+        let report = run(
+            &mut store,
+            Scope::Project,
+            vec![archive.clone()],
+            &[".txt".into()],
+        )
+        .unwrap();
+
+        assert_eq!(report.status, ImportStatus::PartialSuccess);
+        assert_eq!(report.total_imported, 1);
+        assert!(report.sources[0]
+            .diagnostics
+            .iter()
+            .any(|diagnostic| matches!(
+                diagnostic,
+                ImportDiagnostic::ArchiveEntrySkipped {
+                    entry,
+                    reason: ArchiveEntrySkipReason::MissingFile,
+                    ..
+                } if entry == &missing_file
+            )));
+        std::fs::remove_file(archive).ok();
+    }
+
+    #[test]
+    fn tag_registry_merge_failure_is_typed_partial_success() {
+        let id = Uuid::new_v4();
+        let file = format!("pads/pad-{id}.txt");
+        let db = serde_json::json!({
+            "schema_version": 1,
+            "exported_at": "2026-04-22T00:00:00Z",
+            "padz_version": "1.9.0",
+            "pads": [{"file": file.clone(), "metadata": {"id": id.to_string(), "tags": ["work"]}}],
+            "tags": [{"name": "work", "created_at": "2026-04-22T00:00:00Z"}]
+        });
+        let archive = handcrafted_archive(db, &[(file.as_str(), b"Tagged\n\nBody")]);
+        let mut store = new_store();
+        store.tag_backend.set_simulate_write_error(true);
+
+        let report = run(
+            &mut store,
+            Scope::Project,
+            vec![archive.clone()],
+            &[".txt".into()],
+        )
+        .unwrap();
+
+        assert_eq!(report.status, ImportStatus::PartialSuccess);
+        assert_eq!(report.total_imported, 1);
+        assert!(report.sources[0]
+            .diagnostics
+            .iter()
+            .any(|diagnostic| matches!(
+                diagnostic,
+                ImportDiagnostic::TagRegistryMerge {
+                    status: TagRegistryMergeStatus::Failed,
+                    added: 1,
+                    ..
+                }
+            )));
+        std::fs::remove_file(archive).ok();
+    }
+
     #[test]
     fn test_json_roundtrip_preserves_metadata() {
         let mut src = new_store();
@@ -896,10 +1241,16 @@ mod tests {
             &[".md".into(), ".txt".into(), ".lex".into()],
         )
         .unwrap();
-        assert!(res
-            .messages
-            .iter()
-            .any(|m| m.content.contains("Total imported: 1")));
+        assert_eq!(res.status, ImportStatus::FullSuccess);
+        assert_eq!(res.total_imported, 1);
+        assert!(res.sources[0].diagnostics.iter().any(|diagnostic| matches!(
+            diagnostic,
+            ImportDiagnostic::TagRegistryMerge {
+                status: TagRegistryMergeStatus::Merged,
+                added: 1,
+                ..
+            }
+        )));
 
         let pads = dst.list_pads(Scope::Project, Bucket::Active).unwrap();
         assert_eq!(pads.len(), 1);
@@ -1081,14 +1432,13 @@ mod tests {
             &[".md".into()],
         )
         .unwrap();
-        assert!(res
-            .messages
-            .iter()
-            .any(|m| m.content.contains("Total imported: 1")));
-        assert!(
-            res.messages.iter().any(|m| m.content.contains("status")),
-            "expected a warning mentioning the bad status field"
-        );
+        assert_eq!(res.status, ImportStatus::PartialSuccess);
+        assert_eq!(res.total_imported, 1);
+        assert!(res.sources[0].diagnostics.iter().any(|diagnostic| matches!(
+            diagnostic,
+            ImportDiagnostic::MetadataWarning { warning }
+                if warning.field.as_deref() == Some("status")
+        )));
 
         let pads = dst.list_pads(Scope::Project, Bucket::Active).unwrap();
         assert_eq!(pads.len(), 1);
@@ -1166,11 +1516,9 @@ mod tests {
         )
         .unwrap();
 
-        assert!(res.messages.iter().any(|m| m.content.contains("Imported:")));
-        assert!(res
-            .messages
-            .iter()
-            .any(|m| m.content.contains("Total imported: 1")));
+        assert_eq!(res.status, ImportStatus::FullSuccess);
+        assert_eq!(res.total_imported, 1);
+        assert_eq!(res.sources[0].processed_files.len(), 1);
 
         let pads = store
             .list_pads(Scope::Project, crate::store::Bucket::Active)

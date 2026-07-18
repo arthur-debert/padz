@@ -1,0 +1,47 @@
+{#- Semantic import facts rendered with the historical human wording/order. -#}
+{% for source in sources -%}
+{% if source.source_kind == "json_archive" -%}
+{% if source.status == "imported" or source.status == "skipped" -%}
+[info]Imported {{ source.imported }} pads from {{ source.source }}[/info]
+{% else -%}
+[warning]Failed to import JSON archive {{ source.source }}: {{ source.detail }}[/warning]
+{% endif -%}
+{% else -%}
+{% for file in source.processed_files -%}
+[info]Imported: {{ file }}[/info]
+{% endfor -%}
+{% if source.status == "missing" -%}
+[warning]Path not found: {{ source.source }}[/warning]
+{% elif source.status == "unreadable" or source.status == "invalid" -%}
+[warning]Failed to import: {{ source.source }}[/warning]
+{% endif -%}
+{% endif -%}
+{% for diagnostic in source.diagnostics -%}
+{% if diagnostic.kind == "inline_metadata_applied" and diagnostic.warning_count > 0 -%}
+[info]{{ diagnostic.source_label }}: applied inline metadata[/info]
+{% elif diagnostic.kind == "archive_metadata_summary" -%}
+[info]Pad {{ diagnostic.pad_id }} imported; {{ diagnostic.warning_count }} metadata warning(s)[/info]
+{% elif diagnostic.kind == "metadata_warning" -%}
+{% set warning = diagnostic.warning -%}
+{% if warning.reason == "not_an_object" -%}
+{% set message = warning.source_label ~ ": metadata is not an object, keeping existing fields" -%}
+{% elif warning.reason == "invalid_value" and warning.field == "id" -%}
+{% set message = warning.source_label ~ ": invalid id field, keeping existing UUID" -%}
+{% elif warning.reason == "invalid_value" -%}
+{% set message = warning.source_label ~ ": invalid " ~ warning.field -%}
+{% elif warning.reason == "non_string_entries" -%}
+{% set message = warning.source_label ~ ": " ~ warning.count ~ " non-string tag entries ignored" -%}
+{% else -%}
+{% set message = warning.source_label ~ ": parent not in import set, orphaned to root" -%}
+{% endif -%}
+{{ message | style_as(warning.severity) }}
+{% elif diagnostic.kind == "archive_entry_skipped" -%}
+[warning]Skipping pad entry {{ diagnostic.entry }}: {{ diagnostic.detail }}[/warning]
+{% elif diagnostic.kind == "tag_registry_merge" and diagnostic.status == "failed" -%}
+[warning]Failed to merge tag registry: {{ diagnostic.detail }}[/warning]
+{% elif diagnostic.kind == "tag_registry_merge" and diagnostic.added > 0 -%}
+[info]Merged {{ diagnostic.added }} tag registry entry/entries[/info]
+{% endif -%}
+{% endfor -%}
+{% endfor -%}
+[success]Total imported: {{ total_imported }}[/success]{{ "" | nl }}
