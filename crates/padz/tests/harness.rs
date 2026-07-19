@@ -359,16 +359,26 @@ fn purge_preserves_completed_text_and_exposes_selection_and_counts() {
     );
 
     json.assert_success();
-    let mut value: serde_json::Value = serde_json::from_str(json.stdout()).unwrap();
-    assert!(value["selected_pads"][0]["id"]
+    // Structured output reflects the core `PurgeOutcome`: each selection carries its
+    // canonical `path` (the CLI composes the `d1` selector from it) and the full pad
+    // record. The prose progress/success lines stay template-only.
+    let value: serde_json::Value = serde_json::from_str(json.stdout()).unwrap();
+    assert_eq!(value["status"], "purged");
+    assert_eq!(
+        value["selected_pads"][0]["path"],
+        serde_json::json!([{ "type": "Deleted", "value": 1 }])
+    );
+    let selected_pad = &value["selected_pads"][0]["pad"]["pad"];
+    assert_eq!(selected_pad["metadata"]["title"], "gone");
+    assert!(selected_pad["metadata"]["id"]
         .as_str()
         .is_some_and(|id| id.len() == 36));
-    value["selected_pads"][0]["id"] = serde_json::json!("<UUID>");
-    let fixture: serde_json::Value = serde_json::from_str(include_str!(
-        "fixtures/semantic_outcomes/purge-completed.json"
-    ))
-    .unwrap();
-    assert_eq!(value, fixture);
+    assert_eq!(value["total_purged"], 1);
+    assert_eq!(value["descendant_count"], 0);
+    assert!(
+        value.get("messages").is_none(),
+        "purge schema must expose facts rather than prose"
+    );
 }
 
 #[test]
@@ -388,9 +398,20 @@ fn purge_preserves_a_nested_selection_path_in_text_and_structured_output() {
     );
 
     json.assert_success();
+    // The nested selection keeps its complete canonical path in structured output; the
+    // `1.1` selector string is composed in the template from that path.
     let value: serde_json::Value = serde_json::from_str(json.stdout()).unwrap();
-    assert_eq!(value["selected_pads"][0]["selector"], "1.1");
-    assert_eq!(value["selected_pads"][0]["title"], "child");
+    assert_eq!(
+        value["selected_pads"][0]["path"],
+        serde_json::json!([
+            { "type": "Regular", "value": 1 },
+            { "type": "Regular", "value": 1 }
+        ])
+    );
+    assert_eq!(
+        value["selected_pads"][0]["pad"]["pad"]["metadata"]["title"],
+        "child"
+    );
 }
 
 #[test]

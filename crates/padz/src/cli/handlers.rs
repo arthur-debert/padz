@@ -29,11 +29,14 @@ use std::cell::RefCell;
 use std::rc::Rc;
 
 use super::result::{
-    CopyResult, CreateAbortKindResult, CreateAbortReasonResult, CreateAbortResult, CreateResult,
-    DoctorResult, InitializationResult, ListRequest, Listing, ModificationActionResult,
-    ModificationRequest, ModificationResult, PadContent, PadContentResult, PathResult, PurgeResult,
-    UuidResult,
+    CreateAbortKindResult, CreateAbortReasonResult, CreateAbortResult, CreateResult, ListRequest,
+    Listing, ModificationActionResult, ModificationRequest, ModificationResult, PadContent,
+    PadContentResult,
 };
+use super::views::{CopyView, PathView, UuidView};
+use padzapp::commands::doctor::DoctorOutcome;
+use padzapp::commands::init::InitializationOutcome;
+use padzapp::commands::purge::PurgeOutcome;
 use padzapp::commands::tagging::TaggingResult;
 use padzapp::commands::tags::{TagCatalogOutcome, TagRegistryOutcome};
 
@@ -290,34 +293,34 @@ impl<'a> ScopedApi<'a> {
         indexes: &[String],
         yes: bool,
         recursive: bool,
-    ) -> Result<Output<PurgeResult>, anyhow::Error> {
+    ) -> Result<Output<PurgeOutcome>, anyhow::Error> {
         let include_done = self.state.mode == PadzMode::Todos;
         let outcome =
             self.call(|api, scope| api.purge_pads(scope, indexes, recursive, yes, include_done))?;
-        Ok(Output::Render(outcome.into()))
+        Ok(Output::Render(outcome))
     }
 
-    pub fn doctor(&self) -> Result<Output<DoctorResult>, anyhow::Error> {
+    pub fn doctor(&self) -> Result<Output<DoctorOutcome>, anyhow::Error> {
         let outcome = self.call(|api, scope| api.doctor(scope))?;
-        Ok(Output::Render(outcome.into()))
+        Ok(Output::Render(outcome))
     }
 
-    pub fn init(&self) -> Result<Output<InitializationResult>, anyhow::Error> {
+    pub fn init(&self) -> Result<Output<InitializationOutcome>, anyhow::Error> {
         let outcome = self.call(|api, scope| api.init(scope))?;
-        Ok(Output::Render(outcome.into()))
+        Ok(Output::Render(outcome))
     }
 
-    pub fn init_link(&self, target: &str) -> Result<Output<InitializationResult>, anyhow::Error> {
+    pub fn init_link(&self, target: &str) -> Result<Output<InitializationOutcome>, anyhow::Error> {
         let target_path = std::path::PathBuf::from(target);
         let local_padz = &self.state.local_padz_dir;
         let outcome = self.call(|api, _scope| api.init_link(local_padz, &target_path))?;
-        Ok(Output::Render(outcome.into()))
+        Ok(Output::Render(outcome))
     }
 
-    pub fn init_unlink(&self) -> Result<Output<InitializationResult>, anyhow::Error> {
+    pub fn init_unlink(&self) -> Result<Output<InitializationOutcome>, anyhow::Error> {
         let local_padz = &self.state.local_padz_dir;
         let outcome = self.call(|api, _scope| api.init_unlink(local_padz))?;
-        Ok(Output::Render(outcome.into()))
+        Ok(Output::Render(outcome))
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -493,7 +496,7 @@ impl<'a> ScopedApi<'a> {
         &self,
         indexes: &[String],
         nesting: NestingMode,
-    ) -> Result<Output<CopyResult>, anyhow::Error> {
+    ) -> Result<Output<CopyView>, anyhow::Error> {
         let result = self.call(|api, scope| api.view_pads(scope, indexes, nesting))?;
 
         let indent_per_level: usize = match nesting {
@@ -540,7 +543,7 @@ impl<'a> ScopedApi<'a> {
             .map(|(_, dp)| dp.pad.metadata.title.clone())
             .collect();
 
-        Ok(Output::Render(CopyResult {
+        Ok(Output::Render(CopyView {
             root_pad_count: titles.len(),
             titles,
         }))
@@ -921,7 +924,7 @@ pub fn copy(
     #[flag] flat: bool,
     #[flag] tree: bool,
     #[flag] indented: bool,
-) -> Result<Output<CopyResult>, anyhow::Error> {
+) -> Result<Output<CopyView>, anyhow::Error> {
     let nesting = parse_nesting_mode(flat, tree, indented);
     api(ctx).copy_pads(&indexes, nesting)
 }
@@ -1117,11 +1120,11 @@ pub fn move_pads(
 pub fn path(
     #[ctx] ctx: &CommandContext,
     #[arg] indexes: Vec<String>,
-) -> Result<Output<PathResult>, anyhow::Error> {
+) -> Result<Output<PathView>, anyhow::Error> {
     let state = get_state(ctx);
     let result = state.with_api(|api| api.pad_paths(state.scope, &indexes).map_err(to_anyhow))?;
 
-    Ok(Output::Render(PathResult {
+    Ok(Output::Render(PathView {
         paths: result
             .pad_paths
             .iter()
@@ -1135,11 +1138,11 @@ pub fn path(
 pub fn uuid(
     #[ctx] ctx: &CommandContext,
     #[arg] indexes: Vec<String>,
-) -> Result<Output<UuidResult>, anyhow::Error> {
+) -> Result<Output<UuidView>, anyhow::Error> {
     let state = get_state(ctx);
     let result = state.with_api(|api| api.pad_uuids(state.scope, &indexes).map_err(to_anyhow))?;
 
-    Ok(Output::Render(UuidResult {
+    Ok(Output::Render(UuidView {
         uuids: result.into_iter().map(|uuid| uuid.to_string()).collect(),
     }))
 }
@@ -1170,7 +1173,7 @@ pub fn purge(
     #[arg] indexes: Vec<String>,
     #[flag] yes: bool,
     #[flag] recursive: bool,
-) -> Result<Output<PurgeResult>, anyhow::Error> {
+) -> Result<Output<PurgeOutcome>, anyhow::Error> {
     api(ctx).purge_pads(&indexes, yes, recursive)
 }
 
@@ -1241,7 +1244,7 @@ pub fn migrate(
 // =============================================================================
 
 #[handler]
-pub fn doctor(#[ctx] ctx: &CommandContext) -> Result<Output<DoctorResult>, anyhow::Error> {
+pub fn doctor(#[ctx] ctx: &CommandContext) -> Result<Output<DoctorOutcome>, anyhow::Error> {
     api(ctx).doctor()
 }
 
@@ -1250,7 +1253,7 @@ pub fn init(
     #[ctx] ctx: &CommandContext,
     #[arg] link: Option<String>,
     #[flag] unlink: bool,
-) -> Result<Output<InitializationResult>, anyhow::Error> {
+) -> Result<Output<InitializationOutcome>, anyhow::Error> {
     if let Some(target) = link {
         api(ctx).init_link(&target)
     } else if unlink {

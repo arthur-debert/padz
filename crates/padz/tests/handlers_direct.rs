@@ -26,22 +26,26 @@ mod support;
 use padz::cli::handlers;
 use padz::cli::input::{RequestContent, CREATE_CONTENT, EDIT_CONTENT};
 use padz::cli::result::{
-    CopyResult, CreateAbortKindResult, CreateAbortReasonResult, CreateResult, DoctorResult,
-    InitializationResult, Listing, ModificationActionResult, ModificationNoticeResult,
-    ModificationResult, MutationOutcomeResult, MutationStatusResult, PadContentResult, PathResult,
-    PurgeResult, UpdateKindResult, UuidResult,
+    CreateAbortKindResult, CreateAbortReasonResult, CreateResult, Listing,
+    ModificationActionResult, ModificationNoticeResult, ModificationResult, MutationOutcomeResult,
+    MutationStatusResult, PadContentResult, UpdateKindResult,
 };
+use padz::cli::views::{CopyView, PathView, UuidView};
+use padzapp::commands::doctor::DoctorOutcome;
 use padzapp::commands::export::{ExportFormat, ExportReport, ExportWarning};
 use padzapp::commands::import::{
     ImportDiagnostic, ImportReport, ImportSourceKind, ImportSourceStatus, ImportStatus,
 };
+use padzapp::commands::init::InitializationOutcome;
 use padzapp::commands::metadata_apply::MetadataWarningReason;
+use padzapp::commands::purge::PurgeOutcome;
 use padzapp::commands::tagging::{TaggingOutcome, TaggingResult};
 use padzapp::commands::tags::{TagCatalogOutcome, TagRegistryOutcome};
 use padzapp::commands::transfer::{
     TransferDirection, TransferMode, TransferReport, TransferSelection, TransferStatus,
 };
 use padzapp::commands::NestingMode;
+use padzapp::model::Scope;
 use standout::cli::Output;
 use support::Fixture;
 
@@ -320,7 +324,7 @@ fn copy_maps_a_single_root_to_typed_facts_and_one_semantic_write() {
     fx.seed_pad(&state, "single", "body");
     let ctx = support::ctx_with_state(state);
 
-    let result: CopyResult = rendered(handlers::copy(
+    let result: CopyView = rendered(handlers::copy(
         &ctx,
         vec!["1".to_string()],
         false,
@@ -331,7 +335,7 @@ fn copy_maps_a_single_root_to_typed_facts_and_one_semantic_write() {
 
     assert_eq!(
         result,
-        CopyResult {
+        CopyView {
             root_pad_count: 1,
             titles: vec!["single".to_string()],
         }
@@ -347,7 +351,7 @@ fn copy_maps_multiple_roots_in_display_order() {
     fx.seed_pad(&state, "second", "two");
     let ctx = support::ctx_with_state(state);
 
-    let result: CopyResult = rendered(handlers::copy(
+    let result: CopyView = rendered(handlers::copy(
         &ctx,
         vec!["1".to_string(), "2".to_string()],
         false,
@@ -372,7 +376,7 @@ fn copy_keeps_nested_content_in_the_payload_but_counts_only_the_root() {
     fx.seed_child(&state, "1", "child", "child body");
     let ctx = support::ctx_with_state(state);
 
-    let result: CopyResult = rendered(handlers::copy(
+    let result: CopyView = rendered(handlers::copy(
         &ctx,
         vec!["1".to_string()],
         false,
@@ -778,7 +782,7 @@ fn path_maps_selectors_to_one_filesystem_path_each() {
     fx.seed_pad(&state, "second", "");
     let ctx = support::ctx_with_state(state);
 
-    let result: PathResult = rendered(handlers::path(&ctx, vec!["1".to_string(), "2".to_string()]));
+    let result: PathView = rendered(handlers::path(&ctx, vec!["1".to_string(), "2".to_string()]));
 
     assert_eq!(result.paths.len(), 2);
     for path in &result.paths {
@@ -809,14 +813,13 @@ fn uuid_maps_single_multiple_and_range_selectors_in_order() {
         .id;
     let ctx = support::ctx_with_state(state);
 
-    let single: UuidResult = rendered(handlers::uuid(&ctx, vec!["1".to_string()]));
+    let single: UuidView = rendered(handlers::uuid(&ctx, vec!["1".to_string()]));
     assert_eq!(single.uuids, vec![second.to_string()]);
 
-    let multiple: UuidResult =
-        rendered(handlers::uuid(&ctx, vec!["2".to_string(), "1".to_string()]));
+    let multiple: UuidView = rendered(handlers::uuid(&ctx, vec!["2".to_string(), "1".to_string()]));
     assert_eq!(multiple.uuids, vec![first.to_string(), second.to_string()],);
 
-    let range: UuidResult = rendered(handlers::uuid(&ctx, vec!["1-2".to_string()]));
+    let range: UuidView = rendered(handlers::uuid(&ctx, vec!["1-2".to_string()]));
     assert_eq!(range.uuids, vec![second.to_string(), first.to_string()]);
 }
 
@@ -953,13 +956,13 @@ fn initialization_maps_scope_and_store_path() {
     let fx = Fixture::new();
     let ctx = support::ctx_with_state(fx.app_state_for(&["init"]));
 
-    let result: InitializationResult = rendered(handlers::init(&ctx, None, false));
+    let result: InitializationOutcome = rendered(handlers::init(&ctx, None, false));
 
     assert_eq!(
         result,
-        InitializationResult::Initialized {
-            scope: "project".to_string(),
-            store_path: fx.project().join(".padz").display().to_string(),
+        InitializationOutcome::Initialized {
+            scope: Scope::Project,
+            store_path: fx.project().join(".padz"),
         }
     );
 }
@@ -971,25 +974,20 @@ fn link_and_unlink_map_typed_actions_and_resolved_target() {
     padzapp::init::create_bucket_layout(&target.join(".padz")).unwrap();
     let ctx = fx.ctx();
 
-    let linked: InitializationResult = rendered(handlers::init(
+    let linked: InitializationOutcome = rendered(handlers::init(
         &ctx,
         Some(target.display().to_string()),
         false,
     ));
     assert_eq!(
         linked,
-        InitializationResult::Linked {
-            target: target
-                .join(".padz")
-                .canonicalize()
-                .unwrap()
-                .display()
-                .to_string(),
+        InitializationOutcome::Linked {
+            target: target.join(".padz").canonicalize().unwrap(),
         }
     );
 
-    let unlinked: InitializationResult = rendered(handlers::init(&ctx, None, true));
-    assert_eq!(unlinked, InitializationResult::Unlinked);
+    let unlinked: InitializationOutcome = rendered(handlers::init(&ctx, None, true));
+    assert_eq!(unlinked, InitializationOutcome::Unlinked);
 }
 
 #[test]
@@ -999,11 +997,11 @@ fn doctor_maps_a_healthy_store_to_a_clean_result() {
     fx.seed_pad(&state, "note", "");
     let ctx = support::ctx_with_state(state);
 
-    let result: DoctorResult = rendered(handlers::doctor(&ctx));
+    let result: DoctorOutcome = rendered(handlers::doctor(&ctx));
 
     assert_eq!(
         result,
-        DoctorResult::Clean {
+        DoctorOutcome::Clean {
             missing_files: 0,
             recovered_files: 0,
         }
@@ -1020,9 +1018,9 @@ fn purge_maps_selected_pads_and_counts() {
         .unwrap();
     let ctx = support::ctx_with_state(state);
 
-    let result: PurgeResult = rendered(handlers::purge(&ctx, vec![], true, false));
+    let result: PurgeOutcome = rendered(handlers::purge(&ctx, vec![], true, false));
 
-    let PurgeResult::Purged {
+    let PurgeOutcome::Purged {
         selected_pads,
         total_purged,
         descendant_count,
@@ -1031,8 +1029,8 @@ fn purge_maps_selected_pads_and_counts() {
         panic!("expected a completed purge");
     };
     assert_eq!(selected_pads.len(), 1);
-    assert_eq!(selected_pads[0].selector, "d1");
-    assert_eq!(selected_pads[0].title, "gone");
+    assert_eq!(selected_pads[0].selector(), "d1");
+    assert_eq!(selected_pads[0].pad.pad.metadata.title, "gone");
     assert_eq!(total_purged, 1);
     assert_eq!(descendant_count, 0);
 }
@@ -1045,14 +1043,15 @@ fn purge_maps_a_nested_selection_with_its_complete_path() {
     fx.seed_child(&state, "1", "child", "");
     let ctx = support::ctx_with_state(state);
 
-    let result: PurgeResult = rendered(handlers::purge(&ctx, vec!["1.1".to_string()], true, false));
+    let result: PurgeOutcome =
+        rendered(handlers::purge(&ctx, vec!["1.1".to_string()], true, false));
 
-    let PurgeResult::Purged { selected_pads, .. } = result else {
+    let PurgeOutcome::Purged { selected_pads, .. } = result else {
         panic!("expected a completed purge");
     };
     assert_eq!(selected_pads.len(), 1);
-    assert_eq!(selected_pads[0].selector, "1.1");
-    assert_eq!(selected_pads[0].title, "child");
+    assert_eq!(selected_pads[0].selector(), "1.1");
+    assert_eq!(selected_pads[0].pad.pad.metadata.title, "child");
 }
 
 // =============================================================================

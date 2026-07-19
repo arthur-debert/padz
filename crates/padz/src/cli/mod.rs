@@ -81,5 +81,6 @@ pub mod input;
 pub mod render;
 pub mod result;
 pub mod setup;
+pub mod views;
 
 pub use commands::run;
