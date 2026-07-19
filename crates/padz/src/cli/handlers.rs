@@ -361,7 +361,7 @@ impl<'a> ScopedApi<'a> {
         paths: Vec<std::path::PathBuf>,
     ) -> Result<Output<padzapp::commands::import::ImportReport>, anyhow::Error> {
         let extensions = &self.state.import_extensions.0;
-        let report = self.call(|api, scope| api.import_pads(scope, paths.clone(), extensions))?;
+        let report = self.call(move |api, scope| api.import_pads(scope, paths, extensions))?;
         Ok(Output::Render(report))
     }
 

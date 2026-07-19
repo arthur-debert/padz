@@ -7,7 +7,7 @@
 {%- for warning in report.warnings -%}
 {%- if warning.kind == "metadata_unavailable" -%}
 {%- set count = warning.titles | length -%}
-{%- set additional = count - 3 -%}
+{%- set additional = [count - 3, 0] | max -%}
 [warning]{{ count }} .txt pad(s) exported without metadata (txt has no metadata format): {{ warning.titles[:3] | join(", ") }}{% if additional > 0 %} (+ {{ additional }} more){% endif %}[/warning]{{ "" | nl }}
 {%- endif -%}
 {%- endfor -%}
