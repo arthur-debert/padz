@@ -27,6 +27,12 @@
 {%- else -%}
 {%- set show_status = request.status -%}
 {%- set peek_mode = false -%}
+{#- `_list_pad_line.jinja` reads `request.uuid`, but a modification passes a -#}
+{#- `ModificationRequest` (status only). Set an explicit `uuid: false` — mirroring -#}
+{#- `tagging.jinja` — so the partial reads a defined flag under a strict-undefined -#}
+{#- engine. Modification output has never shown a short-UUID; `show_status` above -#}
+{#- already captured the status flag before this override. -#}
+{%- set request = {"uuid": false} -%}
 {%- set verb = {
     "create": "Created",
     "pin": "Pinned",
