@@ -1091,6 +1091,43 @@ fn create_with_direct_content_splits_title_from_body() {
 }
 
 #[test]
+fn create_maps_typed_format_values_to_core_format_overrides() {
+    for (format, expected_extension) in [("md", "md"), ("markdown", "md"), ("text", "txt")] {
+        let fx = Fixture::new();
+        if format == "text" {
+            std::fs::write(
+                fx.project().join(".padz").join("padz.toml"),
+                "format = \"md\"\n",
+            )
+            .unwrap();
+        }
+        let ctx = support::ctx_with_input(
+            fx.app_state_for(&["create"]),
+            CREATE_CONTENT,
+            RequestContent::Direct(format!("{format} note\nbody")),
+        );
+
+        let result = created(handlers::create(
+            &ctx,
+            None,
+            Some(format.to_string()),
+            vec![],
+        ));
+        let id = result.pads[0].pad.metadata.id;
+        let expected_path = fx
+            .project()
+            .join(".padz")
+            .join("active")
+            .join(format!("pad-{id}.{expected_extension}"));
+
+        assert!(
+            expected_path.exists(),
+            "typed format {format:?} should reach the core as .{expected_extension}"
+        );
+    }
+}
+
+#[test]
 fn create_with_an_empty_pipe_aborts_without_creating_a_pad() {
     let fx = Fixture::new();
     let state = fx.app_state_for(&["create"]);
