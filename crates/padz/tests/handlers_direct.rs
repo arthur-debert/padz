@@ -29,13 +29,15 @@ use padz::cli::result::{
     CopyResult, CreateAbortKindResult, CreateAbortReasonResult, CreateResult, DoctorResult,
     InitializationResult, Listing, ModificationActionResult, ModificationNoticeResult,
     ModificationResult, MutationOutcomeResult, MutationStatusResult, PadContentResult, PathResult,
-    PurgeResult, TagCatalogResult, TagRegistryResult, TaggingResult, UpdateKindResult, UuidResult,
+    PurgeResult, UpdateKindResult, UuidResult,
 };
 use padzapp::commands::export::{ExportFormat, ExportReport, ExportWarning};
 use padzapp::commands::import::{
     ImportDiagnostic, ImportReport, ImportSourceKind, ImportSourceStatus, ImportStatus,
 };
 use padzapp::commands::metadata_apply::MetadataWarningReason;
+use padzapp::commands::tagging::{TaggingOutcome, TaggingResult};
+use padzapp::commands::tags::{TagCatalogOutcome, TagRegistryOutcome};
 use padzapp::commands::transfer::{
     TransferDirection, TransferMode, TransferReport, TransferSelection, TransferStatus,
 };
@@ -628,7 +630,7 @@ fn empty_delete_completed_maps_the_core_no_op() {
 fn tag_list_maps_empty_and_ordered_catalog_states() {
     let empty = Fixture::new();
     let result = rendered(handlers::tag::list(&empty.ctx(), vec![]));
-    assert_eq!(result, TagCatalogResult::Empty { tags: vec![] });
+    assert_eq!(result, TagCatalogOutcome::Empty);
 
     let fx = Fixture::new();
     let state = fx.app_state();
@@ -643,7 +645,7 @@ fn tag_list_maps_empty_and_ordered_catalog_states() {
     let result = rendered(handlers::tag::list(&ctx, vec![]));
     assert_eq!(
         result,
-        TagCatalogResult::Listed {
+        TagCatalogOutcome::Listed {
             tags: vec!["work".into(), "rust".into()]
         }
     );
@@ -662,7 +664,7 @@ fn tag_list_maps_selected_pad_tags_to_a_singleton_catalog() {
     let result = rendered(handlers::tag::list(&ctx, vec!["1".into()]));
     assert_eq!(
         result,
-        TagCatalogResult::Listed {
+        TagCatalogOutcome::Listed {
             tags: vec!["work".into()]
         }
     );
@@ -676,30 +678,28 @@ fn tag_assignment_maps_requested_tags_counts_and_no_op_kind() {
     let ctx = support::ctx_with_state(state);
     let args = vec!["1".into(), "work".into(), "rust".into()];
 
-    let changed = rendered(handlers::tag::add(&ctx, args.clone()));
-    match changed {
-        TaggingResult::Assigned {
+    let changed: TaggingResult = rendered(handlers::tag::add(&ctx, args.clone()));
+    assert_eq!(changed.affected_pads.len(), 1);
+    match changed.outcome {
+        TaggingOutcome::Assigned {
             requested_tags,
             modified_pads,
-            pads,
         } => {
             assert_eq!(requested_tags, vec!["work", "rust"]);
             assert_eq!(modified_pads, 1);
-            assert_eq!(pads.len(), 1);
         }
         other => panic!("expected assigned outcome, got {other:?}"),
     }
 
-    let no_op = rendered(handlers::tag::add(&ctx, args));
-    match no_op {
-        TaggingResult::AllAlreadyPresent {
+    let no_op: TaggingResult = rendered(handlers::tag::add(&ctx, args));
+    assert_eq!(no_op.affected_pads.len(), 1);
+    match no_op.outcome {
+        TaggingOutcome::AllAlreadyPresent {
             requested_tags,
             modified_pads,
-            pads,
         } => {
             assert_eq!(requested_tags, vec!["work", "rust"]);
             assert_eq!(modified_pads, 0);
-            assert_eq!(pads.len(), 1);
         }
         other => panic!("expected all-already-present outcome, got {other:?}"),
     }
@@ -714,23 +714,21 @@ fn tag_removal_maps_requested_tags_counts_and_no_op_kind() {
     let args = vec!["1".into(), "work".into()];
     rendered(handlers::tag::add(&ctx, args.clone()));
 
-    let changed = rendered(handlers::tag::remove(&ctx, args.clone()));
+    let changed: TaggingResult = rendered(handlers::tag::remove(&ctx, args.clone()));
     assert!(matches!(
-        changed,
-        TaggingResult::Removed {
+        changed.outcome,
+        TaggingOutcome::Removed {
             requested_tags,
             modified_pads: 1,
-            ..
         } if requested_tags == vec!["work"]
     ));
 
-    let no_op = rendered(handlers::tag::remove(&ctx, args));
+    let no_op: TaggingResult = rendered(handlers::tag::remove(&ctx, args));
     assert!(matches!(
-        no_op,
-        TaggingResult::NonePresent {
+        no_op.outcome,
+        TaggingOutcome::NonePresent {
             requested_tags,
             modified_pads: 0,
-            ..
         } if requested_tags == vec!["work"]
     ));
 }
@@ -751,7 +749,7 @@ fn tag_registry_handlers_map_names_and_affected_pad_counts() {
     let renamed = rendered(handlers::tag::rename(&ctx, "old".into(), "new".into()));
     assert_eq!(
         renamed,
-        TagRegistryResult::Renamed {
+        TagRegistryOutcome::Renamed {
             old_name: "old".into(),
             new_name: "new".into(),
             affected_pads: 1,
@@ -761,7 +759,7 @@ fn tag_registry_handlers_map_names_and_affected_pad_counts() {
     let deleted = rendered(handlers::tag::delete(&ctx, "new".into()));
     assert_eq!(
         deleted,
-        TagRegistryResult::Deleted {
+        TagRegistryOutcome::Deleted {
             name: "new".into(),
             affected_pads: 1,
         }

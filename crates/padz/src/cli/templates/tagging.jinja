@@ -1,25 +1,49 @@
-{#- Per-pad tag changes. `tagging_view` is derived only for human rendering. -#}
-{%- set view = tagging_view -%}
-{%- set show_status = false -%}
-{%- set peek_mode = false -%}
-{%- set count = view.rows | length -%}
-
-{%- if count > 0 -%}
-[info]{{ "Untagged" if view.action in ["removed", "none_present"] else "Tagged" }} {{ count }} {{ "pad" if count == 1 else "pads" }}...[/info]{{ "" | nl }}
+{#- Per-pad tag changes, rendered straight from the core TaggingResult the handler -#}
+{#- returns: `affected_pads` (a list of padzapp::index::DisplayPad) plus `outcome`, -#}
+{#- an externally-tagged TaggingOutcome carrying exactly one of the variant keys below. -#}
+{%- set ns = namespace(action = "", tags = [], modified = 0) -%}
+{%- if outcome.Assigned is defined -%}
+{%- set ns.action = "assigned" -%}
+{%- set ns.tags = outcome.Assigned.requested_tags -%}
+{%- set ns.modified = outcome.Assigned.modified_pads -%}
+{%- elif outcome.AllAlreadyPresent is defined -%}
+{%- set ns.action = "all_already_present" -%}
+{%- set ns.tags = outcome.AllAlreadyPresent.requested_tags -%}
+{%- set ns.modified = outcome.AllAlreadyPresent.modified_pads -%}
+{%- elif outcome.Removed is defined -%}
+{%- set ns.action = "removed" -%}
+{%- set ns.tags = outcome.Removed.requested_tags -%}
+{%- set ns.modified = outcome.Removed.modified_pads -%}
+{%- elif outcome.NonePresent is defined -%}
+{%- set ns.action = "none_present" -%}
+{%- set ns.tags = outcome.NonePresent.requested_tags -%}
+{%- set ns.modified = outcome.NonePresent.modified_pads -%}
 {%- endif -%}
 
-{%- for pad in view.rows -%}
-{%- include "_pad_line.jinja" -%}
+{#- Affected pads render flat: a tag change names the pads it touched (all depth 0), -#}
+{#- with status and peek off, reusing the listing's core-DisplayPad pad line. -#}
+{%- set show_status = false -%}
+{%- set peek_mode = false -%}
+{%- set request = {"uuid": false} -%}
+{%- set count = affected_pads | length -%}
+
+{%- if count > 0 -%}
+[info]{{ "Untagged" if ns.action in ["removed", "none_present"] else "Tagged" }} {{ count }} {{ "pad" if count == 1 else "pads" }}...[/info]{{ "" | nl }}
+{%- endif -%}
+
+{%- for pad in affected_pads -%}
+{%- set depth = 0 -%}
+{%- include "_list_pad_line.jinja" -%}
 {%- endfor -%}
 
-{%- set tag_count = view.requested_tags | length -%}
-{%- set tag_names = view.requested_tags | join(", ") -%}
-{%- if view.action == "assigned" -%}
-[success]Added {{ "tag" if tag_count == 1 else "tags" }} [{{ tag_names }}] to {{ view.modified_pads }} {{ "pad" if view.modified_pads == 1 else "pads" }}[/success]{{ "" | nl }}
-{%- elif view.action == "all_already_present" -%}
+{%- set tag_count = ns.tags | length -%}
+{%- set tag_names = ns.tags | join(", ") -%}
+{%- if ns.action == "assigned" -%}
+[success]Added {{ "tag" if tag_count == 1 else "tags" }} [{{ tag_names }}] to {{ ns.modified }} {{ "pad" if ns.modified == 1 else "pads" }}[/success]{{ "" | nl }}
+{%- elif ns.action == "all_already_present" -%}
 [info]All pads already have {{ "tag" if tag_count == 1 else "tags" }} [{{ tag_names }}][/info]{{ "" | nl }}
-{%- elif view.action == "removed" -%}
-[success]Removed {{ "tag" if tag_count == 1 else "tags" }} [{{ tag_names }}] from {{ view.modified_pads }} {{ "pad" if view.modified_pads == 1 else "pads" }}[/success]{{ "" | nl }}
-{%- elif view.action == "none_present" -%}
+{%- elif ns.action == "removed" -%}
+[success]Removed {{ "tag" if tag_count == 1 else "tags" }} [{{ tag_names }}] from {{ ns.modified }} {{ "pad" if ns.modified == 1 else "pads" }}[/success]{{ "" | nl }}
+{%- elif ns.action == "none_present" -%}
 [info]No pads had {{ "tag" if tag_count == 1 else "tags" }} [{{ tag_names }}][/info]{{ "" | nl }}
 {%- endif -%}

@@ -1,5 +1,6 @@
 {
-  "action": "removed",
-  "requested_tags": ["work", "rust"],
-  "modified_pads": 1
+  "Removed": {
+    "requested_tags": ["work", "rust"],
+    "modified_pads": 1
+  }
 }

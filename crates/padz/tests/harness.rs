@@ -1053,15 +1053,8 @@ fn tag_assignment_preserves_wording_styles_counts_and_no_op_kind() {
         "fixtures/semantic_outcomes/tag-all-already-present.json"
     ))
     .unwrap();
-    assert_eq!(
-        serde_json::json!({
-            "action": value["action"].clone(),
-            "requested_tags": value["requested_tags"].clone(),
-            "modified_pads": value["modified_pads"].clone(),
-        }),
-        expected
-    );
-    assert_eq!(value["pads"].as_array().map(Vec::len), Some(2));
+    assert_eq!(value["outcome"], expected);
+    assert_eq!(value["affected_pads"].as_array().map(Vec::len), Some(2));
     drop(json);
 
     let changed_fx = Fixture::new();
@@ -1079,14 +1072,8 @@ fn tag_assignment_preserves_wording_styles_counts_and_no_op_kind() {
     let value: serde_json::Value = serde_json::from_str(json.stdout()).unwrap();
     let expected: serde_json::Value =
         serde_json::from_str(include_str!("fixtures/semantic_outcomes/tag-assigned.json")).unwrap();
-    assert_eq!(
-        serde_json::json!({
-            "action": value["action"].clone(),
-            "requested_tags": value["requested_tags"].clone(),
-            "modified_pads": value["modified_pads"].clone(),
-        }),
-        expected
-    );
+    assert_eq!(value["outcome"], expected);
+    assert_eq!(value["affected_pads"].as_array().map(Vec::len), Some(2));
 }
 
 #[test]
@@ -1131,14 +1118,8 @@ fn tag_removal_preserves_wording_counts_and_none_present_no_op() {
         "fixtures/semantic_outcomes/tag-none-present.json"
     ))
     .unwrap();
-    assert_eq!(
-        serde_json::json!({
-            "action": value["action"].clone(),
-            "requested_tags": value["requested_tags"].clone(),
-            "modified_pads": value["modified_pads"].clone(),
-        }),
-        expected
-    );
+    assert_eq!(value["outcome"], expected);
+    assert_eq!(value["affected_pads"].as_array().map(Vec::len), Some(1));
     drop(json);
 
     let changed_fx = Fixture::new();
@@ -1158,14 +1139,8 @@ fn tag_removal_preserves_wording_counts_and_none_present_no_op() {
     let value: serde_json::Value = serde_json::from_str(json.stdout()).unwrap();
     let expected: serde_json::Value =
         serde_json::from_str(include_str!("fixtures/semantic_outcomes/tag-removed.json")).unwrap();
-    assert_eq!(
-        serde_json::json!({
-            "action": value["action"].clone(),
-            "requested_tags": value["requested_tags"].clone(),
-            "modified_pads": value["modified_pads"].clone(),
-        }),
-        expected
-    );
+    assert_eq!(value["outcome"], expected);
+    assert_eq!(value["affected_pads"].as_array().map(Vec::len), Some(1));
 }
 
 #[test]

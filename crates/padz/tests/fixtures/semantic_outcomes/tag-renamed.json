@@ -1,6 +1,7 @@
 {
-  "action": "renamed",
-  "old_name": "old",
-  "new_name": "new",
-  "affected_pads": 1
+  "Renamed": {
+    "old_name": "old",
+    "new_name": "new",
+    "affected_pads": 1
+  }
 }

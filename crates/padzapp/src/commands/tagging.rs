@@ -9,9 +9,10 @@ use crate::error::{PadzError, Result};
 use crate::index::{DisplayIndex, DisplayPad, PadSelector};
 use crate::model::Scope;
 use crate::store::{Bucket, DataStore};
+use serde::Serialize;
 
 /// The semantic result of applying or removing requested tags.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub enum TaggingOutcome {
     Assigned {
         requested_tags: Vec<String>,
@@ -32,7 +33,7 @@ pub enum TaggingOutcome {
 }
 
 /// Selected pads after a tag mutation, paired with its semantic outcome.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize)]
 pub struct TaggingResult {
     pub affected_pads: Vec<DisplayPad>,
     pub outcome: TaggingOutcome,

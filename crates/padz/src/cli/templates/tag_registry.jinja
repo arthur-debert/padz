@@ -1,14 +1,16 @@
-{#- Human wording for semantic tag-registry mutations. -#}
-{%- if action == "created" -%}
-[success]Created tag '{{ name }}'[/success]{{ "" | nl }}
-{%- elif action == "deleted" -%}
-[success]Deleted tag '{{ name }}'[/success]{{ "" | nl }}
-{%- if affected_pads > 0 -%}
-[info]Removed from {{ affected_pads }} {{ "pad" if affected_pads == 1 else "pads" }}[/info]{{ "" | nl }}
+{#- Human wording for a semantic tag-registry mutation, rendered straight from the -#}
+{#- core TagRegistryOutcome: an externally-tagged enum carrying exactly one of the -#}
+{#- variant keys below. -#}
+{%- if Created is defined -%}
+[success]Created tag '{{ Created.name }}'[/success]{{ "" | nl }}
+{%- elif Deleted is defined -%}
+[success]Deleted tag '{{ Deleted.name }}'[/success]{{ "" | nl }}
+{%- if Deleted.affected_pads > 0 -%}
+[info]Removed from {{ Deleted.affected_pads }} {{ "pad" if Deleted.affected_pads == 1 else "pads" }}[/info]{{ "" | nl }}
 {%- endif -%}
-{%- elif action == "renamed" -%}
-[success]Renamed tag '{{ old_name }}' to '{{ new_name }}'[/success]{{ "" | nl }}
-{%- if affected_pads > 0 -%}
-[info]Updated {{ affected_pads }} {{ "pad" if affected_pads == 1 else "pads" }}[/info]{{ "" | nl }}
+{%- elif Renamed is defined -%}
+[success]Renamed tag '{{ Renamed.old_name }}' to '{{ Renamed.new_name }}'[/success]{{ "" | nl }}
+{%- if Renamed.affected_pads > 0 -%}
+[info]Updated {{ Renamed.affected_pads }} {{ "pad" if Renamed.affected_pads == 1 else "pads" }}[/info]{{ "" | nl }}
 {%- endif -%}
 {%- endif -%}
