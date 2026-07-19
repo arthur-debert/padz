@@ -1,4 +1,5 @@
 {
-  "status": "listed",
-  "tags": ["work"]
+  "Listed": {
+    "tags": ["work"]
+  }
 }

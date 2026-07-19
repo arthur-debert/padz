@@ -1,8 +1,11 @@
-{#- Ordered tag catalog. The core supplies names and an explicit empty state. -#}
-{%- if status == "empty" -%}
-[info]No tags defined[/info]{{ "" | nl }}
-{%- else -%}
-{%- for tag in tags -%}
+{#- Ordered tag catalog, rendered straight from the core TagCatalogOutcome. -#}
+{#- `Listed { tags }` serializes to a `Listed` object; the `Empty` unit variant -#}
+{#- serializes to a bare string that contributes no context keys, so an absent -#}
+{#- `Listed` is exactly the empty state. -#}
+{%- if Listed is defined -%}
+{%- for tag in Listed.tags -%}
 [info]{{ tag }}[/info]{{ "" | nl }}
 {%- endfor -%}
+{%- else -%}
+[info]No tags defined[/info]{{ "" | nl }}
 {%- endif -%}

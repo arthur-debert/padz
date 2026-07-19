@@ -32,8 +32,10 @@ use super::result::{
     CopyResult, CreateAbortKindResult, CreateAbortReasonResult, CreateAbortResult, CreateResult,
     DoctorResult, InitializationResult, ListRequest, Listing, ModificationActionResult,
     ModificationRequest, ModificationResult, PadContent, PadContentResult, PathResult, PurgeResult,
-    TagCatalogResult, TagRegistryResult, TaggingResult, UuidResult,
+    UuidResult,
 };
+use padzapp::commands::tagging::TaggingResult;
+use padzapp::commands::tags::{TagCatalogOutcome, TagRegistryOutcome};
 
 // =============================================================================
 // App State Types (for standout's type-based app_state lookup)
@@ -392,23 +394,23 @@ impl<'a> ScopedApi<'a> {
 
     // --- Tags subcommand operations ---
 
-    pub fn list_tags(&self) -> Result<Output<TagCatalogResult>, anyhow::Error> {
+    pub fn list_tags(&self) -> Result<Output<TagCatalogOutcome>, anyhow::Error> {
         let outcome = self.call(|api, scope| api.list_tags(scope))?;
-        Ok(Output::Render(outcome.into()))
+        Ok(Output::Render(outcome))
     }
 
-    pub fn delete_tag(&self, name: &str) -> Result<Output<TagRegistryResult>, anyhow::Error> {
+    pub fn delete_tag(&self, name: &str) -> Result<Output<TagRegistryOutcome>, anyhow::Error> {
         let outcome = self.call(|api, scope| api.delete_tag(scope, name))?;
-        Ok(Output::Render(outcome.into()))
+        Ok(Output::Render(outcome))
     }
 
     pub fn rename_tag(
         &self,
         old_name: &str,
         new_name: &str,
-    ) -> Result<Output<TagRegistryResult>, anyhow::Error> {
+    ) -> Result<Output<TagRegistryOutcome>, anyhow::Error> {
         let outcome = self.call(|api, scope| api.rename_tag(scope, old_name, new_name))?;
-        Ok(Output::Render(outcome.into()))
+        Ok(Output::Render(outcome))
     }
 
     // --- List operations ---
@@ -1313,7 +1315,7 @@ pub mod tag {
             api.add_tags_to_pads(state.scope, &indexes, &tags)
                 .map_err(to_anyhow)
         })?;
-        Ok(Output::Render(result.into()))
+        Ok(Output::Render(result))
     }
 
     #[handler]
@@ -1327,7 +1329,7 @@ pub mod tag {
             api.remove_tags_from_pads(state.scope, &indexes, &tags)
                 .map_err(to_anyhow)
         })?;
-        Ok(Output::Render(result.into()))
+        Ok(Output::Render(result))
     }
 
     #[handler]
@@ -1335,7 +1337,7 @@ pub mod tag {
         #[ctx] ctx: &CommandContext,
         #[arg(name = "old_name")] old_name: String,
         #[arg(name = "new_name")] new_name: String,
-    ) -> Result<Output<TagRegistryResult>, anyhow::Error> {
+    ) -> Result<Output<TagRegistryOutcome>, anyhow::Error> {
         api(ctx).rename_tag(&old_name, &new_name)
     }
 
@@ -1343,7 +1345,7 @@ pub mod tag {
     pub fn delete(
         #[ctx] ctx: &CommandContext,
         #[arg] name: String,
-    ) -> Result<Output<TagRegistryResult>, anyhow::Error> {
+    ) -> Result<Output<TagRegistryOutcome>, anyhow::Error> {
         api(ctx).delete_tag(&name)
     }
 
@@ -1351,14 +1353,14 @@ pub mod tag {
     pub fn list(
         #[ctx] ctx: &CommandContext,
         #[arg] ids: Vec<String>,
-    ) -> Result<Output<TagCatalogResult>, anyhow::Error> {
+    ) -> Result<Output<TagCatalogOutcome>, anyhow::Error> {
         if ids.is_empty() {
             api(ctx).list_tags()
         } else {
             let state = get_state(ctx);
             let outcome =
                 state.with_api(|api| api.list_pad_tags(state.scope, &ids).map_err(to_anyhow))?;
-            Ok(Output::Render(outcome.into()))
+            Ok(Output::Render(outcome))
         }
     }
 }

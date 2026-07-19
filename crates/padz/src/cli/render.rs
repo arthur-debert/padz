@@ -53,12 +53,15 @@
 //! [`super::commands`]. Both are render-path only and never touch structured output.
 //!
 //! The `PadRow`/`SectionKind`/`TimeAgo`/`build_peek` derivations below are still used
-//! by the modification and tagging mirrors (`modification_result.jinja`,
-//! `tagging.jinja`), which have not migrated yet; they retire with those families.
+//! by the modification mirror (`modification_result.jinja`), which has not migrated
+//! yet; they retire with that family. The tagging family now renders straight from
+//! the core `padzapp::commands::tagging::TaggingResult` — see `tagging.jinja`,
+//! `tag_catalog.jinja`, and `tag_registry.jinja`, which read the serialized core
+//! outcomes directly and reuse the listing's `_list_pad_line.jinja` for affected pads.
 
 use super::result::{
     ModificationActionResult, ModificationNoticeResult, ModificationResult, MutationOutcomeResult,
-    MutationStatusResult, TaggingResult, UpdateKindResult,
+    MutationStatusResult, UpdateKindResult,
 };
 use chrono::{DateTime, Utc};
 use minijinja::Value;
@@ -75,8 +78,6 @@ pub const DEFAULT_LINE_WIDTH: usize = 80;
 
 /// The context name `modification_result.jinja` reads its view data from.
 pub const MODIFICATION_VIEW: &str = "modification_view";
-/// The context name `tagging.jinja` reads its view data from.
-pub const TAGGING_VIEW: &str = "tagging_view";
 /// The context name every template reads layout width from.
 pub const TERMINAL: &str = "terminal";
 
@@ -248,15 +249,6 @@ pub struct MutationOutcomeView {
     pub update_kind: &'static str,
 }
 
-/// Template-ready view for per-pad tag assignment and removal.
-#[derive(Debug, Clone, Serialize)]
-pub struct TaggingView {
-    pub action: &'static str,
-    pub requested_tags: Vec<String>,
-    pub modified_pads: usize,
-    pub rows: Vec<PadRow>,
-}
-
 // =============================================================================
 // Context providers (the render-time seam)
 // =============================================================================
@@ -273,14 +265,6 @@ pub fn terminal_provider(_ctx: &RenderContext) -> Value {
 pub fn modification_view_provider(ctx: &RenderContext) -> Value {
     match serde_json::from_value::<ModificationResult>(ctx.data.clone()) {
         Ok(result) => Value::from_serialize(build_modification_view(&result)),
-        Err(_) => Value::UNDEFINED,
-    }
-}
-
-/// Context provider for `tagging.jinja`.
-pub fn tagging_view_provider(ctx: &RenderContext) -> Value {
-    match serde_json::from_value::<TaggingResult>(ctx.data.clone()) {
-        Ok(result) => Value::from_serialize(build_tagging_view(&result)),
         Err(_) => Value::UNDEFINED,
     }
 }
@@ -311,43 +295,6 @@ pub fn build_modification_view(result: &ModificationResult) -> ModificationView 
             .outcomes
             .iter()
             .filter_map(mutation_outcome)
-            .collect(),
-    }
-}
-
-/// Builds the template-ready view for a tag assignment or removal.
-pub fn build_tagging_view(result: &TaggingResult) -> TaggingView {
-    let (action, requested_tags, modified_pads, pads) = match result {
-        TaggingResult::Assigned {
-            requested_tags,
-            modified_pads,
-            pads,
-        } => ("assigned", requested_tags, *modified_pads, pads),
-        TaggingResult::AllAlreadyPresent {
-            requested_tags,
-            modified_pads,
-            pads,
-        } => ("all_already_present", requested_tags, *modified_pads, pads),
-        TaggingResult::Removed {
-            requested_tags,
-            modified_pads,
-            pads,
-        } => ("removed", requested_tags, *modified_pads, pads),
-        TaggingResult::NonePresent {
-            requested_tags,
-            modified_pads,
-            pads,
-        } => ("none_present", requested_tags, *modified_pads, pads),
-    };
-    let options = super::result::ListRequest::default();
-
-    TaggingView {
-        action,
-        requested_tags: requested_tags.clone(),
-        modified_pads,
-        rows: pads
-            .iter()
-            .map(|pad| row(pad, 0, SectionKind::of(&pad.index), &options))
             .collect(),
     }
 }

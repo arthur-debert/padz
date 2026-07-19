@@ -7,9 +7,10 @@ use crate::error::{PadzError, Result};
 use crate::model::Scope;
 use crate::store::{Bucket, DataStore};
 use crate::tags::{validate_tag_name, TagEntry};
+use serde::Serialize;
 
 /// An ordered catalog of tag names.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub enum TagCatalogOutcome {
     /// No tags are defined for the requested registry or pad selection.
     Empty,
@@ -28,7 +29,7 @@ impl TagCatalogOutcome {
 }
 
 /// A completed tag-registry mutation.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub enum TagRegistryOutcome {
     Created {
         name: String,

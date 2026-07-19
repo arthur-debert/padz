@@ -18,8 +18,8 @@
 
 use super::handlers::AppState;
 use super::render::{
-    modification_view_provider, peek_filter, tagging_view_provider, terminal_provider,
-    timeago_filter, MODIFICATION_VIEW, TAGGING_VIEW, TERMINAL,
+    modification_view_provider, peek_filter, terminal_provider, timeago_filter, MODIFICATION_VIEW,
+    TERMINAL,
 };
 use super::setup::{
     build_command, get_grouped_help, invocation_default_command, parse_cli, Cli, Commands,
@@ -72,13 +72,13 @@ pub fn run() -> Result<()> {
 /// Build the dispatch-ready App with templates, styles, command configuration, and app state
 ///
 /// Two render-time seams keep presentation out of structured output. The `context_fn`
-/// registrations derive the modification/tagging template views from the serialized
-/// result — Standout resolves them only on the template path. The custom MiniJinja
-/// engine adds the listing family's filters (`timeago`, `peek`) and the empty-store
-/// `grouped_help()` helper, which are likewise render-only: structured modes bypass the
-/// engine entirely, so a JSON consumer never sees a relative timestamp, a preview, or a
-/// help blob. The `list`/`search`/`peek` templates render straight from the core
-/// `DisplayPad` tree, so no list-view provider is needed.
+/// registration derives the modification template view from the serialized result —
+/// Standout resolves it only on the template path. The custom MiniJinja engine adds the
+/// listing family's filters (`timeago`, `peek`) and the empty-store `grouped_help()`
+/// helper, which are likewise render-only: structured modes bypass the engine entirely,
+/// so a JSON consumer never sees a relative timestamp, a preview, or a help blob. The
+/// `list`/`search`/`peek` and tag (`tagging`/`tag_catalog`/`tag_registry`) templates
+/// render straight from the core outcomes, so neither needs a view provider.
 ///
 /// Public because it is the whole app-under-test: `TestHarness` tests pair it with
 /// [`build_command`] to drive argv through render in process, against the same
@@ -104,7 +104,6 @@ pub fn build_dispatch_app(app_state: AppState) -> App {
         .default_theme("default")
         .context_fn(TERMINAL, terminal_provider)
         .context_fn(MODIFICATION_VIEW, modification_view_provider)
-        .context_fn(TAGGING_VIEW, tagging_view_provider)
         .commands(Commands::dispatch_config())
         .expect("Failed to configure commands")
         .command_with("create", super::handlers::create__handler, |config| {
