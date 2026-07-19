@@ -28,11 +28,10 @@ use standout_macros::handler;
 use std::cell::RefCell;
 use std::rc::Rc;
 
-use super::result::{
-    ListRequest, Listing, Modification, ModificationAction, ModificationRequest, PadContent,
-    PadContentResult,
+use super::views::{
+    CopyView, ListRequest, Listing, Modification, ModificationAction, ModificationRequest,
+    PadContent, PadContentResult, PathView, UuidView,
 };
-use super::views::{CopyView, PathView, UuidView};
 use padzapp::commands::doctor::DoctorOutcome;
 use padzapp::commands::init::InitializationOutcome;
 use padzapp::commands::purge::PurgeOutcome;

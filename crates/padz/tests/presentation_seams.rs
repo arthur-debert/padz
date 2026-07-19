@@ -7,7 +7,7 @@
 mod support;
 
 use padz::cli::handlers;
-use padz::cli::result::{Modification, ModificationAction};
+use padz::cli::views::{Modification, ModificationAction};
 use standout::cli::Output;
 use standout_test::{serial, TestHarness};
 use support::Fixture;

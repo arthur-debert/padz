@@ -1,71 +1,59 @@
-//! # Render-time view data
+//! # Render-time presentation glue
 //!
-//! This module derives **typed view data** from the mode-independent results that
-//! handlers return (see [`super::result`]). It is a render concern only: nothing here
-//! runs unless standout has decided to render a human template.
+//! Everything here runs **only** on the human-render path — nothing in this module
+//! touches structured output. Templates own wording, glyphs, style names, column widths
+//! and indentation; what survives in Rust is the handful of derivations a MiniJinja
+//! template cannot do for itself, and each piece earns its place.
 //!
-//! ## Architecture
+//! After the epic that collapsed padz's presentation tiers, this module is exactly three
+//! things:
 //!
-//! ```text
-//! handler -> Output::Render(typed result) -> serialize once
-//!                                              |-- structured mode: emitted as-is
-//!                                              `-- human mode: template + view provider
-//! ```
+//! ## 1. Two MiniJinja filters (the listing render path)
 //!
-//! Handlers return one value regardless of `--output`. Standout serializes it once and
-//! then either emits it directly (json/yaml/xml/csv) or renders a MiniJinja template
-//! with it. The providers here are registered as standout **context providers**
-//! (`AppBuilder::context_fn`, wired in [`super::commands`]), which standout resolves
-//! *only* on the template path. That is the seam that keeps terminal width and
-//! relative timestamps out of structured output while still giving templates
-//! everything they need — derived from the very same handler value.
+//! Handlers return core types and `list.jinja` walks the core [`DisplayPad`] tree with a
+//! recursive loop (`{% for pad in pads recursive %}` + `loop.depth0`), so depth and
+//! section fall out of the tree itself. The only per-value derivation a template cannot
+//! do lives in two filters, registered on the engine in [`super::commands`]:
 //!
-//! Providers receive the serialized result as JSON, so each one deserializes it back
-//! into its typed result and returns `undefined` if the data is a different command's
-//! shape. Templates only read the provider matching their own command, so a
-//! non-matching provider is simply unused.
+//! - [`timeago_filter`] — clock arithmetic against `Utc::now()` (a template has no
+//!   clock). Yields a *number and a unit* ([`TimeAgo`]); the template composes the label.
+//! - [`peek_filter`] — delegates to `padzapp::peek::format_as_peek`, which owns the
+//!   preview rules.
 //!
-//! ## What is deliberately *not* here
+//! The modification family (`modification_result.jinja`) and the tagging family
+//! (`tagging.jinja`, `tag_catalog.jinja`, `tag_registry.jinja`) also render straight from
+//! core types, reusing the listing pad line and these filters, so no view mirror
+//! survives.
 //!
-//! No wording, no glyphs, no style names, no column widths, no indentation. Those are
-//! presentation policy and live in `templates/` and `styles/default.css`. What survives
-//! in Rust is the derivation templates cannot do for themselves, and each piece earns
-//! its place:
+//! ## 2. The terminal-width detector padz installs with Standout
 //!
-//! - [`line_width`] — reads process state (`$COLUMNS`, the tty) that MiniJinja cannot.
-//! - [`PadRow::section`] — which lifecycle bucket a row's **root** sits in. Templates
-//!   drive section breaks off this; it cannot be read off a row's own index, because a
-//!   pinned root's children are indexed `Regular` (see [`SectionKind`]).
-//! - [`TimeAgo`] — clock arithmetic against `Utc::now()`. It yields a *number and a
-//!   unit*, not a sentence; the template composes the label.
-//! - [`build_peek`] — delegates to `padzapp::peek`, which owns the preview rules.
+//! [`line_width`]/[`detect_width`] read process state (`$COLUMNS`, the tty) that MiniJinja
+//! cannot, and [`super::commands::run`] installs `detect_width` as Standout's terminal-
+//! width detector. Standout 7.9.1's built-in detector ignores `$COLUMNS` and returns
+//! `None` under a pipe (falling back to a bare 80), which would lose both the `$COLUMNS`
+//! control tests and pipelines rely on and the `⏲` under-measure payback — so installing
+//! this is what keeps piped and tty output byte-identical. The listing templates then call
+//! `tabular([...])` with no `width=` and resolve against it. This is **not** a template
+//! width provider; it is the framework-level detector.
 //!
-//! Everything a template can decide, a template decides.
+//! ## 3. The `terminal` width context provider — a single documented residue
 //!
-//! ## Listing renders straight from the core tree
-//!
-//! The `list`/`search`/`peek` family no longer projects into a flat `*Row` mirror.
-//! `list.jinja` walks the core [`DisplayPad`] tree with a MiniJinja recursive loop
-//! (`{% for pad in pads recursive %}` + `loop.depth0`), so depth and section fall out
-//! of the tree itself. The only Rust that survives on that path is two MiniJinja
-//! filters — [`timeago_filter`] (needs `Utc::now()`) and [`peek_filter`] (wraps
-//! `padzapp::peek::format_as_peek`) — registered on the template engine in
-//! [`super::commands`]. Both are render-path only and never touch structured output.
-//!
-//! The `PadRow`/`SectionKind`/`TimeAgo`/`build_peek` derivations below are retained as
-//! shared listing helpers pending final cleanup. Both the modification family
-//! (`modification_result.jinja`) and the tagging family (`tagging.jinja`,
-//! `tag_catalog.jinja`, `tag_registry.jinja`) now render straight from core types — the
-//! modification view from the core [`Modification`](super::result::Modification)
-//! (`DisplayPad`/`CmdNotice`/`CmdOutcome`), reusing the listing pad line and the
-//! `timeago` filter; the tagging views from the core
-//! `padzapp::commands::tagging::TaggingResult` — so no modification or tagging view
-//! mirror survives here.
+//! [`terminal_provider`] (registered as the [`TERMINAL`] context under
+//! `AppBuilder::context_fn` in [`super::commands`], resolved only on the template path)
+//! exposes `terminal.width` (== [`line_width`]) to exactly one template: `_match_lines.jinja`.
+//! A search-hit line highlights the matched substring in one style and its surroundings in
+//! another, then truncates the run to fit — and it must style each segment *after* it is
+//! cut, because truncation strips BBCode style tags. That per-segment truncate-then-style
+//! math needs the numeric available width, and Standout exposes no template function that
+//! returns the raw terminal width (`tabular`/`col('fill')` resolve width internally and
+//! never surface it), while a tabular column cannot carry heterogeneous per-segment styles
+//! nor truncate without dropping the tags. So this provider survives solely to feed
+//! `_match_lines` its width; every other template resolves width through the detector
+//! above. When Standout grows a width-returning template function (or `_match_lines` no
+//! longer needs per-segment truncation), this provider and [`TERMINAL`] can go.
 
 use chrono::{DateTime, Utc};
 use minijinja::Value;
-use padzapp::index::{DisplayIndex, DisplayPad, SearchMatch};
-use padzapp::model::TodoStatus;
 use padzapp::peek::{format_as_peek, PeekResult};
 use serde::Serialize;
 use standout::context::RenderContext;
@@ -100,9 +88,9 @@ pub const TERMINAL: &str = "terminal";
 /// Since standout 7.9.1 this is padz's installed terminal-width detector (see
 /// [`detect_width`] and [`super::commands::run`]): the framework's `tabular()`/`table()`
 /// width cascade resolves against it, so the listing templates call `tabular([...])`
-/// with no `width=` and still get this exact width. It also still backs the `terminal`
-/// context provider that the search-hit and modification/tagging templates read
-/// directly (those do manual width math a table cannot express).
+/// with no `width=` and still get this exact width. It also backs the `terminal` context
+/// provider ([`terminal_provider`]), which feeds this width to `_match_lines.jinja` — the
+/// one template that does manual per-segment truncation a table cannot express.
 pub fn line_width() -> usize {
     let raw = std::env::var("COLUMNS")
         .ok()
@@ -124,37 +112,8 @@ pub fn detect_width() -> Option<usize> {
 }
 
 // =============================================================================
-// View types
+// timeago derivation
 // =============================================================================
-
-/// Which lifecycle block a row's **root** pad belongs to.
-///
-/// This is not the same question as "what is this row's own index?". A pinned root is
-/// indexed `Pinned`, but its children are indexed `Regular` — so a template that drove
-/// section breaks off each row's own index would break the pinned block open at its
-/// first child. Every row in a root's subtree carries the *root's* section, which makes
-/// "did the section change?" a single comparison against the previous row, at any depth.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
-pub enum SectionKind {
-    Pinned,
-    Regular,
-    Archived,
-    Deleted,
-}
-
-impl SectionKind {
-    // Retained shared listing helper: its last callers (the modification and tagging
-    // view mirrors) have migrated to core rendering; the final cleanup pass retires it.
-    #[allow(dead_code)]
-    fn of(index: &DisplayIndex) -> Self {
-        match index {
-            DisplayIndex::Pinned(_) => SectionKind::Pinned,
-            DisplayIndex::Regular(_) => SectionKind::Regular,
-            DisplayIndex::Archived(_) => SectionKind::Archived,
-            DisplayIndex::Deleted(_) => SectionKind::Deleted,
-        }
-    }
-}
 
 /// How long ago something happened, as a number and a unit — never as a sentence.
 ///
@@ -191,92 +150,23 @@ impl TimeAgo {
     }
 }
 
-/// One pad, flattened out of the tree and ready for a template to lay out.
+// =============================================================================
+// Context provider (the documented `_match_lines` width residue)
+// =============================================================================
+
+/// Context provider exposing `terminal.width` to `_match_lines.jinja`.
 ///
-/// Every field is data about the pad. Not one of them is a width, a glyph, a style
-/// name, or a rendered sentence — `_pad_line.jinja` derives all of those.
-#[derive(Debug, Clone, Serialize)]
-pub struct PadRow {
-    /// This row's own display identifier, e.g. `Pinned(1)` — the template formats it.
-    pub index: DisplayIndex,
-    /// Depth in the pad tree; 0 for a root. The template decides what a level costs.
-    pub depth: usize,
-    /// The lifecycle block this row's root sits in. See [`SectionKind`].
-    pub section: SectionKind,
-    pub title: String,
-    /// First 8 characters of the uuid — present only when `--uuid` was asked for.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub short_uuid: Option<String>,
-    pub tags: Vec<String>,
-    pub status: TodoStatus,
-    /// Whether the pad itself is pinned (true in *both* the pinned and regular blocks).
-    pub pinned: bool,
-    pub time: TimeAgo,
-    /// Search hits under this pad; empty unless the listing came from a search.
-    pub matches: Vec<SearchMatch>,
-    /// Content preview — present only when `--peek` was asked for and there is a body.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub peek: Option<PeekResult>,
-}
-
-// =============================================================================
-// Context providers (the render-time seam)
-// =============================================================================
-
-/// Context provider for the layout width every template reads.
+/// This is the module's single surviving context provider (see the module docs): it
+/// resolves only on the template path and feeds [`line_width`] to the one template that
+/// does manual per-segment truncation. Every other template resolves width through the
+/// installed detector ([`detect_width`]) instead.
 pub fn terminal_provider(_ctx: &RenderContext) -> Value {
     Value::from_serialize(serde_json::json!({ "width": line_width() }))
 }
 
 // =============================================================================
-// View builders
+// peek derivation
 // =============================================================================
-
-/// Builds one row from a pad.
-///
-/// Retained shared listing helper: its last callers (the modification and tagging view
-/// mirrors) have migrated to core rendering; the final cleanup pass retires it.
-#[allow(dead_code)]
-fn row(
-    dp: &DisplayPad,
-    depth: usize,
-    section: SectionKind,
-    opts: &super::result::ListRequest,
-) -> PadRow {
-    let meta = &dp.pad.metadata;
-    PadRow {
-        index: dp.index.clone(),
-        depth,
-        section,
-        title: meta.title.clone(),
-        short_uuid: opts.uuid.then(|| meta.id.to_string()[..8].to_string()),
-        tags: meta.tags.clone(),
-        status: meta.status,
-        pinned: meta.is_pinned,
-        time: TimeAgo::since(meta.created_at),
-        // Line 0 is the title match, which the pad's own title line already shows.
-        matches: dp
-            .matches
-            .iter()
-            .flatten()
-            .filter(|m| m.line_number != 0)
-            .cloned()
-            .collect(),
-        peek: opts.peek.then(|| build_peek(dp)).flatten(),
-    }
-}
-
-/// Builds the peek preview for a pad, or `None` when it has no body to preview.
-///
-/// The preview rules (how many lines, where to elide) belong to `padzapp::peek`; this
-/// only feeds it the body and drops an empty result.
-///
-/// Retained shared listing helper: its last caller ([`row`]) is itself retained pending
-/// the final cleanup pass, which retires both.
-#[allow(dead_code)]
-fn build_peek(dp: &DisplayPad) -> Option<PeekResult> {
-    peek_body(&dp.pad.content)
-}
 
 /// Number of preview lines each `peek` shows at the top and bottom of a body.
 const PEEK_LINES: usize = 3;

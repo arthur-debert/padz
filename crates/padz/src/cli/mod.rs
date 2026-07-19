@@ -65,8 +65,8 @@
 //!
 //! - `commands`: App construction, state wiring, and dispatch
 //! - `input`: Declarative request-input precedence for create/edit
-//! - `handlers`: Thin typed adapters — extract args, call the API, return a typed result
-//! - `result`: The typed, mode-independent result each handler returns
+//! - `handlers`: Thin typed adapters — extract args, call the API, return a typed view
+//! - `views`: The typed, mode-independent view each handler returns
 //! - `render`: Render-time view derivation for standout's templates
 //! - `setup`: Argument parsing via clap, help text, and naked-invocation resolution
 
@@ -79,7 +79,6 @@ pub mod errors;
 pub mod handlers;
 pub mod input;
 pub mod render;
-pub mod result;
 pub mod setup;
 pub mod views;
 
