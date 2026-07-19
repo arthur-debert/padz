@@ -370,7 +370,6 @@ mod tests {
 
         let result = run_completed(&mut store, Scope::Project).unwrap();
         assert!(result.affected_pads.is_empty());
-        assert!(result.messages.is_empty());
         assert_eq!(result.notices, vec![CmdNotice::NoCompletedPads]);
 
         // Pad should still be active

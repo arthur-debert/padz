@@ -194,9 +194,6 @@ mod tests {
             result.affected_pads[0].index,
             DisplayIndex::Regular(1)
         ));
-
-        // No messages - CLI handles unified rendering
-        assert!(result.messages.is_empty());
     }
 
     #[test]

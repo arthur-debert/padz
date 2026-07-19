@@ -307,7 +307,7 @@ fn structured_output_excludes_template_only_view_fields() {
     top.sort_unstable();
 
     // The result contract: data + invocation facts, nothing view-derived.
-    assert_eq!(top, vec!["messages", "pads", "request"]);
+    assert_eq!(top, vec!["pads", "request"]);
 
     for forbidden in ["rows", "time_ago", "status_icon", "left_pin", "columns"] {
         assert!(

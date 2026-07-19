@@ -304,7 +304,6 @@ mod tests {
         .unwrap();
 
         assert!(result.affected_pads.is_empty());
-        assert!(result.messages.is_empty());
         assert_eq!(
             result.notices,
             vec![CmdNotice::AlreadyAtDestination { path }]

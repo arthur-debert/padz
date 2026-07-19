@@ -1,0 +1,4 @@
+{
+  "action": "pin",
+  "top_level_keys": ["action", "pads", "request"]
+}
