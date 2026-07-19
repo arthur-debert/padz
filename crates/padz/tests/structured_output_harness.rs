@@ -473,7 +473,7 @@ fn structured_output_has_no_human_artifacts_or_template_only_fields() {
         .map(String::as_str)
         .collect();
     top.sort_unstable();
-    assert_eq!(top, vec!["messages", "pads", "request"]);
+    assert_eq!(top, vec!["pads", "request"]);
 
     fn collect_keys(value: &serde_json::Value, keys: &mut std::collections::BTreeSet<String>) {
         match value {

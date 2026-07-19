@@ -111,8 +111,6 @@ mod tests {
         let sel = PadSelector::Path(vec![DisplayIndex::Regular(1)]);
         let result = complete(&mut store, Scope::Project, slice::from_ref(&sel)).unwrap();
 
-        // No messages for successful completion - CLI handles unified rendering
-        assert!(result.messages.is_empty());
         // Should have affected pad
         assert_eq!(result.affected_pads.len(), 1);
 
@@ -137,8 +135,6 @@ mod tests {
         // Then reopen it
         let result = reopen(&mut store, Scope::Project, slice::from_ref(&sel)).unwrap();
 
-        // No messages for successful reopen - CLI handles unified rendering
-        assert!(result.messages.is_empty());
         // Should have affected pad
         assert_eq!(result.affected_pads.len(), 1);
 
@@ -169,7 +165,6 @@ mod tests {
                 status: TodoStatus::Done,
             }]
         );
-        assert!(result.messages.is_empty());
     }
 
     #[test]
@@ -194,7 +189,6 @@ mod tests {
                 status: TodoStatus::Planned,
             }]
         );
-        assert!(result.messages.is_empty());
     }
 
     #[test]
@@ -263,8 +257,6 @@ mod tests {
 
         let result = complete(&mut store, Scope::Project, &selectors).unwrap();
 
-        // No messages for successful completion - CLI handles unified rendering
-        assert!(result.messages.is_empty());
         // Should have 2 affected pads
         assert_eq!(result.affected_pads.len(), 2);
 

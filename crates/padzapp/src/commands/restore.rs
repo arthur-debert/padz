@@ -129,9 +129,6 @@ mod tests {
         )
         .unwrap();
 
-        // No messages - CLI handles unified rendering
-        assert!(result.messages.is_empty());
-
         // Verify affected_pads contains the restored pad
         assert_eq!(result.affected_pads.len(), 1);
         assert_eq!(result.affected_pads[0].pad.metadata.title, "Title");
@@ -197,8 +194,6 @@ mod tests {
         )
         .unwrap();
 
-        // No messages - CLI handles unified rendering
-        assert!(result.messages.is_empty());
         // Should have 2 affected pads
         assert_eq!(result.affected_pads.len(), 2);
 
@@ -352,8 +347,6 @@ mod tests {
         )
         .unwrap();
 
-        // No messages - CLI handles unified rendering
-        assert!(result.messages.is_empty());
         // Should have 2 affected pads
         assert_eq!(result.affected_pads.len(), 2);
         let count = store
@@ -382,7 +375,6 @@ mod tests {
         .unwrap();
 
         // Pad was skipped (not in Deleted bucket), so no affected pads
-        assert!(result.messages.is_empty());
         assert_eq!(result.affected_pads.len(), 0);
 
         // Pad is still active

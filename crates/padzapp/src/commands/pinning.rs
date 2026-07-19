@@ -213,7 +213,6 @@ mod tests {
                 path: vec![DisplayIndex::Pinned(1)]
             }]
         );
-        assert!(result.messages.is_empty());
     }
 
     #[test]
@@ -240,7 +239,6 @@ mod tests {
                 path: vec![DisplayIndex::Regular(1)]
             }]
         );
-        assert!(result.messages.is_empty());
     }
 
     #[test]

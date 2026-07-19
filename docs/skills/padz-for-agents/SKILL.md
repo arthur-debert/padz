@@ -106,9 +106,11 @@ Not every command returns the skeleton above. The three other shapes:
 
 ```jsonc
 // Mutations: create, delete, pin, unpin, complete, reopen, move, restore…
-{ "action": "Pinned",            // past-tense verb for what happened
+{ "action": "pin",               // stable semantic operation token
   "pads": [ /* affected pads, same pad shape as above */ ],
-  "messages": [ … ], "request": { … } }
+  "notices": [ /* typed no-op facts, omitted when empty */ ],
+  "outcomes": [ /* typed success facts, omitted when empty */ ],
+  "request": { … } }
 
 // view
 { "pads": [ { "title": "…", "content": "<full body>", "depth": 0 } ] }
@@ -118,11 +120,13 @@ Not every command returns the skeleton above. The three other shapes:
 { "uuids": [ "1f7d95d5-55c6-4dda-a688-199d91f4fd2f" ] }
 
 // init, doctor, tag list, copy, import, export, clone, migrate, purge
-{ "messages": [ { "level": "info|success|warning|error", "content": "…" } ] }
+// Each command returns its own typed facts or status variant; there is no generic
+// message container in structured output.
 ```
 
-Mutations report affected pads under `pads` alongside an `action` verb — there is no
-`affected_pads` key in the CLI contract (that name is internal to the library).
+Mutations report affected pads under `pads` alongside a semantic `action` token —
+there is no `affected_pads` key in the CLI contract (that name is internal to the
+library). Human verbs such as "Pinned" belong only to terminal/text rendering.
 
 Two commands are deliberately outside this contract: `open`/`edit` spawn `$EDITOR`
 (and emit nothing at all if you leave the file empty), and `completion`/`config` are

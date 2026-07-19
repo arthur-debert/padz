@@ -8,19 +8,27 @@
 {%- set show_status = view.show_status -%}
 {%- set peek_mode = false -%}
 {%- set count = view.rows | length -%}
+{%- set verb = {
+    "create": "Created",
+    "pin": "Pinned",
+    "unpin": "Unpinned",
+    "delete": "Deleted",
+    "restore": "Restored",
+    "archive": "Archived",
+    "unarchive": "Unarchived",
+    "complete": "Completed",
+    "reopen": "Reopened",
+    "move": "Moved",
+    "update": "Updated"
+}[view.action] -%}
 
-{#- "Created 1 pad...", "Deleted 3 pads..." — the handler supplies only the verb. -#}
+{#- Human verbs and pluralization are presentation policy owned here. -#}
 {%- if count > 0 -%}
-[info]{{ view.action }} {{ count }} {{ "pad" if count == 1 else "pads" }}...[/info]{{ "" | nl }}
+[info]{{ verb }} {{ count }} {{ "pad" if count == 1 else "pads" }}...[/info]{{ "" | nl }}
 {%- endif -%}
 
 {%- for pad in view.rows -%}
 {%- include "_pad_line.jinja" -%}
-{%- endfor -%}
-
-{#- Trailing messages (info, warnings, errors). -#}
-{%- for msg in view.messages -%}
-{{ msg.content | style_as(msg.level) }}{{ "" | nl }}
 {%- endfor -%}
 
 {#- Semantic successful outcomes: wording stays here; refresh updates deliberately -#}

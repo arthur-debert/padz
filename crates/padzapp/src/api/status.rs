@@ -114,7 +114,6 @@ mod tests {
 
         let result = api.move_pads(Scope::Project, &["1"], Some("2")).unwrap();
 
-        assert!(result.messages.is_empty());
         assert_eq!(result.affected_pads.len(), 1);
         assert_eq!(result.affected_pads[0].pad.metadata.title, "B");
 
@@ -136,7 +135,6 @@ mod tests {
             .unwrap();
 
         let result = api.move_pads(Scope::Project, &["1.1"], None).unwrap();
-        assert!(result.messages.is_empty());
         assert_eq!(result.affected_pads.len(), 1);
 
         let pads = api

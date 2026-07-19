@@ -49,7 +49,7 @@ const REQUIRED: &[&str] = &[
     "line-number",
     // tags
     "tag",
-    // messages — these match CmdMessage's lowercase level names
+    // semantic message styles used by CLI-owned templates
     "error",
     "warning",
     "success",

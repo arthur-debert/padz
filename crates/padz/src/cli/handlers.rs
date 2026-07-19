@@ -31,9 +31,9 @@ use std::rc::Rc;
 use super::result::{
     CopyResult, CreateAbortKindResult, CreateAbortReasonResult, CreateAbortResult, CreateResult,
     DoctorResult, ExportReportResult, ImportResult, InitializationResult, ListRequest,
-    ModificationRequest, ModificationResult, PadContent, PadContentResult, PadListResult,
-    PathResult, PurgeResult, TagCatalogResult, TagRegistryResult, TaggingResult, TransferResult,
-    UuidResult,
+    ModificationActionResult, ModificationRequest, ModificationResult, PadContent,
+    PadContentResult, PadListResult, PathResult, PurgeResult, TagCatalogResult, TagRegistryResult,
+    TaggingResult, TransferResult, UuidResult,
 };
 
 // =============================================================================
@@ -161,7 +161,7 @@ impl<'a> ScopedApi<'a> {
     /// When `force_show_status` is true, status icons are requested regardless of mode.
     fn modification(
         &self,
-        action: &str,
+        action: ModificationActionResult,
         result: CmdResult,
         force_show_status: bool,
     ) -> Result<Output<ModificationResult>, anyhow::Error> {
@@ -177,14 +177,13 @@ impl<'a> ScopedApi<'a> {
     /// Used by the handlers that assemble a `CmdResult` themselves (create, edit).
     fn modification_result(
         &self,
-        action: &str,
+        action: ModificationActionResult,
         result: CmdResult,
         force_show_status: bool,
     ) -> ModificationResult {
         ModificationResult {
-            action: action.to_string(),
+            action,
             pads: result.affected_pads,
-            messages: result.messages,
             notices: result.notices.into_iter().map(Into::into).collect(),
             outcomes: result.outcomes.into_iter().map(Into::into).collect(),
             request: ModificationRequest {
@@ -200,7 +199,7 @@ impl<'a> ScopedApi<'a> {
         indexes: &[String],
     ) -> Result<Output<ModificationResult>, anyhow::Error> {
         let result = self.call(|api, scope| api.pin_pads(scope, indexes))?;
-        self.modification("Pinned", result, false)
+        self.modification(ModificationActionResult::Pin, result, false)
     }
 
     pub fn unpin_pads(
@@ -208,7 +207,7 @@ impl<'a> ScopedApi<'a> {
         indexes: &[String],
     ) -> Result<Output<ModificationResult>, anyhow::Error> {
         let result = self.call(|api, scope| api.unpin_pads(scope, indexes))?;
-        self.modification("Unpinned", result, false)
+        self.modification(ModificationActionResult::Unpin, result, false)
     }
 
     pub fn delete_pads(
@@ -216,12 +215,12 @@ impl<'a> ScopedApi<'a> {
         indexes: &[String],
     ) -> Result<Output<ModificationResult>, anyhow::Error> {
         let result = self.call(|api, scope| api.delete_pads(scope, indexes))?;
-        self.modification("Deleted", result, false)
+        self.modification(ModificationActionResult::Delete, result, false)
     }
 
     pub fn delete_completed_pads(&self) -> Result<Output<ModificationResult>, anyhow::Error> {
         let result = self.call(|api, scope| api.delete_completed_pads(scope))?;
-        self.modification("Deleted", result, false)
+        self.modification(ModificationActionResult::Delete, result, false)
     }
 
     pub fn restore_pads(
@@ -229,7 +228,7 @@ impl<'a> ScopedApi<'a> {
         indexes: &[String],
     ) -> Result<Output<ModificationResult>, anyhow::Error> {
         let result = self.call(|api, scope| api.restore_pads(scope, indexes))?;
-        self.modification("Restored", result, false)
+        self.modification(ModificationActionResult::Restore, result, false)
     }
 
     pub fn archive_pads(
@@ -237,7 +236,7 @@ impl<'a> ScopedApi<'a> {
         indexes: &[String],
     ) -> Result<Output<ModificationResult>, anyhow::Error> {
         let result = self.call(|api, scope| api.archive_pads(scope, indexes))?;
-        self.modification("Archived", result, false)
+        self.modification(ModificationActionResult::Archive, result, false)
     }
 
     pub fn unarchive_pads(
@@ -245,7 +244,7 @@ impl<'a> ScopedApi<'a> {
         indexes: &[String],
     ) -> Result<Output<ModificationResult>, anyhow::Error> {
         let result = self.call(|api, scope| api.unarchive_pads(scope, indexes))?;
-        self.modification("Unarchived", result, false)
+        self.modification(ModificationActionResult::Unarchive, result, false)
     }
 
     pub fn complete_pads(
@@ -253,7 +252,7 @@ impl<'a> ScopedApi<'a> {
         indexes: &[String],
     ) -> Result<Output<ModificationResult>, anyhow::Error> {
         let result = self.call(|api, scope| api.complete_pads(scope, indexes))?;
-        self.modification("Completed", result, true)
+        self.modification(ModificationActionResult::Complete, result, true)
     }
 
     pub fn reopen_pads(
@@ -261,7 +260,7 @@ impl<'a> ScopedApi<'a> {
         indexes: &[String],
     ) -> Result<Output<ModificationResult>, anyhow::Error> {
         let result = self.call(|api, scope| api.reopen_pads(scope, indexes))?;
-        self.modification("Reopened", result, true)
+        self.modification(ModificationActionResult::Reopen, result, true)
     }
 
     pub fn move_pads(
@@ -280,7 +279,7 @@ impl<'a> ScopedApi<'a> {
             let (sources, dest) = indexes.split_at(indexes.len() - 1);
             self.call(|api, scope| api.move_pads(scope, sources, Some(dest[0].as_str())))?
         };
-        self.modification("Moved", result, false)
+        self.modification(ModificationActionResult::Move, result, false)
     }
 
     // --- Maintenance outcomes ---
@@ -427,7 +426,6 @@ impl<'a> ScopedApi<'a> {
         let result = self.call(|api, scope| api.get_pads(scope, filter, ids))?;
         Ok(Output::Render(PadListResult {
             pads: result.listed_pads,
-            messages: result.messages,
             request: ListRequest {
                 peek,
                 uuid: show_uuid,
@@ -769,7 +767,7 @@ pub fn create(
     };
 
     Ok(Output::Render(CreateResult::Created(
-        api(ctx).modification_result("Created", result, false),
+        api(ctx).modification_result(ModificationActionResult::Create, result, false),
     )))
 }
 
@@ -957,18 +955,22 @@ pub fn edit(
         RequestContent::Direct(raw) => {
             let result = update(raw)?;
             state.copy_to_clipboard(raw);
-            return Ok(Output::Render(
-                api(ctx).modification_result("Updated", result, false),
-            ));
+            return Ok(Output::Render(api(ctx).modification_result(
+                ModificationActionResult::Update,
+                result,
+                false,
+            )));
         }
 
         // Piped content is copied in the pad's title/body shape.
         RequestContent::Piped(raw) => {
             let result = update(raw)?;
             copy_content_to_clipboard(state, raw);
-            return Ok(Output::Render(
-                api(ctx).modification_result("Updated", result, false),
-            ));
+            return Ok(Output::Render(api(ctx).modification_result(
+                ModificationActionResult::Update,
+                result,
+                false,
+            )));
         }
 
         // An empty pipe aborts the edit outright — unlike create, which reports
@@ -1027,9 +1029,11 @@ pub fn edit(
                 }],
                 ..Default::default()
             };
-            Ok(Output::Render(
-                api(ctx).modification_result("Updated", result, false),
-            ))
+            Ok(Output::Render(api(ctx).modification_result(
+                ModificationActionResult::Update,
+                result,
+                false,
+            )))
         }
         None => {
             // User emptied the file
@@ -1625,7 +1629,7 @@ mod tests {
 
         let result = rendered(pin(&app.ctx, vec!["1".into()]).unwrap());
 
-        assert_eq!(result.action, "Pinned");
+        assert_eq!(result.action, ModificationActionResult::Pin);
         assert_eq!(result.pads.len(), 1);
         assert_eq!(result.pads[0].pad.metadata.title, "Pin me");
         assert!(result.pads[0].pad.metadata.is_pinned);
@@ -1638,7 +1642,7 @@ mod tests {
 
         let result = rendered(complete(&app.ctx, vec!["1".into()]).unwrap());
 
-        assert_eq!(result.action, "Completed");
+        assert_eq!(result.action, ModificationActionResult::Complete);
         // A command that changes status always shows it, whatever the mode.
         assert!(result.request.status);
     }
@@ -1651,7 +1655,6 @@ mod tests {
         let result = rendered(delete(&app.ctx, vec![], true).unwrap());
 
         assert!(result.pads.is_empty());
-        assert!(result.messages.is_empty());
         assert_eq!(
             result.notices,
             vec![super::super::result::ModificationNoticeResult::NoCompletedPads]
@@ -1720,7 +1723,7 @@ mod tests {
 
         let json = serde_json::to_value(&result).unwrap();
         assert!(json.get("pads").unwrap().is_array());
-        assert!(json.get("messages").unwrap().is_array());
+        assert!(json.get("messages").is_none());
         assert!(json.get("request").unwrap().is_object());
 
         // Terminal-only derivations must not be anywhere in the handler's value.

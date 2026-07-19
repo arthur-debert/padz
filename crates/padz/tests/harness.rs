@@ -744,7 +744,7 @@ fn nested_edit_preserves_text_and_exposes_update_facts() {
     let fixture: serde_json::Value =
         serde_json::from_str(include_str!("fixtures/semantic_outcomes/edit-content.json")).unwrap();
     assert_eq!(value["outcomes"], fixture);
-    assert!(value["messages"].as_array().is_some_and(Vec::is_empty));
+    assert!(value.get("messages").is_none());
 }
 
 #[test]
@@ -776,7 +776,7 @@ fn same_parent_move_preserves_text_and_exposes_the_nested_no_op() {
     let fixture: serde_json::Value =
         serde_json::from_str(include_str!("fixtures/semantic_outcomes/move-no-op.json")).unwrap();
     assert_eq!(value["notices"], fixture);
-    assert!(value["messages"].as_array().is_some_and(Vec::is_empty));
+    assert!(value.get("messages").is_none());
 }
 
 #[test]
@@ -898,7 +898,7 @@ fn empty_delete_completed_preserves_text_and_exposes_a_typed_no_op() {
     ))
     .unwrap();
     assert_eq!(value["notices"], fixture);
-    assert!(value["messages"].as_array().is_some_and(Vec::is_empty));
+    assert!(value.get("messages").is_none());
 }
 
 // =============================================================================
@@ -1903,7 +1903,7 @@ fn semantic_pin_notice_is_machine_readable() {
     assert_eq!(value["notices"][0]["kind"], "already_pinned");
     assert_eq!(value["notices"][0]["path"][0]["type"], "Pinned");
     assert_eq!(value["notices"][0]["path"][0]["value"], 1);
-    assert!(value["messages"].as_array().is_some_and(Vec::is_empty));
+    assert!(value.get("messages").is_none());
 }
 
 #[test]

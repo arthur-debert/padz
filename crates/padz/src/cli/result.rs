@@ -10,7 +10,7 @@
 //!
 //! These are CLI-only adapter types: they exist purely to establish the shell's
 //! result contract, so they live in the binary rather than in `padzapp`. The data
-//! they carry (`DisplayPad`, `CmdMessage`, semantic tag/transfer outcomes) is
+//! they carry (`DisplayPad` and semantic mutation/tag/transfer outcomes) is
 //! reusable domain data and stays in `padzapp`.
 //!
 //! ## Presentation is not in here
@@ -26,7 +26,6 @@
 //! icons), not how to draw it. It is a mode-independent fact about the invocation, so
 //! it is part of the result and visible in structured output.
 
-use padzapp::api::CmdMessage;
 use padzapp::commands::{CmdNotice, CmdOutcome, NestingMode, UpdateKind};
 use padzapp::index::{DisplayIndex, DisplayPad};
 use padzapp::model::TodoStatus;
@@ -69,19 +68,17 @@ pub struct ModificationRequest {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PadListResult {
     pub pads: Vec<DisplayPad>,
-    pub messages: Vec<CmdMessage>,
     pub request: ListRequest,
 }
 
 /// The outcome of a command that changed pads.
 ///
-/// `action` is the past-tense verb for the change ("Pinned", "Deleted", ...) and
-/// `pads` are the pads it affected.
+/// `action` is the machine-readable operation token for the change and `pads`
+/// are the pads it affected. The human renderer owns the corresponding verb.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ModificationResult {
-    pub action: String,
+    pub action: ModificationActionResult,
     pub pads: Vec<DisplayPad>,
-    pub messages: Vec<CmdMessage>,
     /// Machine-readable facts emitted by the core; templates own their prose.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub notices: Vec<ModificationNoticeResult>,
@@ -89,6 +86,26 @@ pub struct ModificationResult {
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub outcomes: Vec<MutationOutcomeResult>,
     pub request: ModificationRequest,
+}
+
+/// The operation performed by a generic pad modification command.
+///
+/// This is a machine-readable token, not the human past-tense verb. The
+/// modification template owns wording such as "Pinned" and "Moved".
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ModificationActionResult {
+    Create,
+    Pin,
+    Unpin,
+    Delete,
+    Restore,
+    Archive,
+    Unarchive,
+    Complete,
+    Reopen,
+    Move,
+    Update,
 }
 
 /// CLI projection of a semantic mutation no-op.
@@ -839,21 +856,6 @@ impl From<padzapp::commands::transfer::TransferDiagnostic> for TransferDiagnosti
                 detail,
             },
         }
-    }
-}
-
-/// A command whose whole result is user-facing messages.
-///
-/// Rendered by `messages.jinja`, which reads `CmdMessage` directly — no view
-/// derivation, so no view builder is registered for this shape.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct MessagesResult {
-    pub messages: Vec<CmdMessage>,
-}
-
-impl MessagesResult {
-    pub fn new(messages: Vec<CmdMessage>) -> Self {
-        Self { messages }
     }
 }
 
