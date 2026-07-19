@@ -33,7 +33,7 @@ use serde::{Deserialize, Serialize};
 
 /// What the user asked a listing to show.
 ///
-/// Consumed by [`super::render::build_list_view`] to decide which columns and
+/// Rides on [`Listing`] and is read by `list.jinja` to decide which columns and
 /// previews to draw. Mode-independent: `--peek` means "include previews" whether the
 /// output ends up as a table or as JSON.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -60,13 +60,18 @@ pub struct ModificationRequest {
     pub status: bool,
 }
 
-/// Pads matching a listing, in canonical display order.
+/// A listing of pads plus what the user asked to show, rendered straight from the
+/// core tree.
 ///
-/// Produced by `list`, `peek`, and `search`. `pads` keeps the canonical display
-/// identifiers assigned by `index_pads` — including pinned dual indexes and nested
-/// tree indexes — untouched.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct PadListResult {
+/// Produced by `list`, `peek`, and `search`. `pads` is the core [`DisplayPad`] tree
+/// exactly as `index_pads` built it — canonical display identifiers (pinned dual
+/// indexes, nested tree indexes) and `children` untouched — and `list.jinja` walks it
+/// with a recursive loop rather than a flattened row mirror. `request` records what to
+/// show (peek/uuid/status flags), not how to draw it, so it rides in structured output
+/// too. Presentation (widths, glyphs, timestamps, the empty-store help) stays in the
+/// template and its filters; nothing here is a rendered string.
+#[derive(Debug, Clone, Serialize)]
+pub struct Listing {
     pub pads: Vec<DisplayPad>,
     pub request: ListRequest,
 }

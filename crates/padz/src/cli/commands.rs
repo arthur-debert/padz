@@ -18,21 +18,28 @@
 
 use super::handlers::AppState;
 use super::render::{
-    list_view_provider, modification_view_provider, tagging_view_provider, terminal_provider,
-    LIST_VIEW, MODIFICATION_VIEW, TAGGING_VIEW, TERMINAL,
+    modification_view_provider, peek_filter, tagging_view_provider, terminal_provider,
+    timeago_filter, MODIFICATION_VIEW, TAGGING_VIEW, TERMINAL,
 };
 use super::setup::{
-    build_command, invocation_default_command, parse_cli, Cli, Commands, CompletionAction,
-    CompletionShell, ConfigSubcommand,
+    build_command, get_grouped_help, invocation_default_command, parse_cli, Cli, Commands,
+    CompletionAction, CompletionShell, ConfigSubcommand,
 };
 use clapfig::{Clapfig, ConfigAction, SearchMode, SearchPath};
 use padzapp::config::PadzConfig;
 use padzapp::error::Result;
 use padzapp::init::initialize;
 use standout::cli::{App, RunResult};
-use standout::{embed_styles, embed_templates};
+use standout::{embed_styles, embed_templates, MiniJinjaEngine};
 
 pub fn run() -> Result<()> {
+    // Install padz's terminal-width policy before any rendering. Since 7.9.1 the
+    // framework's `tabular()`/`table()` width cascade resolves against the detector
+    // installed here, so the listing templates get `render::line_width` (`$COLUMNS`,
+    // clamp, ⏲ payback) without naming a width. Set only on the real binary path;
+    // `TestHarness` injects its own width per test.
+    standout_render::set_terminal_width_detector(super::render::detect_width);
+
     // parse_cli() uses standout's App which handles
     // help display (including topics) and errors automatically.
     // It also extracts the output mode from the --output flag.
@@ -64,10 +71,14 @@ pub fn run() -> Result<()> {
 
 /// Build the dispatch-ready App with templates, styles, command configuration, and app state
 ///
-/// The two `context_fn` registrations are the render-time seam: handlers return typed,
-/// mode-independent results, and these providers derive the template-ready view from
-/// the serialized result. Standout resolves context providers only when it renders a
-/// template, so structured output never sees the derived presentation fields.
+/// Two render-time seams keep presentation out of structured output. The `context_fn`
+/// registrations derive the modification/tagging template views from the serialized
+/// result — Standout resolves them only on the template path. The custom MiniJinja
+/// engine adds the listing family's filters (`timeago`, `peek`) and the empty-store
+/// `grouped_help()` helper, which are likewise render-only: structured modes bypass the
+/// engine entirely, so a JSON consumer never sees a relative timestamp, a preview, or a
+/// help blob. The `list`/`search`/`peek` templates render straight from the core
+/// `DisplayPad` tree, so no list-view provider is needed.
 ///
 /// Public because it is the whole app-under-test: `TestHarness` tests pair it with
 /// [`build_command`] to drive argv through render in process, against the same
@@ -85,13 +96,13 @@ pub fn build_dispatch_app(app_state: AppState) -> App {
 
     App::builder()
         .app_state(app_state)
+        .template_engine(Box::new(listing_engine()))
         .default_command_with(invocation_default_command)
         .templates(embed_templates!("src/cli/templates"))
         .template_ext(".jinja")
         .styles(embed_styles!("src/styles"))
         .default_theme("default")
         .context_fn(TERMINAL, terminal_provider)
-        .context_fn(LIST_VIEW, list_view_provider)
         .context_fn(MODIFICATION_VIEW, modification_view_provider)
         .context_fn(TAGGING_VIEW, tagging_view_provider)
         .commands(Commands::dispatch_config())
@@ -116,6 +127,29 @@ pub fn build_dispatch_app(app_state: AppState) -> App {
         .expect("Failed to configure open input")
         .build()
         .expect("Failed to build app")
+}
+
+/// The MiniJinja engine the listing family renders through.
+///
+/// Standout's default engine already carries the framework filters (`col`, `tabular`,
+/// `nl`, …); this adds the three render-only seams the `list`/`search`/`peek` templates
+/// need and that MiniJinja cannot derive for itself:
+///
+/// - `timeago` — clock arithmetic against `Utc::now()` (`created_at | timeago`).
+/// - `peek` — the body preview, delegating to `padzapp::peek` (`content | peek`).
+/// - `grouped_help()` — the clap-rendered command help shown only on an empty store.
+///
+/// All three run exclusively on the template path, so structured output never sees a
+/// relative timestamp, a preview, or the help blob. Registering them here (rather than
+/// via a context provider) is what lets the templates read the core `DisplayPad` tree
+/// directly instead of a flattened row mirror.
+fn listing_engine() -> MiniJinjaEngine {
+    let mut engine = MiniJinjaEngine::new();
+    let env = engine.environment_mut();
+    env.add_filter("timeago", timeago_filter);
+    env.add_filter("peek", peek_filter);
+    env.add_function("grouped_help", get_grouped_help);
+    engine
 }
 
 /// Handle the result of a dispatch operation.

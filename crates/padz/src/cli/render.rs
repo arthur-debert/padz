@@ -33,9 +33,6 @@
 //! its place:
 //!
 //! - [`line_width`] — reads process state (`$COLUMNS`, the tty) that MiniJinja cannot.
-//! - [`flatten`] — turns the pad *tree* into ordered rows with a depth. MiniJinja has
-//!   no clean recursion over a nested structure, and depth is data, not layout: the
-//!   template still decides what a depth is worth in spaces.
 //! - [`PadRow::section`] — which lifecycle bucket a row's **root** sits in. Templates
 //!   drive section breaks off this; it cannot be read off a row's own index, because a
 //!   pinned root's children are indexed `Regular` (see [`SectionKind`]).
@@ -44,12 +41,25 @@
 //! - [`build_peek`] — delegates to `padzapp::peek`, which owns the preview rules.
 //!
 //! Everything a template can decide, a template decides.
+//!
+//! ## Listing renders straight from the core tree
+//!
+//! The `list`/`search`/`peek` family no longer projects into a flat `*Row` mirror.
+//! `list.jinja` walks the core [`DisplayPad`] tree with a MiniJinja recursive loop
+//! (`{% for pad in pads recursive %}` + `loop.depth0`), so depth and section fall out
+//! of the tree itself. The only Rust that survives on that path is two MiniJinja
+//! filters — [`timeago_filter`] (needs `Utc::now()`) and [`peek_filter`] (wraps
+//! `padzapp::peek::format_as_peek`) — registered on the template engine in
+//! [`super::commands`]. Both are render-path only and never touch structured output.
+//!
+//! The `PadRow`/`SectionKind`/`TimeAgo`/`build_peek` derivations below are still used
+//! by the modification and tagging mirrors (`modification_result.jinja`,
+//! `tagging.jinja`), which have not migrated yet; they retire with those families.
 
 use super::result::{
     ModificationActionResult, ModificationNoticeResult, ModificationResult, MutationOutcomeResult,
-    MutationStatusResult, PadListResult, TaggingResult, UpdateKindResult,
+    MutationStatusResult, TaggingResult, UpdateKindResult,
 };
-use super::setup::get_grouped_help;
 use chrono::{DateTime, Utc};
 use minijinja::Value;
 use padzapp::index::{DisplayIndex, DisplayPad, SearchMatch};
@@ -63,8 +73,6 @@ pub const MIN_LINE_WIDTH: usize = 30;
 /// Default width when no terminal is detected and COLUMNS is unset (e.g. piped output).
 pub const DEFAULT_LINE_WIDTH: usize = 80;
 
-/// The context name `list.jinja` reads its view data from.
-pub const LIST_VIEW: &str = "list_view";
 /// The context name `modification_result.jinja` reads its view data from.
 pub const MODIFICATION_VIEW: &str = "modification_view";
 /// The context name `tagging.jinja` reads its view data from.
@@ -84,10 +92,19 @@ pub const TERMINAL: &str = "terminal";
 /// We subtract 1 to compensate for `⏲` (U+23F2) which `unicode-width` measures as 1
 /// column but terminals render as 2. Standout's tabular system uses `unicode-width`
 /// internally, so without this adjustment every line would overflow by 1 character.
+/// `⏲` is Unicode *Narrow*, not East-Asian *ambiguous*, so no ambiguous-width policy
+/// pays this back — the `-1` is the only thing that does.
 ///
 /// This reads `$COLUMNS` rather than `RenderContext::terminal_width` on purpose: the
 /// context field is `None` whenever output is piped, which is exactly the case tests
 /// and shell pipelines need to control.
+///
+/// Since standout 7.9.1 this is padz's installed terminal-width detector (see
+/// [`detect_width`] and [`super::commands::run`]): the framework's `tabular()`/`table()`
+/// width cascade resolves against it, so the listing templates call `tabular([...])`
+/// with no `width=` and still get this exact width. It also still backs the `terminal`
+/// context provider that the search-hit and modification/tagging templates read
+/// directly (those do manual width math a table cannot express).
 pub fn line_width() -> usize {
     let raw = std::env::var("COLUMNS")
         .ok()
@@ -95,6 +112,17 @@ pub fn line_width() -> usize {
         .or_else(|| terminal_size::terminal_size().map(|(w, _)| w.0 as usize))
         .unwrap_or(DEFAULT_LINE_WIDTH);
     raw.max(MIN_LINE_WIDTH).saturating_sub(1)
+}
+
+/// padz's terminal-width detector, installed with `set_terminal_width_detector`.
+///
+/// standout 7.9.1's default detector reads the tty via `terminal_size` and does not
+/// consult `$COLUMNS`, so under a pipe it yields `None` and `tabular()` would fall back
+/// to a bare 80 — losing both the `$COLUMNS` control tests rely on and the `⏲` payback.
+/// Installing this makes the framework width cascade resolve to [`line_width`], which is
+/// what keeps piped and tty output byte-identical to before.
+pub fn detect_width() -> Option<usize> {
+    Some(line_width())
 }
 
 // =============================================================================
@@ -190,25 +218,6 @@ pub struct PadRow {
     pub peek: Option<PeekResult>,
 }
 
-/// Template-ready view for a listing.
-#[derive(Debug, Clone, Serialize)]
-pub struct ListView {
-    pub rows: Vec<PadRow>,
-    /// The listing was narrowed and matched nothing (vs. the store being empty).
-    pub filtered: bool,
-    /// Group rows under lifecycle section headers (`--all`).
-    pub sections: bool,
-    /// Draw todo status icons.
-    pub show_status: bool,
-    /// `--peek` was asked for. Distinct from a row's own `peek`, which is absent when
-    /// a pad has no body: peek *mode* still restyles every title, previewable or not.
-    pub peek: bool,
-    /// Append the deleted-pads help block.
-    pub deleted_help: bool,
-    /// The grouped command help, shown when the store is empty. Rendered by clap.
-    pub help_text: String,
-}
-
 /// Template-ready view for a modification.
 #[derive(Debug, Clone, Serialize)]
 pub struct ModificationView {
@@ -257,16 +266,6 @@ pub fn terminal_provider(_ctx: &RenderContext) -> Value {
     Value::from_serialize(serde_json::json!({ "width": line_width() }))
 }
 
-/// Context provider for `list.jinja`.
-///
-/// Returns `undefined` when the rendered command did not produce a [`PadListResult`].
-pub fn list_view_provider(ctx: &RenderContext) -> Value {
-    match serde_json::from_value::<PadListResult>(ctx.data.clone()) {
-        Ok(result) => Value::from_serialize(build_list_view(&result)),
-        Err(_) => Value::UNDEFINED,
-    }
-}
-
 /// Context provider for `modification_result.jinja`.
 ///
 /// Returns `undefined` when the rendered command did not produce a
@@ -289,31 +288,6 @@ pub fn tagging_view_provider(ctx: &RenderContext) -> Value {
 // =============================================================================
 // View builders
 // =============================================================================
-
-/// Builds the template-ready view for a listing.
-pub fn build_list_view(result: &PadListResult) -> ListView {
-    let opts = &result.request;
-    let mut rows = Vec::new();
-    for dp in &result.pads {
-        flatten(dp, 0, SectionKind::of(&dp.index), opts, &mut rows);
-    }
-    ListView {
-        rows,
-        filtered: opts.filtered,
-        sections: opts.sections,
-        show_status: opts.status,
-        peek: opts.peek,
-        // An empty listing has no deleted pads to explain how to restore, so the
-        // help block would be answering a question nobody asked.
-        deleted_help: opts.deleted_help && !result.pads.is_empty(),
-        // Only paid for when there is nothing else to show.
-        help_text: if result.pads.is_empty() && !opts.filtered {
-            get_grouped_help()
-        } else {
-            String::new()
-        },
-    }
-}
 
 /// Builds the template-ready view for a modification result.
 ///
@@ -437,22 +411,6 @@ fn mutation_outcome(outcome: &MutationOutcomeResult) -> Option<MutationOutcomeVi
     }
 }
 
-/// Recursively flattens a pad and its children into depth-tagged rows.
-///
-/// `section` is the *root's* bucket and is carried down unchanged — see [`SectionKind`].
-fn flatten(
-    dp: &DisplayPad,
-    depth: usize,
-    section: SectionKind,
-    opts: &super::result::ListRequest,
-    out: &mut Vec<PadRow>,
-) {
-    out.push(row(dp, depth, section, opts));
-    for child in &dp.children {
-        flatten(child, depth + 1, section, opts, out);
-    }
-}
-
 /// Builds one row from a pad.
 fn row(
     dp: &DisplayPad,
@@ -488,22 +446,56 @@ fn row(
 /// The preview rules (how many lines, where to elide) belong to `padzapp::peek`; this
 /// only feeds it the body and drops an empty result.
 fn build_peek(dp: &DisplayPad) -> Option<PeekResult> {
-    let body: String = dp
-        .pad
-        .content
-        .lines()
-        .skip(1)
-        .collect::<Vec<_>>()
-        .join("\n");
-    let result = format_as_peek(&body, 3);
+    peek_body(&dp.pad.content)
+}
+
+/// Number of preview lines each `peek` shows at the top and bottom of a body.
+const PEEK_LINES: usize = 3;
+
+/// Builds the peek preview for a pad's raw content, or `None` when there is no body.
+///
+/// The title line is dropped (`.lines().skip(1)`) so the preview shows body only, then
+/// `padzapp::peek` decides how many lines to keep and where to elide. An empty result
+/// (a pad with nothing under its title) previews nothing.
+fn peek_body(content: &str) -> Option<PeekResult> {
+    let body: String = content.lines().skip(1).collect::<Vec<_>>().join("\n");
+    let result = format_as_peek(&body, PEEK_LINES);
     (!result.opening_lines.is_empty()).then_some(result)
+}
+
+// =============================================================================
+// MiniJinja filters (the listing render path)
+// =============================================================================
+
+/// `timeago` filter: turns a serialized `created_at` timestamp into `{value, unit}`.
+///
+/// The input is the RFC3339 string serde produces for `DateTime<Utc>`. The template
+/// composes the label (`"3m ⏲"`); this only does the clock arithmetic, which needs
+/// `Utc::now()` and so cannot live in the template. A value that is not a parseable
+/// timestamp renders as `undefined` rather than aborting the whole listing.
+pub fn timeago_filter(value: &str) -> Value {
+    match DateTime::parse_from_rfc3339(value) {
+        Ok(ts) => Value::from_serialize(TimeAgo::since(ts.with_timezone(&Utc))),
+        Err(_) => Value::UNDEFINED,
+    }
+}
+
+/// `peek` filter: previews a pad's body, or `undefined` when it has none.
+///
+/// Wraps [`peek_body`] so the preview rules stay in `padzapp::peek` and never leak into
+/// structured output — the filter only runs on the template path. `undefined` lets the
+/// template gate the preview block with a plain `{% if pad.pad.content | peek %}`.
+pub fn peek_filter(content: &str) -> Value {
+    match peek_body(content) {
+        Some(result) => Value::from_serialize(result),
+        None => Value::UNDEFINED,
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::cli::result::{ListRequest, ModificationRequest};
-    use padzapp::index::MatchSegment;
+    use crate::cli::result::ModificationRequest;
     use padzapp::model::Pad;
 
     fn pad(title: &str) -> Pad {
@@ -519,163 +511,38 @@ mod tests {
         }
     }
 
-    fn list(pads: Vec<DisplayPad>, request: ListRequest) -> PadListResult {
-        PadListResult { pads, request }
-    }
-
     // =========================================================================
-    // flatten / SectionKind
+    // peek / timeago filters (the listing render path)
     // =========================================================================
 
-    /// The whole reason `section` exists rather than reading each row's own index.
-    ///
-    /// `index_pads` gives a pinned root's children `Regular` indexes, so a template
-    /// driving section breaks off the row's own index would split the pinned block
-    /// open at its first child. Every row carries its *root's* bucket instead.
+    /// The `peek` filter drops the title line and previews the body; a pad whose
+    /// content is only its title has nothing to preview and renders `undefined`, which
+    /// is what lets the template gate the block with a plain `{% if ... | peek %}`.
     #[test]
-    fn a_pinned_roots_children_stay_in_the_pinned_section() {
-        let tree = dp(
-            pad("root"),
-            DisplayIndex::Pinned(1),
-            vec![dp(pad("child"), DisplayIndex::Regular(1), vec![])],
-        );
-        let view = build_list_view(&list(vec![tree], ListRequest::default()));
-
-        assert_eq!(view.rows.len(), 2);
-        assert_eq!(view.rows[1].index, DisplayIndex::Regular(1));
+    fn peek_filter_previews_a_body_and_is_undefined_without_one() {
+        let bodied = peek_filter("has body\n\nbody line");
+        assert!(!bodied.is_undefined(), "a pad with a body previews");
         assert_eq!(
-            view.rows[1].section,
-            SectionKind::Pinned,
-            "a child's section is its root's, not its own index's"
+            bodied.get_attr("opening_lines").unwrap().as_str(),
+            Some("body line")
         );
+
+        // Title line only: nothing under the title to preview.
+        assert!(peek_filter("bare").is_undefined());
+        assert!(peek_filter("").is_undefined());
     }
 
+    /// The `timeago` filter parses the RFC3339 string serde emits for `created_at` and
+    /// returns the `{value, unit}` pair; an unparseable value renders `undefined`
+    /// rather than aborting the listing.
     #[test]
-    fn flatten_walks_depth_first_and_tags_each_row_with_its_depth() {
-        let tree = dp(
-            pad("root"),
-            DisplayIndex::Regular(1),
-            vec![dp(
-                pad("child"),
-                DisplayIndex::Regular(1),
-                vec![dp(pad("grandchild"), DisplayIndex::Regular(1), vec![])],
-            )],
-        );
-        let view = build_list_view(&list(vec![tree], ListRequest::default()));
+    fn timeago_filter_parses_a_timestamp_and_rejects_junk() {
+        let long_ago = timeago_filter("2000-01-01T00:00:00Z");
+        assert!(!long_ago.is_undefined());
+        // Decades ago reads in years.
+        assert_eq!(long_ago.get_attr("unit").unwrap().as_str(), Some("y"));
 
-        let seen: Vec<(&str, usize)> = view
-            .rows
-            .iter()
-            .map(|r| (r.title.as_str(), r.depth))
-            .collect();
-        assert_eq!(seen, [("root", 0), ("child", 1), ("grandchild", 2)]);
-    }
-
-    // =========================================================================
-    // Request-driven fields
-    // =========================================================================
-
-    #[test]
-    fn short_uuid_is_present_only_when_asked_for() {
-        let p = pad("p");
-        let full = p.metadata.id.to_string();
-        let tree = dp(p, DisplayIndex::Regular(1), vec![]);
-
-        let off = build_list_view(&list(vec![tree.clone()], ListRequest::default()));
-        assert_eq!(off.rows[0].short_uuid, None);
-
-        let on = build_list_view(&list(
-            vec![tree],
-            ListRequest {
-                uuid: true,
-                ..Default::default()
-            },
-        ));
-        assert_eq!(on.rows[0].short_uuid.as_deref(), Some(&full[..8]));
-    }
-
-    #[test]
-    fn peek_is_absent_without_the_flag_and_when_a_pad_has_no_body() {
-        let bodied = dp(pad("has body"), DisplayIndex::Regular(1), vec![]);
-        // Empty content normalizes to the title line alone — nothing to preview.
-        let bare = dp(
-            Pad::new("bare".to_string(), String::new()),
-            DisplayIndex::Regular(2),
-            vec![],
-        );
-        let request = ListRequest {
-            peek: true,
-            ..Default::default()
-        };
-
-        let off = build_list_view(&list(vec![bodied.clone()], ListRequest::default()));
-        assert!(off.rows[0].peek.is_none(), "no --peek, no preview");
-
-        let on = build_list_view(&list(vec![bodied, bare], request));
-        assert!(on.rows[0].peek.is_some());
-        assert!(on.rows[1].peek.is_none(), "a bodyless pad previews nothing");
-    }
-
-    /// Line 0 is the *title* match, which the pad's own title line already shows;
-    /// repeating it as a hit line would print the title twice.
-    #[test]
-    fn the_title_match_is_not_repeated_as_a_hit_line() {
-        let mut tree = dp(pad("p"), DisplayIndex::Regular(1), vec![]);
-        tree.matches = Some(vec![
-            SearchMatch {
-                line_number: 0,
-                segments: vec![MatchSegment::Plain("title".into())],
-            },
-            SearchMatch {
-                line_number: 3,
-                segments: vec![MatchSegment::Match("body".into())],
-            },
-        ]);
-        let view = build_list_view(&list(vec![tree], ListRequest::default()));
-
-        let lines: Vec<usize> = view.rows[0].matches.iter().map(|m| m.line_number).collect();
-        assert_eq!(lines, [3]);
-    }
-
-    /// The help block explains how to restore deleted pads. With nothing listed
-    /// there is nothing to restore, so it would answer a question nobody asked.
-    #[test]
-    fn the_deleted_help_block_is_suppressed_on_an_empty_listing() {
-        let request = ListRequest {
-            deleted_help: true,
-            ..Default::default()
-        };
-        let empty = build_list_view(&list(vec![], request.clone()));
-        assert!(!empty.deleted_help);
-
-        let populated = build_list_view(&list(
-            vec![dp(pad("p"), DisplayIndex::Deleted(1), vec![])],
-            request,
-        ));
-        assert!(populated.deleted_help);
-    }
-
-    /// The grouped help is only rendered when it will actually be shown — it is
-    /// clap work, and a populated listing never displays it.
-    #[test]
-    fn the_grouped_help_is_built_only_for_an_empty_unfiltered_store() {
-        assert!(!build_list_view(&list(vec![], ListRequest::default()))
-            .help_text
-            .is_empty());
-
-        let filtered = ListRequest {
-            filtered: true,
-            ..Default::default()
-        };
-        assert!(build_list_view(&list(vec![], filtered))
-            .help_text
-            .is_empty());
-
-        let populated = build_list_view(&list(
-            vec![dp(pad("p"), DisplayIndex::Regular(1), vec![])],
-            ListRequest::default(),
-        ));
-        assert!(populated.help_text.is_empty());
+        assert!(timeago_filter("not a timestamp").is_undefined());
     }
 
     // =========================================================================
