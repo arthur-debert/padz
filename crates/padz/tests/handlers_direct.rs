@@ -1048,6 +1048,24 @@ fn purge_maps_selected_pads_and_counts() {
     assert_eq!(descendant_count, 0);
 }
 
+#[test]
+fn purge_maps_a_nested_selection_with_its_complete_path() {
+    let fx = Fixture::new();
+    let state = fx.app_state();
+    fx.seed_pad(&state, "parent", "");
+    fx.seed_child(&state, "1", "child", "");
+    let ctx = support::ctx_with_state(state);
+
+    let result: PurgeResult = rendered(handlers::purge(&ctx, vec!["1.1".to_string()], true, false));
+
+    let PurgeResult::Purged { selected_pads, .. } = result else {
+        panic!("expected a completed purge");
+    };
+    assert_eq!(selected_pads.len(), 1);
+    assert_eq!(selected_pads[0].selector, "1.1");
+    assert_eq!(selected_pads[0].title, "child");
+}
+
 // =============================================================================
 // Input-chain consumers — create / edit
 // =============================================================================

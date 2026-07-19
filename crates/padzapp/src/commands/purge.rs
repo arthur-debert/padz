@@ -6,15 +6,33 @@ use crate::store::DataStore;
 use std::collections::HashSet;
 use uuid::Uuid;
 
-use super::helpers::{indexed_pads, pads_by_selectors, TitleBucket};
+use super::helpers::{indexed_pads, pads_with_paths_by_selectors, TitleBucket};
+
+/// One explicitly selected pad with its complete canonical display path.
+#[derive(Debug, Clone)]
+pub struct PurgeSelection {
+    pub path: Vec<DisplayIndex>,
+    pub pad: DisplayPad,
+}
+
+impl PurgeSelection {
+    /// Return the complete canonical display selector for this selection.
+    pub fn selector(&self) -> String {
+        self.path
+            .iter()
+            .map(ToString::to_string)
+            .collect::<Vec<_>>()
+            .join(".")
+    }
+}
 
 /// Semantic result of a permanent-deletion request.
 #[derive(Debug, Clone)]
 pub enum PurgeOutcome {
     Empty,
     Purged {
-        /// Explicitly selected pads, de-duplicated by UUID in display order.
-        selected_pads: Vec<DisplayPad>,
+        /// Explicit selections, de-duplicated by UUID in display order.
+        selected_pads: Vec<PurgeSelection>,
         /// Total number of unique pads permanently deleted.
         total_purged: usize,
         /// Unique deleted descendants that were not explicitly selected.
@@ -44,7 +62,7 @@ pub fn run<S: DataStore>(
     include_done: bool,
 ) -> Result<PurgeOutcome> {
     // 1. Resolve targets
-    let mut pads_to_purge = if selectors.is_empty() {
+    let mut pads_to_purge: Vec<PurgeSelection> = if selectors.is_empty() {
         let all_pads = indexed_pads(store, scope)?;
         all_pads
             .into_iter()
@@ -52,22 +70,32 @@ pub fn run<S: DataStore>(
                 matches!(dp.index, DisplayIndex::Deleted(_))
                     || (include_done && dp.pad.metadata.status == TodoStatus::Done)
             })
+            .map(|pad| PurgeSelection {
+                path: vec![pad.index.clone()],
+                pad,
+            })
             .collect()
     } else {
-        pads_by_selectors(store, scope, selectors, true, TitleBucket::Deleted)?
+        pads_with_paths_by_selectors(store, scope, selectors, true, TitleBucket::Deleted)?
+            .into_iter()
+            .map(|(path, pad)| PurgeSelection { path, pad })
+            .collect()
     };
 
     // Pinned active pads appear under both pinned and regular display indexes.
     // Preserve the first display identity while keeping semantic selections unique.
     let mut seen_targets = HashSet::new();
-    pads_to_purge.retain(|dp| seen_targets.insert(dp.pad.metadata.id));
+    pads_to_purge.retain(|selection| seen_targets.insert(selection.pad.pad.metadata.id));
 
     if pads_to_purge.is_empty() {
         return Ok(PurgeOutcome::Empty);
     }
 
     // 2. Find descendants
-    let target_ids: Vec<Uuid> = pads_to_purge.iter().map(|dp| dp.pad.metadata.id).collect();
+    let target_ids: Vec<Uuid> = pads_to_purge
+        .iter()
+        .map(|selection| selection.pad.pad.metadata.id)
+        .collect();
     let descendants = super::helpers::get_descendant_ids(store, scope, &target_ids)?;
 
     // 3. Safety valve: require --recursive if there are children
@@ -76,8 +104,8 @@ pub fn run<S: DataStore>(
             "Cannot purge: {} pad(s) have children. Use --recursive (-r) to purge entire subtrees.",
             pads_to_purge
                 .iter()
-                .filter(|dp| {
-                    let id = dp.pad.metadata.id;
+                .filter(|selection| {
+                    let id = selection.pad.pad.metadata.id;
                     super::helpers::get_descendant_ids(store, scope, &[id])
                         .map(|d| !d.is_empty())
                         .unwrap_or(false)
@@ -147,7 +175,13 @@ mod tests {
         };
         let actual_selected: Vec<String> = selected_pads
             .iter()
-            .map(|pad| format!("{} {}", pad.index, pad.pad.metadata.title))
+            .map(|selection| {
+                format!(
+                    "{} {}",
+                    selection.selector(),
+                    selection.pad.pad.metadata.title
+                )
+            })
             .collect();
         assert_eq!(actual_selected, selected);
         assert_eq!(actual_total, total_purged);
@@ -397,7 +431,7 @@ mod tests {
         )
         .unwrap();
 
-        assert_purged(res, &["1 Parent", "1 Child"], 2, 0);
+        assert_purged(res, &["1 Parent", "1.1 Child"], 2, 0);
     }
 
     #[test]

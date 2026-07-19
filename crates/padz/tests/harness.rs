@@ -373,6 +373,28 @@ fn purge_preserves_completed_text_and_exposes_selection_and_counts() {
 
 #[test]
 #[serial]
+fn purge_preserves_a_nested_selection_path_in_text_and_structured_output() {
+    let fx = Fixture::new();
+    let state = fx.app_state();
+    fx.seed_pad(&state, "parent", "");
+    fx.seed_child(&state, "1", "child", "");
+    drop(state);
+
+    let (app, cmd) = fx.read_app();
+    let json = TestHarness::new().run(
+        &app,
+        cmd,
+        fx.argv(&["purge", "1.1", "--yes", "--output", "json"]),
+    );
+
+    json.assert_success();
+    let value: serde_json::Value = serde_json::from_str(json.stdout()).unwrap();
+    assert_eq!(value["selected_pads"][0]["selector"], "1.1");
+    assert_eq!(value["selected_pads"][0]["title"], "child");
+}
+
+#[test]
+#[serial]
 fn empty_purge_is_distinct_in_text_and_structured_output() {
     let fx = Fixture::new();
     let (app, cmd) = fx.read_app();

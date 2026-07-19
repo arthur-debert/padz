@@ -19,8 +19,10 @@
 //!
 //! ## Consistent Pad Representation
 //!
-//! All pad data in [`CmdResult`] and semantic outcomes uses [`DisplayPad`], which pairs a [`Pad`] with its
-//! canonical [`DisplayIndex`]. This applies to both:
+//! Pad data in [`CmdResult`] and semantic outcomes uses [`DisplayPad`], which pairs a [`Pad`] with its
+//! local canonical [`DisplayIndex`]. Hierarchical semantic results additionally
+//! carry the complete display path when clients must preserve selector identity.
+//! This applies to both:
 //! - `affected_pads`: Pads modified by the operation (with post-operation index)
 //! - `listed_pads`: Pads returned for display (with current index)
 //!
@@ -82,7 +84,7 @@ pub use commands::doctor::DoctorOutcome;
 pub use commands::get::{PadFilter, PadStatusFilter};
 pub use commands::import::ImportReport;
 pub use commands::init::InitializationOutcome;
-pub use commands::purge::PurgeOutcome;
+pub use commands::purge::{PurgeOutcome, PurgeSelection};
 pub use commands::tagging::{TaggingOutcome, TaggingResult};
 pub use commands::tags::{TagCatalogOutcome, TagRegistryOutcome};
 pub use commands::{CmdMessage, CmdResult, MessageLevel, PadUpdate, PadzPaths};

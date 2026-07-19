@@ -1002,9 +1002,9 @@ impl From<padzapp::commands::purge::PurgeOutcome> for PurgeResult {
                 selected_pads: selected_pads
                     .into_iter()
                     .map(|selected| PurgePadResult {
-                        selector: selected.index.to_string(),
-                        id: selected.pad.metadata.id.to_string(),
-                        title: selected.pad.metadata.title,
+                        selector: selected.selector(),
+                        id: selected.pad.pad.metadata.id.to_string(),
+                        title: selected.pad.pad.metadata.title,
                     })
                     .collect(),
                 total_purged,

@@ -15,8 +15,10 @@
 [warning]Failed to {{ operation }} pad {{ diagnostic.pad_id }}: {{ diagnostic.detail }}[/warning]
 {% elif diagnostic.kind == "tag_registry_merge_failed" -%}
 [warning]Tag registry merge failed: {{ diagnostic.detail }}[/warning]
-{% else -%}
+{% elif diagnostic.kind == "source_delete_failed" -%}
 [warning]Copied but failed to remove from source, pad {{ diagnostic.pad_id }}: {{ diagnostic.detail }}[/warning]
+{% else -%}
+[warning]Transfer reported an unrecognized diagnostic: {{ diagnostic.kind }}[/warning]
 {% endif -%}
 {% endfor -%}
 {% if status == "empty" -%}
