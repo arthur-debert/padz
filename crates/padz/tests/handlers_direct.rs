@@ -31,9 +31,10 @@ use padz::cli::result::{
     ImportSourceKindResult, ImportSourceStatusResult, ImportStatusResult, InitializationResult,
     Listing, MetadataWarningReasonResult, ModificationActionResult, ModificationNoticeResult,
     ModificationResult, MutationOutcomeResult, MutationStatusResult, PadContentResult, PathResult,
-    PurgeResult, TagCatalogResult, TagRegistryResult, TaggingResult, TransferDirectionResult,
-    TransferOperationResult, TransferResult, TransferSelectionResult, TransferStatusResult,
-    UpdateKindResult, UuidResult,
+    PurgeResult, TagCatalogResult, TagRegistryResult, TaggingResult, UpdateKindResult, UuidResult,
+};
+use padzapp::commands::transfer::{
+    TransferDirection, TransferMode, TransferReport, TransferSelection, TransferStatus,
 };
 use padzapp::commands::NestingMode;
 use standout::cli::Output;
@@ -922,34 +923,28 @@ fn clone_maps_operation_direction_peer_selection_and_copied_ids() {
     source.seed_pad(&state, "transfer me", "body");
     let ctx = support::ctx_with_state(state);
 
-    let result: TransferResult = rendered(handlers::clone(
+    let result: TransferReport = rendered(handlers::clone(
         &ctx,
         vec!["1".to_string()],
         Some(peer.project().display().to_string()),
         None,
     ));
 
-    assert_eq!(result.status, TransferStatusResult::FullSuccess);
-    assert_eq!(result.operation, TransferOperationResult::Clone);
-    assert_eq!(result.direction, TransferDirectionResult::To);
+    assert_eq!(result.status, TransferStatus::FullSuccess);
+    assert_eq!(result.operation, TransferMode::Clone);
+    assert_eq!(result.direction, TransferDirection::To);
     assert_eq!(
         result.peer_store,
-        peer.project()
-            .join(".padz")
-            .canonicalize()
-            .unwrap()
-            .display()
-            .to_string()
+        peer.project().join(".padz").canonicalize().unwrap()
     );
     assert_eq!(
         result.requested_selection,
-        TransferSelectionResult::Explicit {
+        TransferSelection::Explicit {
             selectors: vec!["1".to_string()]
         }
     );
     assert_eq!(result.copied_count, 1);
     assert_eq!(result.copied_pad_ids.len(), 1);
-    assert!(uuid::Uuid::parse_str(&result.copied_pad_ids[0]).is_ok());
     assert!(result.diagnostics.is_empty());
 }
 
