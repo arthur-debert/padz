@@ -33,7 +33,7 @@ use super::result::{
     DoctorResult, ExportReportResult, ImportResult, InitializationResult, ListRequest, Listing,
     ModificationActionResult, ModificationRequest, ModificationResult, PadContent,
     PadContentResult, PathResult, PurgeResult, TagCatalogResult, TagRegistryResult, TaggingResult,
-    TransferResult, UuidResult,
+    UuidResult,
 };
 
 // =============================================================================
@@ -366,19 +366,19 @@ impl<'a> ScopedApi<'a> {
         to: Option<&str>,
         from: Option<&str>,
         mode: padzapp::commands::transfer::TransferMode,
-    ) -> Result<Output<TransferResult>, anyhow::Error> {
+    ) -> Result<Output<padzapp::commands::transfer::TransferReport>, anyhow::Error> {
         match (to, from) {
             (Some(dest), None) => {
                 let path = std::path::PathBuf::from(dest);
                 let result =
                     self.call(|api, scope| api.transfer_pads_to(scope, indexes, &path, mode))?;
-                Ok(Output::Render(result.into()))
+                Ok(Output::Render(result))
             }
             (None, Some(src)) => {
                 let path = std::path::PathBuf::from(src);
                 let result =
                     self.call(|api, scope| api.transfer_pads_from(scope, indexes, &path, mode))?;
-                Ok(Output::Render(result.into()))
+                Ok(Output::Render(result))
             }
             (Some(_), Some(_)) => Err(anyhow::anyhow!("--to and --from are mutually exclusive")),
             (None, None) => Err(anyhow::anyhow!("exactly one of --to or --from is required")),
@@ -1205,7 +1205,7 @@ pub fn clone(
     #[arg] indexes: Vec<String>,
     #[arg] to: Option<String>,
     #[arg] from: Option<String>,
-) -> Result<Output<TransferResult>, anyhow::Error> {
+) -> Result<Output<padzapp::commands::transfer::TransferReport>, anyhow::Error> {
     api(ctx).transfer_pads(
         &indexes,
         to.as_deref(),
@@ -1220,7 +1220,7 @@ pub fn migrate(
     #[arg] indexes: Vec<String>,
     #[arg] to: Option<String>,
     #[arg] from: Option<String>,
-) -> Result<Output<TransferResult>, anyhow::Error> {
+) -> Result<Output<padzapp::commands::transfer::TransferReport>, anyhow::Error> {
     api(ctx).transfer_pads(
         &indexes,
         to.as_deref(),

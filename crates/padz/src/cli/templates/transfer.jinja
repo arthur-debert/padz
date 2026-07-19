@@ -1,14 +1,7 @@
 {#- Semantic cross-store facts rendered with the historical wording/order. -#}
 {% for diagnostic in diagnostics -%}
 {% if diagnostic.kind == "destination_bucket_enumeration_failed" -%}
-{% if diagnostic.bucket == "active" -%}
-{% set bucket = "Active" -%}
-{% elif diagnostic.bucket == "archived" -%}
-{% set bucket = "Archived" -%}
-{% else -%}
-{% set bucket = "Deleted" -%}
-{% endif -%}
-[warning]Could not enumerate destination bucket {{ bucket }}: {{ diagnostic.detail }}. Parent relationships that cross this bucket may be orphaned.[/warning]
+[warning]Could not enumerate destination bucket {{ diagnostic.bucket }}: {{ diagnostic.detail }}. Parent relationships that cross this bucket may be orphaned.[/warning]
 {% elif diagnostic.kind == "parent_orphaned" -%}
 [info]Pad {{ diagnostic.pad_id }}: parent not in move set, orphaned to root[/info]
 {% elif diagnostic.kind == "copy_failed" -%}
