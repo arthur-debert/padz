@@ -29,8 +29,7 @@ use std::cell::RefCell;
 use std::rc::Rc;
 
 use super::result::{
-    CreateAbortKindResult, CreateAbortReasonResult, CreateAbortResult, CreateResult, ListRequest,
-    Listing, ModificationActionResult, ModificationRequest, ModificationResult, PadContent,
+    ListRequest, Listing, Modification, ModificationAction, ModificationRequest, PadContent,
     PadContentResult,
 };
 use super::views::{CopyView, PathView, UuidView};
@@ -137,7 +136,7 @@ fn get_state(ctx: &CommandContext) -> &AppState {
 /// let result = state.with_api(|api| {
 ///     api.method(state.scope, &args).map_err(to_anyhow)
 /// })?;
-/// Ok(Output::Render(ModificationResult { ... }))
+/// Ok(Output::Render(Modification { ... }))
 /// ```
 ///
 /// With ScopedApi, handlers become one-liners:
@@ -161,14 +160,14 @@ impl<'a> ScopedApi<'a> {
             .with_api(|api| f(api, self.state.scope).map_err(to_anyhow))
     }
 
-    /// Map a CmdResult (modification) into the typed modification result.
+    /// Map a CmdResult (modification) into the thin modification view.
     /// When `force_show_status` is true, status icons are requested regardless of mode.
     fn modification(
         &self,
-        action: ModificationActionResult,
+        action: ModificationAction,
         result: CmdResult,
         force_show_status: bool,
-    ) -> Result<Output<ModificationResult>, anyhow::Error> {
+    ) -> Result<Output<Modification>, anyhow::Error> {
         Ok(Output::Render(self.modification_result(
             action,
             result,
@@ -176,20 +175,23 @@ impl<'a> ScopedApi<'a> {
         )))
     }
 
-    /// Build a typed modification result without wrapping it in `Output`.
+    /// Build the thin modification view without wrapping it in `Output`.
     ///
-    /// Used by the handlers that assemble a `CmdResult` themselves (create, edit).
+    /// The core's `notices`/`outcomes` (`CmdNotice`/`CmdOutcome`) ride through
+    /// verbatim — no projection — so the template and structured output read the
+    /// same core shape. Used by the handlers that assemble a `CmdResult`
+    /// themselves (create, edit).
     fn modification_result(
         &self,
-        action: ModificationActionResult,
+        action: ModificationAction,
         result: CmdResult,
         force_show_status: bool,
-    ) -> ModificationResult {
-        ModificationResult {
+    ) -> Modification {
+        Modification {
             action,
             pads: result.affected_pads,
-            notices: result.notices.into_iter().map(Into::into).collect(),
-            outcomes: result.outcomes.into_iter().map(Into::into).collect(),
+            notices: result.notices,
+            outcomes: result.outcomes,
             request: ModificationRequest {
                 status: self.state.wants_status(force_show_status),
             },
@@ -198,80 +200,59 @@ impl<'a> ScopedApi<'a> {
 
     // --- Modification operations ---
 
-    pub fn pin_pads(
-        &self,
-        indexes: &[String],
-    ) -> Result<Output<ModificationResult>, anyhow::Error> {
+    pub fn pin_pads(&self, indexes: &[String]) -> Result<Output<Modification>, anyhow::Error> {
         let result = self.call(|api, scope| api.pin_pads(scope, indexes))?;
-        self.modification(ModificationActionResult::Pin, result, false)
+        self.modification(ModificationAction::Pin, result, false)
     }
 
-    pub fn unpin_pads(
-        &self,
-        indexes: &[String],
-    ) -> Result<Output<ModificationResult>, anyhow::Error> {
+    pub fn unpin_pads(&self, indexes: &[String]) -> Result<Output<Modification>, anyhow::Error> {
         let result = self.call(|api, scope| api.unpin_pads(scope, indexes))?;
-        self.modification(ModificationActionResult::Unpin, result, false)
+        self.modification(ModificationAction::Unpin, result, false)
     }
 
-    pub fn delete_pads(
-        &self,
-        indexes: &[String],
-    ) -> Result<Output<ModificationResult>, anyhow::Error> {
+    pub fn delete_pads(&self, indexes: &[String]) -> Result<Output<Modification>, anyhow::Error> {
         let result = self.call(|api, scope| api.delete_pads(scope, indexes))?;
-        self.modification(ModificationActionResult::Delete, result, false)
+        self.modification(ModificationAction::Delete, result, false)
     }
 
-    pub fn delete_completed_pads(&self) -> Result<Output<ModificationResult>, anyhow::Error> {
+    pub fn delete_completed_pads(&self) -> Result<Output<Modification>, anyhow::Error> {
         let result = self.call(|api, scope| api.delete_completed_pads(scope))?;
-        self.modification(ModificationActionResult::Delete, result, false)
+        self.modification(ModificationAction::Delete, result, false)
     }
 
-    pub fn restore_pads(
-        &self,
-        indexes: &[String],
-    ) -> Result<Output<ModificationResult>, anyhow::Error> {
+    pub fn restore_pads(&self, indexes: &[String]) -> Result<Output<Modification>, anyhow::Error> {
         let result = self.call(|api, scope| api.restore_pads(scope, indexes))?;
-        self.modification(ModificationActionResult::Restore, result, false)
+        self.modification(ModificationAction::Restore, result, false)
     }
 
-    pub fn archive_pads(
-        &self,
-        indexes: &[String],
-    ) -> Result<Output<ModificationResult>, anyhow::Error> {
+    pub fn archive_pads(&self, indexes: &[String]) -> Result<Output<Modification>, anyhow::Error> {
         let result = self.call(|api, scope| api.archive_pads(scope, indexes))?;
-        self.modification(ModificationActionResult::Archive, result, false)
+        self.modification(ModificationAction::Archive, result, false)
     }
 
     pub fn unarchive_pads(
         &self,
         indexes: &[String],
-    ) -> Result<Output<ModificationResult>, anyhow::Error> {
+    ) -> Result<Output<Modification>, anyhow::Error> {
         let result = self.call(|api, scope| api.unarchive_pads(scope, indexes))?;
-        self.modification(ModificationActionResult::Unarchive, result, false)
+        self.modification(ModificationAction::Unarchive, result, false)
     }
 
-    pub fn complete_pads(
-        &self,
-        indexes: &[String],
-    ) -> Result<Output<ModificationResult>, anyhow::Error> {
+    pub fn complete_pads(&self, indexes: &[String]) -> Result<Output<Modification>, anyhow::Error> {
         let result = self.call(|api, scope| api.complete_pads(scope, indexes))?;
-        self.modification(ModificationActionResult::Complete, result, true)
+        self.modification(ModificationAction::Complete, result, true)
     }
 
-    pub fn reopen_pads(
-        &self,
-        indexes: &[String],
-    ) -> Result<Output<ModificationResult>, anyhow::Error> {
+    pub fn reopen_pads(&self, indexes: &[String]) -> Result<Output<Modification>, anyhow::Error> {
         let result = self.call(|api, scope| api.reopen_pads(scope, indexes))?;
-        self.modification(ModificationActionResult::Reopen, result, true)
+        self.modification(ModificationAction::Reopen, result, true)
     }
 
     pub fn move_pads(
         &self,
         indexes: &[String],
         to_root: bool,
-    ) -> Result<Output<ModificationResult>, anyhow::Error> {
+    ) -> Result<Output<Modification>, anyhow::Error> {
         let result = if to_root {
             self.call(|api, scope| api.move_pads(scope, indexes, None))?
         } else {
@@ -283,7 +264,7 @@ impl<'a> ScopedApi<'a> {
             let (sources, dest) = indexes.split_at(indexes.len() - 1);
             self.call(|api, scope| api.move_pads(scope, sources, Some(dest[0].as_str())))?
         };
-        self.modification(ModificationActionResult::Move, result, false)
+        self.modification(ModificationAction::Move, result, false)
     }
 
     // --- Maintenance outcomes ---
@@ -650,15 +631,17 @@ pub(crate) fn split_indexes_and_content(args: &[String]) -> (Vec<String>, Vec<St
 /// decided here: `cli::input`'s chain resolves it before dispatch and this
 /// handler matches on the resulting [`RequestContent`]. The `editor` /
 /// `no_editor` flags are part of that chain's availability rules, so they are
-/// not read here either. Successful creates preserve the modification schema;
-/// empty piped/editor content returns a typed [`CreateResult::Aborted`] outcome.
+/// not read here either. Both paths return the same core [`Modification`] the rest
+/// of the family does (rendered by `modification_result.jinja` with `action =
+/// "create"`): a success carries the created pad, and empty piped/editor content
+/// carries no pads, which the template reads as the aborted-empty-content case.
 #[handler]
 pub fn create(
     #[ctx] ctx: &CommandContext,
     #[arg] inside: Option<String>,
     #[arg] format: Option<String>,
     #[arg] title: Vec<String>,
-) -> Result<Output<CreateResult>, anyhow::Error> {
+) -> Result<Output<Modification>, anyhow::Error> {
     let state = get_state(ctx);
     let content = ctx.input::<RequestContent>(CREATE_CONTENT)?;
     let title_arg = if title.is_empty() {
@@ -723,7 +706,7 @@ pub fn create(
         }
 
         // An empty pipe is an abort: no pad, no editor.
-        RequestContent::PipedEmpty => return Ok(Output::Render(aborted_create())),
+        RequestContent::PipedEmpty => return Ok(aborted_create(ctx)),
 
         // Interactive: create pad first, then open real file in editor.
         //
@@ -770,25 +753,31 @@ pub fn create(
                 }
                 None => {
                     // Empty file - user aborted
-                    return Ok(Output::Render(aborted_create()));
+                    return Ok(aborted_create(ctx));
                 }
             }
         }
     };
 
-    Ok(Output::Render(CreateResult::Created(
-        api(ctx).modification_result(ModificationActionResult::Create, result, false),
+    Ok(Output::Render(api(ctx).modification_result(
+        ModificationAction::Create,
+        result,
+        false,
     )))
 }
 
 /// The result of a `create` the user abandoned by supplying no content.
 ///
-/// No pad was created, so the result carries only the semantic abort facts.
-fn aborted_create() -> CreateResult {
-    CreateResult::Aborted(CreateAbortResult {
-        kind: CreateAbortKindResult::Aborted,
-        reason: CreateAbortReasonResult::EmptyContent,
-    })
+/// No pad was created, so the outcome is a `create` [`Modification`] with no
+/// affected pads — the shape `modification_result.jinja` renders as the
+/// aborted-empty-content warning. Keeping it a `Modification` (rather than a
+/// bespoke abort projection) is what lets create share the family's core outcome.
+fn aborted_create(ctx: &CommandContext) -> Output<Modification> {
+    Output::Render(api(ctx).modification_result(
+        ModificationAction::Create,
+        CmdResult::default(),
+        false,
+    ))
 }
 
 /// List all pads with optional filtering.
@@ -938,7 +927,7 @@ pub fn copy(
 pub fn edit(
     #[ctx] ctx: &CommandContext,
     #[arg] indexes: Vec<String>,
-) -> Result<Output<ModificationResult>, anyhow::Error> {
+) -> Result<Output<Modification>, anyhow::Error> {
     let state = get_state(ctx);
     let content = ctx.input::<RequestContent>(EDIT_CONTENT)?;
 
@@ -966,7 +955,7 @@ pub fn edit(
             let result = update(raw)?;
             state.copy_to_clipboard(raw);
             return Ok(Output::Render(api(ctx).modification_result(
-                ModificationActionResult::Update,
+                ModificationAction::Update,
                 result,
                 false,
             )));
@@ -977,7 +966,7 @@ pub fn edit(
             let result = update(raw)?;
             copy_content_to_clipboard(state, raw);
             return Ok(Output::Render(api(ctx).modification_result(
-                ModificationActionResult::Update,
+                ModificationAction::Update,
                 result,
                 false,
             )));
@@ -1040,14 +1029,14 @@ pub fn edit(
                 ..Default::default()
             };
             Ok(Output::Render(api(ctx).modification_result(
-                ModificationActionResult::Update,
+                ModificationAction::Update,
                 result,
                 false,
             )))
         }
         None => {
             // User emptied the file
-            Ok(Output::<ModificationResult>::Silent)
+            Ok(Output::<Modification>::Silent)
         }
     }
 }
@@ -1057,7 +1046,7 @@ pub fn delete(
     #[ctx] ctx: &CommandContext,
     #[arg] indexes: Vec<String>,
     #[flag] completed: bool,
-) -> Result<Output<ModificationResult>, anyhow::Error> {
+) -> Result<Output<Modification>, anyhow::Error> {
     if completed {
         api(ctx).delete_completed_pads()
     } else {
@@ -1069,7 +1058,7 @@ pub fn delete(
 pub fn restore(
     #[ctx] ctx: &CommandContext,
     #[arg] indexes: Vec<String>,
-) -> Result<Output<ModificationResult>, anyhow::Error> {
+) -> Result<Output<Modification>, anyhow::Error> {
     api(ctx).restore_pads(&indexes)
 }
 
@@ -1077,7 +1066,7 @@ pub fn restore(
 pub fn archive(
     #[ctx] ctx: &CommandContext,
     #[arg] indexes: Vec<String>,
-) -> Result<Output<ModificationResult>, anyhow::Error> {
+) -> Result<Output<Modification>, anyhow::Error> {
     api(ctx).archive_pads(&indexes)
 }
 
@@ -1085,7 +1074,7 @@ pub fn archive(
 pub fn unarchive(
     #[ctx] ctx: &CommandContext,
     #[arg] indexes: Vec<String>,
-) -> Result<Output<ModificationResult>, anyhow::Error> {
+) -> Result<Output<Modification>, anyhow::Error> {
     api(ctx).unarchive_pads(&indexes)
 }
 
@@ -1094,7 +1083,7 @@ pub fn unarchive(
 pub fn pin(
     #[ctx] ctx: &CommandContext,
     #[arg] indexes: Vec<String>,
-) -> Result<Output<ModificationResult>, anyhow::Error> {
+) -> Result<Output<Modification>, anyhow::Error> {
     api(ctx).pin_pads(&indexes)
 }
 
@@ -1102,7 +1091,7 @@ pub fn pin(
 pub fn unpin(
     #[ctx] ctx: &CommandContext,
     #[arg] indexes: Vec<String>,
-) -> Result<Output<ModificationResult>, anyhow::Error> {
+) -> Result<Output<Modification>, anyhow::Error> {
     api(ctx).unpin_pads(&indexes)
 }
 
@@ -1111,7 +1100,7 @@ pub fn move_pads(
     #[ctx] ctx: &CommandContext,
     #[arg] indexes: Vec<String>,
     #[flag] root: bool,
-) -> Result<Output<ModificationResult>, anyhow::Error> {
+) -> Result<Output<Modification>, anyhow::Error> {
     api(ctx).move_pads(&indexes, root)
 }
 
@@ -1151,7 +1140,7 @@ pub fn uuid(
 pub fn complete(
     #[ctx] ctx: &CommandContext,
     #[arg] indexes: Vec<String>,
-) -> Result<Output<ModificationResult>, anyhow::Error> {
+) -> Result<Output<Modification>, anyhow::Error> {
     api(ctx).complete_pads(&indexes)
 }
 
@@ -1159,7 +1148,7 @@ pub fn complete(
 pub fn reopen(
     #[ctx] ctx: &CommandContext,
     #[arg] indexes: Vec<String>,
-) -> Result<Output<ModificationResult>, anyhow::Error> {
+) -> Result<Output<Modification>, anyhow::Error> {
     api(ctx).reopen_pads(&indexes)
 }
 
@@ -1639,7 +1628,7 @@ mod tests {
 
         let result = rendered(pin(&app.ctx, vec!["1".into()]).unwrap());
 
-        assert_eq!(result.action, ModificationActionResult::Pin);
+        assert_eq!(result.action, ModificationAction::Pin);
         assert_eq!(result.pads.len(), 1);
         assert_eq!(result.pads[0].pad.metadata.title, "Pin me");
         assert!(result.pads[0].pad.metadata.is_pinned);
@@ -1652,7 +1641,7 @@ mod tests {
 
         let result = rendered(complete(&app.ctx, vec!["1".into()]).unwrap());
 
-        assert_eq!(result.action, ModificationActionResult::Complete);
+        assert_eq!(result.action, ModificationAction::Complete);
         // A command that changes status always shows it, whatever the mode.
         assert!(result.request.status);
     }
@@ -1667,7 +1656,7 @@ mod tests {
         assert!(result.pads.is_empty());
         assert_eq!(
             result.notices,
-            vec![super::super::result::ModificationNoticeResult::NoCompletedPads]
+            vec![padzapp::commands::CmdNotice::NoCompletedPads]
         );
     }
 

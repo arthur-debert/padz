@@ -25,11 +25,7 @@ mod support;
 
 use padz::cli::handlers;
 use padz::cli::input::{RequestContent, CREATE_CONTENT, EDIT_CONTENT};
-use padz::cli::result::{
-    CreateAbortKindResult, CreateAbortReasonResult, CreateResult, Listing,
-    ModificationActionResult, ModificationNoticeResult, ModificationResult, MutationOutcomeResult,
-    MutationStatusResult, PadContentResult, UpdateKindResult,
-};
+use padz::cli::result::{Listing, Modification, ModificationAction, PadContentResult};
 use padz::cli::views::{CopyView, PathView, UuidView};
 use padzapp::commands::doctor::DoctorOutcome;
 use padzapp::commands::export::{ExportFormat, ExportReport, ExportWarning};
@@ -44,8 +40,8 @@ use padzapp::commands::tags::{TagCatalogOutcome, TagRegistryOutcome};
 use padzapp::commands::transfer::{
     TransferDirection, TransferMode, TransferReport, TransferSelection, TransferStatus,
 };
-use padzapp::commands::NestingMode;
-use padzapp::model::Scope;
+use padzapp::commands::{CmdNotice, CmdOutcome, NestingMode, UpdateKind};
+use padzapp::model::{Scope, TodoStatus};
 use standout::cli::Output;
 use support::Fixture;
 
@@ -73,14 +69,19 @@ fn titles(result: &Listing) -> Vec<String> {
         .collect()
 }
 
-/// Unwraps the successful modification arm of create without changing its public
-/// serialized shape.
+/// Unwraps the `create` handler's core modification outcome.
+///
+/// `create` now returns the same [`Modification`] the rest of the family does; a
+/// successful create carries the created pad, so an empty `pads` here means the
+/// create aborted (see [`create_with_an_empty_pipe_aborts_without_creating_a_pad`]).
 #[track_caller]
-fn created(out: Result<Output<CreateResult>, anyhow::Error>) -> ModificationResult {
-    match rendered(out) {
-        CreateResult::Created(result) => result,
-        CreateResult::Aborted(abort) => panic!("expected created pad, got {abort:?}"),
-    }
+fn created(out: Result<Output<Modification>, anyhow::Error>) -> Modification {
+    let result = rendered(out);
+    assert!(
+        !result.pads.is_empty(),
+        "expected a created pad, got an aborted create: {result:?}"
+    );
+    result
 }
 
 // =============================================================================
@@ -403,19 +404,19 @@ fn copy_keeps_nested_content_in_the_payload_but_counts_only_the_root() {
 #[test]
 fn modification_handlers_report_their_semantic_action() {
     type Call =
-        fn(&standout_dispatch::CommandContext) -> Result<Output<ModificationResult>, anyhow::Error>;
+        fn(&standout_dispatch::CommandContext) -> Result<Output<Modification>, anyhow::Error>;
 
-    let cases: Vec<(&str, ModificationActionResult, Call)> = vec![
-        ("pin", ModificationActionResult::Pin, |ctx| {
+    let cases: Vec<(&str, ModificationAction, Call)> = vec![
+        ("pin", ModificationAction::Pin, |ctx| {
             handlers::pin(ctx, vec!["1".to_string()])
         }),
-        ("delete", ModificationActionResult::Delete, |ctx| {
+        ("delete", ModificationAction::Delete, |ctx| {
             handlers::delete(ctx, vec!["1".to_string()], false)
         }),
-        ("archive", ModificationActionResult::Archive, |ctx| {
+        ("archive", ModificationAction::Archive, |ctx| {
             handlers::archive(ctx, vec!["1".to_string()])
         }),
-        ("complete", ModificationActionResult::Complete, |ctx| {
+        ("complete", ModificationAction::Complete, |ctx| {
             handlers::complete(ctx, vec!["1".to_string()])
         }),
     ];
@@ -479,7 +480,7 @@ fn repeated_pin_maps_the_core_notice_without_parsing_prose() {
 
     assert_eq!(
         result.notices,
-        vec![ModificationNoticeResult::AlreadyPinned {
+        vec![CmdNotice::AlreadyPinned {
             path: vec![padzapp::index::DisplayIndex::Pinned(1)]
         }]
     );
@@ -495,7 +496,7 @@ fn unpin_reverses_pin_and_reports_its_semantic_action() {
     rendered(handlers::pin(&ctx, vec!["1".to_string()]));
     let result = rendered(handlers::unpin(&ctx, vec!["p1".to_string()]));
 
-    assert_eq!(result.action, ModificationActionResult::Unpin);
+    assert_eq!(result.action, ModificationAction::Unpin);
     assert!(!result.pads[0].pad.metadata.is_pinned);
 }
 
@@ -509,7 +510,7 @@ fn restore_maps_a_deleted_selector_back_to_active() {
     rendered(handlers::delete(&ctx, vec!["1".to_string()], false));
     let result = rendered(handlers::restore(&ctx, vec!["d1".to_string()]));
 
-    assert_eq!(result.action, ModificationActionResult::Restore);
+    assert_eq!(result.action, ModificationAction::Restore);
     assert_eq!(result.pads[0].pad.metadata.title, "gone");
 }
 
@@ -545,7 +546,7 @@ fn move_to_root_needs_only_the_sources() {
     ));
     let result = rendered(handlers::move_pads(&ctx, vec!["1.1".to_string()], true));
 
-    assert_eq!(result.action, ModificationActionResult::Move);
+    assert_eq!(result.action, ModificationAction::Move);
     assert!(
         result.pads[0].pad.metadata.parent_id.is_none(),
         "--root detaches the pad from its parent"
@@ -569,7 +570,7 @@ fn same_parent_move_maps_the_nested_no_op_path() {
     assert!(result.pads.is_empty());
     assert_eq!(
         result.notices,
-        vec![ModificationNoticeResult::AlreadyAtDestination {
+        vec![CmdNotice::AlreadyAtDestination {
             path: vec![
                 padzapp::index::DisplayIndex::Regular(1),
                 padzapp::index::DisplayIndex::Regular(1),
@@ -596,16 +597,16 @@ fn mixed_complete_maps_changed_pads_and_requested_status_no_ops() {
     assert_eq!(result.pads.len(), 2);
     assert_eq!(
         result.notices,
-        vec![ModificationNoticeResult::AlreadyInStatus {
+        vec![CmdNotice::AlreadyInStatus {
             path: vec![padzapp::index::DisplayIndex::Regular(1)],
-            status: MutationStatusResult::Done,
+            status: TodoStatus::Done,
         }]
     );
     assert_eq!(
         result.outcomes,
-        vec![MutationOutcomeResult::StatusChanged {
+        vec![CmdOutcome::StatusChanged {
             path: vec![padzapp::index::DisplayIndex::Regular(2)],
-            status: MutationStatusResult::Done,
+            status: TodoStatus::Done,
         }]
     );
 }
@@ -620,10 +621,7 @@ fn empty_delete_completed_maps_the_core_no_op() {
     let result = rendered(handlers::delete(&ctx, vec![], true));
 
     assert!(result.pads.is_empty());
-    assert_eq!(
-        result.notices,
-        vec![ModificationNoticeResult::NoCompletedPads]
-    );
+    assert_eq!(result.notices, vec![CmdNotice::NoCompletedPads]);
 }
 
 // =============================================================================
@@ -1073,7 +1071,7 @@ fn create_with_direct_content_splits_title_from_body() {
 
     let result = created(handlers::create(&ctx, None, None, vec![]));
 
-    assert_eq!(result.action, ModificationActionResult::Create);
+    assert_eq!(result.action, ModificationAction::Create);
     assert_eq!(result.pads[0].pad.metadata.title, "the title");
     assert!(result.pads[0].pad.content.contains("the body"));
 }
@@ -1123,11 +1121,15 @@ fn create_with_an_empty_pipe_aborts_without_creating_a_pad() {
 
     let result = rendered(handlers::create(&ctx, None, None, vec![]));
 
-    let CreateResult::Aborted(abort) = result else {
-        panic!("expected a semantic create abort")
-    };
-    assert_eq!(abort.kind, CreateAbortKindResult::Aborted);
-    assert_eq!(abort.reason, CreateAbortReasonResult::EmptyContent);
+    // An aborted create is a `create` modification that affected no pads — the
+    // shape `modification_result.jinja` renders as the empty-content warning.
+    assert_eq!(result.action, ModificationAction::Create);
+    assert!(
+        result.pads.is_empty(),
+        "an empty pipe creates no pad, so the outcome carries none"
+    );
+    assert!(result.notices.is_empty());
+    assert!(result.outcomes.is_empty());
 
     let listed = rendered(handlers::list(
         &ctx,
@@ -1214,10 +1216,10 @@ fn edit_with_direct_content_replaces_the_selected_pads_text() {
     assert!(result.pads[0].pad.content.contains("new body"));
     assert_eq!(
         result.outcomes,
-        vec![MutationOutcomeResult::Updated {
+        vec![CmdOutcome::Updated {
             path: vec![padzapp::index::DisplayIndex::Regular(1)],
             title: "after".to_string(),
-            update_kind: UpdateKindResult::Content,
+            update_kind: UpdateKind::Content,
         }]
     );
 }
@@ -1238,13 +1240,13 @@ fn edit_maps_a_nested_canonical_path_without_parsing_prose() {
 
     assert_eq!(
         result.outcomes,
-        vec![MutationOutcomeResult::Updated {
+        vec![CmdOutcome::Updated {
             path: vec![
                 padzapp::index::DisplayIndex::Regular(1),
                 padzapp::index::DisplayIndex::Regular(1),
             ],
             title: "edited child".to_string(),
-            update_kind: UpdateKindResult::Content,
+            update_kind: UpdateKind::Content,
         }]
     );
 }

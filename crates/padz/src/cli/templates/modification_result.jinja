@@ -1,13 +1,32 @@
-{#- Unified rendering for modification commands. `modification_view` is derived at -#}
-{#- render time from the handler's ModificationResult; see cli::render. -#}
-{#- An empty piped/editor create is a typed abort, not a modification. -#}
-{%- if kind == "aborted" and reason == "empty_content" -%}
+{#- Unified rendering for modification commands, straight from the core shape. -#}
+{#- Reads the handler's `Modification` view at top level: `action` (semantic token), -#}
+{#- `pads` (core DisplayPad, reported flat at depth 0), the core `notices`/`outcomes` -#}
+{#- (CmdNotice/CmdOutcome verbatim), and `request` (status-icon flag). Every verb, -#}
+{#- sentence and pluralization is presentation policy owned here. -#}
+
+{#- A core DisplayIndex path (e.g. [Regular(1), Regular(1)]) as the dotted display -#}
+{#- string the user knows ("1.1", "p1", "d2"). The core Display owns the prefixes; -#}
+{#- here the template mirrors them since it reads the serialized {type, value} shape. -#}
+{%- macro index_path(path) -%}
+{%- for idx in path -%}
+{%- if idx.type == "Pinned" -%}p{{ idx.value }}
+{%- elif idx.type == "Archived" -%}ar{{ idx.value }}
+{%- elif idx.type == "Deleted" -%}d{{ idx.value }}
+{%- else -%}{{ idx.value }}
+{%- endif -%}
+{{- "." if not loop.last -}}
+{%- endfor -%}
+{%- endmacro -%}
+
+{%- set count = pads | length -%}
+
+{#- An empty piped/editor create made no pad: the one modification that affects zero -#}
+{#- pads is the aborted-empty-content create, and it keeps its established warning. -#}
+{%- if action == "create" and count == 0 -%}
 [warning]Aborted: empty content[/warning]{{ "" | nl }}
 {%- else -%}
-{%- set view = modification_view -%}
-{%- set show_status = view.show_status -%}
+{%- set show_status = request.status -%}
 {%- set peek_mode = false -%}
-{%- set count = view.rows | length -%}
 {%- set verb = {
     "create": "Created",
     "pin": "Pinned",
@@ -20,37 +39,40 @@
     "reopen": "Reopened",
     "move": "Moved",
     "update": "Updated"
-}[view.action] -%}
+}[action] -%}
 
 {#- Human verbs and pluralization are presentation policy owned here. -#}
 {%- if count > 0 -%}
 [info]{{ verb }} {{ count }} {{ "pad" if count == 1 else "pads" }}...[/info]{{ "" | nl }}
 {%- endif -%}
 
-{%- for pad in view.rows -%}
-{%- include "_pad_line.jinja" -%}
+{%- for pad in pads -%}
+{%- set depth = 0 -%}
+{%- include "_list_pad_line.jinja" -%}
 {%- endfor -%}
 
-{#- Semantic successful outcomes: wording stays here; refresh updates deliberately -#}
-{#- add no extra line, preserving the interactive editor's established output. -#}
-{%- for outcome in view.outcomes -%}
+{#- Semantic successful outcomes: wording stays here; a StatusChanged carries no line -#}
+{#- (the pad row already shows the new status icon) and a refresh update deliberately -#}
+{#- adds none either, preserving the interactive editor's established output. -#}
+{%- for outcome in outcomes -%}
 {%- if outcome.kind == "updated" and outcome.update_kind == "structured" -%}
-[success]Pad updated ({{ outcome.index }}): {{ outcome.title }}[/success]{{ "" | nl }}
+[success]Pad updated ({{ index_path(outcome.path) }}): {{ outcome.title }}[/success]{{ "" | nl }}
 {%- elif outcome.kind == "updated" and outcome.update_kind == "content" -%}
-[success]Updated ({{ outcome.index }}): {{ outcome.title }}[/success]{{ "" | nl }}
+[success]Updated ({{ index_path(outcome.path) }}): {{ outcome.title }}[/success]{{ "" | nl }}
 {%- endif -%}
 {%- endfor -%}
 
-{#- Semantic notices: wording stays here; structured modes receive kind + fields. -#}
-{%- for notice in view.notices -%}
+{#- Semantic notices: wording stays here; structured modes receive kind + fields. The -#}
+{#- core TodoStatus serializes as Planned/InProgress/Done, so the label map is here. -#}
+{%- for notice in notices -%}
 {%- if notice.kind == "already_pinned" -%}
-[info]Pad {{ notice.index }} is already pinned[/info]{{ "" | nl }}
+[info]Pad {{ index_path(notice.path) }} is already pinned[/info]{{ "" | nl }}
 {%- elif notice.kind == "already_unpinned" -%}
-[info]Pad {{ notice.index }} is already unpinned[/info]{{ "" | nl }}
+[info]Pad {{ index_path(notice.path) }} is already unpinned[/info]{{ "" | nl }}
 {%- elif notice.kind == "already_at_destination" -%}
-[info]Pad '{{ notice.index }}' is already at destination[/info]{{ "" | nl }}
+[info]Pad '{{ index_path(notice.path) }}' is already at destination[/info]{{ "" | nl }}
 {%- elif notice.kind == "already_in_status" -%}
-[info]Pad {{ notice.index }} is already {{ notice.status }}[/info]{{ "" | nl }}
+[info]Pad {{ index_path(notice.path) }} is already {{ {"Planned": "planned", "InProgress": "in progress", "Done": "done"}[notice.status] }}[/info]{{ "" | nl }}
 {%- elif notice.kind == "no_completed_pads" -%}
 [info]No completed pads to delete.[/info]{{ "" | nl }}
 {%- endif -%}

@@ -26,9 +26,8 @@
 //! icons), not how to draw it. It is a mode-independent fact about the invocation, so
 //! it is part of the result and visible in structured output.
 
-use padzapp::commands::{CmdNotice, CmdOutcome, NestingMode, UpdateKind};
-use padzapp::index::{DisplayIndex, DisplayPad};
-use padzapp::model::TodoStatus;
+use padzapp::commands::{CmdNotice, CmdOutcome, NestingMode};
+use padzapp::index::DisplayPad;
 use serde::{Deserialize, Serialize};
 
 /// What the user asked a listing to show.
@@ -76,30 +75,36 @@ pub struct Listing {
     pub request: ListRequest,
 }
 
-/// The outcome of a command that changed pads.
+/// The outcome of a command that changed pads, rendered straight from core types.
 ///
-/// `action` is the machine-readable operation token for the change and `pads`
-/// are the pads it affected. The human renderer owns the corresponding verb.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ModificationResult {
-    pub action: ModificationActionResult,
+/// This is the thin flat view the modification family returns instead of a tier-2
+/// projection: `action` is the machine-readable operation token (the one genuinely
+/// CLI-only fact — the core has no "which command ran" enum) and `pads` are the pads
+/// it affected. `notices` and `outcomes` are the **core** semantic facts
+/// ([`CmdNotice`]/[`CmdOutcome`]) verbatim — they already `derive(Serialize)`, so
+/// structured output reads them directly and `modification_result.jinja` owns every
+/// verb and sentence. `request` records what to show (status icons), not how to draw.
+#[derive(Debug, Clone, Serialize)]
+pub struct Modification {
+    pub action: ModificationAction,
     pub pads: Vec<DisplayPad>,
     /// Machine-readable facts emitted by the core; templates own their prose.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub notices: Vec<ModificationNoticeResult>,
+    pub notices: Vec<CmdNotice>,
     /// Machine-readable successful outcomes emitted by the core.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub outcomes: Vec<MutationOutcomeResult>,
+    pub outcomes: Vec<CmdOutcome>,
     pub request: ModificationRequest,
 }
 
 /// The operation performed by a generic pad modification command.
 ///
-/// This is a machine-readable token, not the human past-tense verb. The
-/// modification template owns wording such as "Pinned" and "Moved".
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+/// This is a machine-readable token, not the human past-tense verb, and the one
+/// fact the core does not model (it reports *what changed*, not *which command
+/// asked*). The modification template owns wording such as "Pinned" and "Moved".
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "snake_case")]
-pub enum ModificationActionResult {
+pub enum ModificationAction {
     Create,
     Pin,
     Unpin,
@@ -111,150 +116,6 @@ pub enum ModificationActionResult {
     Reopen,
     Move,
     Update,
-}
-
-/// CLI projection of a semantic mutation no-op.
-///
-/// This keeps the shell's structured schema independent from the core enum while
-/// retaining the `kind` and canonical display-path shape established for pinning.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(tag = "kind", rename_all = "snake_case")]
-pub enum ModificationNoticeResult {
-    AlreadyPinned {
-        path: Vec<DisplayIndex>,
-    },
-    AlreadyUnpinned {
-        path: Vec<DisplayIndex>,
-    },
-    AlreadyAtDestination {
-        path: Vec<DisplayIndex>,
-    },
-    AlreadyInStatus {
-        path: Vec<DisplayIndex>,
-        status: MutationStatusResult,
-    },
-    NoCompletedPads,
-}
-
-impl From<CmdNotice> for ModificationNoticeResult {
-    fn from(notice: CmdNotice) -> Self {
-        match notice {
-            CmdNotice::AlreadyPinned { path } => Self::AlreadyPinned { path },
-            CmdNotice::AlreadyUnpinned { path } => Self::AlreadyUnpinned { path },
-            CmdNotice::AlreadyAtDestination { path } => Self::AlreadyAtDestination { path },
-            CmdNotice::AlreadyInStatus { path, status } => Self::AlreadyInStatus {
-                path,
-                status: status.into(),
-            },
-            CmdNotice::NoCompletedPads => Self::NoCompletedPads,
-        }
-    }
-}
-
-/// Requested status exposed by a semantic no-op.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum MutationStatusResult {
-    Planned,
-    InProgress,
-    Done,
-}
-
-impl From<TodoStatus> for MutationStatusResult {
-    fn from(status: TodoStatus) -> Self {
-        match status {
-            TodoStatus::Planned => Self::Planned,
-            TodoStatus::InProgress => Self::InProgress,
-            TodoStatus::Done => Self::Done,
-        }
-    }
-}
-
-/// CLI projection of a successful semantic pad mutation.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(tag = "kind", rename_all = "snake_case")]
-pub enum MutationOutcomeResult {
-    Updated {
-        path: Vec<DisplayIndex>,
-        title: String,
-        update_kind: UpdateKindResult,
-    },
-    StatusChanged {
-        path: Vec<DisplayIndex>,
-        status: MutationStatusResult,
-    },
-}
-
-impl From<CmdOutcome> for MutationOutcomeResult {
-    fn from(outcome: CmdOutcome) -> Self {
-        match outcome {
-            CmdOutcome::Updated {
-                path,
-                title,
-                update_kind,
-            } => Self::Updated {
-                path,
-                title,
-                update_kind: update_kind.into(),
-            },
-            CmdOutcome::StatusChanged { path, status } => Self::StatusChanged {
-                path,
-                status: status.into(),
-            },
-        }
-    }
-}
-
-/// How an update reached the core, as part of the shell's public result schema.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum UpdateKindResult {
-    Structured,
-    Content,
-    Refresh,
-}
-
-impl From<UpdateKind> for UpdateKindResult {
-    fn from(kind: UpdateKind) -> Self {
-        match kind {
-            UpdateKind::Structured => Self::Structured,
-            UpdateKind::Content => Self::Content,
-            UpdateKind::Refresh => Self::Refresh,
-        }
-    }
-}
-
-/// The typed outcome of `create`.
-///
-/// `Created` deliberately serializes exactly like the existing
-/// [`ModificationResult`] so successful-create automation remains compatible.
-/// `Aborted` replaces the former prose-only warning with semantic facts.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(untagged)]
-pub enum CreateResult {
-    Created(ModificationResult),
-    Aborted(CreateAbortResult),
-}
-
-/// Why a create invocation stopped without creating a pad.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-pub struct CreateAbortResult {
-    pub kind: CreateAbortKindResult,
-    pub reason: CreateAbortReasonResult,
-}
-
-/// The top-level outcome class for a create abort.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum CreateAbortKindResult {
-    Aborted,
-}
-
-/// The semantic reason a create invocation aborted.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum CreateAbortReasonResult {
-    EmptyContent,
 }
 
 /// One pad's full content, as returned by `view`.

@@ -1,4 +1,5 @@
 {
-  "kind": "aborted",
-  "reason": "empty_content"
+  "action": "create",
+  "pads": [],
+  "request": { "status": false }
 }

@@ -17,10 +17,7 @@
 //! 5. **Error Handling**: Convert errors to user-friendly messages and exit codes
 
 use super::handlers::AppState;
-use super::render::{
-    modification_view_provider, peek_filter, terminal_provider, timeago_filter, MODIFICATION_VIEW,
-    TERMINAL,
-};
+use super::render::{peek_filter, terminal_provider, timeago_filter, TERMINAL};
 use super::setup::{
     build_command, get_grouped_help, invocation_default_command, parse_cli, Cli, Commands,
     CompletionAction, CompletionShell, ConfigSubcommand,
@@ -72,13 +69,14 @@ pub fn run() -> Result<()> {
 /// Build the dispatch-ready App with templates, styles, command configuration, and app state
 ///
 /// Two render-time seams keep presentation out of structured output. The `context_fn`
-/// registration derives the modification template view from the serialized result —
-/// Standout resolves it only on the template path. The custom MiniJinja engine adds the
-/// listing family's filters (`timeago`, `peek`) and the empty-store `grouped_help()`
-/// helper, which are likewise render-only: structured modes bypass the engine entirely,
-/// so a JSON consumer never sees a relative timestamp, a preview, or a help blob. The
-/// `list`/`search`/`peek` and tag (`tagging`/`tag_catalog`/`tag_registry`) templates
-/// render straight from the core outcomes, so neither needs a view provider.
+/// registration installs the `terminal` width provider — Standout resolves it only on
+/// the template path. The custom MiniJinja engine adds the listing family's filters
+/// (`timeago`, `peek`) and the empty-store `grouped_help()` helper, which are likewise
+/// render-only: structured modes bypass the engine entirely, so a JSON consumer never
+/// sees a relative timestamp, a preview, or a help blob. Every command family —
+/// `list`/`search`/`peek`, the modification family (`modification_result`), and the tag
+/// templates (`tagging`/`tag_catalog`/`tag_registry`) — renders straight from the core
+/// outcomes, so none needs a view provider.
 ///
 /// Public because it is the whole app-under-test: `TestHarness` tests pair it with
 /// [`build_command`] to drive argv through render in process, against the same
@@ -103,7 +101,6 @@ pub fn build_dispatch_app(app_state: AppState) -> App {
         .styles(embed_styles!("src/styles"))
         .default_theme("default")
         .context_fn(TERMINAL, terminal_provider)
-        .context_fn(MODIFICATION_VIEW, modification_view_provider)
         .commands(Commands::dispatch_config())
         .expect("Failed to configure commands")
         .command_with("create", super::handlers::create__handler, |config| {

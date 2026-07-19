@@ -7,12 +7,12 @@
 mod support;
 
 use padz::cli::handlers;
-use padz::cli::result::{ModificationActionResult, ModificationResult};
+use padz::cli::result::{Modification, ModificationAction};
 use standout::cli::Output;
 use standout_test::{serial, TestHarness};
 use support::Fixture;
 
-fn rendered(out: Result<Output<ModificationResult>, anyhow::Error>) -> ModificationResult {
+fn rendered(out: Result<Output<Modification>, anyhow::Error>) -> Modification {
     match out.expect("handler returned an error") {
         Output::Render(value) => value,
         other => panic!("expected rendered modification result, got {other:?}"),
@@ -28,7 +28,7 @@ fn typed_pin_handler_exposes_a_semantic_action_without_generic_messages() {
 
     let result = rendered(handlers::pin(&ctx, vec!["1".to_string()]));
 
-    assert_eq!(result.action, ModificationActionResult::Pin);
+    assert_eq!(result.action, ModificationAction::Pin);
     assert_eq!(result.pads.len(), 1);
     assert!(result.notices.is_empty());
     assert!(result.outcomes.is_empty());
