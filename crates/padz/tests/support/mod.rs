@@ -27,7 +27,7 @@ use standout::cli::App;
 use standout::input::{InputSourceKind, Inputs, ResolvedInput};
 use standout_dispatch::{CommandContext, Extensions};
 use std::cell::RefCell;
-use std::path::{Path, PathBuf};
+use std::path::{Component, Path, PathBuf};
 use std::rc::Rc;
 use tempfile::TempDir;
 
@@ -73,8 +73,27 @@ impl Fixture {
     /// not in the developer's real `~` — a test that silently wrote to the real
     /// global store would be both a false pass and a mess.
     pub fn new() -> Self {
+        Self::with_project_name("project")
+    }
+
+    /// Creates an initialized fixture whose project directory has `name`.
+    ///
+    /// Most tests should use [`Fixture::new`]. Structured path tests use this
+    /// constructor to prove that characters which resemble style markup remain
+    /// ordinary path data without mutating the process working directory. The
+    /// name must be one normal path component so the project cannot escape the
+    /// fixture's tempdir.
+    pub fn with_project_name(name: &str) -> Self {
+        let mut components = Path::new(name).components();
+        let is_single_normal_component =
+            matches!(components.next(), Some(Component::Normal(_))) && components.next().is_none();
+        assert!(
+            is_single_normal_component,
+            "fixture project name must be one normal path component: {name:?}"
+        );
+
         let temp = tempfile::tempdir().expect("failed to create tempdir");
-        let project = temp.path().join("project");
+        let project = temp.path().join(name);
         let global = temp.path().join("global");
         std::fs::create_dir_all(&project).expect("failed to create project dir");
         std::fs::create_dir_all(&global).expect("failed to create global dir");

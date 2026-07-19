@@ -73,8 +73,8 @@ pub struct PadListResult {
 
 /// The outcome of a command that changed pads.
 ///
-/// `action` is the past-tense verb for the change ("Pinned", "Deleted", ...) and
-/// `pads` are the pads it affected.
+/// `action` is the machine-readable operation token for the change and `pads`
+/// are the pads it affected. The human renderer owns the corresponding verb.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ModificationResult {
     pub action: ModificationActionResult,

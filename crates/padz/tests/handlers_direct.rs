@@ -12,7 +12,7 @@
 //!
 //! - **Domain behavior** (does archiving actually move the file?) belongs to
 //!   `padzapp`'s own tests. These tests assert the *mapping*: that `archive`
-//!   reports the `"Archived"` action for the pads the user selected.
+//!   reports the semantic `Archive` action for the pads the user selected.
 //! - **Flag-to-argument wiring** (does `--peek` reach the `peek` parameter?) is a
 //!   clap concern and is proven at the harness seam, which parses real argv.
 //! - **Rendering** of any kind. A handler that returns the right result and a
@@ -476,7 +476,7 @@ fn repeated_pin_maps_the_core_notice_without_parsing_prose() {
 }
 
 #[test]
-fn unpin_reverses_pin_and_reports_its_own_verb() {
+fn unpin_reverses_pin_and_reports_its_semantic_action() {
     let fx = Fixture::new();
     let state = fx.app_state();
     fx.seed_pad(&state, "note", "");
@@ -1086,6 +1086,43 @@ fn create_with_direct_content_splits_title_from_body() {
     assert_eq!(result.action, ModificationActionResult::Create);
     assert_eq!(result.pads[0].pad.metadata.title, "the title");
     assert!(result.pads[0].pad.content.contains("the body"));
+}
+
+#[test]
+fn create_maps_typed_format_values_to_core_format_overrides() {
+    for (format, expected_extension) in [("md", "md"), ("markdown", "md"), ("text", "txt")] {
+        let fx = Fixture::new();
+        if format == "text" {
+            std::fs::write(
+                fx.project().join(".padz").join("padz.toml"),
+                "format = \"md\"\n",
+            )
+            .unwrap();
+        }
+        let ctx = support::ctx_with_input(
+            fx.app_state_for(&["create"]),
+            CREATE_CONTENT,
+            RequestContent::Direct(format!("{format} note\nbody")),
+        );
+
+        let result = created(handlers::create(
+            &ctx,
+            None,
+            Some(format.to_string()),
+            vec![],
+        ));
+        let id = result.pads[0].pad.metadata.id;
+        let expected_path = fx
+            .project()
+            .join(".padz")
+            .join("active")
+            .join(format!("pad-{id}.{expected_extension}"));
+
+        assert!(
+            expected_path.exists(),
+            "typed format {format:?} should reach the core as .{expected_extension}"
+        );
+    }
 }
 
 #[test]
