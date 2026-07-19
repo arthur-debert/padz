@@ -6,7 +6,9 @@
 {%- if receipt is defined -%}
 {%- for warning in report.warnings -%}
 {%- if warning.kind == "metadata_unavailable" -%}
-[warning]{{ warning.count }} .txt pad(s) exported without metadata (txt has no metadata format): {{ warning.preview | join(", ") }}{% if warning.additional > 0 %} (+ {{ warning.additional }} more){% endif %}[/warning]{{ "" | nl }}
+{%- set count = warning.titles | length -%}
+{%- set additional = count - 3 -%}
+[warning]{{ count }} .txt pad(s) exported without metadata (txt has no metadata format): {{ warning.titles[:3] | join(", ") }}{% if additional > 0 %} (+ {{ additional }} more){% endif %}[/warning]{{ "" | nl }}
 {%- endif -%}
 {%- endfor -%}
 {%- if report.format == "single_file" -%}

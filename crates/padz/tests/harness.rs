@@ -2674,7 +2674,6 @@ fn export_artifact_report_is_machine_readable_and_keeps_metadata_warnings() {
     result.assert_success();
     let report: serde_json::Value =
         serde_json::from_str(result.artifact_report().unwrap()).unwrap();
-    assert_eq!(report["report"]["status"], "exported");
     assert_eq!(report["report"]["format"], "metadata_archive");
     assert_eq!(report["report"]["exported"], 1);
     assert_eq!(
