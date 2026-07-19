@@ -52,7 +52,7 @@ impl Fixture {
         let mut command = Command::new(padz_bin());
         command
             .env("PADZ_GLOBAL_DATA", self.global.as_os_str())
-            .env("EDITOR", "/bin/false")
+            .env("EDITOR", "/usr/bin/false")
             .current_dir(cwd);
         command
     }
