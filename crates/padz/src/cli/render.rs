@@ -52,17 +52,16 @@
 //! `padzapp::peek::format_as_peek`) — registered on the template engine in
 //! [`super::commands`]. Both are render-path only and never touch structured output.
 //!
-//! The `PadRow`/`SectionKind`/`TimeAgo`/`build_peek` derivations below are still used
-//! by the modification mirror (`modification_result.jinja`), which has not migrated
-//! yet; they retire with that family. The tagging family now renders straight from
-//! the core `padzapp::commands::tagging::TaggingResult` — see `tagging.jinja`,
-//! `tag_catalog.jinja`, and `tag_registry.jinja`, which read the serialized core
-//! outcomes directly and reuse the listing's `_list_pad_line.jinja` for affected pads.
+//! The `PadRow`/`SectionKind`/`TimeAgo`/`build_peek` derivations below are retained as
+//! shared listing helpers pending final cleanup. Both the modification family
+//! (`modification_result.jinja`) and the tagging family (`tagging.jinja`,
+//! `tag_catalog.jinja`, `tag_registry.jinja`) now render straight from core types — the
+//! modification view from the core [`Modification`](super::result::Modification)
+//! (`DisplayPad`/`CmdNotice`/`CmdOutcome`), reusing the listing pad line and the
+//! `timeago` filter; the tagging views from the core
+//! `padzapp::commands::tagging::TaggingResult` — so no modification or tagging view
+//! mirror survives here.
 
-use super::result::{
-    ModificationActionResult, ModificationNoticeResult, ModificationResult, MutationOutcomeResult,
-    MutationStatusResult, UpdateKindResult,
-};
 use chrono::{DateTime, Utc};
 use minijinja::Value;
 use padzapp::index::{DisplayIndex, DisplayPad, SearchMatch};
@@ -76,8 +75,6 @@ pub const MIN_LINE_WIDTH: usize = 30;
 /// Default width when no terminal is detected and COLUMNS is unset (e.g. piped output).
 pub const DEFAULT_LINE_WIDTH: usize = 80;
 
-/// The context name `modification_result.jinja` reads its view data from.
-pub const MODIFICATION_VIEW: &str = "modification_view";
 /// The context name every template reads layout width from.
 pub const TERMINAL: &str = "terminal";
 
@@ -146,6 +143,9 @@ pub enum SectionKind {
 }
 
 impl SectionKind {
+    // Retained shared listing helper: its last callers (the modification and tagging
+    // view mirrors) have migrated to core rendering; the final cleanup pass retires it.
+    #[allow(dead_code)]
     fn of(index: &DisplayIndex) -> Self {
         match index {
             DisplayIndex::Pinned(_) => SectionKind::Pinned,
@@ -219,36 +219,6 @@ pub struct PadRow {
     pub peek: Option<PeekResult>,
 }
 
-/// Template-ready view for a modification.
-#[derive(Debug, Clone, Serialize)]
-pub struct ModificationView {
-    /// Semantic operation token. The template owns the human verb.
-    pub action: ModificationActionResult,
-    pub rows: Vec<PadRow>,
-    pub show_status: bool,
-    /// Presentation-ready projections of semantic core notices.
-    pub notices: Vec<ModificationNoticeView>,
-    /// Presentation-ready projections of semantic successful outcomes.
-    pub outcomes: Vec<MutationOutcomeView>,
-}
-
-/// The small amount of display shaping a semantic modification notice needs.
-#[derive(Debug, Clone, Serialize)]
-pub struct ModificationNoticeView {
-    pub kind: &'static str,
-    pub index: String,
-    pub status: &'static str,
-}
-
-/// The small amount of display shaping a semantic update outcome needs.
-#[derive(Debug, Clone, Serialize)]
-pub struct MutationOutcomeView {
-    pub kind: &'static str,
-    pub index: String,
-    pub title: String,
-    pub update_kind: &'static str,
-}
-
 // =============================================================================
 // Context providers (the render-time seam)
 // =============================================================================
@@ -258,107 +228,15 @@ pub fn terminal_provider(_ctx: &RenderContext) -> Value {
     Value::from_serialize(serde_json::json!({ "width": line_width() }))
 }
 
-/// Context provider for `modification_result.jinja`.
-///
-/// Returns `undefined` when the rendered command did not produce a
-/// [`ModificationResult`].
-pub fn modification_view_provider(ctx: &RenderContext) -> Value {
-    match serde_json::from_value::<ModificationResult>(ctx.data.clone()) {
-        Ok(result) => Value::from_serialize(build_modification_view(&result)),
-        Err(_) => Value::UNDEFINED,
-    }
-}
-
 // =============================================================================
 // View builders
 // =============================================================================
 
-/// Builds the template-ready view for a modification result.
-///
-/// Affected pads are reported as a flat list — a modification names the pads it
-/// touched, it does not redraw their subtrees — so every row here is at depth 0.
-pub fn build_modification_view(result: &ModificationResult) -> ModificationView {
-    let opts = super::result::ListRequest {
-        status: result.request.status,
-        ..Default::default()
-    };
-    ModificationView {
-        action: result.action,
-        rows: result
-            .pads
-            .iter()
-            .map(|dp| row(dp, 0, SectionKind::of(&dp.index), &opts))
-            .collect(),
-        show_status: result.request.status,
-        notices: result.notices.iter().map(modification_notice).collect(),
-        outcomes: result
-            .outcomes
-            .iter()
-            .filter_map(mutation_outcome)
-            .collect(),
-    }
-}
-
-fn modification_notice(notice: &ModificationNoticeResult) -> ModificationNoticeView {
-    let (kind, path, status) = match notice {
-        ModificationNoticeResult::AlreadyPinned { path } => ("already_pinned", path, ""),
-        ModificationNoticeResult::AlreadyUnpinned { path } => ("already_unpinned", path, ""),
-        ModificationNoticeResult::AlreadyAtDestination { path } => {
-            ("already_at_destination", path, "")
-        }
-        ModificationNoticeResult::AlreadyInStatus { path, status } => (
-            "already_in_status",
-            path,
-            match status {
-                MutationStatusResult::Planned => "planned",
-                MutationStatusResult::InProgress => "in progress",
-                MutationStatusResult::Done => "done",
-            },
-        ),
-        ModificationNoticeResult::NoCompletedPads => {
-            return ModificationNoticeView {
-                kind: "no_completed_pads",
-                index: String::new(),
-                status: "",
-            };
-        }
-    };
-    ModificationNoticeView {
-        kind,
-        index: path
-            .iter()
-            .map(ToString::to_string)
-            .collect::<Vec<_>>()
-            .join("."),
-        status,
-    }
-}
-
-fn mutation_outcome(outcome: &MutationOutcomeResult) -> Option<MutationOutcomeView> {
-    match outcome {
-        MutationOutcomeResult::Updated {
-            path,
-            title,
-            update_kind,
-        } => Some(MutationOutcomeView {
-            kind: "updated",
-            index: path
-                .iter()
-                .map(ToString::to_string)
-                .collect::<Vec<_>>()
-                .join("."),
-            title: title.clone(),
-            update_kind: match update_kind {
-                UpdateKindResult::Structured => "structured",
-                UpdateKindResult::Content => "content",
-                UpdateKindResult::Refresh => "refresh",
-            },
-        }),
-        MutationOutcomeResult::StatusChanged { .. } => None,
-    }
-}
-
 /// Builds one row from a pad.
+///
+/// Retained shared listing helper: its last callers (the modification and tagging view
+/// mirrors) have migrated to core rendering; the final cleanup pass retires it.
+#[allow(dead_code)]
 fn row(
     dp: &DisplayPad,
     depth: usize,
@@ -392,6 +270,10 @@ fn row(
 ///
 /// The preview rules (how many lines, where to elide) belong to `padzapp::peek`; this
 /// only feeds it the body and drops an empty result.
+///
+/// Retained shared listing helper: its last caller ([`row`]) is itself retained pending
+/// the final cleanup pass, which retires both.
+#[allow(dead_code)]
 fn build_peek(dp: &DisplayPad) -> Option<PeekResult> {
     peek_body(&dp.pad.content)
 }
@@ -442,21 +324,6 @@ pub fn peek_filter(content: &str) -> Value {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::cli::result::ModificationRequest;
-    use padzapp::model::Pad;
-
-    fn pad(title: &str) -> Pad {
-        Pad::new(title.to_string(), format!("{title}\n\nbody line"))
-    }
-
-    fn dp(pad: Pad, index: DisplayIndex, children: Vec<DisplayPad>) -> DisplayPad {
-        DisplayPad {
-            pad,
-            index,
-            matches: None,
-            children,
-        }
-    }
 
     // =========================================================================
     // peek / timeago filters (the listing render path)
@@ -522,32 +389,6 @@ mod tests {
     fn a_future_timestamp_clamps_to_zero() {
         let t = TimeAgo::since(Utc::now() + chrono::Duration::seconds(600));
         assert_eq!((t.value, t.unit), (0, 's'));
-    }
-
-    // =========================================================================
-    // Modification view
-    // =========================================================================
-
-    /// A modification names the pads it touched; it does not redraw their subtrees.
-    #[test]
-    fn a_modification_reports_affected_pads_flat() {
-        let result = ModificationResult {
-            action: ModificationActionResult::Pin,
-            pads: vec![dp(
-                pad("root"),
-                DisplayIndex::Pinned(1),
-                vec![dp(pad("child"), DisplayIndex::Regular(1), vec![])],
-            )],
-            notices: vec![],
-            outcomes: vec![],
-            request: ModificationRequest { status: true },
-        };
-        let view = build_modification_view(&result);
-
-        assert_eq!(view.action, ModificationActionResult::Pin);
-        assert_eq!(view.rows.len(), 1, "children are not redrawn");
-        assert_eq!(view.rows[0].depth, 0);
-        assert!(view.show_status);
     }
 
     // =========================================================================
