@@ -73,8 +73,17 @@ impl Fixture {
     /// not in the developer's real `~` — a test that silently wrote to the real
     /// global store would be both a false pass and a mess.
     pub fn new() -> Self {
+        Self::with_project_name("project")
+    }
+
+    /// Creates an initialized fixture whose project directory has `name`.
+    ///
+    /// Most tests should use [`Fixture::new`]. Structured path tests use this
+    /// constructor to prove that characters which resemble style markup remain
+    /// ordinary path data without mutating the process working directory.
+    pub fn with_project_name(name: &str) -> Self {
         let temp = tempfile::tempdir().expect("failed to create tempdir");
-        let project = temp.path().join("project");
+        let project = temp.path().join(name);
         let global = temp.path().join("global");
         std::fs::create_dir_all(&project).expect("failed to create project dir");
         std::fs::create_dir_all(&global).expect("failed to create global dir");
