@@ -73,13 +73,19 @@ pub const TERMINAL: &str = "terminal";
 /// 2. Actual terminal width via `terminal_size`
 /// 3. `DEFAULT_LINE_WIDTH` (80)
 ///
-/// The result is clamped to at least `MIN_LINE_WIDTH` (30).
+/// The raw width is clamped to at least `MIN_LINE_WIDTH` (30) *before* the `⏲`
+/// payback below subtracts 1, so the effective minimum this function returns is
+/// `MIN_LINE_WIDTH - 1` (29), not `MIN_LINE_WIDTH` — the
+/// `line_width_reads_columns_and_clamps_to_the_minimum` unit test pins this. Keep that
+/// ordering in mind when adjusting width policy.
 ///
 /// We subtract 1 to compensate for `⏲` (U+23F2) which `unicode-width` measures as 1
 /// column but terminals render as 2. Standout's tabular system uses `unicode-width`
 /// internally, so without this adjustment every line would overflow by 1 character.
 /// `⏲` is Unicode *Narrow*, not East-Asian *ambiguous*, so no ambiguous-width policy
-/// pays this back — the `-1` is the only thing that does.
+/// pays this back — the `-1` is the only thing that does. Because this payback lands
+/// after the clamp (`raw.max(MIN_LINE_WIDTH).saturating_sub(1)`), it is what pulls the
+/// effective floor to 29.
 ///
 /// This reads `$COLUMNS` rather than `RenderContext::terminal_width` on purpose: the
 /// context field is `None` whenever output is piped, which is exactly the case tests
