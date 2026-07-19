@@ -135,11 +135,16 @@ fn mixed_format_pads_are_listable_and_viewable() {
     titles.sort_unstable();
     assert_eq!(titles, ["markdown note", "plain text note"]);
 
-    for selector in ["1", "2"] {
+    for listed_pad in &listed.listed_pads {
+        let selector = listed_pad.index.to_string();
         let viewed = fx
             .api
-            .view_pads(Scope::Project, &[selector], NestingMode::Flat)
+            .view_pads(Scope::Project, &[selector.as_str()], NestingMode::Flat)
             .unwrap();
         assert_eq!(viewed.listed_pads.len(), 1);
+        assert_eq!(
+            viewed.listed_pads[0].pad.metadata.title, listed_pad.pad.metadata.title,
+            "selector {selector} should resolve to its listed pad"
+        );
     }
 }
