@@ -1,0 +1,161 @@
+# Padz Default Stylesheet
+#
+# This stylesheet implements a three-layer styling architecture:
+#
+# 1. Visual Layer (prefixed with _): Concrete styles with actual colors
+# 2. Presentation Layer (prefixed with _): Semantic aliases like _secondary
+# 3. Semantic Layer: Template-facing style names
+#
+# For light/dark mode support, styles use adaptive sections.
+# The base style is optional when light/dark variants fully specify the style.
+
+# ============================================================================
+# VISUAL LAYER - Concrete styles with actual colors
+# These are the raw building blocks, prefixed with _ to indicate internal use
+# ============================================================================
+
+_primary:
+  light:
+    fg: black
+  dark:
+    fg: white
+
+_gray:
+  light:
+    fg: [115, 115, 115]
+  dark:
+    fg: [180, 180, 180]
+
+_gray_light:
+  light:
+    fg: [173, 173, 173]
+  dark:
+    fg: [110, 110, 110]
+
+_gold:
+  light:
+    fg: [196, 140, 0]
+  dark:
+    fg: [255, 214, 10]
+
+_red:
+  light:
+    fg: [186, 33, 45]
+  dark:
+    fg: [255, 138, 128]
+
+_green:
+  light:
+    fg: [0, 128, 0]
+  dark:
+    fg: [144, 238, 144]
+
+_yellow_bg:
+  light:
+    fg: black
+    bg: [255, 235, 59]
+  dark:
+    fg: black
+    bg: [229, 185, 0]
+
+# ============================================================================
+# PRESENTATION LAYER - Cross-cutting visual concepts (aliases)
+# These provide consistent appearance for similar elements
+# ============================================================================
+
+_secondary: _gray
+_tertiary: _gray_light
+_accent: _gold
+_danger: _red
+_success: _green
+
+# ============================================================================
+# SEMANTIC LAYER - What templates use
+# Some reference presentation layer aliases, some define concrete styles
+# with modifiers like bold/italic that can't be expressed as pure aliases
+# ============================================================================
+
+# Core semantic styles
+title:
+  bold: true
+  light:
+    fg: black
+  dark:
+    fg: white
+
+time:
+  italic: true
+  light:
+    fg: [115, 115, 115]
+  dark:
+    fg: [180, 180, 180]
+
+hint: _tertiary
+
+# List styles
+list-index: _accent
+list-title: _primary
+
+pinned:
+  bold: true
+  light:
+    fg: [196, 140, 0]
+  dark:
+    fg: [255, 214, 10]
+
+deleted: _danger
+deleted-index: _danger
+deleted-title: _secondary
+status-icon: _secondary
+
+# Search/highlight
+highlight: _yellow_bg
+match: _yellow_bg
+
+# Message styles (concrete - need modifiers for emphasis)
+error:
+  bold: true
+  light:
+    fg: [186, 33, 45]
+  dark:
+    fg: [255, 138, 128]
+
+warning:
+  bold: true
+  light:
+    fg: [196, 140, 0]
+  dark:
+    fg: [255, 214, 10]
+
+success: _success
+info: _secondary
+
+# Help styles
+help-header:
+  bold: true
+  light:
+    fg: black
+  dark:
+    fg: white
+
+help-section:
+  bold: true
+  light:
+    fg: [196, 140, 0]
+  dark:
+    fg: [255, 214, 10]
+
+help-command: _success
+help-desc: _secondary
+
+help-usage:
+  fg: cyan
+
+# Template content styles (aliases to presentation layer)
+help-text: _tertiary
+section-header: _secondary
+empty-message: _secondary
+preview: _tertiary
+truncation: _secondary
+line-number: _secondary
+separator: _tertiary

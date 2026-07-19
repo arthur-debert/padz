@@ -4,10 +4,114 @@
 
 ## Unreleased
 
+- Retire the unused generic `CmdMessage` presentation pipeline. Reusable command
+  results and CLI projections no longer serialize always-empty `messages` arrays;
+  generic pad modifications now serialize a typed semantic `action` token such as
+  `pin` instead of a human past-tense verb such as `Pinned`. This intentional
+  structured-schema cleanup is fixture-tested. Human wording, pluralization,
+  ordering, styles, and terminal layout remain unchanged in CLI templates.
+- `copy` structured output now reports CLI-owned `root_pad_count` and ordered
+  `titles` facts instead of a prose-only `messages` result. Nested descendants
+  remain in the single ordered clipboard payload but do not increase the selected
+  root count. Human wording and clipboard bytes remain compatible.
+- Empty piped-input and editor creates now return `{ "kind": "aborted",
+  "reason": "empty_content" }` in structured modes instead of an empty generic
+  modification plus an English warning message. Human `Aborted: empty content`
+  wording and successful exit behavior remain unchanged; no pad, editor fallback,
+  or clipboard write occurs for an empty pipe.
+- Import results now expose a semantic report in structured output: overall
+  full/partial/no-import status and total, per-source status and counts, typed
+  metadata warnings, inline-metadata application, skipped archive and directory
+  entries, and tag-registry merge outcomes. Human output retains its existing
+  wording, ordering, and semantic styles.
+- Initialization, link/unlink, doctor, and purge now expose semantic structured
+  outcomes instead of prose-only `messages` arrays. Initialization reports its
+  action plus scope/store path or resolved link target; doctor reports a distinct
+  `clean`/`repaired` status with missing/recovered file counts; purge reports a
+  distinct `empty`/`purged` status with selected pad identities, total count, and
+  descendant count. Human wording, ordering, styles, confirmation and recursive
+  safety errors remain unchanged and are rendered by command-specific templates.
+- Pad updates now expose an `outcomes` array with an `updated` kind, canonical
+  display path, title, and `structured`/`content`/`refresh` update kind. Repeated
+  complete/reopen requests, same-parent moves, and empty `delete --completed`
+  requests now expose typed `notices` instead of prose-only `messages`; mixed
+  status requests expose `status_changed` outcomes alongside the paths and
+  requested statuses that were no-ops. This intentionally extends the structured
+  modification schema and removes the migrated English messages. Human wording,
+  status display, and semantic `info`/`success` styling remain unchanged and are
+  rendered by `modification_result.jinja`.
+- Tag listing now exposes an ordered `tags` array with an explicit
+  `empty`/`listed` status. Tag registry mutations expose `created`/`deleted`/`renamed`
+  actions with their relevant names and affected-pad counts; per-pad assignment and
+  removal expose requested tag arrays, modified-pad counts, and distinct
+  `all_already_present`/`none_present` no-ops. These dedicated structured schemas
+  replace the former prose-only `messages` and generic modification results. Human
+  wording, ordering, brackets, pluralization, pad rows, and semantic `info`/`success`
+  styling remain unchanged through CLI-owned MiniJinja templates.
+- Clone and migrate now expose one semantic cross-store transfer report in
+  structured output. The report identifies operation, direction, resolved peer
+  store, requested selection, copied pad IDs/count, and explicit empty,
+  full-success, partial-success, or no-copy status. Ordered typed diagnostics
+  distinguish source-read and destination-write copy failures, parent orphaning,
+  destination bucket enumeration failures, tag-registry merge failures, and
+  migrate source-delete failures. This intentionally replaces the former
+  prose-only `messages` schema; human wording, ordering, and styles remain
+  compatible through the CLI-owned transfer template.
 - Releases now run entirely on shipit's per-stage release caller
   (`gh workflow run shipit-release.yml`): the caller gained independently
   re-runnable `build`/`sign`/`publish` stage dispatches, and the legacy
   `release.yml` (rust-cli.yml@v3) workflow was removed.
+- Upgrade the Standout framework from 6.2 to the 7.6 generation
+  (`standout`/`standout-macros`/`standout-dispatch` 7.6.4). Handler failures now
+  use Standout's native `RunResult::Error` variant instead of being detected by
+  an `"Error:"` string prefix on rendered output. User-visible behavior is
+  otherwise unchanged, except that `<command> --help` / `-h` is now rendered by
+  Standout (matching `padz help <command>`, which already was) and no longer
+  lists the global `-g`/`-v`/`--data`/`--output` flags; those flags are still
+  accepted.
+- Upgrade the coherent Standout dependency family from 7.7.0 to 7.9.0. Naked
+  `padz` now uses Standout's invocation-aware default resolver (terminal stdin
+  lists; redirected stdin, including an empty pipe, creates) without local argv
+  injection. Exports now return owned bytes and semantic report facts from
+  `padzapp`; Standout selects and writes the suggested or explicit destination,
+  then renders the receipt-aware success report. Metadata warnings remain
+  machine-readable and artifact bytes/formats are unchanged. Structured export
+  reports now use Standout's `{ report, receipt }` envelope rather than the old
+  prose `messages` result. Owned-byte exports keep source data and the compressed
+  artifact plus encoder buffers live at peak, while API/handler handoff moves the
+  byte vector without another copy.
+- Deepen the CLI/core ownership split for `view` and pin-state notices. `view`
+  structured output now keeps `title` and `content` unindented, exposes the
+  requested `nesting` mode, and leaves four-space human indentation to the
+  MiniJinja template. Viewing multiple selected roots now performs one clipboard
+  write in display order, separated by `---`; child rows remain excluded from the
+  `view` clipboard payload, as before. Repeating `pin` or `unpin` now exposes an
+  additive `notices` array with a stable semantic `kind` and canonical display
+  path; the former English entry is no longer duplicated in `messages`, while the
+  human sentence remains unchanged through the modification template.
+- Fix `--output yaml`, `--output xml`, and `--output csv`, which silently rendered
+  human terminal output — ANSI escapes, glyphs, and width-truncated titles — instead
+  of machine-readable data. All three were accepted as valid flag values and then fell
+  back to automatic rendering, so scripts and agents received text that no parser could
+  read, with a success exit code. The output mode is now read via Standout's own
+  `App::extract_output_mode` rather than a local copy of its mode list, so `json`,
+  `yaml`, `xml`, and `csv` each select the requested serialization. `path` and `uuid`
+  are included, and structured output is invariant across terminal width and color
+  settings. CSV flattens a whole result into one dotted-path row and is lossy for
+  nested data by design — use JSON or YAML for nested reads.
+- Build the Standout-shaped test pyramid. The `padz` crate now has a library
+  target (the binary is a shim over `cli::run()`), so the CLI's own seams —
+  the clap command tree, the typed handlers, the app builder — are testable in
+  process instead of only through a spawned binary. Test coverage is now layered
+  by the smallest seam that can observe each behavior: direct `padzapp` tests for
+  domain behavior, direct typed-handler tests for adapter mapping, serial
+  `standout-test` `TestHarness` tests for Clap-through-render integration, and
+  subprocess E2E only for boundaries a harness cannot model (each retained E2E
+  file documents the boundary it protects). The create/edit input-precedence and
+  terminal-width suites moved down from subprocess to the harness, which closed a
+  real gap: a spawned test process has no pty, so its stdin could never *be* a
+  terminal and the editor arm of the input chain was untestable — the harness
+  injects the reader and now covers both arms. No user-visible behavior changes.
 
 ## 1.9.0 - 2026-07-12
 
