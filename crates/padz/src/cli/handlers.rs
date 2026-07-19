@@ -28,13 +28,15 @@ use standout_macros::handler;
 use std::cell::RefCell;
 use std::rc::Rc;
 
-use super::result::{
-    CopyResult, CreateAbortKindResult, CreateAbortReasonResult, CreateAbortResult, CreateResult,
-    DoctorResult, ExportReportResult, ImportResult, InitializationResult, ListRequest,
-    ModificationActionResult, ModificationRequest, ModificationResult, PadContent,
-    PadContentResult, PadListResult, PathResult, PurgeResult, TagCatalogResult, TagRegistryResult,
-    TaggingResult, TransferResult, UuidResult,
+use super::views::{
+    CopyView, ListRequest, Listing, Modification, ModificationAction, ModificationRequest,
+    PadContent, PadContentResult, PathView, UuidView,
 };
+use padzapp::commands::doctor::DoctorOutcome;
+use padzapp::commands::init::InitializationOutcome;
+use padzapp::commands::purge::PurgeOutcome;
+use padzapp::commands::tagging::TaggingResult;
+use padzapp::commands::tags::{TagCatalogOutcome, TagRegistryOutcome};
 
 // =============================================================================
 // App State Types (for standout's type-based app_state lookup)
@@ -133,7 +135,7 @@ fn get_state(ctx: &CommandContext) -> &AppState {
 /// let result = state.with_api(|api| {
 ///     api.method(state.scope, &args).map_err(to_anyhow)
 /// })?;
-/// Ok(Output::Render(ModificationResult { ... }))
+/// Ok(Output::Render(Modification { ... }))
 /// ```
 ///
 /// With ScopedApi, handlers become one-liners:
@@ -157,14 +159,14 @@ impl<'a> ScopedApi<'a> {
             .with_api(|api| f(api, self.state.scope).map_err(to_anyhow))
     }
 
-    /// Map a CmdResult (modification) into the typed modification result.
+    /// Map a CmdResult (modification) into the thin modification view.
     /// When `force_show_status` is true, status icons are requested regardless of mode.
     fn modification(
         &self,
-        action: ModificationActionResult,
+        action: ModificationAction,
         result: CmdResult,
         force_show_status: bool,
-    ) -> Result<Output<ModificationResult>, anyhow::Error> {
+    ) -> Result<Output<Modification>, anyhow::Error> {
         Ok(Output::Render(self.modification_result(
             action,
             result,
@@ -172,20 +174,23 @@ impl<'a> ScopedApi<'a> {
         )))
     }
 
-    /// Build a typed modification result without wrapping it in `Output`.
+    /// Build the thin modification view without wrapping it in `Output`.
     ///
-    /// Used by the handlers that assemble a `CmdResult` themselves (create, edit).
+    /// The core's `notices`/`outcomes` (`CmdNotice`/`CmdOutcome`) ride through
+    /// verbatim — no projection — so the template and structured output read the
+    /// same core shape. Used by the handlers that assemble a `CmdResult`
+    /// themselves (create, edit).
     fn modification_result(
         &self,
-        action: ModificationActionResult,
+        action: ModificationAction,
         result: CmdResult,
         force_show_status: bool,
-    ) -> ModificationResult {
-        ModificationResult {
+    ) -> Modification {
+        Modification {
             action,
             pads: result.affected_pads,
-            notices: result.notices.into_iter().map(Into::into).collect(),
-            outcomes: result.outcomes.into_iter().map(Into::into).collect(),
+            notices: result.notices,
+            outcomes: result.outcomes,
             request: ModificationRequest {
                 status: self.state.wants_status(force_show_status),
             },
@@ -194,80 +199,59 @@ impl<'a> ScopedApi<'a> {
 
     // --- Modification operations ---
 
-    pub fn pin_pads(
-        &self,
-        indexes: &[String],
-    ) -> Result<Output<ModificationResult>, anyhow::Error> {
+    pub fn pin_pads(&self, indexes: &[String]) -> Result<Output<Modification>, anyhow::Error> {
         let result = self.call(|api, scope| api.pin_pads(scope, indexes))?;
-        self.modification(ModificationActionResult::Pin, result, false)
+        self.modification(ModificationAction::Pin, result, false)
     }
 
-    pub fn unpin_pads(
-        &self,
-        indexes: &[String],
-    ) -> Result<Output<ModificationResult>, anyhow::Error> {
+    pub fn unpin_pads(&self, indexes: &[String]) -> Result<Output<Modification>, anyhow::Error> {
         let result = self.call(|api, scope| api.unpin_pads(scope, indexes))?;
-        self.modification(ModificationActionResult::Unpin, result, false)
+        self.modification(ModificationAction::Unpin, result, false)
     }
 
-    pub fn delete_pads(
-        &self,
-        indexes: &[String],
-    ) -> Result<Output<ModificationResult>, anyhow::Error> {
+    pub fn delete_pads(&self, indexes: &[String]) -> Result<Output<Modification>, anyhow::Error> {
         let result = self.call(|api, scope| api.delete_pads(scope, indexes))?;
-        self.modification(ModificationActionResult::Delete, result, false)
+        self.modification(ModificationAction::Delete, result, false)
     }
 
-    pub fn delete_completed_pads(&self) -> Result<Output<ModificationResult>, anyhow::Error> {
+    pub fn delete_completed_pads(&self) -> Result<Output<Modification>, anyhow::Error> {
         let result = self.call(|api, scope| api.delete_completed_pads(scope))?;
-        self.modification(ModificationActionResult::Delete, result, false)
+        self.modification(ModificationAction::Delete, result, false)
     }
 
-    pub fn restore_pads(
-        &self,
-        indexes: &[String],
-    ) -> Result<Output<ModificationResult>, anyhow::Error> {
+    pub fn restore_pads(&self, indexes: &[String]) -> Result<Output<Modification>, anyhow::Error> {
         let result = self.call(|api, scope| api.restore_pads(scope, indexes))?;
-        self.modification(ModificationActionResult::Restore, result, false)
+        self.modification(ModificationAction::Restore, result, false)
     }
 
-    pub fn archive_pads(
-        &self,
-        indexes: &[String],
-    ) -> Result<Output<ModificationResult>, anyhow::Error> {
+    pub fn archive_pads(&self, indexes: &[String]) -> Result<Output<Modification>, anyhow::Error> {
         let result = self.call(|api, scope| api.archive_pads(scope, indexes))?;
-        self.modification(ModificationActionResult::Archive, result, false)
+        self.modification(ModificationAction::Archive, result, false)
     }
 
     pub fn unarchive_pads(
         &self,
         indexes: &[String],
-    ) -> Result<Output<ModificationResult>, anyhow::Error> {
+    ) -> Result<Output<Modification>, anyhow::Error> {
         let result = self.call(|api, scope| api.unarchive_pads(scope, indexes))?;
-        self.modification(ModificationActionResult::Unarchive, result, false)
+        self.modification(ModificationAction::Unarchive, result, false)
     }
 
-    pub fn complete_pads(
-        &self,
-        indexes: &[String],
-    ) -> Result<Output<ModificationResult>, anyhow::Error> {
+    pub fn complete_pads(&self, indexes: &[String]) -> Result<Output<Modification>, anyhow::Error> {
         let result = self.call(|api, scope| api.complete_pads(scope, indexes))?;
-        self.modification(ModificationActionResult::Complete, result, true)
+        self.modification(ModificationAction::Complete, result, true)
     }
 
-    pub fn reopen_pads(
-        &self,
-        indexes: &[String],
-    ) -> Result<Output<ModificationResult>, anyhow::Error> {
+    pub fn reopen_pads(&self, indexes: &[String]) -> Result<Output<Modification>, anyhow::Error> {
         let result = self.call(|api, scope| api.reopen_pads(scope, indexes))?;
-        self.modification(ModificationActionResult::Reopen, result, true)
+        self.modification(ModificationAction::Reopen, result, true)
     }
 
     pub fn move_pads(
         &self,
         indexes: &[String],
         to_root: bool,
-    ) -> Result<Output<ModificationResult>, anyhow::Error> {
+    ) -> Result<Output<Modification>, anyhow::Error> {
         let result = if to_root {
             self.call(|api, scope| api.move_pads(scope, indexes, None))?
         } else {
@@ -279,7 +263,7 @@ impl<'a> ScopedApi<'a> {
             let (sources, dest) = indexes.split_at(indexes.len() - 1);
             self.call(|api, scope| api.move_pads(scope, sources, Some(dest[0].as_str())))?
         };
-        self.modification(ModificationActionResult::Move, result, false)
+        self.modification(ModificationAction::Move, result, false)
     }
 
     // --- Maintenance outcomes ---
@@ -289,34 +273,34 @@ impl<'a> ScopedApi<'a> {
         indexes: &[String],
         yes: bool,
         recursive: bool,
-    ) -> Result<Output<PurgeResult>, anyhow::Error> {
+    ) -> Result<Output<PurgeOutcome>, anyhow::Error> {
         let include_done = self.state.mode == PadzMode::Todos;
         let outcome =
             self.call(|api, scope| api.purge_pads(scope, indexes, recursive, yes, include_done))?;
-        Ok(Output::Render(outcome.into()))
+        Ok(Output::Render(outcome))
     }
 
-    pub fn doctor(&self) -> Result<Output<DoctorResult>, anyhow::Error> {
+    pub fn doctor(&self) -> Result<Output<DoctorOutcome>, anyhow::Error> {
         let outcome = self.call(|api, scope| api.doctor(scope))?;
-        Ok(Output::Render(outcome.into()))
+        Ok(Output::Render(outcome))
     }
 
-    pub fn init(&self) -> Result<Output<InitializationResult>, anyhow::Error> {
+    pub fn init(&self) -> Result<Output<InitializationOutcome>, anyhow::Error> {
         let outcome = self.call(|api, scope| api.init(scope))?;
-        Ok(Output::Render(outcome.into()))
+        Ok(Output::Render(outcome))
     }
 
-    pub fn init_link(&self, target: &str) -> Result<Output<InitializationResult>, anyhow::Error> {
+    pub fn init_link(&self, target: &str) -> Result<Output<InitializationOutcome>, anyhow::Error> {
         let target_path = std::path::PathBuf::from(target);
         let local_padz = &self.state.local_padz_dir;
         let outcome = self.call(|api, _scope| api.init_link(local_padz, &target_path))?;
-        Ok(Output::Render(outcome.into()))
+        Ok(Output::Render(outcome))
     }
 
-    pub fn init_unlink(&self) -> Result<Output<InitializationResult>, anyhow::Error> {
+    pub fn init_unlink(&self) -> Result<Output<InitializationOutcome>, anyhow::Error> {
         let local_padz = &self.state.local_padz_dir;
         let outcome = self.call(|api, _scope| api.init_unlink(local_padz))?;
-        Ok(Output::Render(outcome.into()))
+        Ok(Output::Render(outcome))
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -327,7 +311,7 @@ impl<'a> ScopedApi<'a> {
         json: bool,
         with_metadata: bool,
         nesting: NestingMode,
-    ) -> Result<Output<ExportReportResult>, anyhow::Error> {
+    ) -> Result<Output<padzapp::commands::export::ExportReport>, anyhow::Error> {
         let result = if let Some(title) = single_file {
             self.call(|api, scope| api.export_pads_single_file(scope, indexes, title, nesting))?
         } else if json {
@@ -336,28 +320,34 @@ impl<'a> ScopedApi<'a> {
             self.call(|api, scope| api.export_pads(scope, indexes, nesting, with_metadata))?
         };
         Ok(match result {
+            // An empty selection never enters the artifact path: Standout only
+            // merges its receipt after a write, so `export.jinja` keys the empty
+            // message on the receipt being absent. `exported: 0` states the fact.
             padzapp::commands::export::ExportOutcome::Empty { format } => {
-                Output::Render(ExportReportResult::empty(format))
+                Output::Render(padzapp::commands::export::ExportReport {
+                    format,
+                    exported: 0,
+                    warnings: Vec::new(),
+                })
             }
-            padzapp::commands::export::ExportOutcome::Artifact(artifact) => {
-                let report = artifact.report.into();
-                Output::Artifact(
-                    Artifact::new(artifact.bytes)
-                        .suggest_destination(artifact.suggested_filename)
-                        .with_report(report),
-                )
-            }
+            // The core report rides along as the artifact's semantic report;
+            // Standout owns the write and merges its own receipt afterwards.
+            padzapp::commands::export::ExportOutcome::Artifact(artifact) => Output::Artifact(
+                Artifact::new(artifact.bytes)
+                    .suggest_destination(artifact.suggested_filename)
+                    .with_report(artifact.report),
+            ),
         })
     }
 
-    /// Project the core semantic import report into the CLI's public DTO.
+    /// Return the core semantic import report for the CLI to render directly.
     pub fn import_pads(
         &self,
         paths: Vec<std::path::PathBuf>,
-    ) -> Result<Output<ImportResult>, anyhow::Error> {
+    ) -> Result<Output<padzapp::commands::import::ImportReport>, anyhow::Error> {
         let extensions = &self.state.import_extensions.0;
-        let report = self.call(|api, scope| api.import_pads(scope, paths.clone(), extensions))?;
-        Ok(Output::Render(report.into()))
+        let report = self.call(move |api, scope| api.import_pads(scope, paths, extensions))?;
+        Ok(Output::Render(report))
     }
 
     pub fn transfer_pads(
@@ -366,19 +356,19 @@ impl<'a> ScopedApi<'a> {
         to: Option<&str>,
         from: Option<&str>,
         mode: padzapp::commands::transfer::TransferMode,
-    ) -> Result<Output<TransferResult>, anyhow::Error> {
+    ) -> Result<Output<padzapp::commands::transfer::TransferReport>, anyhow::Error> {
         match (to, from) {
             (Some(dest), None) => {
                 let path = std::path::PathBuf::from(dest);
                 let result =
                     self.call(|api, scope| api.transfer_pads_to(scope, indexes, &path, mode))?;
-                Ok(Output::Render(result.into()))
+                Ok(Output::Render(result))
             }
             (None, Some(src)) => {
                 let path = std::path::PathBuf::from(src);
                 let result =
                     self.call(|api, scope| api.transfer_pads_from(scope, indexes, &path, mode))?;
-                Ok(Output::Render(result.into()))
+                Ok(Output::Render(result))
             }
             (Some(_), Some(_)) => Err(anyhow::anyhow!("--to and --from are mutually exclusive")),
             (None, None) => Err(anyhow::anyhow!("exactly one of --to or --from is required")),
@@ -387,23 +377,23 @@ impl<'a> ScopedApi<'a> {
 
     // --- Tags subcommand operations ---
 
-    pub fn list_tags(&self) -> Result<Output<TagCatalogResult>, anyhow::Error> {
+    pub fn list_tags(&self) -> Result<Output<TagCatalogOutcome>, anyhow::Error> {
         let outcome = self.call(|api, scope| api.list_tags(scope))?;
-        Ok(Output::Render(outcome.into()))
+        Ok(Output::Render(outcome))
     }
 
-    pub fn delete_tag(&self, name: &str) -> Result<Output<TagRegistryResult>, anyhow::Error> {
+    pub fn delete_tag(&self, name: &str) -> Result<Output<TagRegistryOutcome>, anyhow::Error> {
         let outcome = self.call(|api, scope| api.delete_tag(scope, name))?;
-        Ok(Output::Render(outcome.into()))
+        Ok(Output::Render(outcome))
     }
 
     pub fn rename_tag(
         &self,
         old_name: &str,
         new_name: &str,
-    ) -> Result<Output<TagRegistryResult>, anyhow::Error> {
+    ) -> Result<Output<TagRegistryOutcome>, anyhow::Error> {
         let outcome = self.call(|api, scope| api.rename_tag(scope, old_name, new_name))?;
-        Ok(Output::Render(outcome.into()))
+        Ok(Output::Render(outcome))
     }
 
     // --- List operations ---
@@ -418,13 +408,13 @@ impl<'a> ScopedApi<'a> {
         ids: &[String],
         show_uuid: bool,
         show_status: bool,
-    ) -> Result<Output<PadListResult>, anyhow::Error> {
+    ) -> Result<Output<Listing>, anyhow::Error> {
         let filtered = filter.search_term.is_some()
             || filter.todo_status.is_some()
             || filter.tags.is_some()
             || !ids.is_empty();
         let result = self.call(|api, scope| api.get_pads(scope, filter, ids))?;
-        Ok(Output::Render(PadListResult {
+        Ok(Output::Render(Listing {
             pads: result.listed_pads,
             request: ListRequest {
                 peek,
@@ -486,7 +476,7 @@ impl<'a> ScopedApi<'a> {
         &self,
         indexes: &[String],
         nesting: NestingMode,
-    ) -> Result<Output<CopyResult>, anyhow::Error> {
+    ) -> Result<Output<CopyView>, anyhow::Error> {
         let result = self.call(|api, scope| api.view_pads(scope, indexes, nesting))?;
 
         let indent_per_level: usize = match nesting {
@@ -533,7 +523,7 @@ impl<'a> ScopedApi<'a> {
             .map(|(_, dp)| dp.pad.metadata.title.clone())
             .collect();
 
-        Ok(Output::Render(CopyResult {
+        Ok(Output::Render(CopyView {
             root_pad_count: titles.len(),
             titles,
         }))
@@ -640,15 +630,17 @@ pub(crate) fn split_indexes_and_content(args: &[String]) -> (Vec<String>, Vec<St
 /// decided here: `cli::input`'s chain resolves it before dispatch and this
 /// handler matches on the resulting [`RequestContent`]. The `editor` /
 /// `no_editor` flags are part of that chain's availability rules, so they are
-/// not read here either. Successful creates preserve the modification schema;
-/// empty piped/editor content returns a typed [`CreateResult::Aborted`] outcome.
+/// not read here either. Both paths return the same core [`Modification`] the rest
+/// of the family does (rendered by `modification_result.jinja` with `action =
+/// "create"`): a success carries the created pad, and empty piped/editor content
+/// carries no pads, which the template reads as the aborted-empty-content case.
 #[handler]
 pub fn create(
     #[ctx] ctx: &CommandContext,
     #[arg] inside: Option<String>,
     #[arg] format: Option<String>,
     #[arg] title: Vec<String>,
-) -> Result<Output<CreateResult>, anyhow::Error> {
+) -> Result<Output<Modification>, anyhow::Error> {
     let state = get_state(ctx);
     let content = ctx.input::<RequestContent>(CREATE_CONTENT)?;
     let title_arg = if title.is_empty() {
@@ -713,7 +705,7 @@ pub fn create(
         }
 
         // An empty pipe is an abort: no pad, no editor.
-        RequestContent::PipedEmpty => return Ok(Output::Render(aborted_create())),
+        RequestContent::PipedEmpty => return Ok(aborted_create(ctx)),
 
         // Interactive: create pad first, then open real file in editor.
         //
@@ -760,25 +752,31 @@ pub fn create(
                 }
                 None => {
                     // Empty file - user aborted
-                    return Ok(Output::Render(aborted_create()));
+                    return Ok(aborted_create(ctx));
                 }
             }
         }
     };
 
-    Ok(Output::Render(CreateResult::Created(
-        api(ctx).modification_result(ModificationActionResult::Create, result, false),
+    Ok(Output::Render(api(ctx).modification_result(
+        ModificationAction::Create,
+        result,
+        false,
     )))
 }
 
 /// The result of a `create` the user abandoned by supplying no content.
 ///
-/// No pad was created, so the result carries only the semantic abort facts.
-fn aborted_create() -> CreateResult {
-    CreateResult::Aborted(CreateAbortResult {
-        kind: CreateAbortKindResult::Aborted,
-        reason: CreateAbortReasonResult::EmptyContent,
-    })
+/// No pad was created, so the outcome is a `create` [`Modification`] with no
+/// affected pads — the shape `modification_result.jinja` renders as the
+/// aborted-empty-content warning. Keeping it a `Modification` (rather than a
+/// bespoke abort projection) is what lets create share the family's core outcome.
+fn aborted_create(ctx: &CommandContext) -> Output<Modification> {
+    Output::Render(api(ctx).modification_result(
+        ModificationAction::Create,
+        CmdResult::default(),
+        false,
+    ))
 }
 
 /// List all pads with optional filtering.
@@ -800,7 +798,7 @@ pub fn list(
     #[arg] tags: Vec<String>,
     #[flag] uuid: bool,
     #[flag(name = "show_status")] show_status: bool,
-) -> Result<Output<PadListResult>, anyhow::Error> {
+) -> Result<Output<Listing>, anyhow::Error> {
     let todo_status = if planned {
         Some(TodoStatus::Planned)
     } else if completed {
@@ -843,7 +841,7 @@ pub fn peek(
     #[arg] ids: Vec<String>,
     #[arg] tags: Vec<String>,
     #[flag] uuid: bool,
-) -> Result<Output<PadListResult>, anyhow::Error> {
+) -> Result<Output<Listing>, anyhow::Error> {
     let filter = PadFilter {
         status: PadStatusFilter::Active,
         search_term: None,
@@ -864,7 +862,7 @@ pub fn search(
     #[flag] completed: bool,
     #[arg] tags: Vec<String>,
     #[flag] uuid: bool,
-) -> Result<Output<PadListResult>, anyhow::Error> {
+) -> Result<Output<Listing>, anyhow::Error> {
     let filter = PadFilter {
         status: if all {
             PadStatusFilter::All
@@ -914,7 +912,7 @@ pub fn copy(
     #[flag] flat: bool,
     #[flag] tree: bool,
     #[flag] indented: bool,
-) -> Result<Output<CopyResult>, anyhow::Error> {
+) -> Result<Output<CopyView>, anyhow::Error> {
     let nesting = parse_nesting_mode(flat, tree, indented);
     api(ctx).copy_pads(&indexes, nesting)
 }
@@ -928,7 +926,7 @@ pub fn copy(
 pub fn edit(
     #[ctx] ctx: &CommandContext,
     #[arg] indexes: Vec<String>,
-) -> Result<Output<ModificationResult>, anyhow::Error> {
+) -> Result<Output<Modification>, anyhow::Error> {
     let state = get_state(ctx);
     let content = ctx.input::<RequestContent>(EDIT_CONTENT)?;
 
@@ -956,7 +954,7 @@ pub fn edit(
             let result = update(raw)?;
             state.copy_to_clipboard(raw);
             return Ok(Output::Render(api(ctx).modification_result(
-                ModificationActionResult::Update,
+                ModificationAction::Update,
                 result,
                 false,
             )));
@@ -967,7 +965,7 @@ pub fn edit(
             let result = update(raw)?;
             copy_content_to_clipboard(state, raw);
             return Ok(Output::Render(api(ctx).modification_result(
-                ModificationActionResult::Update,
+                ModificationAction::Update,
                 result,
                 false,
             )));
@@ -1030,14 +1028,14 @@ pub fn edit(
                 ..Default::default()
             };
             Ok(Output::Render(api(ctx).modification_result(
-                ModificationActionResult::Update,
+                ModificationAction::Update,
                 result,
                 false,
             )))
         }
         None => {
             // User emptied the file
-            Ok(Output::<ModificationResult>::Silent)
+            Ok(Output::<Modification>::Silent)
         }
     }
 }
@@ -1047,7 +1045,7 @@ pub fn delete(
     #[ctx] ctx: &CommandContext,
     #[arg] indexes: Vec<String>,
     #[flag] completed: bool,
-) -> Result<Output<ModificationResult>, anyhow::Error> {
+) -> Result<Output<Modification>, anyhow::Error> {
     if completed {
         api(ctx).delete_completed_pads()
     } else {
@@ -1059,7 +1057,7 @@ pub fn delete(
 pub fn restore(
     #[ctx] ctx: &CommandContext,
     #[arg] indexes: Vec<String>,
-) -> Result<Output<ModificationResult>, anyhow::Error> {
+) -> Result<Output<Modification>, anyhow::Error> {
     api(ctx).restore_pads(&indexes)
 }
 
@@ -1067,7 +1065,7 @@ pub fn restore(
 pub fn archive(
     #[ctx] ctx: &CommandContext,
     #[arg] indexes: Vec<String>,
-) -> Result<Output<ModificationResult>, anyhow::Error> {
+) -> Result<Output<Modification>, anyhow::Error> {
     api(ctx).archive_pads(&indexes)
 }
 
@@ -1075,7 +1073,7 @@ pub fn archive(
 pub fn unarchive(
     #[ctx] ctx: &CommandContext,
     #[arg] indexes: Vec<String>,
-) -> Result<Output<ModificationResult>, anyhow::Error> {
+) -> Result<Output<Modification>, anyhow::Error> {
     api(ctx).unarchive_pads(&indexes)
 }
 
@@ -1084,7 +1082,7 @@ pub fn unarchive(
 pub fn pin(
     #[ctx] ctx: &CommandContext,
     #[arg] indexes: Vec<String>,
-) -> Result<Output<ModificationResult>, anyhow::Error> {
+) -> Result<Output<Modification>, anyhow::Error> {
     api(ctx).pin_pads(&indexes)
 }
 
@@ -1092,7 +1090,7 @@ pub fn pin(
 pub fn unpin(
     #[ctx] ctx: &CommandContext,
     #[arg] indexes: Vec<String>,
-) -> Result<Output<ModificationResult>, anyhow::Error> {
+) -> Result<Output<Modification>, anyhow::Error> {
     api(ctx).unpin_pads(&indexes)
 }
 
@@ -1101,7 +1099,7 @@ pub fn move_pads(
     #[ctx] ctx: &CommandContext,
     #[arg] indexes: Vec<String>,
     #[flag] root: bool,
-) -> Result<Output<ModificationResult>, anyhow::Error> {
+) -> Result<Output<Modification>, anyhow::Error> {
     api(ctx).move_pads(&indexes, root)
 }
 
@@ -1110,11 +1108,11 @@ pub fn move_pads(
 pub fn path(
     #[ctx] ctx: &CommandContext,
     #[arg] indexes: Vec<String>,
-) -> Result<Output<PathResult>, anyhow::Error> {
+) -> Result<Output<PathView>, anyhow::Error> {
     let state = get_state(ctx);
     let result = state.with_api(|api| api.pad_paths(state.scope, &indexes).map_err(to_anyhow))?;
 
-    Ok(Output::Render(PathResult {
+    Ok(Output::Render(PathView {
         paths: result
             .pad_paths
             .iter()
@@ -1128,11 +1126,11 @@ pub fn path(
 pub fn uuid(
     #[ctx] ctx: &CommandContext,
     #[arg] indexes: Vec<String>,
-) -> Result<Output<UuidResult>, anyhow::Error> {
+) -> Result<Output<UuidView>, anyhow::Error> {
     let state = get_state(ctx);
     let result = state.with_api(|api| api.pad_uuids(state.scope, &indexes).map_err(to_anyhow))?;
 
-    Ok(Output::Render(UuidResult {
+    Ok(Output::Render(UuidView {
         uuids: result.into_iter().map(|uuid| uuid.to_string()).collect(),
     }))
 }
@@ -1141,7 +1139,7 @@ pub fn uuid(
 pub fn complete(
     #[ctx] ctx: &CommandContext,
     #[arg] indexes: Vec<String>,
-) -> Result<Output<ModificationResult>, anyhow::Error> {
+) -> Result<Output<Modification>, anyhow::Error> {
     api(ctx).complete_pads(&indexes)
 }
 
@@ -1149,7 +1147,7 @@ pub fn complete(
 pub fn reopen(
     #[ctx] ctx: &CommandContext,
     #[arg] indexes: Vec<String>,
-) -> Result<Output<ModificationResult>, anyhow::Error> {
+) -> Result<Output<Modification>, anyhow::Error> {
     api(ctx).reopen_pads(&indexes)
 }
 
@@ -1163,7 +1161,7 @@ pub fn purge(
     #[arg] indexes: Vec<String>,
     #[flag] yes: bool,
     #[flag] recursive: bool,
-) -> Result<Output<PurgeResult>, anyhow::Error> {
+) -> Result<Output<PurgeOutcome>, anyhow::Error> {
     api(ctx).purge_pads(&indexes, yes, recursive)
 }
 
@@ -1178,7 +1176,7 @@ pub fn export(
     #[flag] flat: bool,
     #[flag] tree: bool,
     #[flag] indented: bool,
-) -> Result<Output<ExportReportResult>, anyhow::Error> {
+) -> Result<Output<padzapp::commands::export::ExportReport>, anyhow::Error> {
     let nesting = parse_nesting_mode(flat, tree, indented);
     api(ctx).export_pads(
         &indexes,
@@ -1194,7 +1192,7 @@ pub fn export(
 pub fn import(
     #[ctx] ctx: &CommandContext,
     #[arg] paths: Vec<String>,
-) -> Result<Output<ImportResult>, anyhow::Error> {
+) -> Result<Output<padzapp::commands::import::ImportReport>, anyhow::Error> {
     let paths: Vec<std::path::PathBuf> = paths.into_iter().map(std::path::PathBuf::from).collect();
     api(ctx).import_pads(paths)
 }
@@ -1205,7 +1203,7 @@ pub fn clone(
     #[arg] indexes: Vec<String>,
     #[arg] to: Option<String>,
     #[arg] from: Option<String>,
-) -> Result<Output<TransferResult>, anyhow::Error> {
+) -> Result<Output<padzapp::commands::transfer::TransferReport>, anyhow::Error> {
     api(ctx).transfer_pads(
         &indexes,
         to.as_deref(),
@@ -1220,7 +1218,7 @@ pub fn migrate(
     #[arg] indexes: Vec<String>,
     #[arg] to: Option<String>,
     #[arg] from: Option<String>,
-) -> Result<Output<TransferResult>, anyhow::Error> {
+) -> Result<Output<padzapp::commands::transfer::TransferReport>, anyhow::Error> {
     api(ctx).transfer_pads(
         &indexes,
         to.as_deref(),
@@ -1234,7 +1232,7 @@ pub fn migrate(
 // =============================================================================
 
 #[handler]
-pub fn doctor(#[ctx] ctx: &CommandContext) -> Result<Output<DoctorResult>, anyhow::Error> {
+pub fn doctor(#[ctx] ctx: &CommandContext) -> Result<Output<DoctorOutcome>, anyhow::Error> {
     api(ctx).doctor()
 }
 
@@ -1243,7 +1241,7 @@ pub fn init(
     #[ctx] ctx: &CommandContext,
     #[arg] link: Option<String>,
     #[flag] unlink: bool,
-) -> Result<Output<InitializationResult>, anyhow::Error> {
+) -> Result<Output<InitializationOutcome>, anyhow::Error> {
     if let Some(target) = link {
         api(ctx).init_link(&target)
     } else if unlink {
@@ -1308,7 +1306,7 @@ pub mod tag {
             api.add_tags_to_pads(state.scope, &indexes, &tags)
                 .map_err(to_anyhow)
         })?;
-        Ok(Output::Render(result.into()))
+        Ok(Output::Render(result))
     }
 
     #[handler]
@@ -1322,7 +1320,7 @@ pub mod tag {
             api.remove_tags_from_pads(state.scope, &indexes, &tags)
                 .map_err(to_anyhow)
         })?;
-        Ok(Output::Render(result.into()))
+        Ok(Output::Render(result))
     }
 
     #[handler]
@@ -1330,7 +1328,7 @@ pub mod tag {
         #[ctx] ctx: &CommandContext,
         #[arg(name = "old_name")] old_name: String,
         #[arg(name = "new_name")] new_name: String,
-    ) -> Result<Output<TagRegistryResult>, anyhow::Error> {
+    ) -> Result<Output<TagRegistryOutcome>, anyhow::Error> {
         api(ctx).rename_tag(&old_name, &new_name)
     }
 
@@ -1338,7 +1336,7 @@ pub mod tag {
     pub fn delete(
         #[ctx] ctx: &CommandContext,
         #[arg] name: String,
-    ) -> Result<Output<TagRegistryResult>, anyhow::Error> {
+    ) -> Result<Output<TagRegistryOutcome>, anyhow::Error> {
         api(ctx).delete_tag(&name)
     }
 
@@ -1346,14 +1344,14 @@ pub mod tag {
     pub fn list(
         #[ctx] ctx: &CommandContext,
         #[arg] ids: Vec<String>,
-    ) -> Result<Output<TagCatalogResult>, anyhow::Error> {
+    ) -> Result<Output<TagCatalogOutcome>, anyhow::Error> {
         if ids.is_empty() {
             api(ctx).list_tags()
         } else {
             let state = get_state(ctx);
             let outcome =
                 state.with_api(|api| api.list_pad_tags(state.scope, &ids).map_err(to_anyhow))?;
-            Ok(Output::Render(outcome.into()))
+            Ok(Output::Render(outcome))
         }
     }
 }
@@ -1629,7 +1627,7 @@ mod tests {
 
         let result = rendered(pin(&app.ctx, vec!["1".into()]).unwrap());
 
-        assert_eq!(result.action, ModificationActionResult::Pin);
+        assert_eq!(result.action, ModificationAction::Pin);
         assert_eq!(result.pads.len(), 1);
         assert_eq!(result.pads[0].pad.metadata.title, "Pin me");
         assert!(result.pads[0].pad.metadata.is_pinned);
@@ -1642,7 +1640,7 @@ mod tests {
 
         let result = rendered(complete(&app.ctx, vec!["1".into()]).unwrap());
 
-        assert_eq!(result.action, ModificationActionResult::Complete);
+        assert_eq!(result.action, ModificationAction::Complete);
         // A command that changes status always shows it, whatever the mode.
         assert!(result.request.status);
     }
@@ -1657,7 +1655,7 @@ mod tests {
         assert!(result.pads.is_empty());
         assert_eq!(
             result.notices,
-            vec![super::super::result::ModificationNoticeResult::NoCompletedPads]
+            vec![padzapp::commands::CmdNotice::NoCompletedPads]
         );
     }
 

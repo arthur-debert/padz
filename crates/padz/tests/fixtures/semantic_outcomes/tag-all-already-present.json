@@ -1,5 +1,6 @@
 {
-  "action": "all_already_present",
-  "requested_tags": ["work", "rust"],
-  "modified_pads": 0
+  "AllAlreadyPresent": {
+    "requested_tags": ["work", "rust"],
+    "modified_pads": 0
+  }
 }

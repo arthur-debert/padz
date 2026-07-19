@@ -25,17 +25,23 @@ mod support;
 
 use padz::cli::handlers;
 use padz::cli::input::{RequestContent, CREATE_CONTENT, EDIT_CONTENT};
-use padz::cli::result::{
-    CopyResult, CreateAbortKindResult, CreateAbortReasonResult, CreateResult, DoctorResult,
-    ExportFormat, ExportStatus, ExportWarning, ImportDiagnosticResult, ImportResult,
-    ImportSourceKindResult, ImportSourceStatusResult, ImportStatusResult, InitializationResult,
-    MetadataWarningReasonResult, ModificationActionResult, ModificationNoticeResult,
-    ModificationResult, MutationOutcomeResult, MutationStatusResult, PadContentResult,
-    PadListResult, PathResult, PurgeResult, TagCatalogResult, TagRegistryResult, TaggingResult,
-    TransferDirectionResult, TransferOperationResult, TransferResult, TransferSelectionResult,
-    TransferStatusResult, UpdateKindResult, UuidResult,
+use padz::cli::views::{CopyView, PathView, UuidView};
+use padz::cli::views::{Listing, Modification, ModificationAction, PadContentResult};
+use padzapp::commands::doctor::DoctorOutcome;
+use padzapp::commands::export::{ExportFormat, ExportReport, ExportWarning};
+use padzapp::commands::import::{
+    ImportDiagnostic, ImportReport, ImportSourceKind, ImportSourceStatus, ImportStatus,
 };
-use padzapp::commands::NestingMode;
+use padzapp::commands::init::InitializationOutcome;
+use padzapp::commands::metadata_apply::MetadataWarningReason;
+use padzapp::commands::purge::PurgeOutcome;
+use padzapp::commands::tagging::{TaggingOutcome, TaggingResult};
+use padzapp::commands::tags::{TagCatalogOutcome, TagRegistryOutcome};
+use padzapp::commands::transfer::{
+    TransferDirection, TransferMode, TransferReport, TransferSelection, TransferStatus,
+};
+use padzapp::commands::{CmdNotice, CmdOutcome, NestingMode, UpdateKind};
+use padzapp::model::{Scope, TodoStatus};
 use standout::cli::Output;
 use support::Fixture;
 
@@ -55,7 +61,7 @@ where
 }
 
 /// The titles a listing result carries, in the order the handler returned them.
-fn titles(result: &PadListResult) -> Vec<String> {
+fn titles(result: &Listing) -> Vec<String> {
     result
         .pads
         .iter()
@@ -63,14 +69,19 @@ fn titles(result: &PadListResult) -> Vec<String> {
         .collect()
 }
 
-/// Unwraps the successful modification arm of create without changing its public
-/// serialized shape.
+/// Unwraps the `create` handler's core modification outcome.
+///
+/// `create` now returns the same [`Modification`] the rest of the family does; a
+/// successful create carries the created pad, so an empty `pads` here means the
+/// create aborted (see [`create_with_an_empty_pipe_aborts_without_creating_a_pad`]).
 #[track_caller]
-fn created(out: Result<Output<CreateResult>, anyhow::Error>) -> ModificationResult {
-    match rendered(out) {
-        CreateResult::Created(result) => result,
-        CreateResult::Aborted(abort) => panic!("expected created pad, got {abort:?}"),
-    }
+fn created(out: Result<Output<Modification>, anyhow::Error>) -> Modification {
+    let result = rendered(out);
+    assert!(
+        !result.pads.is_empty(),
+        "expected a created pad, got an aborted create: {result:?}"
+    );
+    result
 }
 
 // =============================================================================
@@ -314,7 +325,7 @@ fn copy_maps_a_single_root_to_typed_facts_and_one_semantic_write() {
     fx.seed_pad(&state, "single", "body");
     let ctx = support::ctx_with_state(state);
 
-    let result: CopyResult = rendered(handlers::copy(
+    let result: CopyView = rendered(handlers::copy(
         &ctx,
         vec!["1".to_string()],
         false,
@@ -325,7 +336,7 @@ fn copy_maps_a_single_root_to_typed_facts_and_one_semantic_write() {
 
     assert_eq!(
         result,
-        CopyResult {
+        CopyView {
             root_pad_count: 1,
             titles: vec!["single".to_string()],
         }
@@ -341,7 +352,7 @@ fn copy_maps_multiple_roots_in_display_order() {
     fx.seed_pad(&state, "second", "two");
     let ctx = support::ctx_with_state(state);
 
-    let result: CopyResult = rendered(handlers::copy(
+    let result: CopyView = rendered(handlers::copy(
         &ctx,
         vec!["1".to_string(), "2".to_string()],
         false,
@@ -366,7 +377,7 @@ fn copy_keeps_nested_content_in_the_payload_but_counts_only_the_root() {
     fx.seed_child(&state, "1", "child", "child body");
     let ctx = support::ctx_with_state(state);
 
-    let result: CopyResult = rendered(handlers::copy(
+    let result: CopyView = rendered(handlers::copy(
         &ctx,
         vec!["1".to_string()],
         false,
@@ -393,19 +404,19 @@ fn copy_keeps_nested_content_in_the_payload_but_counts_only_the_root() {
 #[test]
 fn modification_handlers_report_their_semantic_action() {
     type Call =
-        fn(&standout_dispatch::CommandContext) -> Result<Output<ModificationResult>, anyhow::Error>;
+        fn(&standout_dispatch::CommandContext) -> Result<Output<Modification>, anyhow::Error>;
 
-    let cases: Vec<(&str, ModificationActionResult, Call)> = vec![
-        ("pin", ModificationActionResult::Pin, |ctx| {
+    let cases: Vec<(&str, ModificationAction, Call)> = vec![
+        ("pin", ModificationAction::Pin, |ctx| {
             handlers::pin(ctx, vec!["1".to_string()])
         }),
-        ("delete", ModificationActionResult::Delete, |ctx| {
+        ("delete", ModificationAction::Delete, |ctx| {
             handlers::delete(ctx, vec!["1".to_string()], false)
         }),
-        ("archive", ModificationActionResult::Archive, |ctx| {
+        ("archive", ModificationAction::Archive, |ctx| {
             handlers::archive(ctx, vec!["1".to_string()])
         }),
-        ("complete", ModificationActionResult::Complete, |ctx| {
+        ("complete", ModificationAction::Complete, |ctx| {
             handlers::complete(ctx, vec!["1".to_string()])
         }),
     ];
@@ -469,7 +480,7 @@ fn repeated_pin_maps_the_core_notice_without_parsing_prose() {
 
     assert_eq!(
         result.notices,
-        vec![ModificationNoticeResult::AlreadyPinned {
+        vec![CmdNotice::AlreadyPinned {
             path: vec![padzapp::index::DisplayIndex::Pinned(1)]
         }]
     );
@@ -485,7 +496,7 @@ fn unpin_reverses_pin_and_reports_its_semantic_action() {
     rendered(handlers::pin(&ctx, vec!["1".to_string()]));
     let result = rendered(handlers::unpin(&ctx, vec!["p1".to_string()]));
 
-    assert_eq!(result.action, ModificationActionResult::Unpin);
+    assert_eq!(result.action, ModificationAction::Unpin);
     assert!(!result.pads[0].pad.metadata.is_pinned);
 }
 
@@ -499,7 +510,7 @@ fn restore_maps_a_deleted_selector_back_to_active() {
     rendered(handlers::delete(&ctx, vec!["1".to_string()], false));
     let result = rendered(handlers::restore(&ctx, vec!["d1".to_string()]));
 
-    assert_eq!(result.action, ModificationActionResult::Restore);
+    assert_eq!(result.action, ModificationAction::Restore);
     assert_eq!(result.pads[0].pad.metadata.title, "gone");
 }
 
@@ -535,7 +546,7 @@ fn move_to_root_needs_only_the_sources() {
     ));
     let result = rendered(handlers::move_pads(&ctx, vec!["1.1".to_string()], true));
 
-    assert_eq!(result.action, ModificationActionResult::Move);
+    assert_eq!(result.action, ModificationAction::Move);
     assert!(
         result.pads[0].pad.metadata.parent_id.is_none(),
         "--root detaches the pad from its parent"
@@ -559,7 +570,7 @@ fn same_parent_move_maps_the_nested_no_op_path() {
     assert!(result.pads.is_empty());
     assert_eq!(
         result.notices,
-        vec![ModificationNoticeResult::AlreadyAtDestination {
+        vec![CmdNotice::AlreadyAtDestination {
             path: vec![
                 padzapp::index::DisplayIndex::Regular(1),
                 padzapp::index::DisplayIndex::Regular(1),
@@ -586,16 +597,16 @@ fn mixed_complete_maps_changed_pads_and_requested_status_no_ops() {
     assert_eq!(result.pads.len(), 2);
     assert_eq!(
         result.notices,
-        vec![ModificationNoticeResult::AlreadyInStatus {
+        vec![CmdNotice::AlreadyInStatus {
             path: vec![padzapp::index::DisplayIndex::Regular(1)],
-            status: MutationStatusResult::Done,
+            status: TodoStatus::Done,
         }]
     );
     assert_eq!(
         result.outcomes,
-        vec![MutationOutcomeResult::StatusChanged {
+        vec![CmdOutcome::StatusChanged {
             path: vec![padzapp::index::DisplayIndex::Regular(2)],
-            status: MutationStatusResult::Done,
+            status: TodoStatus::Done,
         }]
     );
 }
@@ -610,10 +621,7 @@ fn empty_delete_completed_maps_the_core_no_op() {
     let result = rendered(handlers::delete(&ctx, vec![], true));
 
     assert!(result.pads.is_empty());
-    assert_eq!(
-        result.notices,
-        vec![ModificationNoticeResult::NoCompletedPads]
-    );
+    assert_eq!(result.notices, vec![CmdNotice::NoCompletedPads]);
 }
 
 // =============================================================================
@@ -624,7 +632,7 @@ fn empty_delete_completed_maps_the_core_no_op() {
 fn tag_list_maps_empty_and_ordered_catalog_states() {
     let empty = Fixture::new();
     let result = rendered(handlers::tag::list(&empty.ctx(), vec![]));
-    assert_eq!(result, TagCatalogResult::Empty { tags: vec![] });
+    assert_eq!(result, TagCatalogOutcome::Empty);
 
     let fx = Fixture::new();
     let state = fx.app_state();
@@ -639,7 +647,7 @@ fn tag_list_maps_empty_and_ordered_catalog_states() {
     let result = rendered(handlers::tag::list(&ctx, vec![]));
     assert_eq!(
         result,
-        TagCatalogResult::Listed {
+        TagCatalogOutcome::Listed {
             tags: vec!["work".into(), "rust".into()]
         }
     );
@@ -658,7 +666,7 @@ fn tag_list_maps_selected_pad_tags_to_a_singleton_catalog() {
     let result = rendered(handlers::tag::list(&ctx, vec!["1".into()]));
     assert_eq!(
         result,
-        TagCatalogResult::Listed {
+        TagCatalogOutcome::Listed {
             tags: vec!["work".into()]
         }
     );
@@ -672,30 +680,28 @@ fn tag_assignment_maps_requested_tags_counts_and_no_op_kind() {
     let ctx = support::ctx_with_state(state);
     let args = vec!["1".into(), "work".into(), "rust".into()];
 
-    let changed = rendered(handlers::tag::add(&ctx, args.clone()));
-    match changed {
-        TaggingResult::Assigned {
+    let changed: TaggingResult = rendered(handlers::tag::add(&ctx, args.clone()));
+    assert_eq!(changed.affected_pads.len(), 1);
+    match changed.outcome {
+        TaggingOutcome::Assigned {
             requested_tags,
             modified_pads,
-            pads,
         } => {
             assert_eq!(requested_tags, vec!["work", "rust"]);
             assert_eq!(modified_pads, 1);
-            assert_eq!(pads.len(), 1);
         }
         other => panic!("expected assigned outcome, got {other:?}"),
     }
 
-    let no_op = rendered(handlers::tag::add(&ctx, args));
-    match no_op {
-        TaggingResult::AllAlreadyPresent {
+    let no_op: TaggingResult = rendered(handlers::tag::add(&ctx, args));
+    assert_eq!(no_op.affected_pads.len(), 1);
+    match no_op.outcome {
+        TaggingOutcome::AllAlreadyPresent {
             requested_tags,
             modified_pads,
-            pads,
         } => {
             assert_eq!(requested_tags, vec!["work", "rust"]);
             assert_eq!(modified_pads, 0);
-            assert_eq!(pads.len(), 1);
         }
         other => panic!("expected all-already-present outcome, got {other:?}"),
     }
@@ -710,23 +716,21 @@ fn tag_removal_maps_requested_tags_counts_and_no_op_kind() {
     let args = vec!["1".into(), "work".into()];
     rendered(handlers::tag::add(&ctx, args.clone()));
 
-    let changed = rendered(handlers::tag::remove(&ctx, args.clone()));
+    let changed: TaggingResult = rendered(handlers::tag::remove(&ctx, args.clone()));
     assert!(matches!(
-        changed,
-        TaggingResult::Removed {
+        changed.outcome,
+        TaggingOutcome::Removed {
             requested_tags,
             modified_pads: 1,
-            ..
         } if requested_tags == vec!["work"]
     ));
 
-    let no_op = rendered(handlers::tag::remove(&ctx, args));
+    let no_op: TaggingResult = rendered(handlers::tag::remove(&ctx, args));
     assert!(matches!(
-        no_op,
-        TaggingResult::NonePresent {
+        no_op.outcome,
+        TaggingOutcome::NonePresent {
             requested_tags,
             modified_pads: 0,
-            ..
         } if requested_tags == vec!["work"]
     ));
 }
@@ -747,7 +751,7 @@ fn tag_registry_handlers_map_names_and_affected_pad_counts() {
     let renamed = rendered(handlers::tag::rename(&ctx, "old".into(), "new".into()));
     assert_eq!(
         renamed,
-        TagRegistryResult::Renamed {
+        TagRegistryOutcome::Renamed {
             old_name: "old".into(),
             new_name: "new".into(),
             affected_pads: 1,
@@ -757,7 +761,7 @@ fn tag_registry_handlers_map_names_and_affected_pad_counts() {
     let deleted = rendered(handlers::tag::delete(&ctx, "new".into()));
     assert_eq!(
         deleted,
-        TagRegistryResult::Deleted {
+        TagRegistryOutcome::Deleted {
             name: "new".into(),
             affected_pads: 1,
         }
@@ -776,7 +780,7 @@ fn path_maps_selectors_to_one_filesystem_path_each() {
     fx.seed_pad(&state, "second", "");
     let ctx = support::ctx_with_state(state);
 
-    let result: PathResult = rendered(handlers::path(&ctx, vec!["1".to_string(), "2".to_string()]));
+    let result: PathView = rendered(handlers::path(&ctx, vec!["1".to_string(), "2".to_string()]));
 
     assert_eq!(result.paths.len(), 2);
     for path in &result.paths {
@@ -807,14 +811,13 @@ fn uuid_maps_single_multiple_and_range_selectors_in_order() {
         .id;
     let ctx = support::ctx_with_state(state);
 
-    let single: UuidResult = rendered(handlers::uuid(&ctx, vec!["1".to_string()]));
+    let single: UuidView = rendered(handlers::uuid(&ctx, vec!["1".to_string()]));
     assert_eq!(single.uuids, vec![second.to_string()]);
 
-    let multiple: UuidResult =
-        rendered(handlers::uuid(&ctx, vec!["2".to_string(), "1".to_string()]));
+    let multiple: UuidView = rendered(handlers::uuid(&ctx, vec!["2".to_string(), "1".to_string()]));
     assert_eq!(multiple.uuids, vec![first.to_string(), second.to_string()],);
 
-    let range: UuidResult = rendered(handlers::uuid(&ctx, vec!["1-2".to_string()]));
+    let range: UuidView = rendered(handlers::uuid(&ctx, vec!["1-2".to_string()]));
     assert_eq!(range.uuids, vec![second.to_string(), first.to_string()]);
 }
 
@@ -841,17 +844,12 @@ fn export_maps_core_bytes_suggestion_and_report_without_writing() {
         .suggested_destination()
         .is_some_and(|path| path.to_string_lossy().ends_with(".meta.gz")));
 
-    let report = artifact.report().expect("artifact report");
-    assert_eq!(report.status, ExportStatus::Exported);
+    let report: &ExportReport = artifact.report().expect("artifact report");
     assert_eq!(report.format, ExportFormat::MetadataArchive);
     assert_eq!(report.exported, 1);
     assert!(matches!(
         &report.warnings[0],
-        ExportWarning::MetadataUnavailable {
-            count: 1,
-            additional: 0,
-            ..
-        }
+        ExportWarning::MetadataUnavailable { titles } if titles == &["plain text"]
     ));
 }
 
@@ -871,9 +869,9 @@ fn empty_export_stays_a_non_artifact_result() {
         false,
     ));
 
-    assert_eq!(report.status, ExportStatus::Empty);
     assert_eq!(report.format, ExportFormat::Archive);
     assert_eq!(report.exported, 0);
+    assert!(report.warnings.is_empty());
 }
 
 // =============================================================================
@@ -892,20 +890,20 @@ fn import_maps_core_source_and_metadata_warning_facts() {
     let state = fx.app_state_for(&["import", source.to_str().unwrap()]);
     let ctx = support::ctx_with_state(state);
 
-    let result: ImportResult = rendered(handlers::import(&ctx, vec![source.display().to_string()]));
+    let result: ImportReport = rendered(handlers::import(&ctx, vec![source.display().to_string()]));
 
-    assert_eq!(result.status, ImportStatusResult::PartialSuccess);
+    assert_eq!(result.status, ImportStatus::PartialSuccess);
     assert_eq!(result.total_imported, 1);
-    assert_eq!(result.sources[0].source, source.display().to_string());
-    assert_eq!(result.sources[0].source_kind, ImportSourceKindResult::File);
-    assert_eq!(result.sources[0].status, ImportSourceStatusResult::Imported);
+    assert_eq!(result.sources[0].source, source);
+    assert_eq!(result.sources[0].source_kind, ImportSourceKind::File);
+    assert_eq!(result.sources[0].status, ImportSourceStatus::Imported);
     assert!(result.sources[0]
         .diagnostics
         .iter()
         .any(|diagnostic| matches!(
             diagnostic,
-            ImportDiagnosticResult::MetadataWarning { warning }
-                if warning.reason == MetadataWarningReasonResult::InvalidValue
+            ImportDiagnostic::MetadataWarning { warning }
+                if warning.reason == MetadataWarningReason::InvalidValue
                     && warning.field.as_deref() == Some("status")
         )));
 }
@@ -922,34 +920,28 @@ fn clone_maps_operation_direction_peer_selection_and_copied_ids() {
     source.seed_pad(&state, "transfer me", "body");
     let ctx = support::ctx_with_state(state);
 
-    let result: TransferResult = rendered(handlers::clone(
+    let result: TransferReport = rendered(handlers::clone(
         &ctx,
         vec!["1".to_string()],
         Some(peer.project().display().to_string()),
         None,
     ));
 
-    assert_eq!(result.status, TransferStatusResult::FullSuccess);
-    assert_eq!(result.operation, TransferOperationResult::Clone);
-    assert_eq!(result.direction, TransferDirectionResult::To);
+    assert_eq!(result.status, TransferStatus::FullSuccess);
+    assert_eq!(result.operation, TransferMode::Clone);
+    assert_eq!(result.direction, TransferDirection::To);
     assert_eq!(
         result.peer_store,
-        peer.project()
-            .join(".padz")
-            .canonicalize()
-            .unwrap()
-            .display()
-            .to_string()
+        peer.project().join(".padz").canonicalize().unwrap()
     );
     assert_eq!(
         result.requested_selection,
-        TransferSelectionResult::Explicit {
+        TransferSelection::Explicit {
             selectors: vec!["1".to_string()]
         }
     );
     assert_eq!(result.copied_count, 1);
     assert_eq!(result.copied_pad_ids.len(), 1);
-    assert!(uuid::Uuid::parse_str(&result.copied_pad_ids[0]).is_ok());
     assert!(result.diagnostics.is_empty());
 }
 
@@ -962,13 +954,13 @@ fn initialization_maps_scope_and_store_path() {
     let fx = Fixture::new();
     let ctx = support::ctx_with_state(fx.app_state_for(&["init"]));
 
-    let result: InitializationResult = rendered(handlers::init(&ctx, None, false));
+    let result: InitializationOutcome = rendered(handlers::init(&ctx, None, false));
 
     assert_eq!(
         result,
-        InitializationResult::Initialized {
-            scope: "project".to_string(),
-            store_path: fx.project().join(".padz").display().to_string(),
+        InitializationOutcome::Initialized {
+            scope: Scope::Project,
+            store_path: fx.project().join(".padz"),
         }
     );
 }
@@ -980,25 +972,20 @@ fn link_and_unlink_map_typed_actions_and_resolved_target() {
     padzapp::init::create_bucket_layout(&target.join(".padz")).unwrap();
     let ctx = fx.ctx();
 
-    let linked: InitializationResult = rendered(handlers::init(
+    let linked: InitializationOutcome = rendered(handlers::init(
         &ctx,
         Some(target.display().to_string()),
         false,
     ));
     assert_eq!(
         linked,
-        InitializationResult::Linked {
-            target: target
-                .join(".padz")
-                .canonicalize()
-                .unwrap()
-                .display()
-                .to_string(),
+        InitializationOutcome::Linked {
+            target: target.join(".padz").canonicalize().unwrap(),
         }
     );
 
-    let unlinked: InitializationResult = rendered(handlers::init(&ctx, None, true));
-    assert_eq!(unlinked, InitializationResult::Unlinked);
+    let unlinked: InitializationOutcome = rendered(handlers::init(&ctx, None, true));
+    assert_eq!(unlinked, InitializationOutcome::Unlinked);
 }
 
 #[test]
@@ -1008,11 +995,11 @@ fn doctor_maps_a_healthy_store_to_a_clean_result() {
     fx.seed_pad(&state, "note", "");
     let ctx = support::ctx_with_state(state);
 
-    let result: DoctorResult = rendered(handlers::doctor(&ctx));
+    let result: DoctorOutcome = rendered(handlers::doctor(&ctx));
 
     assert_eq!(
         result,
-        DoctorResult::Clean {
+        DoctorOutcome::Clean {
             missing_files: 0,
             recovered_files: 0,
         }
@@ -1029,9 +1016,9 @@ fn purge_maps_selected_pads_and_counts() {
         .unwrap();
     let ctx = support::ctx_with_state(state);
 
-    let result: PurgeResult = rendered(handlers::purge(&ctx, vec![], true, false));
+    let result: PurgeOutcome = rendered(handlers::purge(&ctx, vec![], true, false));
 
-    let PurgeResult::Purged {
+    let PurgeOutcome::Purged {
         selected_pads,
         total_purged,
         descendant_count,
@@ -1040,8 +1027,8 @@ fn purge_maps_selected_pads_and_counts() {
         panic!("expected a completed purge");
     };
     assert_eq!(selected_pads.len(), 1);
-    assert_eq!(selected_pads[0].selector, "d1");
-    assert_eq!(selected_pads[0].title, "gone");
+    assert_eq!(selected_pads[0].selector(), "d1");
+    assert_eq!(selected_pads[0].pad.pad.metadata.title, "gone");
     assert_eq!(total_purged, 1);
     assert_eq!(descendant_count, 0);
 }
@@ -1054,14 +1041,15 @@ fn purge_maps_a_nested_selection_with_its_complete_path() {
     fx.seed_child(&state, "1", "child", "");
     let ctx = support::ctx_with_state(state);
 
-    let result: PurgeResult = rendered(handlers::purge(&ctx, vec!["1.1".to_string()], true, false));
+    let result: PurgeOutcome =
+        rendered(handlers::purge(&ctx, vec!["1.1".to_string()], true, false));
 
-    let PurgeResult::Purged { selected_pads, .. } = result else {
+    let PurgeOutcome::Purged { selected_pads, .. } = result else {
         panic!("expected a completed purge");
     };
     assert_eq!(selected_pads.len(), 1);
-    assert_eq!(selected_pads[0].selector, "1.1");
-    assert_eq!(selected_pads[0].title, "child");
+    assert_eq!(selected_pads[0].selector(), "1.1");
+    assert_eq!(selected_pads[0].pad.pad.metadata.title, "child");
 }
 
 // =============================================================================
@@ -1083,7 +1071,7 @@ fn create_with_direct_content_splits_title_from_body() {
 
     let result = created(handlers::create(&ctx, None, None, vec![]));
 
-    assert_eq!(result.action, ModificationActionResult::Create);
+    assert_eq!(result.action, ModificationAction::Create);
     assert_eq!(result.pads[0].pad.metadata.title, "the title");
     assert!(result.pads[0].pad.content.contains("the body"));
 }
@@ -1133,11 +1121,15 @@ fn create_with_an_empty_pipe_aborts_without_creating_a_pad() {
 
     let result = rendered(handlers::create(&ctx, None, None, vec![]));
 
-    let CreateResult::Aborted(abort) = result else {
-        panic!("expected a semantic create abort")
-    };
-    assert_eq!(abort.kind, CreateAbortKindResult::Aborted);
-    assert_eq!(abort.reason, CreateAbortReasonResult::EmptyContent);
+    // An aborted create is a `create` modification that affected no pads — the
+    // shape `modification_result.jinja` renders as the empty-content warning.
+    assert_eq!(result.action, ModificationAction::Create);
+    assert!(
+        result.pads.is_empty(),
+        "an empty pipe creates no pad, so the outcome carries none"
+    );
+    assert!(result.notices.is_empty());
+    assert!(result.outcomes.is_empty());
 
     let listed = rendered(handlers::list(
         &ctx,
@@ -1224,10 +1216,10 @@ fn edit_with_direct_content_replaces_the_selected_pads_text() {
     assert!(result.pads[0].pad.content.contains("new body"));
     assert_eq!(
         result.outcomes,
-        vec![MutationOutcomeResult::Updated {
+        vec![CmdOutcome::Updated {
             path: vec![padzapp::index::DisplayIndex::Regular(1)],
             title: "after".to_string(),
-            update_kind: UpdateKindResult::Content,
+            update_kind: UpdateKind::Content,
         }]
     );
 }
@@ -1248,13 +1240,13 @@ fn edit_maps_a_nested_canonical_path_without_parsing_prose() {
 
     assert_eq!(
         result.outcomes,
-        vec![MutationOutcomeResult::Updated {
+        vec![CmdOutcome::Updated {
             path: vec![
                 padzapp::index::DisplayIndex::Regular(1),
                 padzapp::index::DisplayIndex::Regular(1),
             ],
             title: "edited child".to_string(),
-            update_kind: UpdateKindResult::Content,
+            update_kind: UpdateKind::Content,
         }]
     );
 }

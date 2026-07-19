@@ -1,9 +1,15 @@
 use crate::error::Result;
 use crate::model::Scope;
 use crate::store::DataStore;
+use serde::Serialize;
 
 /// Semantic result of reconciling a store's index and content files.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+///
+/// Serializes directly as a CLI/structured payload (the presentation tier that
+/// once mirrored this was removed): the `status` tag plus the two counts are the
+/// facts a client renders or inspects without parsing English.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(tag = "status", rename_all = "snake_case")]
 pub enum DoctorOutcome {
     Clean {
         missing_files: usize,

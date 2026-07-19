@@ -2,6 +2,7 @@ use crate::commands::PadzPaths;
 use crate::error::{PadzError, Result};
 use crate::init::create_bucket_layout;
 use crate::model::Scope;
+use serde::Serialize;
 use std::fs;
 use std::path::{Path, PathBuf};
 
@@ -9,7 +10,14 @@ use std::path::{Path, PathBuf};
 ///
 /// The reusable application layer reports only what happened. Shell-completion
 /// guidance, success wording, styles, and blank-line layout belong to clients.
-#[derive(Debug, Clone, PartialEq, Eq)]
+///
+/// Serializes directly as the CLI/structured payload (the presentation tier that
+/// once mirrored this was removed): the `action` tag names what happened and the
+/// per-variant fields (`scope`, `store_path`, `target`) are the facts a client
+/// renders or inspects. `scope` and the paths serialize in their native core form
+/// (`Scope`'s variant name, the path string).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(tag = "action", rename_all = "snake_case")]
 pub enum InitializationOutcome {
     Initialized { scope: Scope, store_path: PathBuf },
     Linked { target: PathBuf },

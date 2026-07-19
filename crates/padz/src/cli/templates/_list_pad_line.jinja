@@ -1,0 +1,78 @@
+{#- One listing pad line, rendered straight from a core DisplayPad. -#}
+{#- Reads `pad` (padzapp::index::DisplayPad), `depth` (from the recursive loop's -#}
+{#- `loop.depth0`), plus `show_status`, `peek_mode` and `request` off the including -#}
+{#- template's context. Layout width is resolved by `tabular` itself (no `terminal` -#}
+{#- read); every glyph and style name is decided here. -#}
+{#- Its section styling reads the pad's own `index.type`: a cascade-archived or -#}
+{#- cascade-deleted child carries the same bucket as its root, and a pinned root's -#}
+{#- Regular-indexed child is only ever styled at depth 0, so per-pad index is exact. -#}
+{%- import "_layout.jinja" as L -%}
+{%- set section = pad.index.type -%}
+
+{#- Widths. An unused status column still costs its width, so zero it when off. -#}
+{%- set col_status = L.COLS.status if show_status else 0 -%}
+{%- set indent_width = depth * L.INDENT -%}
+
+{#- Index: "p1.", " 1.", "ar1.", "d1." -#}
+{%- if section == "Pinned" -%}
+  {%- set index = "p" ~ pad.index.value ~ "." -%}
+{%- elif section == "Archived" -%}
+  {%- set index = "ar" ~ pad.index.value ~ "." -%}
+{%- elif section == "Deleted" -%}
+  {%- set index = "d" ~ pad.index.value ~ "." -%}
+{%- else -%}
+  {%- set index = (pad.index.value | string | pad_left(2)) ~ "." -%}
+{%- endif -%}
+
+{#- A pinned pad shows its marker only as a root: a nested pad's own line is -#}
+{#- about its place in the tree, not about the pinned block. -#}
+{%- set left_pin = L.PIN if pad.pad.metadata.is_pinned and depth == 0 else "" -%}
+{%- set status_icon = L.STATUS_GLYPH[pad.pad.metadata.status] if show_status else "" -%}
+
+{#- Semantic style per section. -#}
+{%- set index_style = "list-index" -%}
+{%- if section == "Pinned" and depth == 0 -%}
+  {%- set index_style = "pinned" -%}
+{%- elif section == "Deleted" -%}
+  {%- set index_style = "deleted-index" -%}
+{%- endif -%}
+
+{%- set title_style = "list-title" -%}
+{%- if section == "Deleted" -%}
+  {%- set title_style = "deleted-title" -%}
+{%- elif peek_mode -%}
+  {%- set title_style = "title" -%}
+{%- endif -%}
+
+{%- set short_uuid = (pad.pad.metadata.id | string)[:8] if request.uuid else none -%}
+{%- set title = ("(" ~ short_uuid ~ ") " ~ pad.pad.metadata.title) if short_uuid else pad.pad.metadata.title -%}
+
+{#- Tags render as bracketed chips, right-aligned after the title. -#}
+{%- set ns = namespace(tags = "") -%}
+{%- for t in pad.pad.metadata.tags -%}
+  {%- set ns.tags = ns.tags ~ "「[tag]" ~ (t | trim) ~ "[/tag]」" ~ ("" if loop.last else " ") -%}
+{%- endfor -%}
+
+{%- set time = pad.pad.metadata.created_at | timeago -%}
+{%- set time_label = (time.value | string | pad_left(2)) ~ time.unit ~ " " ~ L.CLOCK -%}
+
+{#- No `width=`: `tabular` resolves the total against the terminal width padz -#}
+{#- installs (render::line_width, ⏲ payback included). Nesting is a leading fixed -#}
+{#- column so the content column can `fill` the rest, and the whole row still fits. -#}
+{%- set t = tabular([
+    {"key": "indent", "width": indent_width},
+    {"key": "left_pin", "width": L.COLS.left_pin, "style": "pinned"},
+    {"key": "status", "width": col_status, "style": "status-icon"},
+    {"key": "index", "width": L.COLS.index, "style": index_style},
+    {"key": "content", "width": "fill", "sub_columns": {
+        "columns": [
+            {"width": "fill", "overflow": "truncate", "style": title_style},
+            {"width": {"min": 0, "max": L.TAGS_MAX}, "align": "right"}
+        ],
+        "separator": " "
+    }},
+    {"key": "time", "width": L.COLS.time, "align": "right", "style": "time"}
+]) -%}
+
+{{- t.row(["", left_pin, status_icon, index, [title, ns.tags], time_label]) -}}
+{{ "" | nl -}}

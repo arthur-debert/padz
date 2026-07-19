@@ -1,5 +1,6 @@
 {
-  "action": "none_present",
-  "requested_tags": ["work", "rust"],
-  "modified_pads": 0
+  "NonePresent": {
+    "requested_tags": ["work", "rust"],
+    "modified_pads": 0
+  }
 }

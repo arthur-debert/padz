@@ -3,13 +3,20 @@ use crate::index::{DisplayIndex, DisplayPad, PadSelector};
 use crate::model::{Scope, TodoStatus};
 use crate::store::Bucket;
 use crate::store::DataStore;
+use serde::Serialize;
 use std::collections::HashSet;
 use uuid::Uuid;
 
 use super::helpers::{indexed_pads, pads_with_paths_by_selectors, TitleBucket};
 
 /// One explicitly selected pad with its complete canonical display path.
-#[derive(Debug, Clone)]
+///
+/// Serializes as the pad's full display record plus its canonical `path`. Templates
+/// can't call Rust methods, so the CLI template reimplements the same join-on-`.`
+/// algorithm as [`selector`](Self::selector) to render the human selector string
+/// (`d1`, `1.1`, …) from that path — which is why no separate presentation projection
+/// is kept.
+#[derive(Debug, Clone, Serialize)]
 pub struct PurgeSelection {
     pub path: Vec<DisplayIndex>,
     pub pad: DisplayPad,
@@ -27,7 +34,12 @@ impl PurgeSelection {
 }
 
 /// Semantic result of a permanent-deletion request.
-#[derive(Debug, Clone)]
+///
+/// Serializes directly as the CLI/structured payload (the presentation tier that
+/// once mirrored this was removed): the `status` tag plus, for a purge, the unique
+/// selections and the total/descendant counts.
+#[derive(Debug, Clone, Serialize)]
+#[serde(tag = "status", rename_all = "snake_case")]
 pub enum PurgeOutcome {
     Empty,
     Purged {

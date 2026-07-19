@@ -1,4 +1,5 @@
 {
-  "status": "listed",
-  "tags": ["work", "rust"]
+  "Listed": {
+    "tags": ["work", "rust"]
+  }
 }

@@ -1,5 +1,6 @@
 {
-  "action": "deleted",
-  "name": "new",
-  "affected_pads": 1
+  "Deleted": {
+    "name": "new",
+    "affected_pads": 1
+  }
 }
