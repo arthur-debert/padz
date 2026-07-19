@@ -92,10 +92,19 @@ pub const TERMINAL: &str = "terminal";
 /// We subtract 1 to compensate for `⏲` (U+23F2) which `unicode-width` measures as 1
 /// column but terminals render as 2. Standout's tabular system uses `unicode-width`
 /// internally, so without this adjustment every line would overflow by 1 character.
+/// `⏲` is Unicode *Narrow*, not East-Asian *ambiguous*, so no ambiguous-width policy
+/// pays this back — the `-1` is the only thing that does.
 ///
 /// This reads `$COLUMNS` rather than `RenderContext::terminal_width` on purpose: the
 /// context field is `None` whenever output is piped, which is exactly the case tests
 /// and shell pipelines need to control.
+///
+/// Since standout 7.9.1 this is padz's installed terminal-width detector (see
+/// [`detect_width`] and [`super::commands::run`]): the framework's `tabular()`/`table()`
+/// width cascade resolves against it, so the listing templates call `tabular([...])`
+/// with no `width=` and still get this exact width. It also still backs the `terminal`
+/// context provider that the search-hit and modification/tagging templates read
+/// directly (those do manual width math a table cannot express).
 pub fn line_width() -> usize {
     let raw = std::env::var("COLUMNS")
         .ok()
@@ -103,6 +112,17 @@ pub fn line_width() -> usize {
         .or_else(|| terminal_size::terminal_size().map(|(w, _)| w.0 as usize))
         .unwrap_or(DEFAULT_LINE_WIDTH);
     raw.max(MIN_LINE_WIDTH).saturating_sub(1)
+}
+
+/// padz's terminal-width detector, installed with `set_terminal_width_detector`.
+///
+/// standout 7.9.1's default detector reads the tty via `terminal_size` and does not
+/// consult `$COLUMNS`, so under a pipe it yields `None` and `tabular()` would fall back
+/// to a bare 80 — losing both the `$COLUMNS` control tests rely on and the `⏲` payback.
+/// Installing this makes the framework width cascade resolve to [`line_width`], which is
+/// what keeps piped and tty output byte-identical to before.
+pub fn detect_width() -> Option<usize> {
+    Some(line_width())
 }
 
 // =============================================================================

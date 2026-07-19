@@ -33,6 +33,13 @@ use standout::cli::{App, RunResult};
 use standout::{embed_styles, embed_templates, MiniJinjaEngine};
 
 pub fn run() -> Result<()> {
+    // Install padz's terminal-width policy before any rendering. Since 7.9.1 the
+    // framework's `tabular()`/`table()` width cascade resolves against the detector
+    // installed here, so the listing templates get `render::line_width` (`$COLUMNS`,
+    // clamp, ⏲ payback) without naming a width. Set only on the real binary path;
+    // `TestHarness` injects its own width per test.
+    standout_render::set_terminal_width_detector(super::render::detect_width);
+
     // parse_cli() uses standout's App which handles
     // help display (including topics) and errors automatically.
     // It also extracts the output mode from the --output flag.

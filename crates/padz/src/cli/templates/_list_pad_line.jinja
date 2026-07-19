@@ -1,7 +1,8 @@
 {#- One listing pad line, rendered straight from a core DisplayPad. -#}
 {#- Reads `pad` (padzapp::index::DisplayPad), `depth` (from the recursive loop's -#}
-{#- `loop.depth0`), plus `show_status`, `peek_mode`, `request` and `terminal` off the -#}
-{#- including template's context. Every width, glyph and style name is decided here. -#}
+{#- `loop.depth0`), plus `show_status`, `peek_mode` and `request` off the including -#}
+{#- template's context. Layout width is resolved by `tabular` itself (no `terminal` -#}
+{#- read); every glyph and style name is decided here. -#}
 {#- Its section styling reads the pad's own `index.type`: a cascade-archived or -#}
 {#- cascade-deleted child carries the same bucket as its root, and a pinned root's -#}
 {#- Regular-indexed child is only ever styled at depth 0, so per-pad index is exact. -#}
@@ -11,8 +12,6 @@
 {#- Widths. An unused status column still costs its width, so zero it when off. -#}
 {%- set col_status = L.COLS.status if show_status else 0 -%}
 {%- set indent_width = depth * L.INDENT -%}
-{%- set fixed = L.COLS.left_pin + col_status + L.COLS.index + L.COLS.time -%}
-{%- set title_width = [terminal.width - fixed - indent_width, 0] | max -%}
 
 {#- Index: "p1.", " 1.", "ar1.", "d1." -#}
 {%- if section == "Pinned" -%}
@@ -57,11 +56,15 @@
 {%- set time = pad.pad.metadata.created_at | timeago -%}
 {%- set time_label = (time.value | string | pad_left(2)) ~ time.unit ~ " " ~ L.CLOCK -%}
 
+{#- No `width=`: `tabular` resolves the total against the terminal width padz -#}
+{#- installs (render::line_width, ⏲ payback included). Nesting is a leading fixed -#}
+{#- column so the content column can `fill` the rest, and the whole row still fits. -#}
 {%- set t = tabular([
+    {"key": "indent", "width": indent_width},
     {"key": "left_pin", "width": L.COLS.left_pin, "style": "pinned"},
     {"key": "status", "width": col_status, "style": "status-icon"},
     {"key": "index", "width": L.COLS.index, "style": index_style},
-    {"key": "content", "width": title_width, "sub_columns": {
+    {"key": "content", "width": "fill", "sub_columns": {
         "columns": [
             {"width": "fill", "overflow": "truncate", "style": title_style},
             {"width": {"min": 0, "max": L.TAGS_MAX}, "align": "right"}
@@ -69,8 +72,7 @@
         "separator": " "
     }},
     {"key": "time", "width": L.COLS.time, "align": "right", "style": "time"}
-], width=terminal.width) -%}
+]) -%}
 
-{{- "" | pad_right(indent_width) -}}
-{{- t.row([left_pin, status_icon, index, [title, ns.tags], time_label]) -}}
+{{- t.row(["", left_pin, status_icon, index, [title, ns.tags], time_label]) -}}
 {{ "" | nl -}}
