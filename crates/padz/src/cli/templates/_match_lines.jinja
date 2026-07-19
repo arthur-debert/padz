@@ -1,5 +1,5 @@
 {#- Search hit lines under a pad: "    03L …the matching text". -#}
-{#- Reads `pad` (a core DisplayPad), `depth`, `show_status` and `terminal`. -#}
+{#- Reads `pad` (a core DisplayPad), `depth` and `show_status`. -#}
 {#- `pad.matches` is the raw core `Option<Vec<SearchMatch>>`, so line 0 (the title -#}
 {#- match, already shown by the title line) is rejected here rather than upstream. -#}
 {%- import "_layout.jinja" as L -%}
@@ -14,7 +14,15 @@
     to a constant would only align for one `show_status` setting. -#}
 {%- set match_indent = indent_width + L.COLS.left_pin + col_status + L.COLS.index -%}
 {%- set badge_indent = [match_indent - L.COLS.line_no, 0] | max -%}
-{%- set avail = [terminal.width - L.COLS.time - match_indent, 0] | max -%}
+
+{#- The layout width is the one padz installs as Standout's terminal-width detector
+    (`render::line_width`, ⏲ payback included); `tabular` resolves against it. Read
+    that resolved width back by measuring a single full-width `fill` row — a row of
+    exactly that many spaces — so this template needs no bespoke width provider and
+    still lands `avail` on the same column the pad line's `fill` content column does
+    (total − time − match_indent). -#}
+{%- set layout_width = tabular([{"key": "w", "width": "fill"}]).row([""]) | length -%}
+{%- set avail = [layout_width - L.COLS.time - match_indent, 0] | max -%}
 
 {#- Truncate the styled run as a whole: each segment is styled *after* it is cut, -#}
 {#- because `truncate_at` measures plain text and would drop the tags otherwise. -#}

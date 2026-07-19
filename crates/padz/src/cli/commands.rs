@@ -17,7 +17,7 @@
 //! 5. **Error Handling**: Convert errors to user-friendly messages and exit codes
 
 use super::handlers::AppState;
-use super::render::{peek_filter, terminal_provider, timeago_filter, TERMINAL};
+use super::render::{peek_filter, timeago_filter};
 use super::setup::{
     build_command, get_grouped_help, invocation_default_command, parse_cli, Cli, Commands,
     CompletionAction, CompletionShell, ConfigSubcommand,
@@ -30,10 +30,12 @@ use standout::cli::{App, RunResult};
 use standout::{embed_styles, embed_templates, MiniJinjaEngine};
 
 pub fn run() -> Result<()> {
-    // Install padz's terminal-width policy before any rendering. Since 7.9.1 the
-    // framework's `tabular()`/`table()` width cascade resolves against the detector
-    // installed here, so the listing templates get `render::line_width` (`$COLUMNS`,
-    // clamp, ⏲ payback) without naming a width. Set only on the real binary path;
+    // Install padz's terminal-width policy before any rendering. The framework's
+    // `tabular()`/`table()` width cascade resolves against the detector installed here,
+    // so the listing templates get `render::line_width` (`$COLUMNS`, clamp, ⏲ payback)
+    // without naming a width. Since 7.9.2 the framework default already honours
+    // `$COLUMNS`; the reason this override still exists is the ⏲ payback the framework
+    // has no way to apply (see `render::line_width`). Set only on the real binary path;
     // `TestHarness` injects its own width per test.
     standout_render::set_terminal_width_detector(super::render::detect_width);
 
@@ -68,15 +70,16 @@ pub fn run() -> Result<()> {
 
 /// Build the dispatch-ready App with templates, styles, command configuration, and app state
 ///
-/// Two render-time seams keep presentation out of structured output. The `context_fn`
-/// registration installs the `terminal` width provider — Standout resolves it only on
-/// the template path. The custom MiniJinja engine adds the listing family's filters
-/// (`timeago`, `peek`) and the empty-store `grouped_help()` helper, which are likewise
-/// render-only: structured modes bypass the engine entirely, so a JSON consumer never
-/// sees a relative timestamp, a preview, or a help blob. Every command family —
-/// `list`/`search`/`peek`, the modification family (`modification_result`), and the tag
-/// templates (`tagging`/`tag_catalog`/`tag_registry`) — renders straight from the core
-/// outcomes, so none needs a view provider.
+/// One render-time seam keeps presentation out of structured output: the custom MiniJinja
+/// engine adds the listing family's filters (`timeago`, `peek`) and the empty-store
+/// `grouped_help()` helper, which are render-only — structured modes bypass the engine
+/// entirely, so a JSON consumer never sees a relative timestamp, a preview, or a help blob.
+/// Layout width is not a seam here: templates resolve it through Standout's `tabular`
+/// cascade (backed by the terminal-width detector installed in [`run`]), so no `context_fn`
+/// width provider is needed. Every command family — `list`/`search`/`peek`, the
+/// modification family (`modification_result`), and the tag templates
+/// (`tagging`/`tag_catalog`/`tag_registry`) — renders straight from the core outcomes, so
+/// none needs a view provider.
 ///
 /// Public because it is the whole app-under-test: `TestHarness` tests pair it with
 /// [`build_command`] to drive argv through render in process, against the same
@@ -100,7 +103,6 @@ pub fn build_dispatch_app(app_state: AppState) -> App {
         .template_ext(".jinja")
         .styles(embed_styles!("src/styles"))
         .default_theme("default")
-        .context_fn(TERMINAL, terminal_provider)
         .commands(Commands::dispatch_config())
         .expect("Failed to configure commands")
         .command_with("create", super::handlers::create__handler, |config| {

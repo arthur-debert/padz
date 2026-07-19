@@ -29,42 +29,40 @@
 //!
 //! [`line_width`]/[`detect_width`] read process state (`$COLUMNS`, the tty) that MiniJinja
 //! cannot, and [`super::commands::run`] installs `detect_width` as Standout's terminal-
-//! width detector. Standout 7.9.1's built-in detector ignores `$COLUMNS` and returns
-//! `None` under a pipe (falling back to a bare 80), which would lose both the `$COLUMNS`
-//! control tests and pipelines rely on and the `⏲` under-measure payback — so installing
-//! this is what keeps piped and tty output byte-identical. The listing templates then call
-//! `tabular([...])` with no `width=` and resolve against it. This is **not** a template
-//! width provider; it is the framework-level detector.
+//! width detector. Standout 7.9.2's built-in detector now honours a valid positive
+//! `$COLUMNS` before probing the tty, so that half of this detector's original job is
+//! redundant with the framework default. What still requires a padz override is the `⏲`
+//! (U+23F2) under-measure payback: `unicode-width` measures the glyph as one column but
+//! terminals draw it as two, Standout's `char_width` follows `unicode-width` (the glyph is
+//! Narrow, not East-Asian *ambiguous*, so no ambiguous-width policy pays it back) and there
+//! is no per-glyph width override — so without the `-1` every listing line overflows by one
+//! column. That single subtraction is now the *sole* reason this detector exists. The
+//! listing templates call `tabular([...])` with no `width=` and resolve against it. This is
+//! **not** a template width provider; it is the framework-level detector. (Empirically
+//! confirmed on 7.9.2: dropping the detector shifts human output by one column on the great
+//! majority of listing lines — see the STD04 follow-up PR's byte-diff evidence.)
 //!
-//! ## 3. The `terminal` width context provider — a single documented residue
+//! ## 3. Layout width reaches `_match_lines` through `tabular`, not a provider
 //!
-//! [`terminal_provider`] (registered as the [`TERMINAL`] context under
-//! `AppBuilder::context_fn` in [`super::commands`], resolved only on the template path)
-//! exposes `terminal.width` (== [`line_width`]) to exactly one template: `_match_lines.jinja`.
 //! A search-hit line highlights the matched substring in one style and its surroundings in
-//! another, then truncates the run to fit — and it must style each segment *after* it is
-//! cut, because truncation strips BBCode style tags. That per-segment truncate-then-style
-//! math needs the numeric available width, and Standout exposes no template function that
-//! returns the raw terminal width (`tabular`/`col('fill')` resolve width internally and
-//! never surface it), while a tabular column cannot carry heterogeneous per-segment styles
-//! nor truncate without dropping the tags. So this provider survives solely to feed
-//! `_match_lines` its width; every other template resolves width through the detector
-//! above. When Standout grows a width-returning template function (or `_match_lines` no
-//! longer needs per-segment truncation), this provider and [`TERMINAL`] can go.
+//! another, then truncates the run to fit — and it styles each segment around the cut,
+//! because the ellipsis inherits the cut segment's own style. That per-segment
+//! truncate-then-style math needs the numeric available width. `_match_lines.jinja` reads
+//! that width the same way every other listing line resolves it — through `tabular`, whose
+//! `fill` cascade uses the detector above — by measuring a single full-width `fill` row (a
+//! row of exactly `line_width()` spaces). So no bespoke `terminal.width` context provider
+//! survives: the detector is the one place width policy lives, and both the pad line and the
+//! hit line read it through the framework.
 
 use chrono::{DateTime, Utc};
 use minijinja::Value;
 use padzapp::peek::{format_as_peek, PeekResult};
 use serde::Serialize;
-use standout::context::RenderContext;
 
 /// Minimum terminal width — below this we stop shrinking and let the terminal wrap.
 pub const MIN_LINE_WIDTH: usize = 30;
 /// Default width when no terminal is detected and COLUMNS is unset (e.g. piped output).
 pub const DEFAULT_LINE_WIDTH: usize = 80;
-
-/// The context name every template reads layout width from.
-pub const TERMINAL: &str = "terminal";
 
 /// Returns the effective line width for layout.
 ///
@@ -89,14 +87,15 @@ pub const TERMINAL: &str = "terminal";
 ///
 /// This reads `$COLUMNS` rather than `RenderContext::terminal_width` on purpose: the
 /// context field is `None` whenever output is piped, which is exactly the case tests
-/// and shell pipelines need to control.
+/// and shell pipelines need to control. Since standout 7.9.2 the framework default
+/// detector also honours a valid positive `$COLUMNS`, so this branch merely mirrors it;
+/// the payback below is the part that has no framework equivalent.
 ///
-/// Since standout 7.9.1 this is padz's installed terminal-width detector (see
-/// [`detect_width`] and [`super::commands::run`]): the framework's `tabular()`/`table()`
-/// width cascade resolves against it, so the listing templates call `tabular([...])`
-/// with no `width=` and still get this exact width. It also backs the `terminal` context
-/// provider ([`terminal_provider`]), which feeds this width to `_match_lines.jinja` — the
-/// one template that does manual per-segment truncation a table cannot express.
+/// This is padz's installed terminal-width detector (see [`detect_width`] and
+/// [`super::commands::run`]): the framework's `tabular()`/`table()` width cascade resolves
+/// against it, so the listing templates call `tabular([...])` with no `width=` and still
+/// get this exact width. `_match_lines.jinja` reads the same width by measuring a
+/// full-width `fill` row rather than through a bespoke provider.
 pub fn line_width() -> usize {
     let raw = std::env::var("COLUMNS")
         .ok()
@@ -108,11 +107,11 @@ pub fn line_width() -> usize {
 
 /// padz's terminal-width detector, installed with `set_terminal_width_detector`.
 ///
-/// standout 7.9.1's default detector reads the tty via `terminal_size` and does not
-/// consult `$COLUMNS`, so under a pipe it yields `None` and `tabular()` would fall back
-/// to a bare 80 — losing both the `$COLUMNS` control tests rely on and the `⏲` payback.
-/// Installing this makes the framework width cascade resolve to [`line_width`], which is
-/// what keeps piped and tty output byte-identical to before.
+/// standout 7.9.2's default detector already consults `$COLUMNS` before probing the tty,
+/// so the `$COLUMNS` half of this override is redundant with the framework. What the
+/// framework still does not do is pay back the `⏲` under-measured column, so installing
+/// this makes the framework width cascade resolve to [`line_width`] (payback included),
+/// which is what keeps piped and tty output byte-identical to before.
 pub fn detect_width() -> Option<usize> {
     Some(line_width())
 }
@@ -154,20 +153,6 @@ impl TimeAgo {
         };
         Self { value, unit }
     }
-}
-
-// =============================================================================
-// Context provider (the documented `_match_lines` width residue)
-// =============================================================================
-
-/// Context provider exposing `terminal.width` to `_match_lines.jinja`.
-///
-/// This is the module's single surviving context provider (see the module docs): it
-/// resolves only on the template path and feeds [`line_width`] to the one template that
-/// does manual per-segment truncation. Every other template resolves width through the
-/// installed detector ([`detect_width`]) instead.
-pub fn terminal_provider(_ctx: &RenderContext) -> Value {
-    Value::from_serialize(serde_json::json!({ "width": line_width() }))
 }
 
 // =============================================================================

@@ -30,15 +30,15 @@ console = "0.15"
 directories = "6.0.0"
 dark-light = "0.2"
 once_cell = "1.19"
-standout = "7.9.1"
-standout-macros = "7.9.1"
-standout-dispatch = "7.9.1"
+standout = "7.9.2"
+standout-macros = "7.9.2"
+standout-dispatch = "7.9.2"
 # Standout's render layer, needed directly for `set_terminal_width_detector`:
 # padz installs its own terminal-width policy (read `$COLUMNS`, clamp, pay back
 # the ⏲ column) so 7.9.1's `tabular()` width cascade resolves to the width the
 # listing templates expect. `standout` re-exports most of this crate but not the
 # environment detectors, so it is named here (same reason `minijinja` is).
-standout-render = "7.9.1"
+standout-render = "7.9.2"
 # Standout's template engine. Needed directly to type the context providers in
 # cli::render, whose values standout hands to MiniJinja.
 minijinja = "2"
@@ -76,7 +76,7 @@ unicode-width = "0.2.2"
 #
 # Safe for `cargo publish`: a dev-dependency with no `version` key is stripped
 # from the packaged manifest, so this git source never reaches consumers.
-standout-test = { git = "https://github.com/arthur-debert/standout", tag = "v7.9.1" }
+standout-test = { git = "https://github.com/arthur-debert/standout", tag = "v7.9.2" }
 # Direct, even though standout-test re-exports `serial`: the macro it re-exports
 # expands to `::serial_test` paths, so the crate has to be nameable here for
 # `#[serial]` to resolve. Same major as standout-test's own requirement, so the
