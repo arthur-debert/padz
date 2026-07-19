@@ -25,8 +25,8 @@ mod support;
 
 use padz::cli::handlers;
 use padz::cli::input::{RequestContent, CREATE_CONTENT, EDIT_CONTENT};
-use padz::cli::result::{Listing, Modification, ModificationAction, PadContentResult};
 use padz::cli::views::{CopyView, PathView, UuidView};
+use padz::cli::views::{Listing, Modification, ModificationAction, PadContentResult};
 use padzapp::commands::doctor::DoctorOutcome;
 use padzapp::commands::export::{ExportFormat, ExportReport, ExportWarning};
 use padzapp::commands::import::{
