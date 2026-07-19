@@ -1706,7 +1706,7 @@ fn open_shares_edits_input_resolution() {
 /// The arm the subprocess suite could not reach: a *terminal* stdin means "open
 /// the editor", not "read an empty pipe".
 ///
-/// `$EDITOR` is pointed at `/bin/false` so the editor arm is proven to be
+/// `$EDITOR` is pointed at `/usr/bin/false` so the editor arm is proven to be
 /// *chosen* without a real editor ever succeeding: padz creates the pad, the
 /// editor fails, and padz removes the half-created pad. What is asserted is the
 /// routing — that an interactive stdin does not abort as an empty pipe would.

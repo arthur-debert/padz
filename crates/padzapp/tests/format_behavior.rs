@@ -6,8 +6,9 @@
 
 use padzapp::api::{PadFilter, PadzApi, PadzPaths};
 use padzapp::commands::NestingMode;
-use padzapp::model::Scope;
+use padzapp::model::{Pad, Scope};
 use padzapp::store::fs::FileStore;
+use padzapp::store::{Bucket, DataStore};
 use std::path::{Path, PathBuf};
 use tempfile::TempDir;
 
@@ -147,4 +148,32 @@ fn mixed_format_pads_are_listable_and_viewable() {
             "selector {selector} should resolve to its listed pad"
         );
     }
+}
+
+#[test]
+fn changing_the_store_default_does_not_rename_existing_pads() {
+    let temp = tempfile::tempdir().unwrap();
+    let project = temp.path().join("project/.padz");
+    let global = temp.path().join("global");
+    let mut store = FileStore::new_fs(Some(project), global).with_format("txt");
+    let existing_pad = Pad::new("existing text pad".to_string(), "body".to_string());
+    store
+        .save_pad(&existing_pad, Scope::Project, Bucket::Active)
+        .unwrap();
+    let existing = store
+        .get_pad_path(&existing_pad.metadata.id, Scope::Project, Bucket::Active)
+        .unwrap();
+
+    store.set_format("md");
+    let following_pad = Pad::new("new markdown pad".to_string(), "body".to_string());
+    store
+        .save_pad(&following_pad, Scope::Project, Bucket::Active)
+        .unwrap();
+    let following = store
+        .get_pad_path(&following_pad.metadata.id, Scope::Project, Bucket::Active)
+        .unwrap();
+
+    assert_extension(&existing, "txt");
+    assert_extension(&following, "md");
+    assert!(existing.exists(), "the original path must remain intact");
 }
