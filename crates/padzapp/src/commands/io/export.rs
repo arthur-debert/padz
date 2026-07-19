@@ -11,6 +11,7 @@ use flate2::write::GzEncoder;
 use flate2::Compression;
 use pulldown_cmark::{Event, HeadingLevel, Options, Parser, Tag, TagEnd};
 use pulldown_cmark_to_cmark::cmark;
+use serde::Serialize;
 use std::collections::HashSet;
 use std::io::Write;
 use uuid::Uuid;
@@ -46,7 +47,11 @@ pub struct SingleFileExportResult {
 }
 
 /// The export representation produced by the reusable application layer.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+///
+/// Serializes as its own snake_case token (`archive`, `single_file`, …) so a
+/// CLI can render the report straight from this core type without a projection.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "snake_case")]
 pub enum ExportFormat {
     Archive,
     MetadataArchive,
@@ -55,14 +60,23 @@ pub enum ExportFormat {
 }
 
 /// A semantic warning discovered while producing an export.
-#[derive(Debug, Clone, PartialEq, Eq)]
+///
+/// Internally tagged on `kind` so structured consumers match the taxonomy while
+/// the CLI template owns the wording; presentation-only derivations (a preview,
+/// an overflow count) are computed in the template from `titles`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
 pub enum ExportWarning {
     /// These pads use a format with no inline metadata dialect.
     MetadataUnavailable { titles: Vec<String> },
 }
 
 /// Presentation-free facts that accompany a completed export artifact.
-#[derive(Debug, Clone, PartialEq, Eq)]
+///
+/// This is the value a shell adapter hands to its output framework as the
+/// artifact's semantic report; it carries no destination, since only the
+/// framework knows where the bytes finally landed.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct ExportReport {
     pub format: ExportFormat,
     pub exported: usize,

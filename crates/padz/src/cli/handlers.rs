@@ -30,10 +30,9 @@ use std::rc::Rc;
 
 use super::result::{
     CopyResult, CreateAbortKindResult, CreateAbortReasonResult, CreateAbortResult, CreateResult,
-    DoctorResult, ExportReportResult, ImportResult, InitializationResult, ListRequest, Listing,
-    ModificationActionResult, ModificationRequest, ModificationResult, PadContent,
-    PadContentResult, PathResult, PurgeResult, TagCatalogResult, TagRegistryResult, TaggingResult,
-    UuidResult,
+    DoctorResult, InitializationResult, ListRequest, Listing, ModificationActionResult,
+    ModificationRequest, ModificationResult, PadContent, PadContentResult, PathResult, PurgeResult,
+    TagCatalogResult, TagRegistryResult, TaggingResult, UuidResult,
 };
 
 // =============================================================================
@@ -327,7 +326,7 @@ impl<'a> ScopedApi<'a> {
         json: bool,
         with_metadata: bool,
         nesting: NestingMode,
-    ) -> Result<Output<ExportReportResult>, anyhow::Error> {
+    ) -> Result<Output<padzapp::commands::export::ExportReport>, anyhow::Error> {
         let result = if let Some(title) = single_file {
             self.call(|api, scope| api.export_pads_single_file(scope, indexes, title, nesting))?
         } else if json {
@@ -336,28 +335,34 @@ impl<'a> ScopedApi<'a> {
             self.call(|api, scope| api.export_pads(scope, indexes, nesting, with_metadata))?
         };
         Ok(match result {
+            // An empty selection never enters the artifact path: Standout only
+            // merges its receipt after a write, so `export.jinja` keys the empty
+            // message on the receipt being absent. `exported: 0` states the fact.
             padzapp::commands::export::ExportOutcome::Empty { format } => {
-                Output::Render(ExportReportResult::empty(format))
+                Output::Render(padzapp::commands::export::ExportReport {
+                    format,
+                    exported: 0,
+                    warnings: Vec::new(),
+                })
             }
-            padzapp::commands::export::ExportOutcome::Artifact(artifact) => {
-                let report = artifact.report.into();
-                Output::Artifact(
-                    Artifact::new(artifact.bytes)
-                        .suggest_destination(artifact.suggested_filename)
-                        .with_report(report),
-                )
-            }
+            // The core report rides along as the artifact's semantic report;
+            // Standout owns the write and merges its own receipt afterwards.
+            padzapp::commands::export::ExportOutcome::Artifact(artifact) => Output::Artifact(
+                Artifact::new(artifact.bytes)
+                    .suggest_destination(artifact.suggested_filename)
+                    .with_report(artifact.report),
+            ),
         })
     }
 
-    /// Project the core semantic import report into the CLI's public DTO.
+    /// Return the core semantic import report for the CLI to render directly.
     pub fn import_pads(
         &self,
         paths: Vec<std::path::PathBuf>,
-    ) -> Result<Output<ImportResult>, anyhow::Error> {
+    ) -> Result<Output<padzapp::commands::import::ImportReport>, anyhow::Error> {
         let extensions = &self.state.import_extensions.0;
-        let report = self.call(|api, scope| api.import_pads(scope, paths.clone(), extensions))?;
-        Ok(Output::Render(report.into()))
+        let report = self.call(move |api, scope| api.import_pads(scope, paths, extensions))?;
+        Ok(Output::Render(report))
     }
 
     pub fn transfer_pads(
@@ -1178,7 +1183,7 @@ pub fn export(
     #[flag] flat: bool,
     #[flag] tree: bool,
     #[flag] indented: bool,
-) -> Result<Output<ExportReportResult>, anyhow::Error> {
+) -> Result<Output<padzapp::commands::export::ExportReport>, anyhow::Error> {
     let nesting = parse_nesting_mode(flat, tree, indented);
     api(ctx).export_pads(
         &indexes,
@@ -1194,7 +1199,7 @@ pub fn export(
 pub fn import(
     #[ctx] ctx: &CommandContext,
     #[arg] paths: Vec<String>,
-) -> Result<Output<ImportResult>, anyhow::Error> {
+) -> Result<Output<padzapp::commands::import::ImportReport>, anyhow::Error> {
     let paths: Vec<std::path::PathBuf> = paths.into_iter().map(std::path::PathBuf::from).collect();
     api(ctx).import_pads(paths)
 }

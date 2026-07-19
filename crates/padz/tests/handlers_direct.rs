@@ -27,12 +27,15 @@ use padz::cli::handlers;
 use padz::cli::input::{RequestContent, CREATE_CONTENT, EDIT_CONTENT};
 use padz::cli::result::{
     CopyResult, CreateAbortKindResult, CreateAbortReasonResult, CreateResult, DoctorResult,
-    ExportFormat, ExportStatus, ExportWarning, ImportDiagnosticResult, ImportResult,
-    ImportSourceKindResult, ImportSourceStatusResult, ImportStatusResult, InitializationResult,
-    Listing, MetadataWarningReasonResult, ModificationActionResult, ModificationNoticeResult,
+    InitializationResult, Listing, ModificationActionResult, ModificationNoticeResult,
     ModificationResult, MutationOutcomeResult, MutationStatusResult, PadContentResult, PathResult,
     PurgeResult, TagCatalogResult, TagRegistryResult, TaggingResult, UpdateKindResult, UuidResult,
 };
+use padzapp::commands::export::{ExportFormat, ExportReport, ExportWarning};
+use padzapp::commands::import::{
+    ImportDiagnostic, ImportReport, ImportSourceKind, ImportSourceStatus, ImportStatus,
+};
+use padzapp::commands::metadata_apply::MetadataWarningReason;
 use padzapp::commands::transfer::{
     TransferDirection, TransferMode, TransferReport, TransferSelection, TransferStatus,
 };
@@ -842,17 +845,12 @@ fn export_maps_core_bytes_suggestion_and_report_without_writing() {
         .suggested_destination()
         .is_some_and(|path| path.to_string_lossy().ends_with(".meta.gz")));
 
-    let report = artifact.report().expect("artifact report");
-    assert_eq!(report.status, ExportStatus::Exported);
+    let report: &ExportReport = artifact.report().expect("artifact report");
     assert_eq!(report.format, ExportFormat::MetadataArchive);
     assert_eq!(report.exported, 1);
     assert!(matches!(
         &report.warnings[0],
-        ExportWarning::MetadataUnavailable {
-            count: 1,
-            additional: 0,
-            ..
-        }
+        ExportWarning::MetadataUnavailable { titles } if titles == &["plain text"]
     ));
 }
 
@@ -872,9 +870,9 @@ fn empty_export_stays_a_non_artifact_result() {
         false,
     ));
 
-    assert_eq!(report.status, ExportStatus::Empty);
     assert_eq!(report.format, ExportFormat::Archive);
     assert_eq!(report.exported, 0);
+    assert!(report.warnings.is_empty());
 }
 
 // =============================================================================
@@ -893,20 +891,20 @@ fn import_maps_core_source_and_metadata_warning_facts() {
     let state = fx.app_state_for(&["import", source.to_str().unwrap()]);
     let ctx = support::ctx_with_state(state);
 
-    let result: ImportResult = rendered(handlers::import(&ctx, vec![source.display().to_string()]));
+    let result: ImportReport = rendered(handlers::import(&ctx, vec![source.display().to_string()]));
 
-    assert_eq!(result.status, ImportStatusResult::PartialSuccess);
+    assert_eq!(result.status, ImportStatus::PartialSuccess);
     assert_eq!(result.total_imported, 1);
-    assert_eq!(result.sources[0].source, source.display().to_string());
-    assert_eq!(result.sources[0].source_kind, ImportSourceKindResult::File);
-    assert_eq!(result.sources[0].status, ImportSourceStatusResult::Imported);
+    assert_eq!(result.sources[0].source, source);
+    assert_eq!(result.sources[0].source_kind, ImportSourceKind::File);
+    assert_eq!(result.sources[0].status, ImportSourceStatus::Imported);
     assert!(result.sources[0]
         .diagnostics
         .iter()
         .any(|diagnostic| matches!(
             diagnostic,
-            ImportDiagnosticResult::MetadataWarning { warning }
-                if warning.reason == MetadataWarningReasonResult::InvalidValue
+            ImportDiagnostic::MetadataWarning { warning }
+                if warning.reason == MetadataWarningReason::InvalidValue
                     && warning.field.as_deref() == Some("status")
         )));
 }
