@@ -29,11 +29,11 @@ use padz::cli::result::{
     CopyResult, CreateAbortKindResult, CreateAbortReasonResult, CreateResult, DoctorResult,
     ExportFormat, ExportStatus, ExportWarning, ImportDiagnosticResult, ImportResult,
     ImportSourceKindResult, ImportSourceStatusResult, ImportStatusResult, InitializationResult,
-    MetadataWarningReasonResult, ModificationActionResult, ModificationNoticeResult,
-    ModificationResult, MutationOutcomeResult, MutationStatusResult, PadContentResult,
-    PadListResult, PathResult, PurgeResult, TagCatalogResult, TagRegistryResult, TaggingResult,
-    TransferDirectionResult, TransferOperationResult, TransferResult, TransferSelectionResult,
-    TransferStatusResult, UpdateKindResult, UuidResult,
+    Listing, MetadataWarningReasonResult, ModificationActionResult, ModificationNoticeResult,
+    ModificationResult, MutationOutcomeResult, MutationStatusResult, PadContentResult, PathResult,
+    PurgeResult, TagCatalogResult, TagRegistryResult, TaggingResult, TransferDirectionResult,
+    TransferOperationResult, TransferResult, TransferSelectionResult, TransferStatusResult,
+    UpdateKindResult, UuidResult,
 };
 use padzapp::commands::NestingMode;
 use standout::cli::Output;
@@ -55,7 +55,7 @@ where
 }
 
 /// The titles a listing result carries, in the order the handler returned them.
-fn titles(result: &PadListResult) -> Vec<String> {
+fn titles(result: &Listing) -> Vec<String> {
     result
         .pads
         .iter()

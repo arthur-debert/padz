@@ -30,10 +30,10 @@ use std::rc::Rc;
 
 use super::result::{
     CopyResult, CreateAbortKindResult, CreateAbortReasonResult, CreateAbortResult, CreateResult,
-    DoctorResult, ExportReportResult, ImportResult, InitializationResult, ListRequest,
+    DoctorResult, ExportReportResult, ImportResult, InitializationResult, ListRequest, Listing,
     ModificationActionResult, ModificationRequest, ModificationResult, PadContent,
-    PadContentResult, PadListResult, PathResult, PurgeResult, TagCatalogResult, TagRegistryResult,
-    TaggingResult, TransferResult, UuidResult,
+    PadContentResult, PathResult, PurgeResult, TagCatalogResult, TagRegistryResult, TaggingResult,
+    TransferResult, UuidResult,
 };
 
 // =============================================================================
@@ -418,13 +418,13 @@ impl<'a> ScopedApi<'a> {
         ids: &[String],
         show_uuid: bool,
         show_status: bool,
-    ) -> Result<Output<PadListResult>, anyhow::Error> {
+    ) -> Result<Output<Listing>, anyhow::Error> {
         let filtered = filter.search_term.is_some()
             || filter.todo_status.is_some()
             || filter.tags.is_some()
             || !ids.is_empty();
         let result = self.call(|api, scope| api.get_pads(scope, filter, ids))?;
-        Ok(Output::Render(PadListResult {
+        Ok(Output::Render(Listing {
             pads: result.listed_pads,
             request: ListRequest {
                 peek,
@@ -800,7 +800,7 @@ pub fn list(
     #[arg] tags: Vec<String>,
     #[flag] uuid: bool,
     #[flag(name = "show_status")] show_status: bool,
-) -> Result<Output<PadListResult>, anyhow::Error> {
+) -> Result<Output<Listing>, anyhow::Error> {
     let todo_status = if planned {
         Some(TodoStatus::Planned)
     } else if completed {
@@ -843,7 +843,7 @@ pub fn peek(
     #[arg] ids: Vec<String>,
     #[arg] tags: Vec<String>,
     #[flag] uuid: bool,
-) -> Result<Output<PadListResult>, anyhow::Error> {
+) -> Result<Output<Listing>, anyhow::Error> {
     let filter = PadFilter {
         status: PadStatusFilter::Active,
         search_term: None,
@@ -864,7 +864,7 @@ pub fn search(
     #[flag] completed: bool,
     #[arg] tags: Vec<String>,
     #[flag] uuid: bool,
-) -> Result<Output<PadListResult>, anyhow::Error> {
+) -> Result<Output<Listing>, anyhow::Error> {
     let filter = PadFilter {
         status: if all {
             PadStatusFilter::All

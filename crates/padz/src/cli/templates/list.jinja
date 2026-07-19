@@ -1,38 +1,48 @@
-{#- Listing output. `list_view` is derived at render time from the handler's -#}
-{#- PadListResult; see cli::render. -#}
+{#- Listing output, rendered straight from the core DisplayPad tree the handler -#}
+{#- returns (a cli::result::Listing: `pads` + `request`); see cli::render. -#}
 {%- import "_layout.jinja" as L -%}
-{%- set view = list_view -%}
 {#- The partials below read these off the shared include context. -#}
-{%- set show_status = view.show_status -%}
-{%- set peek_mode = view.peek -%}
-{%- if view.rows | length == 0 -%}
-{%- if view.filtered -%}
+{%- set show_status = request.status -%}
+{%- set peek_mode = request.peek -%}
+{%- if pads | length == 0 -%}
+{%- if request.filtered -%}
 [info]No matching pads.[/info]{{ "" | nl -}}
 {%- else -%}
 [empty-message]No pads yet, create one with `padz create`[/empty-message]{{ "" | nl -}}
-{{ view.help_text }}
+{{ grouped_help() }}
 {%- endif -%}
 {%- else -%}
-{%- for pad in view.rows -%}
-{#- Section breaks key off the *root's* bucket, which every row carries, so a -#}
+{#- Walk the tree: each root recurses into its children via `loop(pad.children)`, so -#}
+{#- depth is `loop.depth0` and section breaks compare only roots (depth 0). -#}
+{%- for pad in pads recursive -%}
+{%- set depth = loop.depth0 -%}
+{%- if depth == 0 -%}
+{#- Section breaks key off the *root's* bucket (its own index at depth 0), so a -#}
 {#- pinned root's Regular-indexed children never break its block open. -#}
-{%- set changed = loop.previtem is not defined or loop.previtem.section != pad.section -%}
+{%- set section = pad.index.type -%}
+{%- set prev_section = loop.previtem.index.type if loop.previtem is defined else "" -%}
+{%- set changed = loop.previtem is not defined or prev_section != section -%}
 {#- Leaving the pinned block costs a blank line: the same pads appear again -#}
 {#- below, and the gap is what says "this is the same list, unpinned". -#}
-{%- if loop.previtem is defined and loop.previtem.section == "Pinned" and pad.section != "Pinned" -%}
+{%- if loop.previtem is defined and prev_section == "Pinned" and section != "Pinned" -%}
 {{- "" | nl -}}
 {%- endif -%}
-{%- if view.sections and changed and pad.section in L.SECTION_TITLE -%}
+{%- if request.sections and changed and section in L.SECTION_TITLE -%}
 {{- "" | nl -}}
-[section-header]{{ L.SECTION_TITLE[pad.section] }}[/section-header]{{ "" | nl }}
+[section-header]{{ L.SECTION_TITLE[section] }}[/section-header]{{ "" | nl }}
 {%- endif -%}
-{%- include "_pad_line.jinja" -%}
+{%- endif -%}
+{%- include "_list_pad_line.jinja" -%}
 {%- include "_match_lines.jinja" -%}
-{%- if pad.peek -%}
+{%- if peek_mode -%}
+{%- set pv = pad.pad.content | peek -%}
+{%- if pv -%}
 {%- include "_peek_content.jinja" -%}
 {%- endif -%}
+{%- endif -%}
+{%- if pad.children -%}{{ loop(pad.children) }}{%- endif -%}
 {%- endfor -%}
 {%- endif -%}
-{%- if view.deleted_help -%}
+{%- if request.deleted_help and pads | length > 0 -%}
 {%- include "_deleted_help.jinja" -%}
 {%- endif -%}

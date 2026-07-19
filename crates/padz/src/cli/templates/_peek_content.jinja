@@ -1,17 +1,18 @@
-{#- Content preview under a pad. Reads `pad` (a render::PadRow with `peek`). -#}
+{#- Content preview under a pad. Reads `pv` (a padzapp::peek::PeekResult, produced by -#}
+{#- the `peek` filter in the including template) and `depth`. -#}
 {#- `indent()` carries the pad's own nesting too, so a nested pad's continuation -#}
 {#- lines stay flush with its first line. -#}
 {%- import "_layout.jinja" as L -%}
-{%- set indent_width = pad.depth * L.INDENT -%}
+{%- set indent_width = depth * L.INDENT -%}
 {%- set indent = "" | pad_right(indent_width) -%}
 {{ "" | nl }}
-    {{ indent }}    [preview]{{ pad.peek.opening_lines | indent(8 + indent_width) }}[/preview]{{ "" | nl }}
-{%- if pad.peek.truncated_count -%}
+    {{ indent }}    [preview]{{ pv.opening_lines | indent(8 + indent_width) }}[/preview]{{ "" | nl }}
+{%- if pv.truncated_count -%}
 {{ "" | nl }}
-    {{ indent }}                      [truncation]... {{ pad.peek.truncated_count }} lines not shown ...[/truncation]{{ "" | nl }}
+    {{ indent }}                      [truncation]... {{ pv.truncated_count }} lines not shown ...[/truncation]{{ "" | nl }}
 {{ "" | nl }}
 {%- endif -%}
-{%- if pad.peek.closing_lines -%}
-    {{ indent }}    [preview]{{ pad.peek.closing_lines | indent(8 + indent_width) }}[/preview]{{ "" | nl }}
+{%- if pv.closing_lines -%}
+    {{ indent }}    [preview]{{ pv.closing_lines | indent(8 + indent_width) }}[/preview]{{ "" | nl }}
 {%- endif -%}
 {{ "" | nl }}
