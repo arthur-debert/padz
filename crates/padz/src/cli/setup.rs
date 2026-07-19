@@ -990,6 +990,32 @@ mod tests {
     }
 
     #[test]
+    fn test_global_output_flags_are_accepted_after_subcommands() {
+        let app = app_with_topics();
+        let command = app.augment_command_with_help(Cli::command());
+        let matches = command
+            .try_get_matches_from(["padz", "list", "--global", "--output", "json"])
+            .unwrap();
+
+        let cli = Cli::from_arg_matches(&matches).unwrap();
+        assert!(cli.global);
+        assert_eq!(app.extract_output_mode(&matches), OutputMode::Json);
+    }
+
+    #[test]
+    fn test_init_link_and_unlink_conflict_at_the_parser_seam() {
+        let result = Cli::try_parse_from([
+            "padz",
+            "init",
+            "--link",
+            "/some/initialized/project",
+            "--unlink",
+        ]);
+        let error = result.unwrap_err();
+        assert_eq!(error.kind(), clap::error::ErrorKind::ArgumentConflict);
+    }
+
+    #[test]
     fn test_data_and_global_options_conflict() {
         // --data and -g are mutually exclusive
         let result = Cli::try_parse_from(["padz", "--data", "/tmp/.padz", "-g", "list"]);

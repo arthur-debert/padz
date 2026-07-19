@@ -12,7 +12,7 @@
 //!
 //! - **Domain behavior** (does archiving actually move the file?) belongs to
 //!   `padzapp`'s own tests. These tests assert the *mapping*: that `archive`
-//!   reports the `"Archived"` action for the pads the user selected.
+//!   reports the semantic `Archive` action for the pads the user selected.
 //! - **Flag-to-argument wiring** (does `--peek` reach the `peek` parameter?) is a
 //!   clap concern and is proven at the harness seam, which parses real argv.
 //! - **Rendering** of any kind. A handler that returns the right result and a
@@ -29,11 +29,11 @@ use padz::cli::result::{
     CopyResult, CreateAbortKindResult, CreateAbortReasonResult, CreateResult, DoctorResult,
     ExportFormat, ExportStatus, ExportWarning, ImportDiagnosticResult, ImportResult,
     ImportSourceKindResult, ImportSourceStatusResult, ImportStatusResult, InitializationResult,
-    MetadataWarningReasonResult, ModificationNoticeResult, ModificationResult,
-    MutationOutcomeResult, MutationStatusResult, PadContentResult, PadListResult, PathResult,
-    PurgeResult, TagCatalogResult, TagRegistryResult, TaggingResult, TransferDirectionResult,
-    TransferOperationResult, TransferResult, TransferSelectionResult, TransferStatusResult,
-    UpdateKindResult, UuidResult,
+    MetadataWarningReasonResult, ModificationActionResult, ModificationNoticeResult,
+    ModificationResult, MutationOutcomeResult, MutationStatusResult, PadContentResult,
+    PadListResult, PathResult, PurgeResult, TagCatalogResult, TagRegistryResult, TaggingResult,
+    TransferDirectionResult, TransferOperationResult, TransferResult, TransferSelectionResult,
+    TransferStatusResult, UpdateKindResult, UuidResult,
 };
 use padzapp::commands::NestingMode;
 use standout::cli::Output;
@@ -384,28 +384,28 @@ fn copy_keeps_nested_content_in_the_payload_but_counts_only_the_root() {
 }
 
 // =============================================================================
-// Modification family — the action verb each maps to
+// Modification family — the semantic action each maps to
 // =============================================================================
 
 /// Every modification handler's contract is the same shape: act on the selected
-/// pads and report a past-tense action. Checking the family in one table is what
-/// keeps a new verb from being added without a test.
+/// pads and report a semantic action. Checking the family in one table is what
+/// keeps a new action from being added without a test.
 #[test]
-fn modification_handlers_report_their_action_verb() {
+fn modification_handlers_report_their_semantic_action() {
     type Call =
         fn(&standout_dispatch::CommandContext) -> Result<Output<ModificationResult>, anyhow::Error>;
 
-    let cases: Vec<(&str, &str, Call)> = vec![
-        ("pin", "Pinned", |ctx| {
+    let cases: Vec<(&str, ModificationActionResult, Call)> = vec![
+        ("pin", ModificationActionResult::Pin, |ctx| {
             handlers::pin(ctx, vec!["1".to_string()])
         }),
-        ("delete", "Deleted", |ctx| {
+        ("delete", ModificationActionResult::Delete, |ctx| {
             handlers::delete(ctx, vec!["1".to_string()], false)
         }),
-        ("archive", "Archived", |ctx| {
+        ("archive", ModificationActionResult::Archive, |ctx| {
             handlers::archive(ctx, vec!["1".to_string()])
         }),
-        ("complete", "Completed", |ctx| {
+        ("complete", ModificationActionResult::Complete, |ctx| {
             handlers::complete(ctx, vec!["1".to_string()])
         }),
     ];
@@ -473,11 +473,10 @@ fn repeated_pin_maps_the_core_notice_without_parsing_prose() {
             path: vec![padzapp::index::DisplayIndex::Pinned(1)]
         }]
     );
-    assert!(result.messages.is_empty());
 }
 
 #[test]
-fn unpin_reverses_pin_and_reports_its_own_verb() {
+fn unpin_reverses_pin_and_reports_its_semantic_action() {
     let fx = Fixture::new();
     let state = fx.app_state();
     fx.seed_pad(&state, "note", "");
@@ -486,7 +485,7 @@ fn unpin_reverses_pin_and_reports_its_own_verb() {
     rendered(handlers::pin(&ctx, vec!["1".to_string()]));
     let result = rendered(handlers::unpin(&ctx, vec!["p1".to_string()]));
 
-    assert_eq!(result.action, "Unpinned");
+    assert_eq!(result.action, ModificationActionResult::Unpin);
     assert!(!result.pads[0].pad.metadata.is_pinned);
 }
 
@@ -500,7 +499,7 @@ fn restore_maps_a_deleted_selector_back_to_active() {
     rendered(handlers::delete(&ctx, vec!["1".to_string()], false));
     let result = rendered(handlers::restore(&ctx, vec!["d1".to_string()]));
 
-    assert_eq!(result.action, "Restored");
+    assert_eq!(result.action, ModificationActionResult::Restore);
     assert_eq!(result.pads[0].pad.metadata.title, "gone");
 }
 
@@ -536,7 +535,7 @@ fn move_to_root_needs_only_the_sources() {
     ));
     let result = rendered(handlers::move_pads(&ctx, vec!["1.1".to_string()], true));
 
-    assert_eq!(result.action, "Moved");
+    assert_eq!(result.action, ModificationActionResult::Move);
     assert!(
         result.pads[0].pad.metadata.parent_id.is_none(),
         "--root detaches the pad from its parent"
@@ -611,7 +610,6 @@ fn empty_delete_completed_maps_the_core_no_op() {
     let result = rendered(handlers::delete(&ctx, vec![], true));
 
     assert!(result.pads.is_empty());
-    assert!(result.messages.is_empty());
     assert_eq!(
         result.notices,
         vec![ModificationNoticeResult::NoCompletedPads]
@@ -1085,9 +1083,46 @@ fn create_with_direct_content_splits_title_from_body() {
 
     let result = created(handlers::create(&ctx, None, None, vec![]));
 
-    assert_eq!(result.action, "Created");
+    assert_eq!(result.action, ModificationActionResult::Create);
     assert_eq!(result.pads[0].pad.metadata.title, "the title");
     assert!(result.pads[0].pad.content.contains("the body"));
+}
+
+#[test]
+fn create_maps_typed_format_values_to_core_format_overrides() {
+    for (format, expected_extension) in [("md", "md"), ("markdown", "md"), ("text", "txt")] {
+        let fx = Fixture::new();
+        if format == "text" {
+            std::fs::write(
+                fx.project().join(".padz").join("padz.toml"),
+                "format = \"md\"\n",
+            )
+            .unwrap();
+        }
+        let ctx = support::ctx_with_input(
+            fx.app_state_for(&["create"]),
+            CREATE_CONTENT,
+            RequestContent::Direct(format!("{format} note\nbody")),
+        );
+
+        let result = created(handlers::create(
+            &ctx,
+            None,
+            Some(format.to_string()),
+            vec![],
+        ));
+        let id = result.pads[0].pad.metadata.id;
+        let expected_path = fx
+            .project()
+            .join(".padz")
+            .join("active")
+            .join(format!("pad-{id}.{expected_extension}"));
+
+        assert!(
+            expected_path.exists(),
+            "typed format {format:?} should reach the core as .{expected_extension}"
+        );
+    }
 }
 
 #[test]

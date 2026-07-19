@@ -24,7 +24,6 @@
 //! Most commands return [`CmdResult`], not strings. This struct carries:
 //! - `affected_pads`: Pads that were modified (as `DisplayPad` with post-operation index)
 //! - `listed_pads`: Pads to display (as `DisplayPad` with current index)
-//! - `messages`: Structured messages with levels (info, success, warning, error)
 //! - `pad_paths`: File paths (for `path` command)
 //!
 //! Both `affected_pads` and `listed_pads` use [`DisplayPad`], which pairs a [`Pad`]
@@ -89,8 +88,8 @@ pub enum NestingMode {
 
 /// A semantic, presentation-free fact a command wants the caller to surface.
 ///
-/// Unlike [`CmdMessage`], notices carry no authored prose. CLI clients can render
-/// them for people while structured clients can branch on `kind` and fields.
+/// CLI clients can render notices for people while structured clients branch on
+/// `kind` and fields.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum CmdNotice {
@@ -200,51 +199,6 @@ impl PadzPaths {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "lowercase")]
-pub enum MessageLevel {
-    Info,
-    Success,
-    Warning,
-    Error,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct CmdMessage {
-    pub level: MessageLevel,
-    pub content: String,
-}
-
-impl CmdMessage {
-    pub fn info(content: impl Into<String>) -> Self {
-        Self {
-            level: MessageLevel::Info,
-            content: content.into(),
-        }
-    }
-
-    pub fn success(content: impl Into<String>) -> Self {
-        Self {
-            level: MessageLevel::Success,
-            content: content.into(),
-        }
-    }
-
-    pub fn warning(content: impl Into<String>) -> Self {
-        Self {
-            level: MessageLevel::Warning,
-            content: content.into(),
-        }
-    }
-
-    pub fn error(content: impl Into<String>) -> Self {
-        Self {
-            level: MessageLevel::Error,
-            content: content.into(),
-        }
-    }
-}
-
 #[derive(Debug, Default)]
 pub struct CmdResult {
     pub affected_pads: Vec<DisplayPad>,
@@ -253,7 +207,6 @@ pub struct CmdResult {
     /// Empty means all pads are at depth 0.
     pub listed_depths: Vec<usize>,
     pub pad_paths: Vec<PathBuf>,
-    pub messages: Vec<CmdMessage>,
     /// Semantic notices that clients render or inspect without parsing English.
     pub notices: Vec<CmdNotice>,
     /// Semantic successful outcomes that clients inspect without parsing English.
@@ -263,10 +216,6 @@ pub struct CmdResult {
 }
 
 impl CmdResult {
-    pub fn add_message(&mut self, message: CmdMessage) {
-        self.messages.push(message);
-    }
-
     pub fn with_affected_pads(mut self, pads: Vec<DisplayPad>) -> Self {
         self.affected_pads = pads;
         self
@@ -280,46 +229,6 @@ impl CmdResult {
     pub fn with_pad_paths(mut self, paths: Vec<PathBuf>) -> Self {
         self.pad_paths = paths;
         self
-    }
-}
-
-/// Result from commands that modify pads.
-///
-/// Provides structured output for unified CLI rendering:
-/// - `affected_pads`: The pads that were modified (rendered as a list)
-/// - `trailing_messages`: Info/warning messages shown after the pad list
-///
-/// The CLI layer generates the start message (e.g., "Completing 2 pads...")
-/// based on the action and affected_pads count.
-#[derive(Debug, Default)]
-pub struct ModificationResult {
-    /// Pads that were modified by the operation
-    pub affected_pads: Vec<DisplayPad>,
-    /// Messages shown after the pad list (info, warnings, errors)
-    pub trailing_messages: Vec<CmdMessage>,
-}
-
-impl ModificationResult {
-    pub fn new() -> Self {
-        Self::default()
-    }
-
-    pub fn with_pads(mut self, pads: Vec<DisplayPad>) -> Self {
-        self.affected_pads = pads;
-        self
-    }
-
-    pub fn add_info(&mut self, content: impl Into<String>) {
-        self.trailing_messages.push(CmdMessage::info(content));
-    }
-
-    /// Convert to CmdResult for backward compatibility
-    pub fn into_cmd_result(self) -> CmdResult {
-        CmdResult {
-            affected_pads: self.affected_pads,
-            messages: self.trailing_messages,
-            ..Default::default()
-        }
     }
 }
 

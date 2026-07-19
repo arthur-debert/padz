@@ -87,7 +87,7 @@ pub use commands::init::InitializationOutcome;
 pub use commands::purge::{PurgeOutcome, PurgeSelection};
 pub use commands::tagging::{TaggingOutcome, TaggingResult};
 pub use commands::tags::{TagCatalogOutcome, TagRegistryOutcome};
-pub use commands::{CmdMessage, CmdResult, MessageLevel, PadUpdate, PadzPaths};
+pub use commands::{CmdResult, PadUpdate, PadzPaths};
 
 #[cfg(test)]
 mod tests {

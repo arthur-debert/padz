@@ -773,6 +773,46 @@ mod tests {
     }
 
     #[test]
+    fn test_initialize_loads_known_config_beside_stale_keys() {
+        let temp = TempDir::new().unwrap();
+        let project = temp.path().join("project");
+        let project_padz = project.join(".padz");
+        let global = temp.path().join("global");
+        fs::create_dir_all(project_padz.join("active")).unwrap();
+        fs::create_dir_all(project_padz.join("archived")).unwrap();
+        fs::create_dir_all(project_padz.join("deleted")).unwrap();
+        fs::create_dir_all(&global).unwrap();
+        fs::write(
+            project_padz.join("padz.toml"),
+            "modes = \"todos\"\nformat = \"lex\"\n",
+        )
+        .unwrap();
+        let env = PadzEnv {
+            global_data_dir: global,
+            home_dir: None,
+        };
+
+        let mut context = initialize(&env, &project, false, None, false).unwrap();
+
+        assert_eq!(context.config.format, "lex");
+        let created = context
+            .api
+            .create_pad(
+                Scope::Project,
+                "stale-key fixture".to_string(),
+                "body".to_string(),
+                None,
+            )
+            .unwrap();
+        assert_eq!(
+            created.pad_paths[0]
+                .extension()
+                .and_then(|ext| ext.to_str()),
+            Some("lex")
+        );
+    }
+
+    #[test]
     fn test_discovery_independent() {
         // The two discovery algorithms are independent: a dir with only `.padz`
         // and no `.git` is found by find_padz_root; a dir with only `.git` and

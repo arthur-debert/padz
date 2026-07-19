@@ -479,7 +479,9 @@ fn copy_one_pad<Src: DataStore, Dst: DataStore>(
     dest.save_pad(&pad, dest_scope, bucket)
         .map_err(|error| CopyFailure {
             category: CopyFailureCategory::DestinationWrite,
-            detail: format!("Writing pad {} to destination failed: {}", id, error),
+            // The report already carries the pad id and failure category. Keep
+            // only the causal store diagnostic here; clients own the sentence.
+            detail: error.to_string(),
         })?;
 
     Ok(CopyOutcome {
@@ -1103,7 +1105,7 @@ mod tests {
                 category: CopyFailureCategory::DestinationWrite,
                 detail,
                 ..
-            }] if detail.contains("Writing pad") && detail.contains("Simulated write error")
+            }] if detail.contains("Simulated write error") && !detail.contains("Writing pad")
         ));
     }
 

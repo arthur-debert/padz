@@ -183,7 +183,6 @@ mod tests {
             MemBackend::new(),
         );
         let result = run(&mut store, Scope::Project, &[]).unwrap();
-        assert!(result.messages.is_empty());
         assert!(result.affected_pads.is_empty());
     }
 
@@ -251,7 +250,6 @@ mod tests {
         let res = run(&mut store, Scope::Project, &updates).unwrap();
 
         // Check semantic results without parsing presentation prose.
-        assert!(res.messages.is_empty());
         assert_eq!(res.outcomes.len(), 2);
         assert!(res.outcomes.iter().any(|outcome| matches!(
             outcome,
@@ -392,7 +390,6 @@ mod tests {
         );
         let result = run(&mut store, Scope::Project, &[update]).unwrap();
 
-        assert!(result.messages.is_empty());
         assert_eq!(
             result.outcomes,
             vec![CmdOutcome::Updated {

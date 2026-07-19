@@ -36,8 +36,3 @@
 {%- if view.deleted_help -%}
 {%- include "_deleted_help.jinja" -%}
 {%- endif -%}
-{#- Trailing messages (info, warnings, errors from the API). A message's semantic -#}
-{#- style is its level, which CmdMessage serializes lowercase to match the theme. -#}
-{%- for msg in view.messages -%}
-{{ msg.content | style_as(msg.level) }}{{ "" | nl }}
-{%- endfor -%}

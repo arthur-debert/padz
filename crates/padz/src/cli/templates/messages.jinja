@@ -1,6 +1,0 @@
-{#- Commands whose whole result is user-facing messages (MessagesResult). -#}
-{#- A message's semantic style is its level, which CmdMessage serializes lowercase -#}
-{#- ("info", "success", "warning", "error") to match the theme's class names. -#}
-{% for msg in messages -%}
-{{ msg.content | style_as(msg.level) }}
-{% endfor %}

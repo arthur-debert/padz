@@ -46,13 +46,12 @@
 //! Everything a template can decide, a template decides.
 
 use super::result::{
-    ModificationNoticeResult, ModificationResult, MutationOutcomeResult, MutationStatusResult,
-    PadListResult, TaggingResult, UpdateKindResult,
+    ModificationActionResult, ModificationNoticeResult, ModificationResult, MutationOutcomeResult,
+    MutationStatusResult, PadListResult, TaggingResult, UpdateKindResult,
 };
 use super::setup::get_grouped_help;
 use chrono::{DateTime, Utc};
 use minijinja::Value;
-use padzapp::api::CmdMessage;
 use padzapp::index::{DisplayIndex, DisplayPad, SearchMatch};
 use padzapp::model::TodoStatus;
 use padzapp::peek::{format_as_peek, PeekResult};
@@ -208,18 +207,15 @@ pub struct ListView {
     pub deleted_help: bool,
     /// The grouped command help, shown when the store is empty. Rendered by clap.
     pub help_text: String,
-    pub messages: Vec<CmdMessage>,
 }
 
 /// Template-ready view for a modification.
 #[derive(Debug, Clone, Serialize)]
 pub struct ModificationView {
-    /// Past-tense verb for the change ("Created", "Pinned"). The template builds the
-    /// sentence around it, including the pluralization.
-    pub action: String,
+    /// Semantic operation token. The template owns the human verb.
+    pub action: ModificationActionResult,
     pub rows: Vec<PadRow>,
     pub show_status: bool,
-    pub messages: Vec<CmdMessage>,
     /// Presentation-ready projections of semantic core notices.
     pub notices: Vec<ModificationNoticeView>,
     /// Presentation-ready projections of semantic successful outcomes.
@@ -316,7 +312,6 @@ pub fn build_list_view(result: &PadListResult) -> ListView {
         } else {
             String::new()
         },
-        messages: result.messages.clone(),
     }
 }
 
@@ -330,14 +325,13 @@ pub fn build_modification_view(result: &ModificationResult) -> ModificationView 
         ..Default::default()
     };
     ModificationView {
-        action: result.action.clone(),
+        action: result.action,
         rows: result
             .pads
             .iter()
             .map(|dp| row(dp, 0, SectionKind::of(&dp.index), &opts))
             .collect(),
         show_status: result.request.status,
-        messages: result.messages.clone(),
         notices: result.notices.iter().map(modification_notice).collect(),
         outcomes: result
             .outcomes
@@ -526,11 +520,7 @@ mod tests {
     }
 
     fn list(pads: Vec<DisplayPad>, request: ListRequest) -> PadListResult {
-        PadListResult {
-            pads,
-            messages: vec![],
-            request,
-        }
+        PadListResult { pads, request }
     }
 
     // =========================================================================
@@ -728,20 +718,19 @@ mod tests {
     #[test]
     fn a_modification_reports_affected_pads_flat() {
         let result = ModificationResult {
-            action: "Pinned".to_string(),
+            action: ModificationActionResult::Pin,
             pads: vec![dp(
                 pad("root"),
                 DisplayIndex::Pinned(1),
                 vec![dp(pad("child"), DisplayIndex::Regular(1), vec![])],
             )],
-            messages: vec![],
             notices: vec![],
             outcomes: vec![],
             request: ModificationRequest { status: true },
         };
         let view = build_modification_view(&result);
 
-        assert_eq!(view.action, "Pinned");
+        assert_eq!(view.action, ModificationActionResult::Pin);
         assert_eq!(view.rows.len(), 1, "children are not redrawn");
         assert_eq!(view.rows[0].depth, 0);
         assert!(view.show_status);
