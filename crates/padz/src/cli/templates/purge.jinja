@@ -1,10 +1,22 @@
-{#- Human projection of PurgeResult; the core returns no progress or success prose. -#}
+{#- Human projection of PurgeOutcome; the core returns no progress or success prose. -#}
+{#- `selected_pads` are core purge::PurgeSelection values: the canonical `path` (a -#}
+{#- list of DisplayIndex {type, value}) plus the full `pad`. The selector string -#}
+{#- (`d1`, `1.1`) is composed here from that path — the presentation the core omits. -#}
 {%- if status == "empty" -%}
 [info]No pads to purge.[/info]{{ "" | nl }}
 {%- else -%}
 [info]Purging {{ total_purged }} pad(s)...[/info]{{ "" | nl }}
 {%- for selected in selected_pads -%}
-[success]Purged: {{ selected.selector }} {{ selected.title }}[/success]{{ "" | nl }}
+{%- set ns = namespace(selector = "") -%}
+{%- for idx in selected.path -%}
+{%- if idx.type == "Pinned" -%}{%- set tok = "p" ~ idx.value -%}
+{%- elif idx.type == "Archived" -%}{%- set tok = "ar" ~ idx.value -%}
+{%- elif idx.type == "Deleted" -%}{%- set tok = "d" ~ idx.value -%}
+{%- else -%}{%- set tok = "" ~ idx.value -%}
+{%- endif -%}
+{%- set ns.selector = ns.selector ~ tok ~ ("" if loop.last else ".") -%}
+{%- endfor -%}
+[success]Purged: {{ ns.selector }} {{ selected.pad.pad.metadata.title }}[/success]{{ "" | nl }}
 {%- endfor -%}
 {%- if descendant_count > 0 -%}
 [success]And purged {{ descendant_count }} descendant(s)[/success]{{ "" | nl }}
