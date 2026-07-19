@@ -1,0 +1,5 @@
+{
+  "action": "initialized",
+  "scope": "project",
+  "store_path": "<STORE_PATH>"
+}

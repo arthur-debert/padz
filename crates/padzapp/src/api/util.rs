@@ -2,6 +2,7 @@
 
 use crate::commands;
 use crate::error::Result;
+use crate::index::{DisplayIndex, PadSelector};
 use crate::model::{Pad, Scope};
 use crate::store::DataStore;
 
@@ -9,7 +10,8 @@ use super::selectors::parse_selectors;
 use super::PadzApi;
 
 impl<S: DataStore> PadzApi<S> {
-    pub fn doctor(&mut self, scope: Scope) -> Result<commands::CmdResult> {
+    /// Reconciles the store and returns a clean/repaired outcome with direct counts.
+    pub fn doctor(&mut self, scope: Scope) -> Result<commands::doctor::DoctorOutcome> {
         commands::doctor::run(&mut self.store, scope)
     }
 
@@ -22,11 +24,9 @@ impl<S: DataStore> PadzApi<S> {
         commands::paths::run(&self.store, scope, &selectors)
     }
 
-    pub fn pad_uuids<I: AsRef<str>>(
-        &self,
-        scope: Scope,
-        indexes: &[I],
-    ) -> Result<commands::CmdResult> {
+    /// Resolves selectors to UUIDs in selector order, with ranges expanded in
+    /// canonical display order.
+    pub fn pad_uuids<I: AsRef<str>>(&self, scope: Scope, indexes: &[I]) -> Result<Vec<uuid::Uuid>> {
         let selectors = parse_selectors(indexes)?;
         commands::uuid::run(&self.store, scope, &selectors)
     }
@@ -34,6 +34,18 @@ impl<S: DataStore> PadzApi<S> {
     pub fn get_path_by_id(&self, scope: Scope, id: uuid::Uuid) -> Result<std::path::PathBuf> {
         use crate::store::Bucket;
         self.store.get_pad_path(&id, scope, Bucket::Active)
+    }
+
+    /// Resolves an active pad's canonical display path from its durable identity.
+    pub fn display_path_by_id(&self, scope: Scope, id: uuid::Uuid) -> Result<Vec<DisplayIndex>> {
+        let mut resolved = commands::helpers::resolve_selectors(
+            &self.store,
+            scope,
+            &[PadSelector::Uuid(id)],
+            false,
+            commands::helpers::TitleBucket::Active,
+        )?;
+        Ok(resolved.remove(0).0)
     }
 
     /// Re-reads a pad from disk and syncs metadata (title, updated_at).
@@ -73,7 +85,13 @@ mod tests {
 
         let result = api.doctor(Scope::Project).unwrap();
 
-        assert!(!result.messages.is_empty());
+        assert_eq!(
+            result,
+            crate::commands::doctor::DoctorOutcome::Clean {
+                missing_files: 0,
+                recovered_files: 0
+            }
+        );
     }
 
     #[test]
@@ -84,6 +102,29 @@ mod tests {
 
         assert_eq!(paths.project, Some(PathBuf::from("/tmp/test")));
         assert_eq!(paths.global, PathBuf::from("/tmp/global"));
+    }
+
+    #[test]
+    fn test_api_pad_uuids_returns_values_in_selector_order() {
+        let mut api = make_api();
+        let first = api
+            .create_pad(Scope::Project, "first".into(), "".into(), None)
+            .unwrap()
+            .affected_pads[0]
+            .pad
+            .metadata
+            .id;
+        let second = api
+            .create_pad(Scope::Project, "second".into(), "".into(), None)
+            .unwrap()
+            .affected_pads[0]
+            .pad
+            .metadata
+            .id;
+
+        let uuids = api.pad_uuids(Scope::Project, &["2", "1"]).unwrap();
+
+        assert_eq!(uuids, vec![first, second]);
     }
 
     #[test]

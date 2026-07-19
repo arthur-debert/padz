@@ -1,0 +1,25 @@
+{#- Per-pad tag changes. `tagging_view` is derived only for human rendering. -#}
+{%- set view = tagging_view -%}
+{%- set show_status = false -%}
+{%- set peek_mode = false -%}
+{%- set count = view.rows | length -%}
+
+{%- if count > 0 -%}
+[info]{{ "Untagged" if view.action in ["removed", "none_present"] else "Tagged" }} {{ count }} {{ "pad" if count == 1 else "pads" }}...[/info]{{ "" | nl }}
+{%- endif -%}
+
+{%- for pad in view.rows -%}
+{%- include "_pad_line.jinja" -%}
+{%- endfor -%}
+
+{%- set tag_count = view.requested_tags | length -%}
+{%- set tag_names = view.requested_tags | join(", ") -%}
+{%- if view.action == "assigned" -%}
+[success]Added {{ "tag" if tag_count == 1 else "tags" }} [{{ tag_names }}] to {{ view.modified_pads }} {{ "pad" if view.modified_pads == 1 else "pads" }}[/success]{{ "" | nl }}
+{%- elif view.action == "all_already_present" -%}
+[info]All pads already have {{ "tag" if tag_count == 1 else "tags" }} [{{ tag_names }}][/info]{{ "" | nl }}
+{%- elif view.action == "removed" -%}
+[success]Removed {{ "tag" if tag_count == 1 else "tags" }} [{{ tag_names }}] from {{ view.modified_pads }} {{ "pad" if view.modified_pads == 1 else "pads" }}[/success]{{ "" | nl }}
+{%- elif view.action == "none_present" -%}
+[info]No pads had {{ "tag" if tag_count == 1 else "tags" }} [{{ tag_names }}][/info]{{ "" | nl }}
+{%- endif -%}

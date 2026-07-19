@@ -501,9 +501,9 @@ pub enum Commands {
         indented: bool,
     },
 
-    /// Copy one or more pads to the clipboard (without printing)
+    /// Copy one or more pads to the clipboard without printing their contents
     #[command(alias = "cp", display_order = 10)]
-    #[dispatch(pure, template = "messages")]
+    #[dispatch(pure, template = "copy")]
     Copy {
         /// Indexes of the pads (e.g. 1 p1 d1)
         #[arg(required = true, num_args = 1.., add = all_pads_completer())]
@@ -658,7 +658,7 @@ pub enum Commands {
     // --- Data operations ---
     /// Permanently delete pads
     #[command(display_order = 20)]
-    #[dispatch(pure, template = "messages")]
+    #[dispatch(pure, template = "purge")]
     Purge {
         /// Indexes of the pads (e.g. d1 d2) - if omitted, purges all deleted pads
         #[arg(required = false, num_args = 0.., add = deleted_pads_completer())]
@@ -713,7 +713,7 @@ pub enum Commands {
 
     /// Import files as pads
     #[command(display_order = 22)]
-    #[dispatch(pure, template = "messages")]
+    #[dispatch(pure, template = "import")]
     Import {
         /// Paths to files or directories to import
         #[arg(required = true, num_args = 1..)]
@@ -722,7 +722,7 @@ pub enum Commands {
 
     /// Copy pads to (or from) another padz store (source is kept)
     #[command(display_order = 23)]
-    #[dispatch(pure, template = "messages")]
+    #[dispatch(pure, template = "transfer")]
     Clone {
         /// Indexes of the pads (e.g. 1 2) - if omitted, all non-deleted pads (active + archived)
         #[arg(required = false, num_args = 0.., add = active_pads_completer())]
@@ -739,7 +739,7 @@ pub enum Commands {
 
     /// Move pads to (or from) another padz store (source is removed on success)
     #[command(display_order = 24)]
-    #[dispatch(pure, template = "messages")]
+    #[dispatch(pure, template = "transfer")]
     Migrate {
         /// Indexes of the pads (e.g. 1 2) - if omitted, all non-deleted pads (active + archived)
         #[arg(required = false, num_args = 0.., add = active_pads_completer())]
@@ -763,7 +763,7 @@ pub enum Commands {
     // --- Misc commands ---
     /// Check and fix data inconsistencies
     #[command(display_order = 30)]
-    #[dispatch(pure, template = "messages")]
+    #[dispatch(pure, template = "doctor")]
     Doctor,
 
     /// Manage configuration
@@ -776,7 +776,7 @@ pub enum Commands {
 
     /// Initialize the store (optional utility)
     #[command(display_order = 32)]
-    #[dispatch(pure, template = "messages")]
+    #[dispatch(pure, template = "initialization")]
     Init {
         /// Link to another project's padz data
         #[arg(long, value_name = "PATH", conflicts_with = "unlink")]
@@ -832,7 +832,7 @@ pub enum ConfigSubcommand {
 pub enum TagCommands {
     /// Add tags to pads (auto-creates tags if needed)
     #[command(display_order = 25)]
-    #[dispatch(pure, template = "modification_result")]
+    #[dispatch(pure, template = "tagging")]
     Add {
         /// Pad selectors followed by tag names (e.g. 1 2 feature work)
         #[arg(required = true, num_args = 1..)]
@@ -841,7 +841,7 @@ pub enum TagCommands {
 
     /// Remove tags from pads
     #[command(display_order = 26)]
-    #[dispatch(pure, template = "modification_result")]
+    #[dispatch(pure, template = "tagging")]
     Remove {
         /// Pad selectors followed by tag names (e.g. 1 2 feature work)
         #[arg(required = true, num_args = 1..)]
@@ -850,7 +850,7 @@ pub enum TagCommands {
 
     /// Rename a tag (updates all pads)
     #[command(alias = "mv", display_order = 27)]
-    #[dispatch(pure, template = "messages")]
+    #[dispatch(pure, template = "tag_registry")]
     Rename {
         /// Current name of the tag
         old_name: String,
@@ -860,7 +860,7 @@ pub enum TagCommands {
 
     /// Delete a tag (removes from all pads)
     #[command(alias = "rm", display_order = 28)]
-    #[dispatch(pure, template = "messages")]
+    #[dispatch(pure, template = "tag_registry")]
     Delete {
         /// Name of the tag to delete
         name: String,
@@ -868,7 +868,7 @@ pub enum TagCommands {
 
     /// List all defined tags, or tags for specific pads
     #[command(alias = "ls", display_order = 29)]
-    #[dispatch(pure, template = "messages")]
+    #[dispatch(pure, template = "tag_catalog")]
     List {
         /// Pad IDs to show tags for (e.g. 1, 2 3, 1-3). If omitted, lists all tags.
         #[arg(num_args = 0..)]

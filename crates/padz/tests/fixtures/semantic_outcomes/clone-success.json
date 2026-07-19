@@ -1,0 +1,13 @@
+{
+  "status": "full_success",
+  "operation": "clone",
+  "direction": "to",
+  "peer_store": "<PEER_STORE>",
+  "requested_selection": {
+    "kind": "explicit",
+    "selectors": ["1"]
+  },
+  "copied_pad_ids": ["<PAD_ID>"],
+  "copied_count": 1,
+  "diagnostics": []
+}

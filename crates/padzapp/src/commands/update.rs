@@ -1,4 +1,10 @@
-use crate::commands::{CmdMessage, CmdResult, PadUpdate};
+//! Semantic pad updates.
+//!
+//! Both typed-field and raw-content updates return the affected pads plus an
+//! [`CmdOutcome`](crate::commands::CmdOutcome) for each update. Human wording is
+//! deliberately left to clients.
+
+use crate::commands::{CmdOutcome, CmdResult, PadUpdate, UpdateKind};
 use crate::error::{PadzError, Result};
 use crate::index::{DisplayPad, PadSelector};
 use crate::model::{parse_pad_content, Scope};
@@ -50,12 +56,11 @@ pub fn run<S: DataStore>(store: &mut S, scope: Scope, updates: &[PadUpdate]) -> 
         // edit still surfaces the parent under `ordering = updated_at`.
         crate::todos::propagate_status_change(store, scope, parent_id)?;
 
-        // Fix: Use display_index directly as it's already formatted for display
-        result.add_message(CmdMessage::success(format!(
-            "Pad updated ({}): {}",
-            super::helpers::fmt_path(&display_index),
-            pad.metadata.title
-        )));
+        result.outcomes.push(CmdOutcome::Updated {
+            path: display_index.clone(),
+            title: pad.metadata.title.clone(),
+            update_kind: UpdateKind::Structured,
+        });
         // Index doesn't change after update (use the last segment of the path)
         let local_index = display_index
             .last()
@@ -110,11 +115,11 @@ pub fn run_from_content<S: DataStore>(
         // edit still surfaces the parent under `ordering = updated_at`.
         crate::todos::propagate_status_change(store, scope, parent_id)?;
 
-        result.add_message(CmdMessage::success(format!(
-            "Updated ({}): {}",
-            super::helpers::fmt_path(&display_index),
-            pad.metadata.title
-        )));
+        result.outcomes.push(CmdOutcome::Updated {
+            path: display_index.clone(),
+            title: pad.metadata.title.clone(),
+            update_kind: UpdateKind::Content,
+        });
 
         let local_index = display_index
             .last()
@@ -245,10 +250,25 @@ mod tests {
 
         let res = run(&mut store, Scope::Project, &updates).unwrap();
 
-        // Check results
-        assert_eq!(res.messages.len(), 2);
-        assert!(res.messages.iter().any(|m| m.content.contains("A Updated")));
-        assert!(res.messages.iter().any(|m| m.content.contains("B Updated")));
+        // Check semantic results without parsing presentation prose.
+        assert!(res.messages.is_empty());
+        assert_eq!(res.outcomes.len(), 2);
+        assert!(res.outcomes.iter().any(|outcome| matches!(
+            outcome,
+            CmdOutcome::Updated {
+                title,
+                update_kind: UpdateKind::Structured,
+                ..
+            } if title == "A Updated"
+        )));
+        assert!(res.outcomes.iter().any(|outcome| matches!(
+            outcome,
+            CmdOutcome::Updated {
+                title,
+                update_kind: UpdateKind::Structured,
+                ..
+            } if title == "B Updated"
+        )));
 
         // Check store state
         let pads = get::run(&store, Scope::Project, get::PadFilter::default(), &[])
@@ -356,7 +376,7 @@ mod tests {
     }
 
     #[test]
-    fn update_success_message_format() {
+    fn update_returns_semantic_kind_path_and_title() {
         let mut store = BucketedStore::new(
             MemBackend::new(),
             MemBackend::new(),
@@ -372,10 +392,15 @@ mod tests {
         );
         let result = run(&mut store, Scope::Project, &[update]).unwrap();
 
-        assert_eq!(result.messages.len(), 1);
-        assert!(result.messages[0].content.contains("Pad updated"));
-        assert!(result.messages[0].content.contains("1")); // index
-        assert!(result.messages[0].content.contains("Updated Title"));
+        assert!(result.messages.is_empty());
+        assert_eq!(
+            result.outcomes,
+            vec![CmdOutcome::Updated {
+                path: vec![DisplayIndex::Regular(1)],
+                title: "Updated Title".to_string(),
+                update_kind: UpdateKind::Structured,
+            }]
+        );
     }
 
     #[test]
@@ -508,6 +533,51 @@ mod tests {
         assert_eq!(
             result.affected_pads[0].pad.content,
             "New Title From Pipe\n\nNew body content from piped input."
+        );
+        assert_eq!(
+            result.outcomes,
+            vec![CmdOutcome::Updated {
+                path: vec![DisplayIndex::Regular(1)],
+                title: "New Title From Pipe".to_string(),
+                update_kind: UpdateKind::Content,
+            }]
+        );
+    }
+
+    #[test]
+    fn run_from_content_reports_a_nested_canonical_path() {
+        let mut store = BucketedStore::new(
+            MemBackend::new(),
+            MemBackend::new(),
+            MemBackend::new(),
+            MemBackend::new(),
+        );
+        create::run(&mut store, Scope::Project, "Parent".into(), "".into(), None).unwrap();
+        create::run(
+            &mut store,
+            Scope::Project,
+            "Child".into(),
+            "".into(),
+            Some(PadSelector::Path(vec![DisplayIndex::Regular(1)])),
+        )
+        .unwrap();
+
+        let path = vec![DisplayIndex::Regular(1), DisplayIndex::Regular(1)];
+        let result = run_from_content(
+            &mut store,
+            Scope::Project,
+            &[PadSelector::Path(path.clone())],
+            "Edited child",
+        )
+        .unwrap();
+
+        assert_eq!(
+            result.outcomes,
+            vec![CmdOutcome::Updated {
+                path,
+                title: "Edited child".to_string(),
+                update_kind: UpdateKind::Content,
+            }]
         );
     }
 

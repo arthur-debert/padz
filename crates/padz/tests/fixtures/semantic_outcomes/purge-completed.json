@@ -1,0 +1,12 @@
+{
+  "status": "purged",
+  "selected_pads": [
+    {
+      "selector": "d1",
+      "id": "<UUID>",
+      "title": "gone"
+    }
+  ],
+  "total_purged": 1,
+  "descendant_count": 0
+}

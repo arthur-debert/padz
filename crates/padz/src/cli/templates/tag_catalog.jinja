@@ -1,0 +1,8 @@
+{#- Ordered tag catalog. The core supplies names and an explicit empty state. -#}
+{%- if status == "empty" -%}
+[info]No tags defined[/info]{{ "" | nl }}
+{%- else -%}
+{%- for tag in tags -%}
+[info]{{ tag }}[/info]{{ "" | nl }}
+{%- endfor -%}
+{%- endif -%}

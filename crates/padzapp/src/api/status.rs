@@ -28,7 +28,7 @@ impl<S: DataStore> PadzApi<S> {
         commands::pinning::unpin(&mut self.store, scope, &selectors)
     }
 
-    /// Marks pads as Done (completed).
+    /// Marks pads as Done, reporting already-done selectors as semantic no-ops.
     pub fn complete_pads<I: AsRef<str>>(
         &mut self,
         scope: Scope,
@@ -38,7 +38,7 @@ impl<S: DataStore> PadzApi<S> {
         commands::status::complete(&mut self.store, scope, &selectors)
     }
 
-    /// Reopens pads (sets them back to Planned).
+    /// Reopens pads, reporting already-planned selectors as semantic no-ops.
     pub fn reopen_pads<I: AsRef<str>>(
         &mut self,
         scope: Scope,
@@ -48,6 +48,8 @@ impl<S: DataStore> PadzApi<S> {
         commands::status::reopen(&mut self.store, scope, &selectors)
     }
 
+    /// Moves pads under a parent (or root), reporting same-parent moves as
+    /// semantic no-ops with their canonical display paths.
     pub fn move_pads<I: AsRef<str>>(
         &mut self,
         scope: Scope,

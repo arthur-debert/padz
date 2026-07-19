@@ -1,0 +1,9 @@
+[
+  {
+    "kind": "already_at_destination",
+    "path": [
+      { "type": "Regular", "value": 1 },
+      { "type": "Regular", "value": 1 }
+    ]
+  }
+]
