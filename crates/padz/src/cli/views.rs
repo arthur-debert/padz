@@ -1,13 +1,16 @@
 //! # CLI-owned thin views
 //!
-//! Every padz handler returns one of the types in this module (or `Output::Silent` /
-//! `Output::Artifact`). Each is a **mode-independent** value: standout serializes it
-//! once and then either feeds it to a MiniJinja template (human modes) or emits it
-//! directly (structured modes). Handlers therefore never look at `OutputMode`, never
-//! branch on it, and never print.
+//! padz handlers return `padzapp` **core** types directly wherever possible (e.g.
+//! `purge_pads` → `Output<PurgeOutcome>`, `doctor` → `Output<DoctorOutcome>`, and the
+//! export/import/transfer and tag families → their core reports). This module holds only
+//! the small **thin view** structs kept for the handful of commands where a core shape
+//! doesn't fit a template. Every value a handler returns — core type or thin view — is a
+//! **mode-independent** value: standout serializes it once and then either feeds it to a
+//! MiniJinja template (human modes) or emits it directly (structured modes). Handlers
+//! therefore never look at `OutputMode`, never branch on it, and never print.
 //!
-//! These are the thin flat views the reference `tdoo` example uses (`TodoListView`,
-//! `TodoActionView`, …), and they come in two shapes:
+//! The thin views here follow the same flat shape as the reference `tdoo` example
+//! (`TodoListView`, `TodoActionView`, …), and they come in two shapes:
 //!
 //! - **Pure CLI summaries** — facts that have no `padzapp` core type to return, computed
 //!   by the handler itself (resolved filesystem paths, resolved UUID strings, a
